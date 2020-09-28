@@ -4,6 +4,7 @@
 
 mod extern_spec_rewriter;
 mod rewriter;
+mod async_rewriter;
 mod parse_closure_macro;
 mod spec_attribute_kind;
 pub mod specifications;
@@ -60,6 +61,10 @@ pub fn rewrite_prusti_attributes(
     let (generated_spec_items, generated_attributes) = handle_result!(
         generate_spec_and_assertions(prusti_attributes, &item)
     );
+
+    if item.sig.asyncness.is_some() {
+        async_rewriter::rewrite_item(&mut item);
+    }
 
     quote!{
         #(#generated_spec_items)*

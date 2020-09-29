@@ -58,6 +58,31 @@ mod private {
 
     /// A macro for specifying external functions.
     pub use prusti_contracts_internal::extern_spec;
+
+    struct FakeFuture<T> {
+        phantom: std::marker::PhantomData<T>
+    }
+
+    impl<T> std::future::Future for FakeFuture<T> {
+        type Output = T;
+        fn poll(self: std::pin::Pin<&mut Self>, _cx: &mut std::task::Context<'_>) -> std::task::Poll<T> {
+            // For a simpler implementation, we always return `Pending`. It is
+            // not a problem, since fake futures are never actually used.
+            std::task::Poll::Pending
+        }
+    }
+
+    /// A function that mimics the type signature of an async block.
+    pub fn fake_async<T>(_val: T) -> impl std::future::Future<Output = T> {
+        FakeFuture {
+            phantom: std::marker::PhantomData
+        }
+    }
+
+    /// A function that mimics the type signature of an .await expression.
+    pub fn fake_await<T, F: std::future::Future<Output = T>>(_fut: F) -> T {
+        unimplemented!()
+    }
 }
 
 

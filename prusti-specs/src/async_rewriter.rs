@@ -59,7 +59,7 @@ impl VisitMut for AsyncRewriter {
             *node = parse_quote!(
                 #(#attrs)* #vis #sig {
                     if false {
-                        prusti_fake_async(#block)
+                        Box::new(prusti_contracts::fake_async(#block))
                     } else {
                         Box::new(async #original_block)
                     }
@@ -71,7 +71,7 @@ impl VisitMut for AsyncRewriter {
     fn visit_expr_mut(&mut self, node: &mut Expr) {
         match &node {
             Expr::Await(syn::ExprAwait {attrs, base: box expr, ..}) => {
-                *node = parse_quote!(#(#attrs)* prusti_fake_await(#expr));
+                *node = parse_quote!(#(#attrs)* prusti_contracts::fake_await(#expr));
             }
             Expr::Macro(_expr) => {
                 // TODO: rewrite join! and select!

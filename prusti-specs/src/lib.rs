@@ -62,9 +62,7 @@ pub fn rewrite_prusti_attributes(
         generate_spec_and_assertions(prusti_attributes, &item)
     );
 
-    if item.sig.asyncness.is_some() {
-        async_rewriter::rewrite_item(&mut item);
-    }
+    async_rewriter::rewrite_item(&mut item);
 
     quote!{
         #(#generated_spec_items)*

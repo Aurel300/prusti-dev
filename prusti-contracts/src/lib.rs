@@ -73,7 +73,7 @@ mod private {
     }
 
     /// A function that mimics the type signature of an async block.
-    pub fn fake_async<T>(_val: T) -> impl std::future::Future<Output = T> {
+    pub fn fake_async<T, F: Fn() -> T>(_val: F) -> impl std::future::Future<Output = T> {
         FakeFuture {
             phantom: std::marker::PhantomData
         }

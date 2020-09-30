@@ -18,7 +18,7 @@ use quote::quote;
 /// ```rust
 /// fn func_name(inputs...) -> Box<dyn Future<Output = ReturnType>> {
 ///     if false {
-///         prusti_fake_async({ transformed_statements... })
+///         prusti_contracts::fake_async({ transformed_statements... })
 ///     } else {
 ///         Box::new(async { statements... })
 ///     }
@@ -26,7 +26,7 @@ use quote::quote;
 /// ```
 ///
 /// Where `transformed_statements` are obtained by replacing `.await`
-/// expressions with calls to `prusti_fake_await`.
+/// expressions with calls to `prusti_contracts::fake_await`.
 pub fn rewrite_item(item: &mut ItemFn) {
     if !item.sig.asyncness.is_some() {
         return;
@@ -49,20 +49,33 @@ impl VisitMut for AsyncRewriter {
                 ref mut sig,
                 ref mut block
             } = node;
+            /*
             if let syn::ReturnType::Type(_, ref ty) = sig.output {
                 sig.output = parse_quote!( -> Box<dyn Future<Output = #ty>> );
             } else {
                 sig.output = parse_quote!( -> Box<dyn Future<Output = ()>> );
             }
-            let original_block = block.clone();
+            */
+            if let syn::ReturnType::Type(_, ref ty) = sig.output {
+                sig.output = parse_quote!( -> impl std::future::Future<Output = #ty> );
+            } else {
+                sig.output = parse_quote!( -> impl std::future::Future<Output = ()> );
+            }
+            // let original_block = block.clone();
             visit_mut::visit_block_mut(self, block);
             *node = parse_quote!(
                 #(#attrs)* #vis #sig {
+                    prusti_contracts::fake_async(
+                        //#[prusti_fake_sync]
+                        || #block
+                    )
+                    /*
                     if false {
                         Box::new(prusti_contracts::fake_async(#block))
                     } else {
                         Box::new(async #original_block)
                     }
+                    */
                 }
             );
         }
@@ -73,9 +86,29 @@ impl VisitMut for AsyncRewriter {
             Expr::Await(syn::ExprAwait {attrs, base: box expr, ..}) => {
                 *node = parse_quote!(#(#attrs)* prusti_contracts::fake_await(#expr));
             }
-            Expr::Macro(_expr) => {
-                // TODO: rewrite join! and select!
-                panic!("found macro!");
+            Expr::Macro(syn::ExprMacro {attrs, mac: syn::Macro {
+                path,
+                tokens,
+                ..
+            }}) => {
+                match path.segments.last().unwrap().ident.to_string().as_str() {
+                    "join" => {
+                        let args: syn::punctuated::Punctuated<Expr, syn::Token!(,)> = parse_quote!(#tokens);
+                        let wrapped_args = args.iter()
+                            .map(|arg| {
+                                let wrapped: syn::Expr = parse_quote!(prusti_contracts::fake_await(#arg));
+                                wrapped
+                            })
+                            .collect::<Vec<syn::Expr>>();
+                        *node = parse_quote!( #(#attrs)* ( #(#wrapped_args),* ) );
+                    },
+                    "select" => {
+                        unimplemented!("select!");
+                    },
+                    _ => {
+                        visit_mut::visit_expr_mut(self, node);
+                    }
+                }
             }
             _ => {
                 visit_mut::visit_expr_mut(self, node);

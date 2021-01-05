@@ -8,8 +8,8 @@ use prusti_contracts::*;
 
 fn main() {
     let f = closure!(
-        requires(i >= 0),
-        ensures(result == i + 1),
+        #[requires(i >= 0)]
+        #[ensures(result == i + 1)]
         |i: i32| i + 1
     );
 }

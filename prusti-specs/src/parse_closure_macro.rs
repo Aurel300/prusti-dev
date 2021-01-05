@@ -3,41 +3,65 @@ use syn::parse::{Parse, ParseStream};
 pub(crate) struct ClosureWithSpec {
     pub pres: Vec<syn::Expr>,
     pub posts: Vec<syn::Expr>,
-    pub cl: syn::ExprClosure
+    pub invariants: Vec<syn::Expr>,
+    pub views: Vec<ClosureView>,
+    pub cl: syn::ExprClosure,
+}
+
+pub(crate) struct ClosureView {
+    pub ident: syn::Ident,
+    pub ty: syn::Type,
+    pub expr: syn::Expr,
 }
 
 impl Parse for ClosureWithSpec {
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        let mut requires: Vec<syn::Expr> = vec! [];
-        let mut ensures: Vec<syn::Expr> = vec! [];
-        let mut cl: Option<syn::ExprClosure> = None;
+        let mut cl: syn::ExprClosure = input.parse()?;
 
-        while !input.is_empty() {
-            if input.peek(syn::Ident) {
-                let id: syn::Ident = input.parse()?;
-                let expr: syn::Expr = input.parse()?;
-                input.parse::<syn::Token![,]>()?;
+        let mut pres: Vec<syn::Result<syn::Expr>> = vec![];
+        let mut posts: Vec<syn::Result<syn::Expr>> = vec![];
+        let mut invariants: Vec<syn::Result<syn::Expr>> = vec![];
+        let mut views: Vec<syn::Result<ClosureView>> = vec![];
 
-                if id.to_string() == "requires" {
-                    requires.push(expr);
-                } else if id.to_string() == "ensures" {
-                    ensures.push(expr);
-                } else {
-                    return Err(syn::Error::new(id.span(), "invalid closure specification"));
+        // collect and remove any specification attributes
+        // leave other attributes intact
+        cl.attrs.drain_filter(|attr| {
+            if let Some(id) = attr.path.get_ident() {
+                match id.to_string().as_ref() {
+                    "requires" => pres.push(syn::parse2(attr.tokens.clone())),
+                    "ensures" => posts.push(syn::parse2(attr.tokens.clone())),
+                    "invariant" => invariants.push(syn::parse2(attr.tokens.clone())),
+                    "view" => views.push(syn::parse2(attr.tokens.clone())),
+                    _ => return false
                 }
+                true
             } else {
-                cl = Some(input.parse()?);
+                false
             }
-        }
+        });
 
-        if let None = cl {
-            return Err(syn::Error::new(input.span(), "closure specification without closure"));
-        }
+        Ok(Self {
+            pres: pres.into_iter().collect::<syn::Result<Vec<_>>>()?,
+            posts: posts.into_iter().collect::<syn::Result<Vec<_>>>()?,
+            invariants: invariants.into_iter().collect::<syn::Result<Vec<_>>>()?,
+            views: views.into_iter().collect::<syn::Result<Vec<_>>>()?,
+            cl
+        })
+    }
+}
 
-        Ok(ClosureWithSpec {
-            pres: requires,
-            posts: ensures,
-            cl: cl.unwrap()
+impl Parse for ClosureView {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let ident: syn::Ident = input.parse()?;
+        input.parse::<syn::Token![:]>()?;
+        let ty: syn::Type = input.parse()?;
+        input.parse::<syn::Token![=]>()?;
+        let expr: syn::Expr = input.parse()?;
+
+        Ok(Self {
+            ident,
+            ty,
+            expr,
         })
     }
 }

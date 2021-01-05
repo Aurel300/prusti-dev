@@ -10,12 +10,12 @@ use prusti_contracts::*;
 
 fn main() {
     let hocl = closure!(
-        ensures(result |= [
+        #[ensures(result |= [
             ensures(result == outer(i))
-        ]),
+        ])]
         |i: i32| {
             closure!(
-                ensures(result == outer(i)), // ???
+                #[ensures(result == outer(i))] // ???
                 move || i
             )
         }

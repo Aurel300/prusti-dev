@@ -557,19 +557,21 @@ impl Parser {
             let mut parser = Parser::from_token_stream(group.stream());
             let mut pres = vec![];
             let mut posts = vec![];
+            //let mut invariants = vec![];
             // TODO: pledges
             //let mut pledges = vec![];
-            loop {
+            while !parser.input.is_empty() {
                 use common::SpecType::*;
-                if parser.input.is_empty() {
-                    break
-                }
                 let kind = if parser.input.check_and_consume_keyword("requires") {
                     Precondition
                 } else if parser.input.check_and_consume_keyword("ensures") {
                     Postcondition
+                // TODO: does it make sense to have invariants in entailments?
+                //       if specified, do we do refinement as with traits?
+                // } else if parser.input.check_and_consume_keyword("invariant") {
+                //  HistoryInvariant
                 } else {
-                    // TODO: invariant, pledge ...
+                    // TODO: pledge ...
                     return Err(self.error_expected_specification());
                 };
                 let conjunct = if let Some(group) = parser.input.check_and_consume_parenthesized_block() {
@@ -586,6 +588,7 @@ impl Parser {
                 (match kind {
                     Precondition => &mut pres,
                     Postcondition => &mut posts,
+                    // HistoryInvariant => &mut invariants,
                     _ => unreachable!()
                 }).push(conjunct);
             }

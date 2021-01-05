@@ -169,20 +169,27 @@ impl AstRewriter {
         inputs: Punctuated<Pat, Token![,]>,
         output: Type,
         preconds: Vec<(untyped::SpecificationId, untyped::Assertion)>,
-        postconds: Vec<(untyped::SpecificationId, untyped::Assertion)>
-    ) -> (TokenStream, TokenStream) {
-        let process_cond = |is_post: bool, id: &untyped::SpecificationId,
+        postconds: Vec<(untyped::SpecificationId, untyped::Assertion)>,
+        invariants: Vec<(untyped::SpecificationId, untyped::Assertion)>,
+    ) -> (TokenStream, TokenStream, TokenStream) {
+        use crate::specifications::common::SpecType;
+        let process_cond = |spec_type: SpecType, id: &untyped::SpecificationId,
                             assertion: &untyped::Assertion| -> TokenStream
         {
             let spec_id_str = id.to_string();
             let mut encoded = TokenStream::new();
             assertion.encode_type_check(&mut encoded);
             let assertion_json = crate::specifications::json::to_json_string(&assertion);
-            let name = format_ident!("prusti_{}_closure_{}", if is_post { "post" } else { "pre" }, spec_id_str);
+            let name = format_ident!("prusti_{}_closure_{}", match spec_type {
+                SpecType::Precondition => "pre",
+                SpecType::Postcondition => "post",
+                SpecType::HistoryInvariant => "invariant",
+                _ => unimplemented!(),
+            }, spec_id_str);
             let callsite_span = Span::call_site();
-            let result = if is_post && !inputs.empty_or_trailing() {
+            let result = if spec_type == SpecType::Postcondition && !inputs.empty_or_trailing() {
                 quote_spanned! { callsite_span => , result: #output }
-            } else if is_post {
+            } else if spec_type == SpecType::Postcondition {
                 quote_spanned! { callsite_span => result: #output }
             } else {
                 TokenStream::new()
@@ -199,14 +206,19 @@ impl AstRewriter {
 
         let mut pre_ts = TokenStream::new();
         for (id, precond) in preconds {
-            pre_ts.extend(process_cond(false, &id, &precond));
+            pre_ts.extend(process_cond(SpecType::Precondition, &id, &precond));
         }
 
         let mut post_ts = TokenStream::new();
         for (id, postcond) in postconds {
-            post_ts.extend(process_cond(true, &id, &postcond));
+            post_ts.extend(process_cond(SpecType::Postcondition, &id, &postcond));
         }
 
-        (pre_ts, post_ts)
+        let mut invariants_ts = TokenStream::new();
+        for (id, invariant) in invariants {
+            invariants_ts.extend(process_cond(SpecType::HistoryInvariant, &id, &invariant));
+        }
+
+        (pre_ts, post_ts, invariants_ts)
     }
 }

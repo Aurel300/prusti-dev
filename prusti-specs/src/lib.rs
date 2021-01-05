@@ -289,8 +289,9 @@ pub fn closure(tokens: TokenStream, drop_spec: bool) -> TokenStream {
     } else {
         let mut rewriter = rewriter::AstRewriter::new();
 
-        let mut preconds: Vec<(untyped::SpecificationId, untyped::Assertion)> = Vec::new();
-        let mut postconds: Vec<(untyped::SpecificationId, untyped::Assertion)> = Vec::new();
+        let mut preconds: Vec<(untyped::SpecificationId, untyped::Assertion)> = vec![];
+        let mut postconds: Vec<(untyped::SpecificationId, untyped::Assertion)> = vec![];
+        let mut invariants: Vec<(untyped::SpecificationId, untyped::Assertion)> = vec![];
 
         let mut cl_annotations = TokenStream::new();
 
@@ -314,6 +315,16 @@ pub fn closure(tokens: TokenStream, drop_spec: bool) -> TokenStream {
             });
         }
 
+        for e in cl_spec.invariants {
+            let spec_id = rewriter.generate_spec_id();
+            let invariant = handle_result!(rewriter.parse_assertion(spec_id, e.to_token_stream()));
+            invariants.push((spec_id, invariant));
+            let spec_id_str = spec_id.to_string();
+            cl_annotations.extend(quote_spanned! { callsite_span =>
+                #[prusti::hist_inv_spec_id_ref = #spec_id_str]
+            });
+        }
+
         let syn::ExprClosure {
             attrs, asyncness, movability, capture, or1_token,
             inputs, or2_token, output, body
@@ -327,8 +338,8 @@ pub fn closure(tokens: TokenStream, drop_spec: bool) -> TokenStream {
             syn::ReturnType::Type(_, ref ty) => (**ty).clone()
         };
 
-        let (spec_toks_pre, spec_toks_post) = rewriter.generate_cl_spec(
-            inputs.clone(), output_type, preconds, postconds);
+        let (spec_toks_pre, spec_toks_post, spec_toks_invariant) = rewriter.generate_cl_spec(
+            inputs.clone(), output_type, preconds, postconds, invariants);
 
         let mut attrs_ts = TokenStream::new();
         for a in attrs {
@@ -347,6 +358,7 @@ pub fn closure(tokens: TokenStream, drop_spec: bool) -> TokenStream {
                         #[allow(unused_must_use)]
                         if false {
                             #spec_toks_pre
+                            #spec_toks_invariant
                         }
                         let result = #body ;
                         #[allow(unused_must_use)]
@@ -363,8 +375,8 @@ pub fn closure(tokens: TokenStream, drop_spec: bool) -> TokenStream {
 
 pub fn refine_trait_spec(_attr: TokenStream, tokens: TokenStream) -> TokenStream {
     let mut impl_block: syn::ItemImpl = handle_result!(syn::parse2(tokens));
-    let mut new_items = Vec::new();
-    let mut generated_spec_items = Vec::new();
+    let mut new_items = vec![];
+    let mut generated_spec_items = vec![];
     for item in impl_block.items {
         match item {
             syn::ImplItem::Method(method) => {
@@ -398,7 +410,7 @@ pub fn refine_trait_spec(_attr: TokenStream, tokens: TokenStream) -> TokenStream
     }
     impl_block.items = new_items;
     let spec_impl_block = syn::ItemImpl {
-        attrs: Vec::new(),
+        attrs: vec![],
         defaultness: impl_block.defaultness,
         unsafety: impl_block.unsafety,
         impl_token: impl_block.impl_token,

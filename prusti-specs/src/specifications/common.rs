@@ -15,10 +15,12 @@ pub enum SpecType {
     Precondition,
     /// Postcondition of a procedure.
     Postcondition,
-    /// Loop invariant or struct invariant
+    /// Loop invariant or struct invariant.
     Invariant,
     /// Predicate
     Predicate,
+    /// Closure history invariant.
+    HistoryInvariant,
 }
 
 #[derive(Debug)]

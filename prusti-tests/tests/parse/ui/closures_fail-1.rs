@@ -10,8 +10,8 @@ fn main() {
     // TODO: the error is reported with an indicator next to `i` below, but the
     // error is not very clear overall.
     let f = closure!(
-        requires(i >= 0),
-        ensures(result == i + 1),
+        #[requires(i >= 0)]
+        #[ensures(result == i + 1)]
         |i| -> i32 { i + 1 }
     );
 }

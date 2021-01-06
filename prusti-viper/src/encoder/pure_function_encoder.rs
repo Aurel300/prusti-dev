@@ -752,6 +752,13 @@ impl<'p, 'v: 'p, 'tcx: 'v> BackwardMirInterpreter<'tcx>
                                 state
                             }
 
+                            "prusti_contracts::hist_inv" => {
+                                assert_eq!(args.len(), 2);
+                                assert_eq!(own_substs.len(), 1);
+                                assert_eq!(substs.len(), 1);
+                                unimplemented!("hist_inv");
+                            }
+
                             // simple function call
                             _ => {
                                 let is_pure_function = self.encoder.is_pure(def_id);

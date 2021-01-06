@@ -87,4 +87,14 @@ pub fn old<T>(arg: T) -> T {
     arg
 }
 
+/// This function evaluates to [true] when the history invariant of a closure
+/// type is preserved between [_old] and [_new].
+///
+/// [FnType] should really be [FnType: FnOnce<Args>], to allow only functions,
+/// but with any number of arguments. However, this syntax is not yet
+/// supported. See https://github.com/rust-lang/rust/issues/29625
+pub fn hist_inv<FnType>(_old: &FnType, _new: &FnType) -> bool {
+    true
+}
+
 pub use private::*;

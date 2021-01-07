@@ -242,7 +242,7 @@ impl SnapshotEncoder {
                     ty::TyKind::Adt(adt_def, _) if adt_def.variants.is_empty() => self.snap_unit(),
                     ty::TyKind::Adt(adt_def, _) if adt_def.variants.len() == 1 && adt_def.variants[rustc_target::abi::VariantIdx::from_u32(0)].fields.is_empty() => self.snap_unit(),
 
-                    // Param(_) | Adt(_) | Tuple(_), arrays and slices and unsupported types
+                    // Param(_) | Adt(_) | Tuple(_) | Closure(_, _), arrays and slices and unsupported types
                     _ => {
                         let snapshot = self.encode_snapshot(encoder, ty)?;
                         self.snap_app_expr(expr, snapshot.get_type())
@@ -583,7 +583,7 @@ impl SnapshotEncoder {
             ty::TyKind::Adt(adt_def, _) if adt_def.variants.is_empty() => self.snap_unit().get_type().clone(),
             ty::TyKind::Adt(adt_def, _) if adt_def.variants.len() == 1 && adt_def.variants[rustc_target::abi::VariantIdx::from_u32(0)].fields.is_empty() => self.snap_unit().get_type().clone(),
 
-            // Param(_) | Adt(_) | Tuple(_), arrays and slices and unsupported types
+            // Param(_) | Adt(_) | Tuple(_) | Closure(_, _), arrays and slices and unsupported types
             _ => Type::Snapshot(predicate_name.to_string()),
         };
 
@@ -638,7 +638,7 @@ impl SnapshotEncoder {
             ty::TyKind::Adt(adt_def, _) if adt_def.variants.is_empty() => Ok(Snapshot::Unit),
             ty::TyKind::Adt(adt_def, _) if adt_def.variants.len() == 1 && adt_def.variants[rustc_target::abi::VariantIdx::from_u32(0)].fields.is_empty() => Ok(Snapshot::Unit),
 
-            // TODO: closures, never type
+            // TODO: never type
 
             ty::TyKind::Tuple(substs) => {
                 let mut fields = vec![];
@@ -725,6 +725,26 @@ impl SnapshotEncoder {
                     });
                 }
                 self.encode_complex(encoder, variants, predicate_name)
+            }
+            ty::TyKind::Closure(def_id, substs) => {
+                let closure_substs = substs.as_closure();
+                for (upvar_num, upvar_ty) in closure_substs.upvar_tys().enumerate() {
+                    let field_name = format!("closure_{}", upvar_num);
+                    fields.push(SnapshotField {
+                        name: field_name.to_string(),
+                        access: self.snap_app(encoder, Expr::field(
+                            arg_expr.clone(),
+                            encoder.encode_raw_ref_field(field_name, upvar_ty)?,
+                        ))?,
+                        mir_type: upvar_ty,
+                        typ: self.encode_type(encoder, upvar_ty)?,
+                    });
+                }
+                self.encode_complex(encoder, vec![SnapshotVariant {
+                    discriminant: -1,
+                    fields,
+                    name: None,
+                }], predicate_name)
             }
 
             ty::TyKind::Array(elem_ty, ..) => {

@@ -47,7 +47,8 @@ impl<'p, 'v, 'r: 'v, 'tcx: 'v> TypeEncoder<'p, 'v, 'tcx> {
             | ty::TyKind::Adt(_, _)
             | ty::TyKind::Tuple(_)
             | ty::TyKind::Never
-            | ty::TyKind::Param(_) => true,
+            | ty::TyKind::Param(_)
+            | ty::TyKind::Closure(_, _) => true,
             _ => false,
         }
     }
@@ -116,7 +117,9 @@ impl<'p, 'v, 'r: 'v, 'tcx: 'v> TypeEncoder<'p, 'v, 'tcx> {
                 vir::Type::TypedRef(type_name)
             }
 
-            ty::TyKind::Adt(_, _) | ty::TyKind::Tuple(_) => {
+            ty::TyKind::Adt(_, _)
+            | ty::TyKind::Tuple(_)
+            | ty::TyKind::Closure(_, _) => {
                 self.encoder.encode_snapshot_type(&self.ty)?;
             }
 
@@ -138,7 +141,8 @@ impl<'p, 'v, 'r: 'v, 'tcx: 'v> TypeEncoder<'p, 'v, 'tcx> {
         debug!("Encode ref value type '{:?}'", self.ty);
         match self.ty.kind() {
             ty::TyKind::Adt(_, _)
-            | ty::TyKind::Tuple(_) => {
+            | ty::TyKind::Tuple(_)
+            | ty::TyKind::Closure(_, _) => {
                 //let snapshot = self.encoder.encode_snapshot(&self.ty)?;
                 let type_name = self.encoder.encode_type_predicate_use(self.ty)?;
                 Ok(vir::Type::TypedRef(type_name))
@@ -372,25 +376,15 @@ impl<'p, 'v, 'r: 'v, 'tcx: 'v> TypeEncoder<'p, 'v, 'tcx> {
 
             ty::TyKind::Closure(_def_id, internal_substs) => {
                 let closure_substs = internal_substs.as_closure();
-                match closure_substs.tupled_upvars_ty().kind() {
-                    ty::TyKind::Tuple(upvar_substs) => {
-                        // TODO: this should encode the state of a closure, i.e.
-                        // the "self" parameter passed into the implementation
-                        // function generated for every closure. This should
-                        // work using snapshots. For now, the "self" parameter
-                        // is skipped in encoding.
-
-                        // let field_name = "upvars".to_owned();
-                        // let field = self.encoder.encode_raw_ref_field(field_name, cl_upvars);
-                        // let pred = vir::Predicate::new_struct(typ.clone(), vec![field.clone()]);
-                        let pred = vir::Predicate::new_struct(typ.clone(), vec![]);
-                        // trace!("Encoded closure type {:?} as {:?} with field {:?}", typ, pred, field);
-                        trace!("Encoded closure type {:?} as {:?}", typ, pred);
-                        vec![pred]
-                    }
-
-                    _ => unreachable!()
-                }
+                let upvars = closure_substs
+                    .upvar_tys()
+                    .enumerate()
+                    .map(|(upvar_num, upvar_ty)| {
+                        let field_name = format!("closure_{}", upvar_num);
+                        self.encoder.encode_raw_ref_field(field_name, upvar_ty)
+                    })
+                    .collect::<Result<_, _>>()?;
+                vec![vir::Predicate::new_struct(typ, upvars)]
             }
 
             ref ty_variant => {

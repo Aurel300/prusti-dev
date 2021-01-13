@@ -45,13 +45,16 @@ impl Parse for ClosureWithSpec {
             posts: posts.into_iter().collect::<syn::Result<Vec<_>>>()?,
             invariants: invariants.into_iter().collect::<syn::Result<Vec<_>>>()?,
             views: views.into_iter().collect::<syn::Result<Vec<_>>>()?,
-            cl
+            cl,
         })
     }
 }
 
 impl Parse for ClosureView {
-    fn parse(input: ParseStream) -> syn::Result<Self> {
+    fn parse(group: ParseStream) -> syn::Result<Self> {
+        let input;
+        syn::parenthesized!(input in group);
+
         let ident: syn::Ident = input.parse()?;
         input.parse::<syn::Token![:]>()?;
         let ty: syn::Type = input.parse()?;

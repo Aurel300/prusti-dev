@@ -285,90 +285,117 @@ pub fn closure(tokens: TokenStream, drop_spec: bool) -> TokenStream {
     let callsite_span = Span::call_site();
 
     if drop_spec {
-        cl_spec.cl.into_token_stream()
-    } else {
-        let mut rewriter = rewriter::AstRewriter::new();
+        return cl_spec.cl.into_token_stream();
+    }
 
-        let mut preconds: Vec<(untyped::SpecificationId, untyped::Assertion)> = vec![];
-        let mut postconds: Vec<(untyped::SpecificationId, untyped::Assertion)> = vec![];
-        let mut invariants: Vec<(untyped::SpecificationId, untyped::Assertion)> = vec![];
+    let mut rewriter = rewriter::AstRewriter::new();
 
-        let mut cl_annotations = TokenStream::new();
+    let mut preconds: Vec<(untyped::SpecificationId, untyped::Assertion)> = vec![];
+    let mut postconds: Vec<(untyped::SpecificationId, untyped::Assertion)> = vec![];
+    let mut invariants: Vec<(untyped::SpecificationId, untyped::Assertion)> = vec![];
+    let mut views: Vec<(untyped::ExpressionId, untyped::Expression)> = vec![];
 
-        for r in cl_spec.pres {
-            let spec_id = rewriter.generate_spec_id();
-            let precond = handle_result!(rewriter.parse_assertion(spec_id, r.to_token_stream()));
-            preconds.push((spec_id, precond));
-            let spec_id_str = spec_id.to_string();
-            cl_annotations.extend(quote_spanned! { callsite_span =>
-                #[prusti::pre_spec_id_ref = #spec_id_str]
-            });
+    let mut cl_annotations = TokenStream::new();
+
+    for e in cl_spec.pres {
+        let spec_id = rewriter.generate_spec_id();
+        let precond = handle_result!(rewriter.parse_assertion(spec_id, e.to_token_stream()));
+        preconds.push((spec_id, precond));
+        let spec_id_str = spec_id.to_string();
+        cl_annotations.extend(quote_spanned! { callsite_span =>
+            #[prusti::pre_spec_id_ref = #spec_id_str]
+        });
+    }
+
+    for e in cl_spec.posts {
+        let spec_id = rewriter.generate_spec_id();
+        let postcond = handle_result!(rewriter.parse_assertion(spec_id, e.to_token_stream()));
+        postconds.push((spec_id, postcond));
+        let spec_id_str = spec_id.to_string();
+        cl_annotations.extend(quote_spanned! { callsite_span =>
+            #[prusti::post_spec_id_ref = #spec_id_str]
+        });
+    }
+
+    for e in cl_spec.invariants {
+        let spec_id = rewriter.generate_spec_id();
+        let invariant = handle_result!(rewriter.parse_assertion(spec_id, e.to_token_stream()));
+        invariants.push((spec_id, invariant));
+        let spec_id_str = spec_id.to_string();
+        cl_annotations.extend(quote_spanned! { callsite_span =>
+            #[prusti::hist_inv_spec_id_ref = #spec_id_str]
+        });
+    }
+
+    for e in cl_spec.views {
+        let spec_id = rewriter.generate_spec_id();
+        let expr_id = rewriter.generate_expr_id();
+        let view = handle_result!(rewriter.parse_expression(spec_id, e.expr.to_token_stream()));
+        let view_json = crate::specifications::json::ClosureView::new(
+            e.ident.to_string(),
+            &view,
+        ).to_json_string();
+        views.push((expr_id, view));
+        cl_annotations.extend(quote_spanned! { callsite_span =>
+            #[prusti::view_ref = #view_json]
+        });
+    }
+
+    let syn::ExprClosure {
+        attrs, asyncness, movability, capture, or1_token,
+        inputs, or2_token, output, body
+    } = cl_spec.cl;
+
+    let output_type: syn::Type = match output {
+        syn::ReturnType::Default => {
+            return syn::Error::new(output.span(), "closure must specify return type")
+                .to_compile_error();
         }
+        syn::ReturnType::Type(_, ref ty) => (**ty).clone()
+    };
 
-        for e in cl_spec.posts {
-            let spec_id = rewriter.generate_spec_id();
-            let postcond = handle_result!(rewriter.parse_assertion(spec_id, e.to_token_stream()));
-            postconds.push((spec_id, postcond));
-            let spec_id_str = spec_id.to_string();
-            cl_annotations.extend(quote_spanned! { callsite_span =>
-                #[prusti::post_spec_id_ref = #spec_id_str]
-            });
-        }
+    let (
+        spec_toks_pre,
+        spec_toks_post,
+        spec_toks_invariant,
+        spec_toks_view,
+    ) = rewriter.generate_cl_spec(
+        inputs.clone(),
+        output_type,
+        preconds,
+        postconds,
+        invariants,
+        views,
+    );
 
-        for e in cl_spec.invariants {
-            let spec_id = rewriter.generate_spec_id();
-            let invariant = handle_result!(rewriter.parse_assertion(spec_id, e.to_token_stream()));
-            invariants.push((spec_id, invariant));
-            let spec_id_str = spec_id.to_string();
-            cl_annotations.extend(quote_spanned! { callsite_span =>
-                #[prusti::hist_inv_spec_id_ref = #spec_id_str]
-            });
-        }
+    let mut attrs_ts = TokenStream::new();
+    for a in attrs {
+        attrs_ts.extend(a.into_token_stream());
+    }
 
-        let syn::ExprClosure {
-            attrs, asyncness, movability, capture, or1_token,
-            inputs, or2_token, output, body
-        } = cl_spec.cl;
-
-        let output_type: syn::Type = match output {
-            syn::ReturnType::Default => {
-                return syn::Error::new(output.span(), "closure must specify return type")
-                    .to_compile_error();
-            }
-            syn::ReturnType::Type(_, ref ty) => (**ty).clone()
-        };
-
-        let (spec_toks_pre, spec_toks_post, spec_toks_invariant) = rewriter.generate_cl_spec(
-            inputs.clone(), output_type, preconds, postconds, invariants);
-
-        let mut attrs_ts = TokenStream::new();
-        for a in attrs {
-            attrs_ts.extend(a.into_token_stream());
-        }
-
-        quote_spanned! {callsite_span=>
-            {
-                #[allow(unused_variables)]
-                #[prusti::closure]
-                #cl_annotations #attrs_ts
-                let _prusti_closure =
-                    #asyncness #movability #capture
-                    #or1_token #inputs #or2_token #output
-                    {
-                        #[allow(unused_must_use)]
-                        if false {
-                            #spec_toks_pre
-                            #spec_toks_invariant
-                        }
-                        let result = #body ;
-                        #[allow(unused_must_use)]
-                        if false {
-                            #spec_toks_post
-                        }
-                        result
-                    };
-                _prusti_closure
-            }
+    quote_spanned! { callsite_span =>
+        {
+            #spec_toks_view
+            #[allow(unused_variables)]
+            #[prusti::closure]
+            #cl_annotations #attrs_ts
+            let _prusti_closure =
+                #asyncness #movability #capture
+                #or1_token #inputs #or2_token #output
+                {
+                    #[allow(unused_must_use)]
+                    if false {
+                        #spec_toks_pre
+                        #spec_toks_invariant
+                    }
+                    let result = #body ;
+                    #[allow(unused_must_use)]
+                    if false {
+                        #spec_toks_post
+                    }
+                    result
+                };
+            _prusti_closure
         }
     }
 }

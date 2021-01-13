@@ -6,6 +6,7 @@
 use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
 use std::fmt::{Display, Debug};
+use std::collections::HashMap;
 use uuid::Uuid;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -62,6 +63,7 @@ pub enum SpecIdRef {
         rhs: SpecificationId,
     },
     Predicate(SpecificationId),
+    HistoryInvariant(SpecificationId),
 }
 
 impl Display for SpecificationId {
@@ -74,7 +76,7 @@ impl Display for SpecificationId {
     }
 }
 
-impl std::convert::TryFrom<String> for SpecificationId {
+impl TryFrom<String> for SpecificationId {
     type Error = uuid::Error;
     fn try_from(value: String) -> Result<Self, Self::Error> {
         Uuid::parse_str(&value).map(|id| Self(id))
@@ -395,6 +397,23 @@ impl<EID: Clone + Debug, ET: Clone + Debug, AT: Clone + Debug> ProcedureSpecific
     }
 }
 
+/// Specification of a closure.
+#[derive(Debug, Clone)]
+pub struct ClosureSpecification<EID, ET, AT> {
+    /// Specifications of the underlying procedure.
+    pub proc_spec: ProcedureSpecification<EID, ET, AT>,
+    /// History invariants.
+    pub invariants: Vec<Assertion<EID, ET, AT>>,
+    /// Views.
+    pub views: HashMap<String, Expression<EID, ET>>,
+}
+
+impl<EID, ET, AT> ClosureSpecification<EID, ET, AT> {
+    pub fn is_empty(&self) -> bool {
+        self.proc_spec.is_empty() && self.invariants.is_empty() && self.views.is_empty()
+    }
+}
+
 #[derive(Debug, Clone)]
 /// Specification of a single element such as procedure or loop.
 pub enum SpecificationSet<EID, ET, AT> {
@@ -404,6 +423,9 @@ pub enum SpecificationSet<EID, ET, AT> {
     Loop(LoopSpecification<EID, ET, AT>),
     /// Struct invariant.
     Struct(Vec<Specification<EID, ET, AT>>),
+    /// Closure specifications. Same as procedure specifications, but adds
+    /// extra fields only relevant to closures.
+    Closure(ClosureSpecification<EID, ET, AT>),
 }
 
 impl<EID, ET, AT> SpecificationSet<EID, ET, AT> {
@@ -412,16 +434,18 @@ impl<EID, ET, AT> SpecificationSet<EID, ET, AT> {
             SpecificationSet::Procedure(spec) => spec.is_empty(),
             SpecificationSet::Loop(ref invs) => invs.is_empty(),
             SpecificationSet::Struct(ref invs) => invs.is_empty(),
+            SpecificationSet::Closure(cl_spec) => cl_spec.is_empty(),
         }
     }
 }
 
 impl<EID: Clone + Debug, ET: Clone + Debug, AT: Clone + Debug> SpecificationSet<EID, ET, AT> {
     pub fn expect_procedure(&self) -> &ProcedureSpecification<EID, ET, AT> {
-        if let SpecificationSet::Procedure(spec) = self {
-            return spec;
+        match self {
+            SpecificationSet::Procedure(spec) => spec,
+            SpecificationSet::Closure(spec) => &spec.proc_spec,
+            _ => unreachable!("expected Procedure: {:?}", self),
         }
-        unreachable!("expected Procedure: {:?}", self);
     }
 
     pub fn expect_mut_procedure(&mut self) -> &mut ProcedureSpecification<EID, ET, AT> {
@@ -429,6 +453,13 @@ impl<EID: Clone + Debug, ET: Clone + Debug, AT: Clone + Debug> SpecificationSet<
             return spec;
         }
         unreachable!("expected Procedure: {:?}", self);
+    }
+
+    pub fn expect_closure(&self) -> &ClosureSpecification<EID, ET, AT> {
+        if let SpecificationSet::Closure(spec) = self {
+            return spec;
+        }
+        unreachable!("expected Closure: {:?}", self);
     }
 
     pub fn expect_loop(&self) -> &LoopSpecification<EID, ET, AT> {

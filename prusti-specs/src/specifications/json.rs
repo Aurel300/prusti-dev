@@ -50,6 +50,12 @@ pub struct TriggerSet(pub Vec<Trigger>);
 #[derive(Serialize, Deserialize)]
 pub struct Trigger(pub Vec<Expression>);
 
+#[derive(Serialize, Deserialize)]
+pub struct ClosureView {
+    pub ident: String,
+    pub expr: Expression,
+}
+
 impl untyped::Expression {
     fn to_structure(&self) -> Expression {
         Expression {
@@ -145,6 +151,21 @@ impl untyped::Assertion {
 
 pub fn to_json_string(assertion: &untyped::Assertion) -> String {
     serde_json::to_string(&assertion.to_structure()).unwrap()
+}
+
+impl ClosureView {
+    pub fn new(ident: String, expr: &untyped::Expression) -> Self {
+        Self {
+            ident,
+            expr: expr.to_structure(),
+        }
+    }
+    pub fn from_json_string(json: &str) -> Self {
+        serde_json::from_str(&json).unwrap()
+    }
+    pub fn to_json_string(&self) -> String {
+        serde_json::to_string(self).unwrap()
+    }
 }
 
 impl Assertion {

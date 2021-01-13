@@ -1,4 +1,4 @@
-use crate::specifications::common::{ExpressionIdGenerator, SpecificationIdGenerator};
+use crate::specifications::common::{ExpressionIdGenerator, SpecificationIdGenerator, SpecType};
 use crate::specifications::untyped::{self, EncodeTypeCheck};
 use proc_macro2::{Span, TokenStream};
 use quote::{quote_spanned, format_ident};
@@ -35,8 +35,21 @@ impl AstRewriter {
         }
     }
 
+    pub fn generate_expr_id(&mut self) -> untyped::ExpressionId {
+        self.expr_id_generator.generate()
+    }
+
     pub fn generate_spec_id(&mut self) -> untyped::SpecificationId {
         self.spec_id_generator.generate()
+    }
+
+    /// Parse an expression.
+    pub fn parse_expression(
+        &mut self,
+        spec_id: untyped::SpecificationId,
+        tokens: TokenStream,
+    ) -> syn::Result<untyped::Expression> {
+        untyped::Expression::parse(tokens, spec_id, &mut self.expr_id_generator)
     }
 
     /// Parse an assertion.
@@ -164,6 +177,8 @@ impl AstRewriter {
 
     /// Generate statements for checking a closure specification.
     /// TODO: arguments, result (types are typically not known yet after parsing...)
+    /// TODO: refactor so that generate_cl_spec does more (too much preprocessing
+    /// currently in lib::closure.
     pub fn generate_cl_spec(
         &mut self,
         inputs: Punctuated<Pat, Token![,]>,
@@ -171,8 +186,9 @@ impl AstRewriter {
         preconds: Vec<(untyped::SpecificationId, untyped::Assertion)>,
         postconds: Vec<(untyped::SpecificationId, untyped::Assertion)>,
         invariants: Vec<(untyped::SpecificationId, untyped::Assertion)>,
-    ) -> (TokenStream, TokenStream, TokenStream) {
-        use crate::specifications::common::SpecType;
+        views: Vec<(untyped::ExpressionId, untyped::Expression)>,
+    ) -> (TokenStream, TokenStream, TokenStream, TokenStream) {
+        let callsite_span = Span::call_site();
         let process_cond = |spec_type: SpecType, id: &untyped::SpecificationId,
                             assertion: &untyped::Assertion| -> TokenStream
         {
@@ -186,7 +202,6 @@ impl AstRewriter {
                 SpecType::HistoryInvariant => "invariant",
                 _ => unimplemented!(),
             }, spec_id_str);
-            let callsite_span = Span::call_site();
             let result = if spec_type == SpecType::Postcondition && !inputs.empty_or_trailing() {
                 quote_spanned! { callsite_span => , result: #output }
             } else if spec_type == SpecType::Postcondition {
@@ -219,6 +234,22 @@ impl AstRewriter {
             invariants_ts.extend(process_cond(SpecType::HistoryInvariant, &id, &invariant));
         }
 
-        (pre_ts, post_ts, invariants_ts)
+        let mut views_ts = TokenStream::new();
+        for (id, expr) in views {
+            let expr_id_str = id.to_string();
+            let mut encoded = TokenStream::new();
+            expr.encode_type_check_any(&mut encoded);
+            // TODO: type check specifically for view type
+            // let ty = view.ty;
+            views_ts.extend(quote_spanned! { callsite_span =>
+                #[prusti::spec_only]
+                #[prusti::expr_id = #expr_id_str]
+                || {
+                    #encoded
+                };
+            })
+        }
+
+        (pre_ts, post_ts, invariants_ts, views_ts)
     }
 }

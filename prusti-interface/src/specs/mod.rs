@@ -1,4 +1,9 @@
-use prusti_specs::specifications::{json::Assertion as JsonAssertion, SpecType};
+use prusti_specs::specifications::{
+    json::Assertion as JsonAssertion,
+    json::Expression as JsonExpression,
+    json::ClosureView as JsonClosureView,
+    SpecType
+};
 use rustc_ast::ast;
 use rustc_hir::{intravisit, ItemKind};
 use rustc_middle::hir::map::Map;
@@ -45,6 +50,11 @@ struct ProcedureSpecRef {
     trusted: bool,
 }
 
+struct ClosureSpecRef {
+    spec_id_refs: Vec<prusti_specs::specifications::common::SpecIdRef>,
+    view_refs: HashMap<String, JsonExpression>,
+}
+
 /// Specification collector, intended to be applied as a visitor over the crate
 /// HIR. After the visit, [determine_def_specs] can be used to get back
 /// a mapping of DefIds (which may not be local due to extern specs) to their
@@ -63,6 +73,7 @@ pub struct SpecCollector<'tcx> {
 
     /// Resolved specifications.
     procedure_specs: HashMap<LocalDefId, ProcedureSpecRef>,
+    closure_specs: HashMap<LocalDefId, ClosureSpecRef>,
     loop_specs: HashMap<LocalDefId, Vec<SpecificationId>>,
 }
 
@@ -70,9 +81,10 @@ impl<'tcx> SpecCollector<'tcx> {
     pub fn new(tcx: TyCtxt<'tcx>) -> Self {
         Self {
             tcx: tcx,
-            spec_items: Vec::new(),
+            spec_items: vec![],
             typed_specs: HashMap::new(),
             procedure_specs: HashMap::new(),
+            closure_specs: HashMap::new(),
             loop_specs: HashMap::new(),
             typed_expressions: HashMap::new(),
             extern_resolver: ExternSpecResolver::new(tcx),
@@ -99,6 +111,7 @@ impl<'tcx> SpecCollector<'tcx> {
 
         let mut def_spec = typed::DefSpecificationMap::new();
         self.determine_procedure_specs(&mut def_spec);
+        self.determine_closure_specs(&mut def_spec);
         self.determine_extern_specs(&mut def_spec, env);
         self.determine_loop_specs(&mut def_spec);
         self.determine_struct_specs(&mut def_spec);
@@ -148,6 +161,7 @@ impl<'tcx> SpecCollector<'tcx> {
                     SpecIdRef::Predicate(spec_id) => {
                         predicate_body = Some(self.typed_specs.get(&spec_id).unwrap().clone());
                     }
+                    SpecIdRef::HistoryInvariant(_) => unimplemented!(),
                 }
             }
             def_spec.specs.insert(
@@ -159,6 +173,40 @@ impl<'tcx> SpecCollector<'tcx> {
                     predicate_body,
                     pure: refs.pure,
                     trusted: refs.trusted,
+                })
+            );
+        }
+    }
+
+    /// Must be called after [determine_procedure_specs] to ensure closure
+    /// specs are properly merged with their procedure specs.
+    fn determine_closure_specs(&mut self, def_spec: &mut typed::DefSpecificationMap<'tcx>) {
+        let closure_specs = std::mem::replace(&mut self.closure_specs, HashMap::new());
+        for (local_id, mut refs) in closure_specs.into_iter() {
+            let proc_spec = def_spec.specs.get(&local_id)
+                .map(|spec| spec.expect_procedure().clone())
+                .unwrap_or_else(|| typed::ProcedureSpecification::empty());
+            let invariants = refs.spec_id_refs.iter()
+                .map(|spec_id_ref| match spec_id_ref {
+                    SpecIdRef::HistoryInvariant(spec_id) => {
+                        self.typed_specs.get(&spec_id).unwrap().clone()
+                    }
+                    _ => unimplemented!()
+                })
+                .collect::<Vec<_>>();
+            let view_refs = std::mem::replace(&mut refs.view_refs, HashMap::new());
+            let views = view_refs.into_iter()
+                .map(|(ident, expr)| (
+                    ident.to_string(),
+                    expr.to_typed(&self.typed_expressions, self.tcx),
+                ))
+                .collect::<HashMap<String, _>>();
+            def_spec.specs.insert(
+                local_id,
+                typed::SpecificationSet::Closure(typed::ClosureSpecification {
+                    proc_spec,
+                    invariants,
+                    views,
                 })
             );
         }
@@ -179,23 +227,23 @@ impl<'tcx> SpecCollector<'tcx> {
     fn determine_struct_specs(&self, def_spec: &mut typed::DefSpecificationMap<'tcx>) {}
 }
 
+fn parse_spec_id(spec_id: String, def_id: DefId) -> SpecificationId {
+    spec_id.try_into().expect(
+        &format!("cannot parse the spec_id attached to {:?}", def_id)
+    )
+}
+
 fn get_procedure_spec_ids(def_id: DefId, attrs: &[ast::Attribute]) -> Option<ProcedureSpecRef> {
     let mut spec_id_refs = vec![];
 
-    let parse_spec_id = |spec_id: String| -> SpecificationId {
-        spec_id.try_into().expect(
-            &format!("cannot parse the spec_id attached to {:?}", def_id)
-        )
-    };
-
     spec_id_refs.extend(
         read_prusti_attrs("pre_spec_id_ref", attrs).into_iter().map(
-            |raw_spec_id| SpecIdRef::Precondition(parse_spec_id(raw_spec_id))
+            |raw_spec_id| SpecIdRef::Precondition(parse_spec_id(raw_spec_id, def_id))
         )
     );
     spec_id_refs.extend(
         read_prusti_attrs("post_spec_id_ref", attrs).into_iter().map(
-            |raw_spec_id| SpecIdRef::Postcondition(parse_spec_id(raw_spec_id))
+            |raw_spec_id| SpecIdRef::Postcondition(parse_spec_id(raw_spec_id, def_id))
         )
     );
     spec_id_refs.extend(
@@ -205,11 +253,11 @@ fn get_procedure_spec_ids(def_id: DefId, attrs: &[ast::Attribute]) -> Option<Pro
                 let raw_lhs_spec_id = value.next().unwrap();
                 let raw_rhs_spec_id = value.next().unwrap();
                 let lhs_spec_id = if !raw_lhs_spec_id.is_empty() {
-                    Some(parse_spec_id(raw_lhs_spec_id.to_string()))
+                    Some(parse_spec_id(raw_lhs_spec_id.to_string(), def_id))
                 } else {
                     None
                 };
-                let rhs_spec_id = parse_spec_id(raw_rhs_spec_id.to_string());
+                let rhs_spec_id = parse_spec_id(raw_rhs_spec_id.to_string(), def_id);
                 SpecIdRef::Pledge{ lhs: lhs_spec_id, rhs: rhs_spec_id }
             }
         )
@@ -229,6 +277,38 @@ fn get_procedure_spec_ids(def_id: DefId, attrs: &[ast::Attribute]) -> Option<Pro
             spec_id_refs,
             pure,
             trusted,
+        })
+    } else {
+        None
+    }
+}
+
+fn get_closure_spec_ids(def_id: DefId, attrs: &[ast::Attribute]) -> Option<ClosureSpecRef> {
+    let mut spec_id_refs = vec![];
+    let mut view_refs = HashMap::new();
+
+    spec_id_refs.extend(
+        read_prusti_attrs("hist_inv_spec_id_ref", attrs).into_iter().map(
+            |raw_spec_id| SpecIdRef::HistoryInvariant(parse_spec_id(raw_spec_id, def_id))
+        )
+    );
+
+    read_prusti_attrs("view_ref", attrs).into_iter().for_each(
+        |raw_view_id| {
+            let view = JsonClosureView::from_json_string(&raw_view_id);
+            // TODO: proper error
+            assert!(!view_refs.contains_key(&view.ident), "duplicate view identifier");
+            view_refs.insert(
+                view.ident,
+                view.expr,
+            );
+        }
+    );
+
+    if !spec_id_refs.is_empty() || !view_refs.is_empty() {
+        Some(ClosureSpecRef {
+            spec_id_refs,
+            view_refs,
         })
     } else {
         None
@@ -368,9 +448,15 @@ impl<'tcx> intravisit::Visitor<'tcx> for SpecCollector<'tcx> {
                     .expect("closure on Local without assignment");
                 let local_id = self.tcx.hir().local_def_id(init_expr.hir_id);
                 let def_id = local_id.to_def_id();
+
                 // Collect procedure specifications
                 if let Some(procedure_spec_ref) = get_procedure_spec_ids(def_id, attrs) {
                     self.procedure_specs.insert(local_id, procedure_spec_ref);
+                }
+
+                // Collect closure specifications
+                if let Some(closure_spec_ref) = get_closure_spec_ids(def_id, attrs) {
+                    self.closure_specs.insert(local_id, closure_spec_ref);
                 }
             }
         }

@@ -17,6 +17,8 @@ pub type SpecificationSet = common::SpecificationSet<ExpressionId, syn::Expr, Ar
 pub type LoopSpecification = common::LoopSpecification<ExpressionId, syn::Expr, Arg>;
 /// A set of untyped specifications associated with a procedure.
 pub type ProcedureSpecification = common::ProcedureSpecification<ExpressionId, syn::Expr, Arg>;
+/// A set of untyped specifications associated with a closure.
+pub type ClosureSpecification = common::ClosureSpecification<ExpressionId, syn::Expr, Arg>;
 /// A map of untyped specifications for a specific crate.
 pub type SpecificationMap = HashMap<common::SpecificationId, SpecificationSet>;
 /// An assertion that has no types associated with it.
@@ -37,7 +39,7 @@ pub enum AnyFnItem {
     ImplMethod(syn::ImplItemMethod),
 }
 
-impl syn::parse::Parse for AnyFnItem {
+impl Parse for AnyFnItem {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
         use syn::parse::discouraged::Speculative;
         let fork = input.fork();
@@ -102,6 +104,35 @@ impl Assertion {
         let mut parser = Parser::from_token_stream(tokens);
         let assertion = parser.extract_assertion()?;
         Ok(assertion.assign_id(spec_id, id_generator))
+    }
+}
+
+impl Expression {
+    pub(crate) fn parse(
+        tokens: TokenStream,
+        spec_id: SpecificationId,
+        id_generator: &mut ExpressionIdGenerator,
+    ) -> syn::Result<Self> {
+        Ok(Self {
+            spec_id,
+            id: id_generator.generate(),
+            expr: syn::parse2(tokens)?,
+        })
+    }
+
+    /// Encodes the expression without forcing the result to be [bool].
+    pub fn encode_type_check_any(&self, tokens: &mut TokenStream) {
+        let span = self.expr.span();
+        let expr = &self.expr;
+        let identifier = format!("{}_{}", self.spec_id, self.id);
+        let typeck_call = quote_spanned! { span =>
+            #[prusti::spec_only]
+            #[prusti::expr_id = #identifier]
+            || {
+                #expr
+            };
+        };
+        tokens.extend(typeck_call);
     }
 }
 
@@ -183,10 +214,7 @@ impl AssignExpressionId<Option<Assertion>> for Option<common::Assertion<(), syn:
         spec_id: SpecificationId,
         id_generator: &mut ExpressionIdGenerator,
     ) -> Option<Assertion> {
-        if self.is_none() {
-            return None;
-        }
-        Some(self.unwrap().assign_id(spec_id, id_generator))
+        self.map(|a| a.assign_id(spec_id, id_generator))
     }
 }
 
@@ -196,10 +224,7 @@ impl AssignExpressionId<Option<Expression>> for Option<common::Expression<(), sy
         spec_id: SpecificationId,
         id_generator: &mut ExpressionIdGenerator,
     ) -> Option<Expression> {
-        if self.is_none() {
-            return None;
-        }
-        Some(self.unwrap().assign_id(spec_id, id_generator))
+        self.map(|a| a.assign_id(spec_id, id_generator))
     }
 }
 

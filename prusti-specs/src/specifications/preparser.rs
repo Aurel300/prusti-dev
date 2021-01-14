@@ -517,7 +517,7 @@ impl Parser {
             return Err(self.error_expected_parenthesis());
         }
     }
-    fn resolve_spec_ent(&mut self) -> syn::Result<()> {
+    fn resolve_spec_ent(&mut self, once: bool) -> syn::Result<()> {
         // handles the case when there is no lhs of the |= operator
         if !self.expected_operator {
             return Err(self.error_expected_assertion());
@@ -604,6 +604,7 @@ impl Parser {
                         result: Arg { name: syn::Ident::new("result", Span::call_site()),
                                       typ: syn::parse2(quote! { i32 }).unwrap() },
                     },
+                    once,
                     pres,
                     posts,
                 })
@@ -687,8 +688,13 @@ impl Parser {
                     return Err(err);
                 }
             }
+            else if self.input.check_and_consume_operator("|=!") {
+                if let Err(err) = self.resolve_spec_ent(true) {
+                    return Err(err);
+                }
+            }
             else if self.input.check_and_consume_operator("|=") {
-                if let Err(err) = self.resolve_spec_ent() {
+                if let Err(err) = self.resolve_spec_ent(false) {
                     return Err(err);
                 }
             }

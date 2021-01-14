@@ -267,9 +267,10 @@ impl<'tcx> StructuralToTyped<'tcx, AssertionKind<'tcx>> for json::AssertionKind 
                 triggers.to_typed(typed_expressions, tcx),
                 body.to_typed(typed_expressions, tcx),
             ),
-            SpecEntailment {closure, arg_binders, pres, posts} => AssertionKind::SpecEntailment {
+            SpecEntailment {closure, arg_binders, once, pres, posts} => AssertionKind::SpecEntailment {
                 closure: closure.to_typed(typed_expressions, tcx),
                 arg_binders: arg_binders.to_typed(typed_expressions, tcx),
+                once,
                 pres: pres.into_iter()
                     .map(|pre| pre.to_typed(typed_expressions, tcx))
                     .collect(),

@@ -302,9 +302,10 @@ impl AssignExpressionId<AssertionKind> for common::AssertionKind<(), syn::Expr, 
                 triggers.assign_id(spec_id, id_generator),
                 body.assign_id(spec_id, id_generator)
             ),
-            SpecEntailment {closure, arg_binders, pres, posts} => SpecEntailment {
+            SpecEntailment {closure, arg_binders, once, pres, posts} => SpecEntailment {
                 closure: closure.assign_id(spec_id, id_generator),
                 arg_binders: arg_binders.assign_id(spec_id, id_generator),
+                once,
                 pres: pres.into_iter()
                     .map(|assertion|
                         Assertion { kind: assertion.kind.assign_id(spec_id, id_generator) })
@@ -421,7 +422,7 @@ impl EncodeTypeCheck for Assertion {
                 };
                 tokens.extend(typeck_call);
             }
-            AssertionKind::SpecEntailment {closure, arg_binders, pres, posts} => {
+            AssertionKind::SpecEntailment {closure, arg_binders, once, pres, posts} => {
                 // cl needs special handling because it's not a boolean expression
                 let span = closure.expr.span();
                 let expr = &closure.expr;

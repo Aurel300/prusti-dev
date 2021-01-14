@@ -268,6 +268,8 @@ pub enum AssertionKind<EID, ET, AT> {
     SpecEntailment {
         closure: Expression<EID, ET>,
         arg_binders: SpecEntailmentVars<EID, AT>,
+        // Whether the entailment specifies a single call only. (|=! syntax)
+        once: bool,
         pres: Vec<Assertion<EID, ET, AT>>,
         posts: Vec<Assertion<EID, ET, AT>>,
     },

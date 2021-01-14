@@ -232,6 +232,7 @@ impl<'p, 'v: 'p, 'tcx: 'v> SpecEncoder<'p, 'v, 'tcx> {
             box typed::AssertionKind::SpecEntailment {
                 ref closure,
                 arg_binders: ref vars,
+                once,
                 ref pres,
                 ref posts,
             } => {

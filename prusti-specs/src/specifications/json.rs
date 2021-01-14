@@ -17,6 +17,7 @@ pub enum AssertionKind {
     SpecEntailment {
         closure: Expression,
         arg_binders: SpecEntailmentVars,
+        once: bool,
         pres: Vec<Assertion>,
         posts: Vec<Assertion>,
     },
@@ -134,9 +135,10 @@ impl untyped::AssertionKind {
                 body.to_structure(),
                 triggers.to_structure(),
             ),
-            SpecEntailment {closure, arg_binders, pres, posts} => AssertionKind::SpecEntailment {
+            SpecEntailment {closure, arg_binders, once, pres, posts} => AssertionKind::SpecEntailment {
                 closure: closure.to_structure(),
                 arg_binders: arg_binders.to_structure(),
+                once: *once,
                 pres: pres.iter().map(|pre| pre.to_structure()).collect(),
                 posts: posts.iter().map(|post| post.to_structure()).collect(),
             },

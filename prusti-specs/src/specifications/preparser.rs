@@ -188,7 +188,13 @@ impl Parser {
             self.parse_primary()
         } else {
             let lhs = self.parse_rust_until(",")?;
-            if self.consume_operator("|=") {
+            if self.peek_operator("|=!") || self.peek_operator("|=") {
+                let once = self.peek_operator("|=!");
+                if once {
+                    self.consume_operator("|=!");
+                } else {
+                    self.consume_operator("|=");
+                }
                 let vars = if self.consume_operator("|") {
                     let arg_tokens = self.create_stream_until("|");
                     let all_args: SpecEntArgs = syn::parse2(arg_tokens)?;
@@ -203,7 +209,7 @@ impl Parser {
                 };
 
                 if let Some(stream) = self.consume_group(Delimiter::Bracket) {
-                    self.from_token_stream_last_span(stream).extract_entailment_rhs(lhs, vars)
+                    self.from_token_stream_last_span(stream).extract_entailment_rhs(lhs, once, vars)
                 } else {
                     Err(self.error_expected("`[`"))
                 }
@@ -214,7 +220,7 @@ impl Parser {
             }
         }
     }
-    fn extract_entailment_rhs(&mut self, lhs: ExpressionWithoutId, vars: Vec<Arg>) ->
+    fn extract_entailment_rhs(&mut self, lhs: ExpressionWithoutId, once: bool, vars: Vec<Arg>) ->
             syn::Result<AssertionWithoutId> {
         let mut pres = vec![];
         let mut posts = vec![];
@@ -253,6 +259,7 @@ impl Parser {
                     result: Arg { name: syn::Ident::new("result", Span::call_site()),
                                   typ: syn::parse2(quote! { i32 }).unwrap() },
                 },
+                once,
                 pres,
                 posts,
             })
@@ -348,7 +355,8 @@ impl Parser {
     fn parse_rust_until(&mut self, terminator: &str) -> syn::Result<ExpressionWithoutId> {
         let mut t = vec![];
 
-        while !self.peek_operator("|=") &&
+        while !self.peek_operator("|=!") &&
+              !self.peek_operator("|=") &&
               !self.peek_operator("&&") &&
               !self.peek_operator("==>") &&
               !self.peek_operator(terminator) &&
@@ -375,7 +383,8 @@ impl Parser {
     /// is there any non-prusti operator following the first thing?
     fn is_part_of_rust_expr(&mut self) -> bool {
         if let Some(token) = self.tokens.pop_front() {
-            if self.peek_operator("|=") ||
+            if self.peek_operator("|=!") ||
+               self.peek_operator("|=") ||
                self.peek_operator("&&") ||
                self.peek_operator("==>") ||
                self.tokens.front().is_none() {

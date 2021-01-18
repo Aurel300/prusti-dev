@@ -37,54 +37,79 @@ lazy_static! {
 
     static ref REF: Regex = Regex::new(r"&'_#(?P<rvid>\d+)r ").unwrap();
 }
+lazy_static! {
+    static ref BLOCK: Regex = Regex::new(r"bb(?P<index>\d+)( \([a-z_]+\))?: \{$").unwrap();
+}
+
+#[derive(Debug, Hash, PartialEq, Eq)]
+enum PlaceRegionProjection {
+    Field(usize),
+    Deref,
+}
 
 #[derive(Debug)]
-pub struct PlaceRegions(HashMap<(mir::Local, Vec<usize>), facts::Region>);
+pub struct PlaceRegions {
+    locals: HashMap<(mir::Local, Vec<PlaceRegionProjection>), facts::Region>,
+    //derefs: HashMap<(mir::Local, Vec<PlaceRegionProjection>, usize), facts::Region>,
+}
 
 #[derive(Clone, Debug)]
 pub enum PlaceRegionsError {
     Unsupported(String),
 }
 
+// FIXME: (Aurel) hashmaps for all possible projections found in NLL facts are
+// probably an overkill. According to the docs of [mir::ProjectionElem], the
+// only projection kind that can refer to a different region is [Deref]. It
+// should therefore be enough to store a map of Local -> Region instead of the
+// current [locals] map.
+// FIXME: currently, Deref parsing is not implemented; it should store the
+// projection in addition to the block index (better yet mir::Location if it
+// can be parsed accurately) mapping to regions.
 impl PlaceRegions {
     fn new() -> Self {
-        PlaceRegions(HashMap::new())
+        Self {
+            locals: HashMap::new(),
+        }
     }
 
     fn add_local(&mut self, local: mir::Local, rvid: facts::Region) {
         self.add(local, vec![], rvid);
     }
 
-    fn add(&mut self, local: mir::Local, projections: Vec<usize>, rvid: facts::Region) {
-        self.0.insert((local, projections), rvid);
+    fn add(&mut self, local: mir::Local, projections: Vec<PlaceRegionProjection>, rvid: facts::Region) {
+        self.locals.insert((local, projections), rvid);
     }
 
     pub fn for_local(&self, local: mir::Local)-> Option<facts::Region> {
         self.for_place(local.into()).unwrap()
     }
 
-    /// Determines the region of a MIR place. Right now, the only supported places are locals and tuples. Tuples cannot be nested inside other tuples.
+    /// Determines the region of a MIR place. Right now, the only supported
+    /// places are locals, tuples, and some dereferences. Tuples cannot be
+    /// nested inside other tuples.
     pub fn for_place(&self, place: mir::Place)
         -> Result<Option<facts::Region>, PlaceRegionsError>
     {
         let (local, fields) = Self::translate_place(place)?;
-        Ok(self.0.get(&(local, fields)).cloned())
+        Ok(self.locals.get(&(local, fields)).cloned())
     }
 
-    /// Translates a place like _3.0.3.1 into a local (here _3) and a list of field projections like (here [0, 3, 1]).
+    /// Translates a place like _3.0.1 into a local (here _3) and a list of
+    /// field projections (like [Field(0), Field(1)]).
     fn translate_place(place: mir::Place)
-        -> Result<(mir::Local, Vec<usize>), PlaceRegionsError>
+        -> Result<(mir::Local, Vec<PlaceRegionProjection>), PlaceRegionsError>
     {
         let indices = place.projection.iter()
             .map(|elem| match elem {
-                mir::ProjectionElem::Field(f, _) => Ok(f.index()),
-                mir::ProjectionElem::Deref => {
-                    return Err(PlaceRegionsError::Unsupported(
-                        "determining the region of a dereferentiation is \
-                        not supported".to_string()
-                    ));
+                mir::ProjectionElem::Field(f, _) => Ok(PlaceRegionProjection::Field(f.index())),
+                mir::ProjectionElem::Deref => Ok(PlaceRegionProjection::Deref),
+                x => {
+                    return Err(PlaceRegionsError::Unsupported(format!(
+                        "determining the region of {:?} is not supported",
+                        x,
+                    )));
                 }
-                x => unreachable!("{:?}", x),
             })
             .collect::<Result<_, _>>()?;
         Ok((place.local, indices))
@@ -95,14 +120,23 @@ pub fn load_place_regions(path: &Path) -> io::Result<PlaceRegions> {
     trace!("[enter] load_place_regions(path={:?})", path);
     let mut place_regions = PlaceRegions::new();
     let file = File::open(path)?;
+    let mut bb = usize::MAX;
     for line in io::BufReader::new(file).lines() {
         let line = line?;
+        block_index(&mut bb, &line);
         regions_for_fn_sig(&mut place_regions, &line);
         regions_for_local_ref(&mut place_regions, &line);
         regions_for_local_tuple(&mut place_regions, &line)
     }
     trace!("[exit] load_place_regions");
     Ok(place_regions)
+}
+
+fn block_index(bb: &mut usize, line: &String) {
+    if let Some(caps) = BLOCK.captures(&line) {
+        debug!("block {}", &caps["index"]);
+        *bb = caps["index"].parse().unwrap();
+    }
 }
 
 /// This loads regions for parameters and return values in function signatures.
@@ -146,7 +180,7 @@ fn regions_for_local_tuple(place_regions: &mut PlaceRegions, line: &String) {
         let items = &m["items"];
         for (i, m) in REF.captures_iter(&items).enumerate() {
             let rvid: usize = m["rvid"].parse().unwrap();
-            place_regions.add(local, vec![i], rvid.into());
+            place_regions.add(local, vec![PlaceRegionProjection::Field(i)], rvid.into());
         }
     }
 }

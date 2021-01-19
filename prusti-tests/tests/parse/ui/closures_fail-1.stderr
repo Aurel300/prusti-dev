@@ -1,5 +1,5 @@
-error: expected one of `:`, `@`, or `|`, found `)`
-  --> $DIR/closures_fail-1.rs:13:13
+error: expected one of `:`, `@`, or `|`, found `,`
+  --> $DIR/closures_fail-1.rs:12:13
    |
 13 |       let f = closure!(
    |  _____________^

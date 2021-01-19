@@ -54,7 +54,7 @@ pub struct Trigger(pub Vec<Expression>);
 #[derive(Serialize, Deserialize)]
 pub struct ClosureView {
     pub ident: String,
-    pub expr: Expression,
+    // pub expr: Expression,
 }
 
 impl untyped::Expression {
@@ -156,10 +156,13 @@ pub fn to_json_string(assertion: &untyped::Assertion) -> String {
 }
 
 impl ClosureView {
-    pub fn new(ident: String, expr: &untyped::Expression) -> Self {
+    pub fn new(
+        ident: String,
+        //expr: &untyped::Expression,
+    ) -> Self {
         Self {
             ident,
-            expr: expr.to_structure(),
+            // expr: expr.to_structure(),
         }
     }
     pub fn from_json_string(json: &str) -> Self {

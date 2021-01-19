@@ -59,6 +59,18 @@ impl Substs {
             };
         }
 
+        // TODO: super hacky, but makes some closure specifications work
+        // is there a better way to replace? can we somehow have access to the
+        // closure type itself so we can use it as the argument type directly?
+        if from.ends_with("_Prusti_ClosureViews$_beg_$_end_") && to.contains("closure$") {
+            let mut repls = HashMap::new();
+            repls.insert(from.to_string(), to.to_string());
+            return Substs {
+                regex: repls_regex,
+                repls: repls,
+            };
+        }
+
         // Use `repls_regex` to find typaram replacements
         let mut repls = HashMap::new();
         trace! ("regex {:?} from {:?} to {:?}", repls_regex, from, to);

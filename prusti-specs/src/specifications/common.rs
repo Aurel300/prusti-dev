@@ -407,7 +407,8 @@ pub struct ClosureSpecification<EID, ET, AT> {
     /// History invariants.
     pub invariants: Vec<Assertion<EID, ET, AT>>,
     /// Views.
-    pub views: HashMap<String, Expression<EID, ET>>,
+    //pub views: HashMap<String, Expression<EID, ET>>,
+    pub views: Vec<String>,
 }
 
 impl<EID, ET, AT> ClosureSpecification<EID, ET, AT> {

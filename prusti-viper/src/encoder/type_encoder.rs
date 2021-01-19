@@ -374,17 +374,38 @@ impl<'p, 'v, 'r: 'v, 'tcx: 'v> TypeEncoder<'p, 'v, 'tcx> {
                 vec![vir::Predicate::new_abstract(typ)]
             }
 
-            ty::TyKind::Closure(_def_id, internal_substs) => {
+            ty::TyKind::Closure(def_id, internal_substs) => {
                 let closure_substs = internal_substs.as_closure();
-                let upvars = closure_substs
-                    .upvar_tys()
-                    .enumerate()
-                    .map(|(upvar_num, upvar_ty)| {
-                        let field_name = format!("closure_{}", upvar_num);
-                        self.encoder.encode_raw_ref_field(field_name, upvar_ty)
-                    })
-                    .collect::<Result<_, _>>()?;
-                vec![vir::Predicate::new_struct(typ, upvars)]
+                let fields;
+                if let Some(closure_specs) = self.encoder.get_closure_specs(*def_id) {
+                    fields = closure_substs
+                        .upvar_tys()
+                        .zip(closure_specs.views.iter())
+                        .enumerate()
+                        .map(|(upvar_num, (upvar_ty, upvar_name))| {
+                            let field_name = upvar_name.to_string();
+                            let field_ty = upvar_ty;
+                            self.encoder.encode_struct_field(
+                                &field_name,
+                                field_ty
+                            )
+                        })
+                        .collect::<Result<_, _>>()?;
+                } else {
+                    fields = closure_substs
+                        .upvar_tys()
+                        .enumerate()
+                        .map(|(upvar_num, upvar_ty)| {
+                            let field_name = format!("closure_{}", upvar_num);
+                            let field_ty = upvar_ty;
+                            self.encoder.encode_raw_ref_field(
+                                field_name,
+                                field_ty
+                            )
+                        })
+                        .collect::<Result<_, _>>()?;
+                }
+                vec![vir::Predicate::new_struct(typ, fields)]
             }
 
             ref ty_variant => {

@@ -377,6 +377,13 @@ impl<'v, 'tcx> Encoder<'v, 'tcx> {
         Some(spec.expect_procedure().clone())
     }
 
+    /// Get the specifications attached to the `def_id` closure.
+    pub fn get_closure_specs(&self, def_id: DefId) -> Option<typed::ClosureSpecification<'tcx>> {
+        assert!(self.env.tcx().is_closure(def_id));
+        let spec = self.def_spec.get(&def_id)?;
+        Some(spec.expect_closure().clone())
+    }
+
     /// Get a local wrapper `DefId` for functions that have external specs.
     /// Return the original `DefId` for everything else.
     fn get_wrapper_def_id(&self, def_id: DefId) -> DefId {

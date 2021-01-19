@@ -11,7 +11,7 @@ pub(crate) struct ClosureWithSpec {
 pub(crate) struct ClosureView {
     pub ident: syn::Ident,
     pub ty: syn::Type,
-    pub expr: syn::Expr,
+    pub upvar_index: usize,
 }
 
 impl Parse for ClosureWithSpec {
@@ -58,13 +58,14 @@ impl Parse for ClosureView {
         let ident: syn::Ident = input.parse()?;
         input.parse::<syn::Token![:]>()?;
         let ty: syn::Type = input.parse()?;
-        input.parse::<syn::Token![=]>()?;
-        let expr: syn::Expr = input.parse()?;
+        input.parse::<syn::Token![,]>()?;
+        let idx: syn::LitInt = input.parse()?;
+        let upvar_index: usize = idx.base10_parse()?;
 
         Ok(Self {
             ident,
             ty,
-            expr,
+            upvar_index,
         })
     }
 }

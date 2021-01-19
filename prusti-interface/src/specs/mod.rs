@@ -52,7 +52,8 @@ struct ProcedureSpecRef {
 
 struct ClosureSpecRef {
     spec_id_refs: Vec<prusti_specs::specifications::common::SpecIdRef>,
-    view_refs: HashMap<String, JsonExpression>,
+    //view_refs: HashMap<String, JsonExpression>,
+    view_names: Vec<String>,
 }
 
 /// Specification collector, intended to be applied as a visitor over the crate
@@ -194,6 +195,8 @@ impl<'tcx> SpecCollector<'tcx> {
                     _ => unimplemented!()
                 })
                 .collect::<Vec<_>>();
+            let views = std::mem::replace(&mut refs.view_names, Vec::new());
+            /*
             let view_refs = std::mem::replace(&mut refs.view_refs, HashMap::new());
             let views = view_refs.into_iter()
                 .map(|(ident, expr)| (
@@ -201,6 +204,7 @@ impl<'tcx> SpecCollector<'tcx> {
                     expr.to_typed(&self.typed_expressions, self.tcx),
                 ))
                 .collect::<HashMap<String, _>>();
+            */
             def_spec.specs.insert(
                 local_id,
                 typed::SpecificationSet::Closure(typed::ClosureSpecification {
@@ -285,7 +289,8 @@ fn get_procedure_spec_ids(def_id: DefId, attrs: &[ast::Attribute]) -> Option<Pro
 
 fn get_closure_spec_ids(def_id: DefId, attrs: &[ast::Attribute]) -> Option<ClosureSpecRef> {
     let mut spec_id_refs = vec![];
-    let mut view_refs = HashMap::new();
+    //let mut view_refs = HashMap::new();
+    let mut view_names = vec![];
 
     spec_id_refs.extend(
         read_prusti_attrs("hist_inv_spec_id_ref", attrs).into_iter().map(
@@ -297,18 +302,21 @@ fn get_closure_spec_ids(def_id: DefId, attrs: &[ast::Attribute]) -> Option<Closu
         |raw_view_id| {
             let view = JsonClosureView::from_json_string(&raw_view_id);
             // TODO: proper error
+            view_names.push(view.ident);
+            /*
             assert!(!view_refs.contains_key(&view.ident), "duplicate view identifier");
             view_refs.insert(
                 view.ident,
                 view.expr,
             );
+            */
         }
     );
 
-    if !spec_id_refs.is_empty() || !view_refs.is_empty() {
+    if !spec_id_refs.is_empty() || !view_names.is_empty() {
         Some(ClosureSpecRef {
             spec_id_refs,
-            view_refs,
+            view_names,
         })
     } else {
         None
@@ -449,14 +457,26 @@ impl<'tcx> intravisit::Visitor<'tcx> for SpecCollector<'tcx> {
                 let local_id = self.tcx.hir().local_def_id(init_expr.hir_id);
                 let def_id = local_id.to_def_id();
 
+                // TODO: proper upvar treatment
+
                 // Collect procedure specifications
+                let mut closure_has_proc_specs = false;
                 if let Some(procedure_spec_ref) = get_procedure_spec_ids(def_id, attrs) {
+                    closure_has_proc_specs = true;
                     self.procedure_specs.insert(local_id, procedure_spec_ref);
                 }
 
                 // Collect closure specifications
                 if let Some(closure_spec_ref) = get_closure_spec_ids(def_id, attrs) {
                     self.closure_specs.insert(local_id, closure_spec_ref);
+                } else if closure_has_proc_specs {
+                    // If the closure had any procedure specification, we need
+                    // to insert an empty closure spec, so that
+                    // [Encoder::get_closure_specs] does not cause a panic.
+                    self.closure_specs.insert(local_id, ClosureSpecRef {
+                        spec_id_refs: vec![],
+                        view_names: vec![],
+                    });
                 }
             }
         }

@@ -293,7 +293,6 @@ pub fn closure(tokens: TokenStream, drop_spec: bool) -> TokenStream {
     let mut preconds: Vec<(untyped::SpecificationId, untyped::Assertion)> = vec![];
     let mut postconds: Vec<(untyped::SpecificationId, untyped::Assertion)> = vec![];
     let mut invariants: Vec<(untyped::SpecificationId, untyped::Assertion)> = vec![];
-    let mut views: Vec<(untyped::ExpressionId, untyped::Expression)> = vec![];
 
     let mut cl_annotations = TokenStream::new();
 
@@ -327,7 +326,22 @@ pub fn closure(tokens: TokenStream, drop_spec: bool) -> TokenStream {
         });
     }
 
+    let mut spec_toks_view_types = TokenStream::new();
+    let mut spec_toks_view_names = TokenStream::new();
     for e in cl_spec.views {
+        let ident = e.ident;
+        let ty = e.ty;
+        spec_toks_view_types.extend(quote_spanned! { callsite_span => #ident: &'a #ty, });
+        spec_toks_view_names.extend(quote_spanned! { callsite_span => #ident, });
+
+        let view_json = crate::specifications::json::ClosureView::new(
+            ident.to_string(),
+            // &view,
+        ).to_json_string();
+        cl_annotations.extend(quote_spanned! { callsite_span =>
+            #[prusti::view_ref = #view_json]
+        });
+        /*
         let spec_id = rewriter.generate_spec_id();
         let expr_id = rewriter.generate_expr_id();
         let view = handle_result!(rewriter.parse_expression(spec_id, e.expr.to_token_stream()));
@@ -339,6 +353,7 @@ pub fn closure(tokens: TokenStream, drop_spec: bool) -> TokenStream {
         cl_annotations.extend(quote_spanned! { callsite_span =>
             #[prusti::view_ref = #view_json]
         });
+        */
     }
 
     let syn::ExprClosure {
@@ -358,14 +373,12 @@ pub fn closure(tokens: TokenStream, drop_spec: bool) -> TokenStream {
         spec_toks_pre,
         spec_toks_post,
         spec_toks_invariant,
-        spec_toks_view,
     ) = rewriter.generate_cl_spec(
         inputs.clone(),
         output_type,
         preconds,
         postconds,
         invariants,
-        views,
     );
 
     let mut attrs_ts = TokenStream::new();
@@ -375,7 +388,6 @@ pub fn closure(tokens: TokenStream, drop_spec: bool) -> TokenStream {
 
     quote_spanned! { callsite_span =>
         {
-            #spec_toks_view
             #[allow(unused_variables)]
             #[prusti::closure]
             #cl_annotations #attrs_ts
@@ -383,6 +395,10 @@ pub fn closure(tokens: TokenStream, drop_spec: bool) -> TokenStream {
                 #asyncness #movability #capture
                 #or1_token #inputs #or2_token #output
                 {
+                    struct _Prusti_ClosureViews<'a> {
+                        _prusti_phantom: std::marker::PhantomData<&'a i32>, // there may be no views
+                        #spec_toks_view_types
+                    };
                     #[allow(unused_must_use)]
                     if false {
                         #spec_toks_pre

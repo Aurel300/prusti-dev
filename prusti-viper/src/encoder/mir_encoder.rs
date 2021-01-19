@@ -169,8 +169,14 @@ pub trait PlaceEncoder<'v, 'tcx: 'v> {
                         //     .nth(field.index())
                         //     .unwrap();
                         let field_ty = closure_subst.upvar_tys().nth(field.index()).unwrap();
+                        let field_name;
 
-                        let field_name = format!("closure_{}", field.index());
+                        if let Some(closure_specs) = self.encoder().get_closure_specs(*def_id) {
+                            field_name = format!("f${}", closure_specs.views[field.index()]);
+                        } else {
+                            field_name = format!("closure_{}", field.index());
+                        }
+
                         let encoded_field = self.encoder()
                             .encode_raw_ref_field(field_name, field_ty)?;
                         let encoded_projection = encoded_base.field(encoded_field);

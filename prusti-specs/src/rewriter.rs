@@ -186,8 +186,7 @@ impl AstRewriter {
         preconds: Vec<(untyped::SpecificationId, untyped::Assertion)>,
         postconds: Vec<(untyped::SpecificationId, untyped::Assertion)>,
         invariants: Vec<(untyped::SpecificationId, untyped::Assertion)>,
-        views: Vec<(untyped::ExpressionId, untyped::Expression)>,
-    ) -> (TokenStream, TokenStream, TokenStream, TokenStream) {
+    ) -> (TokenStream, TokenStream, TokenStream) {
         let callsite_span = Span::call_site();
         let process_cond = |spec_type: SpecType, id: &untyped::SpecificationId,
                             assertion: &untyped::Assertion| -> TokenStream
@@ -202,18 +201,18 @@ impl AstRewriter {
                 SpecType::HistoryInvariant => "invariant",
                 _ => unimplemented!(),
             }, spec_id_str);
-            let result = if spec_type == SpecType::Postcondition && !inputs.empty_or_trailing() {
-                quote_spanned! { callsite_span => , result: #output }
-            } else if spec_type == SpecType::Postcondition {
-                quote_spanned! { callsite_span => result: #output }
-            } else {
-                TokenStream::new()
-            };
+            let mut extra = TokenStream::new();
+            if !inputs.empty_or_trailing() {
+                extra.extend(quote_spanned! { callsite_span => , });
+            }
+            if spec_type == SpecType::Postcondition {
+                extra.extend(quote_spanned! { callsite_span => result: #output, });
+            }
             quote_spanned! { callsite_span =>
                 #[prusti::spec_only]
                 #[prusti::spec_id = #spec_id_str]
                 #[prusti::assertion = #assertion_json]
-                fn #name(#inputs #result) {
+                fn #name<'a>(views: &'a _Prusti_ClosureViews, #inputs #extra) {
                     #encoded
                 }
             }
@@ -234,6 +233,10 @@ impl AstRewriter {
             invariants_ts.extend(process_cond(SpecType::HistoryInvariant, &id, &invariant));
         }
 
+        /*
+        // TODO: proper upvar treatment
+        // generate an expr (NOT in a closure!) inside an `if false` block;
+        // when MIR is available for the closure, resolve idents to upvars
         let mut views_ts = TokenStream::new();
         for (id, expr) in views {
             let expr_id_str = id.to_string();
@@ -249,7 +252,8 @@ impl AstRewriter {
                 };
             })
         }
+        */
 
-        (pre_ts, post_ts, invariants_ts, views_ts)
+        (pre_ts, post_ts, invariants_ts)
     }
 }

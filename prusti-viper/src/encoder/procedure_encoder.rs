@@ -2059,19 +2059,22 @@ impl<'p, 'v: 'p, 'tcx: 'v> ProcedureEncoder<'p, 'v, 'tcx> {
                             );
                         }
 
-                        "std::ops::Fn::call" => {
+                        "std::ops::Fn::call" |
+                        "std::ops::FnMut::call_mut" => {
                             let cl_type: ty::Ty = substs[0].expect_ty();
                             match cl_type.kind() {
                                 ty::TyKind::Closure(cl_def_id, _) => {
                                     debug!("Encoding call to closure {:?} with func {:?}", cl_def_id, func_const_val);
-                                    stmts.extend(self.encode_impure_function_call(
-                                        location,
-                                        term.source_info.span,
-                                        args,
-                                        destination,
-                                        *cl_def_id,
-                                        self_ty,
-                                    )?);
+                                    stmts.extend(
+                                        self.encode_impure_function_call(
+                                            location,
+                                            term.source_info.span,
+                                            args,
+                                            destination,
+                                            *cl_def_id,
+                                            self_ty,
+                                        ).run_if_err(|| cleanup(&self))?
+                                    );
                                 }
 
                                 _ => {
@@ -5293,17 +5296,40 @@ impl<'p, 'v: 'p, 'tcx: 'v> ProcedureEncoder<'p, 'v, 'tcx> {
                 }
             }
 
-            &mir::AggregateKind::Closure(def_id, _substs) => {
+            &mir::AggregateKind::Closure(def_id, internal_substs) => {
                 debug_assert!(!self.encoder.is_spec_closure(def_id), "spec closure: {:?}", def_id);
-                // TODO: assign to closure; this case should only handle assign
-                // of the same closure type (== instances of the same syntactic
-                // closure)
-                // closure state encoding should first be implemented in
-                // type_encoder
-                // this case might also need to assert history invariants?
-                //
-                // for now we generate nothing to at least allow
-                // let f = closure!(...);
+                let closure_substs = internal_substs.as_closure();
+                let fields;
+                if let Some(closure_specs) = self.encoder.get_closure_specs(def_id) {
+                    fields = closure_substs
+                        .upvar_tys()
+                        .zip(closure_specs.views.clone().into_iter())
+                        .map(|(upvar_ty, upvar_name)| {
+                            let field_name = format!("f${}", upvar_name);
+                            (upvar_ty, field_name)
+                        })
+                        .collect::<Vec<_>>();
+                } else {
+                    fields = closure_substs
+                        .upvar_tys()
+                        .enumerate()
+                        .map(|(upvar_num, upvar_ty)| {
+                            let field_name = format!("closure_{}", upvar_num);
+                            (upvar_ty, field_name)
+                        })
+                        .collect::<Vec<_>>();
+                }
+                for (field_num, (field_ty, field_name)) in fields.iter().enumerate() {
+                    let encoded_field = self
+                        .encoder
+                        .encode_raw_ref_field(field_name.to_string(), field_ty)
+                        .with_span(span)?;
+                    stmts.extend(self.encode_assign_operand(
+                        &dst.clone().field(encoded_field),
+                        &operands[field_num],
+                        location,
+                    )?);
+                }
             }
 
             &mir::AggregateKind::Array(..) => {

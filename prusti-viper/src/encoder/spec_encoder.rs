@@ -262,123 +262,154 @@ impl<'p, 'v: 'p, 'tcx: 'v> SpecEncoder<'p, 'v, 'tcx> {
                 pres: ref pres,
                 posts: ref posts,
             } => {
-                // TODO: refactor, simplify, or extract into a function
                 let tcx = self.encoder.env().tcx();
                 let mir = self.encoder.env().local_mir(closure.expr);
                 let result = &mir.local_decls[(0 as u32).into()];
                 let ty = result.ty;
+
+                let ty = match ty.kind() {
+                    ty::TyKind::Ref(_, ref ty, _) => ty,
+                    _ => &ty,
+                };
+
                 if let Some(ty_repl) = self.encoder.current_tymap().get(ty) {
                     debug!("spec ent repl: {:?} -> {:?}", ty, ty_repl);
 
                     match ty_repl.kind() {
                         ty::TyKind::Closure(def_id, _substs)
-                        | ty::TyKind::FnDef(def_id, _substs) => {
-                            let encoded_pres = pres.iter()
-                                .map(|x| self.encode_assertion(x))
-                                .collect::<Result<Vec<vir::Expr>, _>>()?
-                                .into_iter()
-                                .conjoin();
-
-                            // encode_forall_arg() above only works for integers.
-                            // Therefore, for the time being, check that we're working with integers:
-                            vars.args.iter().map(|(arg, arg_ty)| {
-                                match arg_ty.kind() {
-                                    ty::TyKind::Int(..) | ty::TyKind::Uint(..) => {}
-                                    _ => { unimplemented!("Only integers are currently supported as closure arguments."); }
-                                }
-                            });
-                            match vars.result.1.kind() {
-                                ty::TyKind::Int(..) | ty::TyKind::Uint(..) => {}
-                                _ => { unimplemented!("Only integers are currently supported as closure return types."); }
-                            }
-
-                            let sf_pre_name = self.encoder.encode_spec_func_name(*def_id, SpecFunctionKind::Pre);
-                            let qvars_pre: Vec<_> = vars.args
-                                .iter()
-                                .map(|(arg, arg_ty)| self.encode_forall_arg(*arg, arg_ty, &format!("{}_{}", vars.spec_id, vars.pre_id)))
-                                .collect();
-                            let pre_conjunct = vir::Expr::forall(
-                                qvars_pre.clone(),
-                                vec![], // TODO: encode triggers
-                                vir::Expr::implies(
-                                    encoded_pres.clone(),
-                                    vir::Expr::FuncApp(
-                                        sf_pre_name,
-                                        qvars_pre.iter()
-                                            .map(|x| vir::Expr::Local(x.clone(), vir::Position::default()))
-                                            .collect(),
-                                        (0 .. vars.args.len())
-                                            .map(|i| vir::LocalVar::new(format!("_{}", i), vir::Type::Int))
-                                            .collect(),
-                                        vir::Type::Bool,
-                                        vir::Position::default()
-                                    )
-                                )
-                            );
-
-
-                            let sf_post_name = self.encoder.encode_spec_func_name(*def_id, SpecFunctionKind::Post);
-
-                            // The result is modeled as the final argument to the post() spec function
-                            let result_var = mir::Local::from_usize(vars.args.len() + 2);
-
-                            // The set of quantified variables
-                            let qvars_post: Vec<_> = vars.args
-                                .iter()
-                                .map(|(arg, arg_ty)|
-                                     self.encode_forall_arg(
-                                         *arg, arg_ty,
-                                         &format!("{}_{}", vars.spec_id, vars.post_id)))
-                                .chain(std::iter::once(
-                                    self.encode_forall_arg(
-                                        result_var, tcx.mk_ty(ty::TyKind::Int(ty::IntTy::I32)),
-                                        &format!("{}_{}", vars.spec_id, vars.post_id))))
-                                .collect();
-
-                            let post_conjunct = vir::Expr::forall(
-                                qvars_post.clone(),
-                                vec![], // TODO: encode triggers
-                                vir::Expr::implies(
-                                    // The quantified variables in the precondition have been encoded using
-                                    // different IDs (vars.pre_id vs. vars.post_id), so we need to fix them
-                                    (0 .. qvars_pre.len())
-                                        .fold(encoded_pres, |e, i| {
-                                            e.replace_place(&vir::Expr::Local(qvars_pre[i].clone(), vir::Position::default()),
-                                                            &vir::Expr::Local(qvars_post[i].clone(), vir::Position::default()))
-                                        }),
-                                    vir::Expr::implies(
-                                        vir::Expr::FuncApp(
-                                            sf_post_name,
-                                            qvars_post.iter()
-                                                .map(|x| vir::Expr::Local(x.clone(), vir::Position::default()))
-                                                .collect(),
-                                            (0 ..= vars.args.len())
-                                                .map(|i| vir::LocalVar::new(format!("_{}", i), vir::Type::Int))
-                                                .collect(),
-                                            vir::Type::Bool,
-                                            vir::Position::default()
-                                        ),
-                                        posts.iter()
-                                            .map(|x| self.encode_assertion(x))
-                                            .collect::<Result<Vec<vir::Expr>, _>>()?
-                                            .into_iter()
-                                            .conjoin()
-                                    )
-                                )
-                            );
-
-                            vec![pre_conjunct, post_conjunct]
-                                .into_iter()
-                                .conjoin()
-                        }
-                        _ => unreachable!()
+                        | ty::TyKind::FnDef(def_id, _substs) => self.encode_spec_entailment(
+                            closure,
+                            vars,
+                            once,
+                            pres,
+                            posts,
+                            def_id,
+                            matches!(ty_repl.kind(), ty::TyKind::Closure(_, _)),
+                        )?,
+                        _ => unreachable!(),
                     }
                 } else {
                     // TODO
+                    println!("!!! ignored closure {:?}, type {:?}", closure, ty);
                     vir::Expr::Const(vir::Const::Bool(true), vir::Position::default())
                 }
             }
         })
+    }
+
+    fn encode_spec_entailment(
+        &self,
+        closure: &typed::Expression,
+        vars: &typed::SpecEntailmentVars<'tcx>,
+        once: bool,
+        pres: &Vec<typed::Assertion<'tcx>>,
+        posts: &Vec<typed::Assertion<'tcx>>,
+        def_id: &DefId,
+        is_closure: bool,
+    ) -> SpannedEncodingResult<vir::Expr> {
+        let cl_expr = self.encode_expression(closure)?;
+
+        let encoded_pres = pres.iter()
+            .map(|x| self.encode_assertion(x))
+            .collect::<Result<Vec<vir::Expr>, _>>()?
+            .into_iter()
+            .conjoin();
+
+        let forall_pre_id = format!("{}_{}", vars.spec_id, vars.pre_id);
+        let forall_post_id = format!("{}_{}", vars.spec_id, vars.post_id);
+
+        let sf_pre_name = self.encoder.encode_spec_func_name(*def_id, SpecFunctionKind::Pre);
+        let sf_post_name = self.encoder.encode_spec_func_name(*def_id, SpecFunctionKind::Post);
+
+        // Encode the precondition conjunct of the form:
+        // forall args... ::
+        //   <preconditions(closure, args...)> => sf_pre(closure, args...)
+        // This asserts the weakening of the precondition.
+        let qvars_pre = vars.args
+            .iter()
+            .map(|(arg, arg_ty)| self.encode_forall_arg(*arg, arg_ty, &forall_pre_id))
+            .collect::<Vec<_>>();
+        let mut sf_pre_args = qvars_pre.iter()
+            .map(|x| vir::Expr::local(x.clone()))
+            .collect::<Vec<_>>();
+        if is_closure {
+            sf_pre_args.insert(0, cl_expr.clone());
+        }
+        let sf_pre_formal_args = sf_pre_args.iter()
+            .map(|e| vir::LocalVar::new("_".to_string(), e.get_type().clone()))
+            .collect();
+        let pre_conjunct = vir::Expr::forall(
+            qvars_pre.clone(),
+            vec![], // TODO: encode triggers
+            vir::Expr::implies(
+                encoded_pres.clone(),
+                vir::Expr::FuncApp(
+                    sf_pre_name,
+                    sf_pre_args,
+                    sf_pre_formal_args,
+                    vir::Type::Bool,
+                    vir::Position::default()
+                )
+            )
+        );
+
+        // Encode the postcondition conjunct of the form:
+        // forall args..., result ::
+        //   <preconditions(closure, args...)> =>
+        //     (sf_post(closure, args..., result) =>
+        //       <postconditions(closure, args..., result)>)
+        // This asserts the strengthening of the postcondition.
+        let result_var = mir::Local::from_usize(vars.args.len() + 2);
+        let qvars_post: Vec<_> = vars.args
+            .iter()
+            .map(|(arg, arg_ty)|
+                 self.encode_forall_arg(
+                     *arg, arg_ty,
+                     &forall_post_id))
+            .chain(std::iter::once(
+                self.encode_forall_arg(
+                    result_var, self.encoder.env().tcx().mk_ty(ty::TyKind::Int(ty::IntTy::I32)),
+                    &forall_post_id)))
+            .collect();
+        let mut sf_post_args = qvars_post.iter()
+            .map(|x| vir::Expr::local(x.clone()))
+            .collect::<Vec<_>>();
+        if is_closure {
+            sf_post_args.insert(0, cl_expr.clone());
+        }
+        let sf_post_formal_args = sf_post_args.iter()
+            .map(|e| vir::LocalVar::new("_".to_string(), e.get_type().clone()))
+            .collect();
+        // The quantified variables in the precondition have been encoded using
+        // different IDs (vars.pre_id vs. vars.post_id), so we need to fix them
+        let encoded_pres_renamed = (0 .. qvars_pre.len())
+            .fold(encoded_pres, |e, i| {
+                e.replace_place(&vir::Expr::local(qvars_pre[i].clone()),
+                                &vir::Expr::local(qvars_post[i].clone()))
+            });
+        let post_conjunct = vir::Expr::forall(
+            qvars_post.clone(),
+            vec![], // TODO: encode triggers
+            vir::Expr::implies(
+                encoded_pres_renamed,
+                vir::Expr::implies(
+                    vir::Expr::FuncApp(
+                        sf_post_name,
+                        sf_post_args,
+                        sf_post_formal_args,
+                        vir::Type::Bool,
+                        vir::Position::default()
+                    ),
+                    posts.iter()
+                        .map(|x| self.encode_assertion(x))
+                        .collect::<Result<Vec<vir::Expr>, _>>()?
+                        .into_iter()
+                        .conjoin()
+                )
+            )
+        );
+
+        Ok(vir::Expr::and(pre_conjunct, post_conjunct))
     }
 
     /// Translate an expression `expr` from a closure identified by `def_id` to its definition site.
@@ -626,6 +657,7 @@ impl<'p, 'v: 'p, 'tcx: 'v> SpecEncoder<'p, 'v, 'tcx> {
                                 mir_encoder.encode_local(1usize.into()).unwrap(),
                             )),
                             vir::Field::new(
+                                // TODO: for each field
                                 "f$count",
                                 vir::Type::TypedRef("i32".to_string()),
                             ),

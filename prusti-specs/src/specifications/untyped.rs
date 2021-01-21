@@ -431,7 +431,7 @@ impl EncodeTypeCheck for Assertion {
                     #[prusti::spec_only]
                     #[prusti::expr_id = #cl_id]
                     || {
-                        #expr
+                        &#expr
                     };
                 };
                 tokens.extend(typeck_call_cl);

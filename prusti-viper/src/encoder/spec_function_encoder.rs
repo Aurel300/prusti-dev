@@ -70,7 +70,7 @@ impl<'p, 'v: 'p, 'tcx: 'v> SpecFunctionEncoder<'p, 'v, 'tcx> {
         let post_func = self.encode_post_spec_func(&contract)?;
         // let invariant_func = self.encode_invariant_func(&contract)?;
 
-        Ok(vec![]) // Ok(vec![pre_func, post_func, invariant_func])
+        Ok(vec![pre_func, post_func]) // , invariant_func])
     }
 
     fn encode_pre_spec_func(&self, contract: &ProcedureContract<'tcx>)

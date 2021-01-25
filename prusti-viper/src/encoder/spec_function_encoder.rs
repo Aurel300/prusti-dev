@@ -2,6 +2,11 @@ use crate::encoder::{Encoder, borrows::ProcedureContract};
 use crate::encoder::errors::{SpannedEncodingResult, ErrorCtxt, WithSpan};
 use crate::encoder::borrows::compute_procedure_contract;
 use crate::encoder::mir_encoder::{MirEncoder, PlaceEncoder};
+<<<<<<< HEAD
+=======
+use crate::encoder::snapshot_encoder::Snapshot;
+use crate::encoder::snapshot_spec_patcher::SnapshotSpecPatcher;
+>>>>>>> 57c8c77f (make old(*views...) work)
 use prusti_interface::{
     environment::{
         Procedure,
@@ -66,22 +71,40 @@ impl<'p, 'v: 'p, 'tcx: 'v> SpecFunctionEncoder<'p, 'v, 'tcx> {
             Some(&self.encoder.current_tymap())
         ).with_span(self.span)?.to_def_site_contract();
 
-        let pre_func = self.encode_pre_spec_func(&contract)?;
-        let post_func = self.encode_post_spec_func(&contract)?;
+        let closure_snapshot = if self.is_closure {
+            Some(self.encoder
+                .encode_snapshot(self.mir.local_decls[1usize.into()].ty)
+                .with_span(self.span)?)
+        } else {
+            None
+        };
+
+        let pre_func = self.encode_pre_spec_func(&contract, closure_snapshot.as_ref())?;
+        let post_func = self.encode_post_spec_func(&contract, closure_snapshot.as_ref())?;
         // let invariant_func = self.encode_invariant_func(&contract)?;
 
         Ok(vec![pre_func, post_func]) // , invariant_func])
     }
 
-    fn encode_pre_spec_func(&self, contract: &ProcedureContract<'tcx>)
-        -> SpannedEncodingResult<vir::Function> {
+    fn encode_pre_spec_func(
+        &self,
+        contract: &ProcedureContract<'tcx>,
+        closure_snapshot: Option<&Box<Snapshot>>,
+    ) -> SpannedEncodingResult<vir::Function> {
         let mut func_spec: Vec<vir::Expr> = vec![];
 
-        let encoded_args: Vec<vir::LocalVar> = contract
+        let mut encoded_args: Vec<vir::LocalVar> = contract
             .args
             .iter()
             .map(|local| self.encode_local(local.clone().into()).into())
             .collect::<Result<Vec<_>, _>>()?;
+
+        if self.is_closure {
+            encoded_args[0] = vir::LocalVar::new(
+                encoded_args[0].name.to_string(),
+                closure_snapshot.unwrap().get_type(),
+            );
+        }
 
         for item in contract.functional_precondition() {
             func_spec.push(self.encoder.encode_assertion(
@@ -103,11 +126,17 @@ impl<'p, 'v: 'p, 'tcx: 'v> SpecFunctionEncoder<'p, 'v, 'tcx> {
                                                      SpecFunctionKind::Pre),
             formal_args: encoded_args,
             return_type: vir::Type::Bool,
+            pres: Vec::new(),
+            posts: Vec::new(),
+            body: Some(func_spec.into_iter().conjoin()), // TODO: patch snapshots
         })
     }
 
-    fn encode_post_spec_func(&self, contract: &ProcedureContract<'tcx>)
-        -> SpannedEncodingResult<vir::Function> {
+    fn encode_post_spec_func(
+        &self,
+        contract: &ProcedureContract<'tcx>,
+        closure_snapshot: Option<&Box<Snapshot>>,
+    ) -> SpannedEncodingResult<vir::Function> {
         let mut func_spec: Vec<vir::Expr> = vec![];
 
         let mut encoded_args: Vec<vir::LocalVar> = contract
@@ -115,6 +144,21 @@ impl<'p, 'v: 'p, 'tcx: 'v> SpecFunctionEncoder<'p, 'v, 'tcx> {
             .iter()
             .map(|local| self.encode_local(local.clone().into()).into())
             .collect::<Result<Vec<_>, _>>()?;
+
+        if self.is_closure {
+            let original_arg = encoded_args[0].clone();
+            encoded_args[0] = vir::LocalVar::new(
+                original_arg.name.to_string(),
+                closure_snapshot.unwrap().get_type(),
+            );
+            encoded_args.push(vir::LocalVar::new(
+                format!("{}_old", original_arg.name),
+                closure_snapshot.unwrap().get_type(),
+            ));
+        }
+
+        // TODO: (after CAV) snapshot and duplicate any mutable argument
+
         let encoded_return = self.encode_local(contract.returned_value.clone().into())?;
         // encoded_args:
         // _1    - closure "self"
@@ -122,7 +166,7 @@ impl<'p, 'v: 'p, 'tcx: 'v> SpecFunctionEncoder<'p, 'v, 'tcx> {
         // encoded return: _0
 
         for item in contract.functional_postcondition() {
-            func_spec.push(self.encoder.encode_assertion(
+            let mut encoded_item = self.encoder.encode_assertion(
                 &item,
                 &self.mir,
                 None,
@@ -133,7 +177,13 @@ impl<'p, 'v: 'p, 'tcx: 'v> SpecFunctionEncoder<'p, 'v, 'tcx> {
                 true,
                 None,
                 ErrorCtxt::GenericExpression,
-            )?);
+            )?;
+            encoded_item = self.patch_old_access(
+                encoded_item,
+                &encoded_args[0],
+                &encoded_args[encoded_args.len() - 1],
+            );
+            func_spec.push(encoded_item);
         }
 
         Ok(vir::Function {
@@ -143,6 +193,9 @@ impl<'p, 'v: 'p, 'tcx: 'v> SpecFunctionEncoder<'p, 'v, 'tcx> {
                                      .chain(std::iter::once(encoded_return))
                                      .collect(),
             return_type: vir::Type::Bool,
+            pres: Vec::new(),
+            posts: Vec::new(),
+            body: Some(func_spec.into_iter().conjoin()), // TODO: patch snapshots
         })
     }
     /*
@@ -165,6 +218,56 @@ impl<'p, 'v: 'p, 'tcx: 'v> SpecFunctionEncoder<'p, 'v, 'tcx> {
         })
     }
 */
+    fn patch_old_access(&self, expr: vir::Expr, local_post: &vir::LocalVar, local_pre: &vir::LocalVar) -> vir::Expr {
+        if self.is_closure {
+            // TODO: do replacement for all fields
+            return expr.replace_place(
+                &vir::Expr::labelled_old(
+                    "",
+                    vir::Expr::field(
+                        vir::Expr::field(
+                            vir::Expr::field(
+                                vir::Expr::local(local_post.clone()),
+                                vir::Field::new(
+                                    "f$count",
+                                    vir::Type::TypedRef("i32".to_string()),
+                                ),
+                            ),
+                            vir::Field::new(
+                                "val_ref",
+                                vir::Type::TypedRef("i32".to_string()),
+                            ),
+                        ),
+                        vir::Field::new(
+                            "val_int",
+                            vir::Type::Int,
+                        ),
+                    )
+                ),
+                &vir::Expr::field(
+                    vir::Expr::field(
+                        vir::Expr::field(
+                            vir::Expr::local(local_pre.clone()),
+                            vir::Field::new(
+                                "f$count",
+                                vir::Type::TypedRef("i32".to_string()),
+                            ),
+                        ),
+                        vir::Field::new(
+                            "val_ref",
+                            vir::Type::TypedRef("i32".to_string()),
+                        ),
+                    ),
+                    vir::Field::new(
+                        "val_int",
+                        vir::Type::Int,
+                    ),
+                ),
+            );
+        }
+        return expr;
+    }
+
     fn encode_local(&self, local: mir::Local) -> SpannedEncodingResult<vir::LocalVar> {
         let var_name = self.mir_encoder.encode_local_var_name(local);
         let var_type = self

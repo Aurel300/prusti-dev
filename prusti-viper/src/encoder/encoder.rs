@@ -1369,6 +1369,24 @@ impl<'v, 'tcx> Encoder<'v, 'tcx> {
         })
     }
 
+    /// Resolve type parameters and unwrap any references.
+    pub fn resolve_deref_typaram(&self, mut ty: ty::Ty<'tcx>) -> ty::Ty<'tcx> {
+        let current_tymap = self.current_tymap();
+        loop {
+            if let Some(replaced_ty) = current_tymap.get(&ty) {
+                ty = replaced_ty;
+                continue;
+            }
+            match ty.kind() {
+                ty::TyKind::Ref(_, deref_ty, _) => {
+                    ty = deref_ty;
+                }
+                _ => break
+            }
+        }
+        ty
+    }
+
     /// Merges the stack of type maps into a single map.
     pub fn current_tymap(&self) -> HashMap<ty::Ty<'tcx>, ty::Ty<'tcx>> {
         let mut map = HashMap::new();

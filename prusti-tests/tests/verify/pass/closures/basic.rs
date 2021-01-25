@@ -6,7 +6,7 @@ use prusti_contracts::*;
     ensures(result == a + b)
 ])]
 #[ensures(result == 16)]
-fn test1<F: Fn (i32, i32) -> i32>(add: F) -> i32 {
+fn test1<F: FnMut (i32, i32) -> i32>(add: &mut F) -> i32 {
     // TODO: higher-order calls cannot be encoded yet
     // add(7, 9)
     16
@@ -20,10 +20,16 @@ fn main() {
     );
     f(0);
 
-    let add = closure!(
+    let mut count = 0;
+    let mut add = closure!(
+        #[view(count: i32, 0)]
         #[requires(a >= 0 && b >= 0)]
         #[ensures(result == a + b)]
-        |a: i32, b: i32| -> i32 { a + b }
+        #[ensures(*views.count == old(*views.count) + 1)]
+        |a: i32, b: i32| -> i32 {
+            count += 1;
+            a + b
+        }
     );
-    test1(add);
+    test1(&mut add);
 }

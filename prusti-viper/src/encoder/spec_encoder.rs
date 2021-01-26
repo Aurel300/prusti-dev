@@ -298,6 +298,7 @@ impl<'p, 'v: 'p, 'tcx: 'v> SpecEncoder<'p, 'v, 'tcx> {
         posts: &Vec<typed::Assertion<'tcx>>,
         def_id: &DefId,
     ) -> SpannedEncodingResult<vir::Expr> {
+        let span = self.encoder.env().tcx().def_span(*def_id); // TODO: span of assertion?
         let cl_expr = self.encode_expression(closure)?;
         let is_closure = matches!(cl_type.kind(), ty::TyKind::Closure(_, _));
         let cl_snapshot = if is_closure {
@@ -305,7 +306,7 @@ impl<'p, 'v: 'p, 'tcx: 'v> SpecEncoder<'p, 'v, 'tcx> {
                 ty::TyKind::Closure(def_id, _) => {
                     Some(self.encoder
                         .encode_snapshot(cl_type)
-                        .with_span(self.encoder.env().tcx().def_span(*def_id))?)
+                        .with_span(span)?)
                 },
                 _ => unreachable!(),
             }
@@ -350,7 +351,10 @@ impl<'p, 'v: 'p, 'tcx: 'v> SpecEncoder<'p, 'v, 'tcx> {
             .map(|x| vir::Expr::local(x.clone()))
             .collect::<Vec<_>>();
         if is_closure && once {
-            sf_pre_args.insert(0, cl_expr.clone());
+            let snapshot = self.encoder
+                .encode_snapshot(cl_type)
+                .with_span(span)?;
+            sf_pre_args.insert(0, snapshot.snap_call(cl_expr.clone()));
         }
         let sf_pre_formal_args = sf_pre_args.iter()
             .map(|e| vir::LocalVar::new("_".to_string(), e.get_type().clone()))

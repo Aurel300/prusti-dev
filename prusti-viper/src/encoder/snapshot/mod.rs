@@ -97,16 +97,18 @@ pub fn encode_unfold_witness(domain_name: String) -> vir::DomainFunc {
 /// Returns the T$valid function for the given type
 pub fn valid_func_for_type(typ: &vir::Type) -> vir::DomainFunc {
     let domain_name: String = match typ {
-        vir::Type::Domain(name) => name.clone(),
-        vir::Type::Bool | vir::Type::Int => PRIMITIVE_VALID_DOMAIN_NAME.to_string(),
-        vir::Type::TypedRef(_) => unreachable!(),
+        Type::Domain(name) => name.clone(),
+        Type::Bool | Type::Int => PRIMITIVE_VALID_DOMAIN_NAME.to_string(),
+        Type::TypedRef(_) => unreachable!(),
+        Type::Snapshot(_) => unreachable!(),
     };
 
-    let arg_typ: vir::Type = match typ {
-        vir::Type::Domain(name) => vir::Type::Domain(domain_name.clone()),
-        vir::Type::Bool => vir::Type::Bool,
-        vir::Type::Int => vir::Type::Int,
-        vir::Type::TypedRef(_) => unreachable!(),
+    let arg_typ: Type = match typ {
+        Type::Domain(name) => Type::Domain(domain_name.clone()),
+        Type::Bool => Type::Bool,
+        Type::Int => Type::Int,
+        Type::TypedRef(_) => unreachable!(),
+        Type::Snapshot(_) => unreachable!(),
     };
 
     let self_arg = vir::LocalVar {

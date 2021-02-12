@@ -8,10 +8,9 @@ use prusti_common::vir::{self, ExprIterator, WithIdentifier};
 use prusti_interface::environment::borrowck::facts::Loan;
 use crate::encoder::encoder::Encoder;
 use std::collections::HashMap;
-use crate::encoder::snapshot_encoder::{Snapshot, SnapshotEncoder, self};
-use crate::encoder::snapshot;
 
 pub fn encode_mirror_of_pure_function(encoder: &Encoder, mirror_function_domain: &mut vir::Domain, function: &vir::Function) {
+    /*
     let snapshots: &HashMap<String, Box<Snapshot>> = &encoder.get_snapshots();
     let domain_name = mirror_function_domain.name.clone();
 
@@ -101,13 +100,13 @@ pub fn encode_mirror_of_pure_function(encoder: &Encoder, mirror_function_domain:
     mirror_function_domain
         .functions
         .push(domain_function);
-
+    */
 
 }
 
 /// Encode the axiom that defines what the function does.
 fn encode_definitional_axiom(
-    purifier: &mut snapshot::ExprPurifier,
+    //purifier: &mut snapshot::ExprPurifier,
     mirror_function_domain: &mut vir::Domain,
     function: &vir::Function,
     domain_function: vir::DomainFunc,
@@ -117,6 +116,7 @@ fn encode_definitional_axiom(
     post_conds: vir::Expr,
     triggers: Vec<vir::Trigger>,
 ) {
+    /*
     let rhs: vir::Expr = if let Some(fbody) = function.body.clone() {
         let function_body = vir::ExprFolder::fold(purifier, fbody);
 
@@ -144,6 +144,7 @@ fn encode_definitional_axiom(
     mirror_function_domain
     .axioms
     .push(definitional_axiom);
+    */
 }
 
 /// Encode the axiom that the last argument `count` of the function does not
@@ -156,6 +157,7 @@ fn encode_nat_axiom(
     function_call_with_succ: vir::Expr,
     triggers: Vec<vir::Trigger>,
 ) {
+    /*
     let mut args_without_succ: Vec<vir::Expr> = formal_args_without_nat
         .into_iter()
         .map(vir::Expr::local)
@@ -172,9 +174,11 @@ fn encode_nat_axiom(
     mirror_function_domain
     .axioms
     .push(axiom);
+    */
 }
 
 fn encode_mirror_caller(encoder: &Encoder, df: vir::DomainFunc, pres: vir::Expr) {
+    /*
     let arg_call : Vec<vir::Expr> = df.formal_args.iter().map(|e| { vir::Expr::local(e.clone()) }).collect();
     let function = vir::Function {
         name: snapshot::caller_function_name(&df.name),
@@ -185,4 +189,5 @@ fn encode_mirror_caller(encoder: &Encoder, df: vir::DomainFunc, pres: vir::Expr)
         body: Some(vir::Expr::domain_func_app(df.clone(), arg_call))
     };
     encoder.insert_mirror_caller(function);
+    */
 }

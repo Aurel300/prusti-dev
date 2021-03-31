@@ -16,11 +16,22 @@ use rustc_middle::{ty, mir};
 use rustc_span::Span;
 use log::{debug, trace};
 use rustc_hir as hir;
+use rustc_hir::def_id::DefId;
 
 pub enum SpecFunctionKind {
     Pre,
     Post,
     HistInv
+}
+
+impl std::fmt::Display for SpecFunctionKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", match self {
+            SpecFunctionKind::Pre => "pre",
+            SpecFunctionKind::Post => "post",
+            SpecFunctionKind::HistInv => "histinv",
+        })
+    }
 }
 
 pub struct SpecFunctionEncoder<'p, 'v: 'p, 'tcx: 'v> {
@@ -85,6 +96,10 @@ impl<'p, 'v: 'p, 'tcx: 'v> SpecFunctionEncoder<'p, 'v, 'tcx> {
             .with_span(self.span)?)
     }
 
+    fn encode_spec_func_name(&self, def_id: DefId, kind: SpecFunctionKind) -> String {
+        self.encoder.encode_item_name_prefixed(def_id, &format!("sf_{}", kind))
+    }
+
     fn encode_pre_spec_func(
         &self,
         contract: &ProcedureContract<'tcx>,
@@ -121,13 +136,12 @@ impl<'p, 'v: 'p, 'tcx: 'v> SpecFunctionEncoder<'p, 'v, 'tcx> {
         }
 
         Ok(vir::Function {
-            name: self.encoder.encode_spec_func_name(self.proc_def_id,
-                                                     SpecFunctionKind::Pre),
+            name: self.encode_spec_func_name(self.proc_def_id, SpecFunctionKind::Pre),
             formal_args: encoded_args,
             return_type: vir::Type::Bool,
             pres: Vec::new(),
             posts: Vec::new(),
-            body: Some(func_spec.into_iter().conjoin()), // TODO: patch snapshots
+            body: Some(func_spec.into_iter().conjoin()),
         })
     }
 
@@ -186,15 +200,14 @@ impl<'p, 'v: 'p, 'tcx: 'v> SpecFunctionEncoder<'p, 'v, 'tcx> {
         }
 
         Ok(vir::Function {
-            name: self.encoder.encode_spec_func_name(self.proc_def_id,
-                                                     SpecFunctionKind::Post),
+            name: self.encode_spec_func_name(self.proc_def_id, SpecFunctionKind::Post),
             formal_args: encoded_args.into_iter()
                                      .chain(std::iter::once(encoded_return))
                                      .collect(),
             return_type: vir::Type::Bool,
             pres: Vec::new(),
             posts: Vec::new(),
-            body: Some(func_spec.into_iter().conjoin()), // TODO: patch snapshots
+            body: Some(func_spec.into_iter().conjoin()),
         })
     }
     /*

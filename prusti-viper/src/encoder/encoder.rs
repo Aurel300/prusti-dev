@@ -1071,8 +1071,12 @@ impl<'v, 'tcx> Encoder<'v, 'tcx> {
     }
 
     pub fn encode_item_name(&self, def_id: DefId) -> String {
-        let full_name = format!("m_{}", encode_identifier(self.env.get_item_def_path(def_id)));
-        let short_name = format!("m_{}", encode_identifier(
+        self.encode_item_name_prefixed(def_id, "m")
+    }
+
+    pub fn encode_item_name_prefixed(&self, def_id: DefId, prefix: &str) -> String {
+        let full_name = format!("{}_{}", prefix, encode_identifier(self.env.get_item_def_path(def_id)));
+        let short_name = format!("{}_{}", prefix, encode_identifier(
             self.env.tcx().opt_item_name(def_id)
                 .map(|s| s.name.to_ident_string())
                 .unwrap_or(self.env.get_item_name(def_id))
@@ -1438,29 +1442,6 @@ impl<'v, 'tcx> Encoder<'v, 'tcx> {
             .collect();
         substs.sort();
         Ok(substs.join(";"))
-    }
-
-    pub fn encode_spec_func_name(&self, def_id: ProcedureDefId, kind: SpecFunctionKind) -> String {
-        let kind_name = match kind {
-            SpecFunctionKind::Pre => "pre",
-            SpecFunctionKind::Post => "post",
-            SpecFunctionKind::HistInv => "histinv",
-        };
-        let full_name = format!(
-            "sf_{}_{}",
-            kind_name,
-            encode_identifier(self.env.get_item_def_path(def_id))
-        );
-        let short_name = format!(
-            "sf_{}_{}",
-            kind_name,
-            encode_identifier(
-                self.env.tcx().opt_item_name(def_id)
-                    .map(|s| s.name.to_ident_string())
-                    .unwrap_or(self.env.get_item_name(def_id))
-            )
-        );
-        self.intern_viper_identifier(full_name, short_name)
     }
 
     pub fn intern_viper_identifier<S: AsRef<str>>(&self, full_name: S, short_name: S) -> String {

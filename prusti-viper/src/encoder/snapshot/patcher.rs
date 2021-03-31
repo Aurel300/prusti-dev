@@ -171,6 +171,7 @@ impl<'v, 'tcx: 'v> FallibleExprFolder for SnapshotPatcher<'v, 'tcx> {
             }
         }
         let expr = FallibleExprFolder::fallible_fold(self, expr)?;
+
         Ok(vir::Expr::ForAll(
             patched_vars,
             trigger_exprs

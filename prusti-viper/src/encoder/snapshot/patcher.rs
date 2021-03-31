@@ -103,6 +103,17 @@ impl<'v, 'tcx: 'v> FallibleExprFolder for SnapshotPatcher<'v, 'tcx> {
         // TODO: check is_quantifiable
         let mut expr = *expr;
         let mut patched_vars = vec![];
+
+        // unpack triggers into Vec<Vec<Expr>>
+        let mut trigger_exprs = triggers
+            .into_iter()
+            .map(|trigger| trigger
+                .elements()
+                .iter()
+                .cloned()
+                .collect::<Vec<_>>())
+            .collect::<Vec<_>>();
+
         for var in vars {
             match var.typ {
                 vir::Type::TypedRef(ref name) => {
@@ -117,14 +128,31 @@ impl<'v, 'tcx: 'v> FallibleExprFolder for SnapshotPatcher<'v, 'tcx> {
                         patched_var,
                     };
                     expr = fixer.fold(expr);
+                    trigger_exprs = trigger_exprs
+                        .into_iter()
+                        .map(|trigger| trigger
+                            .into_iter()
+                            .map(|expr| fixer.fold(expr))
+                            .collect())
+                        .collect();
                 }
                 _ => patched_vars.push(var.clone()),
             }
         }
         let expr = FallibleExprFolder::fallible_fold(self, expr)?;
+
         Ok(vir::Expr::ForAll(
             patched_vars,
-            triggers, // TODO: patch triggers?
+            trigger_exprs
+                .into_iter()
+                .map(|trigger| trigger
+                    .into_iter()
+                    .map(|expr| FallibleExprFolder::fallible_fold(self, expr))
+                    .collect::<Result<Vec<_>, _>>())
+                .collect::<Result<Vec<_>, _>>()?
+                .into_iter()
+                .map(vir::Trigger::new)
+                .collect(),
             box expr,
             pos,
         ))

@@ -326,7 +326,12 @@ impl<'p, 'v: 'p, 'tcx: 'v> SpecEncoder<'p, 'v, 'tcx> {
 
         let encoded_pres = pres.iter()
             .map(|x| self.encode_assertion(x))
-            .collect::<Result<Vec<vir::Expr>, _>>()?
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .conjoin();
+        let encoded_posts = posts.iter()
+            .map(|x| self.encode_assertion(x))
+            .collect::<Result<Vec<_>, _>>()?
             .into_iter()
             .conjoin();
 
@@ -364,19 +369,20 @@ impl<'p, 'v: 'p, 'tcx: 'v> SpecEncoder<'p, 'v, 'tcx> {
         if is_closure && once {
             sf_pre_args.insert(0, vir::Expr::snap_app(cl_expr.clone()));
         }
+        let pre_app = vir::Expr::func_app(
+            sf_pre.name.to_string(),
+            sf_pre_args,
+            sf_pre.formal_args.clone(),
+            vir::Type::Bool,
+            vir::Position::default(),
+        );
         let pre_conjunct = vir::Expr::forall(
             qvars_pre.clone(),
-            vec![], // TODO: encode triggers
+            vec![vir::Trigger::new(vec![pre_app.clone()])],
             vir::Expr::implies(
                 encoded_pres.clone(),
-                vir::Expr::FuncApp(
-                    sf_pre.name.to_string(),
-                    sf_pre_args,
-                    sf_pre.formal_args.clone(),
-                    vir::Type::Bool,
-                    vir::Position::default()
-                )
-            )
+                pre_app,
+            ),
         );
 
         // Encode the postcondition conjunct of the form:
@@ -411,26 +417,23 @@ impl<'p, 'v: 'p, 'tcx: 'v> SpecEncoder<'p, 'v, 'tcx> {
                 e.replace_place(&vir::Expr::local(qargs_pre[i].clone()),
                                 &vir::Expr::local(qargs_post[i].clone()))
             });
+        let post_app = vir::Expr::func_app(
+            sf_post.name.to_string(),
+            sf_post_args,
+            sf_post.formal_args.clone(),
+            vir::Type::Bool,
+            vir::Position::default(),
+        );
         let post_conjunct = vir::Expr::forall(
             qvars_post.clone(),
-            vec![], // TODO: encode triggers
+            vec![vir::Trigger::new(vec![post_app.clone()])],
             vir::Expr::implies(
                 encoded_pres_renamed,
                 vir::Expr::implies(
-                    vir::Expr::FuncApp(
-                        sf_post.name.to_string(),
-                        sf_post_args,
-                        sf_post.formal_args.clone(),
-                        vir::Type::Bool,
-                        vir::Position::default()
-                    ),
-                    posts.iter()
-                        .map(|x| self.encode_assertion(x))
-                        .collect::<Result<Vec<vir::Expr>, _>>()?
-                        .into_iter()
-                        .conjoin()
-                )
-            )
+                    post_app,
+                    encoded_posts,
+                ),
+            ),
         );
 
         Ok(vir::Expr::and(pre_conjunct, post_conjunct))

@@ -109,6 +109,8 @@ impl<'v, 'tcx: 'v> FallibleExprFolder for SnapshotPatcher<'v, 'tcx> {
                 let receiver = self.fallible_fold_boxed(receiver)?;
                 match receiver.get_type() {
                     vir::Type::Int if field.name == "val_int" => Ok(*receiver),
+                    // FIXME: this case handles &i32 fields, should not work like this
+                    vir::Type::Int if field.name == "val_ref" => Ok(*receiver),
                     vir::Type::Bool if field.name == "val_bool" => Ok(*receiver),
                     vir::Type::Snapshot(_) => {
                         let res = match field.name.as_str() {
@@ -241,7 +243,7 @@ impl ExprFolder for ForallFixer {
         pos: vir::Position
     ) -> vir::Expr {
         match *expr {
-            vir::Expr::Local(v, pos) if v == self.var
+            vir::Expr::Local(v, pos) if v.name == self.var.name
                 => vir::Expr::Local(self.patched_var.clone(), pos),
             _ => vir::Expr::SnapApp(expr, pos),
         }
@@ -252,7 +254,7 @@ impl ExprFolder for ForallFixer {
         v: vir::LocalVar,
         pos: vir::Position
     ) -> vir::Expr {
-        if v == self.var {
+        if v.name == self.var.name {
             vir::Expr::Local(self.patched_var.clone(), pos)
         } else {
             vir::Expr::Local(v, pos)

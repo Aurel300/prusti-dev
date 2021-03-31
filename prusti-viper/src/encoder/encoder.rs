@@ -751,19 +751,6 @@ impl<'v, 'tcx> Encoder<'v, 'tcx> {
 
             self.procedures.borrow_mut().insert(def_id, method);
         }
-
-        // TODO: specification functions are currently only encoded for closures
-        // but we want them (on demand) for all functions when they are passed
-        // as a function pointer; likewise we want them for function *signatures*,
-        // when Fn* values are passed dynamically in boxes.
-        // This is not the correct place to trigger the encoding, it should be
-        // moved to where the spec function is used. `encode_spec_funcs` already
-        // ensures that spec functions for a particular `DefId` are encoded only
-        // once.
-        if self.env.tcx().is_closure(def_id) {
-            self.encode_spec_funcs(def_id)?;
-        }
-
         Ok(())
     }
 
@@ -1032,10 +1019,7 @@ impl<'v, 'tcx> Encoder<'v, 'tcx> {
             ty::TyKind::Uint(ty::UintTy::U64) => scalar_value.to_u64().unwrap().into(),
             ty::TyKind::Uint(ty::UintTy::U128) => scalar_value.to_u128().unwrap().into(),
             ty::TyKind::Uint(ty::UintTy::Usize) => scalar_value.to_machine_usize(&self.env().tcx()).unwrap().into(),
-            ty::TyKind::FnDef(def_id, _) => {
-                self.encode_spec_funcs(*def_id)?;
-                vir::Expr::Const(vir::Const::FnPtr, vir::Position::default())
-            }
+            ty::TyKind::FnDef(def_id, _) => vir::Expr::Const(vir::Const::FnPtr, vir::Position::default()),
             _ => {
                 return Err(EncodingError::unsupported(
                     format!("unsupported constant type {:?}", ty.kind())

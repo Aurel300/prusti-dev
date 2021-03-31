@@ -152,6 +152,7 @@ impl SnapshotEncoder {
         if let Some(body) = function.body {
             function.body = Some(FallibleExprFolder::fallible_fold(&mut patcher, body)?);
         }
+
         Ok(function)
     }
 
@@ -205,7 +206,7 @@ impl SnapshotEncoder {
                 })
             }
             // TODO: why is SnapApp applied to already-snapshot types?
-            vir::Type::Snapshot(_) => Ok(expr),
+            vir::Type::Snapshot(_) | vir::Type::Bool | vir::Type::Int => Ok(expr),
             _ => unreachable!("invalid SnapApp"), // TODO: proper error
         }
     }
@@ -274,6 +275,9 @@ impl SnapshotEncoder {
                         ))
                     },
                     (_, Snapshot::Complex { variants, .. }) => {
+                        if !variants[0].contains_key(&field.name) {
+                            unreachable!("cannot snap_field {} of {}", field.name, expr);
+                        }
                         Ok(Expr::domain_func_app(
                             // TODO: fields of enum variants
                             // -> add SnapshotVariant to vir::Type ?
@@ -425,6 +429,11 @@ impl SnapshotEncoder {
 
             ty::TyKind::Param(_) => Ok(Snapshot::Abstract),
 
+            // handle types with no data
+            ty::TyKind::Tuple(substs) if substs.is_empty() => Ok(Snapshot::Unit),
+            ty::TyKind::Adt(adt_def, _) if adt_def.variants.is_empty() => Ok(Snapshot::Unit),
+            ty::TyKind::Adt(adt_def, _) if adt_def.variants.len() == 1 && adt_def.variants[rustc_target::abi::VariantIdx::from_u32(0)].fields.is_empty() => Ok(Snapshot::Unit),
+
             // TODO: never type
 
             ty::TyKind::Tuple(substs) => {
@@ -513,41 +522,33 @@ impl SnapshotEncoder {
             }
             ty::TyKind::Closure(def_id, substs) => {
                 let closure_substs = substs.as_closure();
-                let fields;
-                if let Some(closure_specs) = self.encoder.get_closure_specs(def_id) {
-                    fields = closure_substs
-                        .upvar_tys()
-                        .zip(closure_specs.views.iter())
-                        .enumerate()
-                        .map(|(upvar_num, (upvar_ty, upvar_name))| {
-                            SnapshotField {
-                                name: upvar_name.to_string(),
-                                access: self.snap_app(encoder, Expr::field(
-                                    arg_expr.clone(),
-                                    encoder.encode_struct_field(upvar_name.to_string(), upvar_ty)?,
-                                ))?,
-                                mir_type: upvar_ty,
-                                typ: self.encode_type(encoder, upvar_ty)?,
-                            }
-                        })
-                        .collect::<Result<_, _>>()?;
+                let mut fields = vec![];
+
+                if let Some(closure_specs) = encoder.get_closure_specs(*def_id) {
+                    for (upvar_ty, field_name) in closure_substs.upvar_tys().zip(closure_specs.views.iter()) {
+                        fields.push(SnapshotField {
+                            name: format!("f${}", field_name),
+                            access: self.snap_app(encoder, Expr::field(
+                                arg_expr.clone(),
+                                encoder.encode_struct_field(field_name, upvar_ty)?,
+                            ))?,
+                            mir_type: upvar_ty,
+                            typ: self.encode_type(encoder, upvar_ty)?,
+                        });
+                    }
                 } else {
-                    fields = closure_substs
-                        .upvar_tys()
-                        .enumerate()
-                        .map(|(upvar_num, upvar_ty)| {
-                            let field_name = format!("closure_{}", upvar_num);
-                            SnapshotField {
-                                name: field_name.to_string(),
-                                access: self.snap_app(encoder, Expr::field(
-                                    arg_expr.clone(),
-                                    encoder.encode_raw_ref_field(field_name, upvar_ty)?,
-                                ))?,
-                                mir_type: upvar_ty,
-                                typ: self.encode_type(encoder, upvar_ty)?,
-                            }
-                        })
-                        .collect::<Result<_, _>>()?;
+                    for (upvar_num, upvar_ty) in closure_substs.upvar_tys().enumerate() {
+                        let field_name = format!("closure_{}", upvar_num);
+                        fields.push(SnapshotField {
+                            name: field_name.to_string(),
+                            access: self.snap_app(encoder, Expr::field(
+                                arg_expr.clone(),
+                                encoder.encode_raw_ref_field(field_name, upvar_ty)?,
+                            ))?,
+                            mir_type: upvar_ty,
+                            typ: self.encode_type(encoder, upvar_ty)?,
+                        });
+                    }
                 }
                 self.encode_complex(encoder, vec![SnapshotVariant {
                     discriminant: -1,
@@ -561,21 +562,15 @@ impl SnapshotEncoder {
     }
 
     /// Encodes the snapshot for a complex data structure (tuple, struct,
-    /// enum, or closure). There may be zero or more variants, each with zero
-    /// or more fields to encode. The returned snapshot will be of the
-    /// [Snapshot::Complex] variant, except for empty enums and structs that
-    /// can be represented with [Snapshot::Unit].
+    /// enum, or closure). There must be one or more variants, at least one
+    /// with one or more fields to encode. The returned snapshot will be of the
+    /// [Snapshot::Complex] variant.
     fn encode_complex<'p, 'v: 'p, 'tcx: 'v>(
         &self,
         encoder: &'p Encoder<'v, 'tcx>,
         variants: Vec<SnapshotVariant<'tcx>>,
         predicate_name: &str,
     ) -> EncodingResult<Snapshot> {
-        if variants.is_empty()
-            || (variants.len() == 1 && variants[0].fields.len() == 0) {
-            return Ok(Snapshot::Unit);
-        }
-
         let domain_name = format!("Snap${}", predicate_name);
         let snapshot_type = Type::Snapshot(predicate_name.to_string());
         let mut domain_funcs = vec![];

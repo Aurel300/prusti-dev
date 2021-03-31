@@ -2,11 +2,6 @@ use crate::encoder::{Encoder, borrows::ProcedureContract};
 use crate::encoder::errors::{SpannedEncodingResult, ErrorCtxt, WithSpan};
 use crate::encoder::borrows::compute_procedure_contract;
 use crate::encoder::mir_encoder::{MirEncoder, PlaceEncoder};
-<<<<<<< HEAD
-=======
-use crate::encoder::snapshot_encoder::Snapshot;
-use crate::encoder::snapshot_spec_patcher::SnapshotSpecPatcher;
->>>>>>> 57c8c77f (make old(*views...) work)
 use prusti_interface::{
     environment::{
         Procedure,
@@ -73,23 +68,27 @@ impl<'p, 'v: 'p, 'tcx: 'v> SpecFunctionEncoder<'p, 'v, 'tcx> {
 
         let closure_snapshot = if self.is_closure {
             Some(self.encoder
-                .encode_snapshot(self.mir.local_decls[1usize.into()].ty)
+                .encode_snapshot_type(self.mir.local_decls[1usize.into()].ty)
                 .with_span(self.span)?)
         } else {
             None
         };
 
-        let pre_func = self.encode_pre_spec_func(&contract, closure_snapshot.as_ref())?;
-        let post_func = self.encode_post_spec_func(&contract, closure_snapshot.as_ref())?;
+        let pre_func = self.encode_pre_spec_func(&contract, closure_snapshot.clone())?;
+        let post_func = self.encode_post_spec_func(&contract, closure_snapshot.clone())?;
         // let invariant_func = self.encode_invariant_func(&contract)?;
 
-        Ok(vec![pre_func, post_func]) // , invariant_func])
+        Ok(vec![pre_func, post_func] // , invariant_func]
+            .into_iter()
+            .map(|func| self.encoder.patch_snapshots_function(func))
+            .collect::<Result<_, _>>()
+            .with_span(self.span)?)
     }
 
     fn encode_pre_spec_func(
         &self,
         contract: &ProcedureContract<'tcx>,
-        closure_snapshot: Option<&Box<Snapshot>>,
+        closure_snapshot: Option<vir::Type>,
     ) -> SpannedEncodingResult<vir::Function> {
         let mut func_spec: Vec<vir::Expr> = vec![];
 
@@ -102,7 +101,7 @@ impl<'p, 'v: 'p, 'tcx: 'v> SpecFunctionEncoder<'p, 'v, 'tcx> {
         if self.is_closure {
             encoded_args[0] = vir::LocalVar::new(
                 encoded_args[0].name.to_string(),
-                closure_snapshot.unwrap().get_type(),
+                closure_snapshot.unwrap(),
             );
         }
 
@@ -135,7 +134,7 @@ impl<'p, 'v: 'p, 'tcx: 'v> SpecFunctionEncoder<'p, 'v, 'tcx> {
     fn encode_post_spec_func(
         &self,
         contract: &ProcedureContract<'tcx>,
-        closure_snapshot: Option<&Box<Snapshot>>,
+        closure_snapshot: Option<vir::Type>,
     ) -> SpannedEncodingResult<vir::Function> {
         let mut func_spec: Vec<vir::Expr> = vec![];
 
@@ -149,11 +148,11 @@ impl<'p, 'v: 'p, 'tcx: 'v> SpecFunctionEncoder<'p, 'v, 'tcx> {
             let original_arg = encoded_args[0].clone();
             encoded_args[0] = vir::LocalVar::new(
                 original_arg.name.to_string(),
-                closure_snapshot.unwrap().get_type(),
+                closure_snapshot.clone().unwrap(),
             );
             encoded_args.push(vir::LocalVar::new(
                 format!("{}_old", original_arg.name),
-                closure_snapshot.unwrap().get_type(),
+                closure_snapshot.unwrap(),
             ));
         }
 

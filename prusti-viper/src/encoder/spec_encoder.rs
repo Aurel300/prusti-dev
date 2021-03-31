@@ -298,21 +298,31 @@ impl<'p, 'v: 'p, 'tcx: 'v> SpecEncoder<'p, 'v, 'tcx> {
         posts: &Vec<typed::Assertion<'tcx>>,
         def_id: &DefId,
     ) -> SpannedEncodingResult<vir::Expr> {
-        let span = self.encoder.env().tcx().def_span(*def_id); // TODO: span of assertion?
+        let tcx = self.encoder.env().tcx();
+        let span = tcx.def_span(*def_id); // TODO: span of assertion?
         let cl_expr = self.encode_expression(closure)?;
-        let is_closure = matches!(cl_type.kind(), ty::TyKind::Closure(_, _));
-        let cl_snapshot = if is_closure {
-            match cl_type.kind() {
-                ty::TyKind::Closure(def_id, _) => {
-                    Some(self.encoder
-                        .encode_snapshot(cl_type)
-                        .with_span(span)?)
-                },
-                _ => unreachable!(),
+
+        let is_closure;
+        let cl_snapshot;
+        let fn_sig;
+        match cl_type.kind() {
+            ty::TyKind::Closure(def_id, substs) => {
+                is_closure = true;
+                cl_snapshot = Some(self.encoder
+                    .encode_snapshot_type(cl_type)
+                    .with_span(span)?);
+                fn_sig = substs.as_closure().sig();
             }
-        } else {
-            None
-        };
+            ty::TyKind::FnDef(def_id, _) => {
+                is_closure = false;
+                cl_snapshot = None;
+                fn_sig = tcx.fn_sig(*def_id);
+            }
+            _ => unreachable!(),
+        }
+        // TODO: skip_binder is most likely wrong, figure out how to properly
+        // use the substs or other information we have to discharge the Binder
+        let fn_sig = fn_sig.skip_binder();
 
         let encoded_pres = pres.iter()
             .map(|x| self.encode_assertion(x))
@@ -323,8 +333,9 @@ impl<'p, 'v: 'p, 'tcx: 'v> SpecEncoder<'p, 'v, 'tcx> {
         let forall_pre_id = format!("{}_{}", vars.spec_id, vars.pre_id);
         let forall_post_id = format!("{}_{}", vars.spec_id, vars.post_id);
 
-        let sf_pre_name = self.encoder.encode_spec_func_name(*def_id, SpecFunctionKind::Pre);
-        let sf_post_name = self.encoder.encode_spec_func_name(*def_id, SpecFunctionKind::Post);
+        let spec_funcs = self.encoder.encode_spec_funcs(*def_id)?;
+        let sf_pre = &spec_funcs[0];
+        let sf_post = &spec_funcs[1];
 
         // Encode call arguments as forall variables.
         let qargs_pre = vars.args
@@ -345,29 +356,23 @@ impl<'p, 'v: 'p, 'tcx: 'v> SpecEncoder<'p, 'v, 'tcx> {
         // we do not need to quantify over the closure.
         let mut qvars_pre = qargs_pre.clone();
         if is_closure && !once {
-            qvars_pre.insert(0, vir::LocalVar::new("_cl".to_string(), cl_snapshot.as_ref().unwrap().get_type()));
+            qvars_pre.insert(0, vir::LocalVar::new("_cl".to_string(), cl_snapshot.clone().unwrap()));
         }
         let mut sf_pre_args = qvars_pre.iter()
-            .map(|x| vir::Expr::local(x.clone()))
+            .map(|x| vir::Expr::snap_app(vir::Expr::local(x.clone())))
             .collect::<Vec<_>>();
         if is_closure && once {
-            let snapshot = self.encoder
-                .encode_snapshot(cl_type)
-                .with_span(span)?;
-            sf_pre_args.insert(0, snapshot.snap_call(cl_expr.clone()));
+            sf_pre_args.insert(0, vir::Expr::snap_app(cl_expr.clone()));
         }
-        let sf_pre_formal_args = sf_pre_args.iter()
-            .map(|e| vir::LocalVar::new("_".to_string(), e.get_type().clone()))
-            .collect();
         let pre_conjunct = vir::Expr::forall(
             qvars_pre.clone(),
             vec![], // TODO: encode triggers
             vir::Expr::implies(
                 encoded_pres.clone(),
                 vir::Expr::FuncApp(
-                    sf_pre_name,
+                    sf_pre.name.to_string(),
                     sf_pre_args,
-                    sf_pre_formal_args,
+                    sf_pre.formal_args.clone(),
                     vir::Type::Bool,
                     vir::Position::default()
                 )
@@ -386,14 +391,14 @@ impl<'p, 'v: 'p, 'tcx: 'v> SpecEncoder<'p, 'v, 'tcx> {
         let result_var = mir::Local::from_usize(vars.args.len() + 2);
         let mut qvars_post: Vec<_> = qargs_post.clone();
         if is_closure && !once {
-            qvars_post.push(vir::LocalVar::new("_cl_pre".to_string(), cl_snapshot.as_ref().unwrap().get_type()));
+            qvars_post.push(vir::LocalVar::new("_cl_pre".to_string(), cl_snapshot.clone().unwrap()));
         }
         qvars_post.push(vir::LocalVar::new(
             format!("_{}_forall_{}", vars.args.len() + 2, &forall_post_id),
-            vir::Type::Int, // TODO: proper type
+            self.encoder.encode_type(fn_sig.output()).with_span(span)?,
         ));
         if is_closure {
-            qvars_post.insert(0, vir::LocalVar::new("_cl_post".to_string(), cl_snapshot.as_ref().unwrap().get_type()));
+            qvars_post.insert(0, vir::LocalVar::new("_cl_post".to_string(), cl_snapshot.clone().unwrap()));
         }
         let mut sf_post_args = qvars_post.iter()
             .map(|x| vir::Expr::local(x.clone()))
@@ -401,11 +406,6 @@ impl<'p, 'v: 'p, 'tcx: 'v> SpecEncoder<'p, 'v, 'tcx> {
         if is_closure && once {
             sf_post_args.insert(0, cl_expr.clone());
         }
-        let sf_post_formal_args = sf_post_args.iter()
-            .map(|e| vir::LocalVar::new("_".to_string(), e.get_type().clone()))
-            .collect();
-        // The quantified arguments in the precondition have been encoded using
-        // different IDs (vars.pre_id vs. vars.post_id), so we need to fix them
         let encoded_pres_renamed = (0 .. qargs_pre.len())
             .fold(encoded_pres, |e, i| {
                 e.replace_place(&vir::Expr::local(qargs_pre[i].clone()),
@@ -418,9 +418,9 @@ impl<'p, 'v: 'p, 'tcx: 'v> SpecEncoder<'p, 'v, 'tcx> {
                 encoded_pres_renamed,
                 vir::Expr::implies(
                     vir::Expr::FuncApp(
-                        sf_post_name,
+                        sf_post.name.to_string(),
                         sf_post_args,
-                        sf_post_formal_args,
+                        sf_post.formal_args.clone(),
                         vir::Type::Bool,
                         vir::Position::default()
                     ),

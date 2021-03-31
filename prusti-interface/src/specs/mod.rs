@@ -268,7 +268,7 @@ fn get_procedure_spec_ids(def_id: DefId, attrs: &[ast::Attribute]) -> Option<Pro
     );
     spec_id_refs.extend(
         read_prusti_attr("pred_spec_id_ref", attrs).map(
-            |raw_spec_id| SpecIdRef::Predicate(parse_spec_id(raw_spec_id))
+            |raw_spec_id| SpecIdRef::Predicate(parse_spec_id(raw_spec_id, def_id))
         )
     );
     debug!("Function {:?} has specification ids {:?}", def_id, spec_id_refs);

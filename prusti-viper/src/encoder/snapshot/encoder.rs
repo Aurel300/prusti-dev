@@ -199,6 +199,7 @@ impl SnapshotEncoder {
         if let Some(body) = function.body {
             function.body = Some(FallibleExprFolder::fallible_fold(&mut patcher, body)?);
         }
+
         Ok(function)
     }
 
@@ -638,6 +639,11 @@ impl SnapshotEncoder {
             ty::TyKind::Adt(adt_def, _) if adt_def.variants.is_empty() => Ok(Snapshot::Unit),
             ty::TyKind::Adt(adt_def, _) if adt_def.variants.len() == 1 && adt_def.variants[rustc_target::abi::VariantIdx::from_u32(0)].fields.is_empty() => Ok(Snapshot::Unit),
 
+            // handle types with no data
+            ty::TyKind::Tuple(substs) if substs.is_empty() => Ok(Snapshot::Unit),
+            ty::TyKind::Adt(adt_def, _) if adt_def.variants.is_empty() => Ok(Snapshot::Unit),
+            ty::TyKind::Adt(adt_def, _) if adt_def.variants.len() == 1 && adt_def.variants[rustc_target::abi::VariantIdx::from_u32(0)].fields.is_empty() => Ok(Snapshot::Unit),
+
             // TODO: never type
 
             ty::TyKind::Tuple(substs) => {
@@ -728,41 +734,33 @@ impl SnapshotEncoder {
             }
             ty::TyKind::Closure(def_id, substs) => {
                 let closure_substs = substs.as_closure();
-                let fields;
-                if let Some(closure_specs) = self.encoder.get_closure_specs(def_id) {
-                    fields = closure_substs
-                        .upvar_tys()
-                        .zip(closure_specs.views.iter())
-                        .enumerate()
-                        .map(|(upvar_num, (upvar_ty, upvar_name))| {
-                            SnapshotField {
-                                name: upvar_name.to_string(),
-                                access: self.snap_app(encoder, Expr::field(
-                                    arg_expr.clone(),
-                                    encoder.encode_struct_field(upvar_name.to_string(), upvar_ty)?,
-                                ))?,
-                                mir_type: upvar_ty,
-                                typ: self.encode_type(encoder, upvar_ty)?,
-                            }
-                        })
-                        .collect::<Result<_, _>>()?;
+                let mut fields = vec![];
+
+                if let Some(closure_specs) = encoder.get_closure_specs(*def_id) {
+                    for (upvar_ty, field_name) in closure_substs.upvar_tys().zip(closure_specs.views.iter()) {
+                        fields.push(SnapshotField {
+                            name: format!("f${}", field_name),
+                            access: self.snap_app(encoder, Expr::field(
+                                arg_expr.clone(),
+                                encoder.encode_struct_field(field_name, upvar_ty)?,
+                            ))?,
+                            mir_type: upvar_ty,
+                            typ: self.encode_type(encoder, upvar_ty)?,
+                        });
+                    }
                 } else {
-                    fields = closure_substs
-                        .upvar_tys()
-                        .enumerate()
-                        .map(|(upvar_num, upvar_ty)| {
-                            let field_name = format!("closure_{}", upvar_num);
-                            SnapshotField {
-                                name: field_name.to_string(),
-                                access: self.snap_app(encoder, Expr::field(
-                                    arg_expr.clone(),
-                                    encoder.encode_raw_ref_field(field_name, upvar_ty)?,
-                                ))?,
-                                mir_type: upvar_ty,
-                                typ: self.encode_type(encoder, upvar_ty)?,
-                            }
-                        })
-                        .collect::<Result<_, _>>()?;
+                    for (upvar_num, upvar_ty) in closure_substs.upvar_tys().enumerate() {
+                        let field_name = format!("closure_{}", upvar_num);
+                        fields.push(SnapshotField {
+                            name: field_name.to_string(),
+                            access: self.snap_app(encoder, Expr::field(
+                                arg_expr.clone(),
+                                encoder.encode_raw_ref_field(field_name, upvar_ty)?,
+                            ))?,
+                            mir_type: upvar_ty,
+                            typ: self.encode_type(encoder, upvar_ty)?,
+                        });
+                    }
                 }
                 self.encode_complex(encoder, vec![SnapshotVariant {
                     discriminant: -1,

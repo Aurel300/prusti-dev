@@ -109,6 +109,8 @@ impl<'v, 'tcx: 'v> FallibleExprFolder for SnapshotPatcher<'v, 'tcx> {
                 let receiver = self.fallible_fold_boxed(receiver)?;
                 match receiver.get_type() {
                     vir::Type::Int if field.name == "val_int" => Ok(*receiver),
+                    // FIXME: this case handles &i32 fields, should not work like this
+                    vir::Type::Int if field.name == "val_ref" => Ok(*receiver),
                     vir::Type::Bool if field.name == "val_bool" => Ok(*receiver),
                     vir::Type::Snapshot(_) => {
                         let res = match field.name.as_str() {

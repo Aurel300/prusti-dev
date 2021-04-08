@@ -34,8 +34,12 @@ pub struct TypeEncoder<'p, 'v: 'p, 'tcx: 'v> {
 impl<'p, 'v, 'r: 'v, 'tcx: 'v> TypeEncoder<'p, 'v, 'tcx> {
     pub fn new(encoder: &'p Encoder<'v, 'tcx>, ty: ty::Ty<'tcx>) -> Self {
         // Map type through the encoder's type map. (#187)
-        let current_tymap = encoder.current_tymap();
-        let ty = current_tymap.get(ty).map(|ty| ty.clone()).unwrap_or(ty);
+        // TODO: type mapping disabled here during closure work; encoding of
+        // a type parameter to its substitution makes the Encoder remember
+        // the type parameter mapping to a particular function type, which
+        // causes issues further down the line.
+        //let current_tymap = encoder.current_tymap();
+        //let ty = current_tymap.get(ty).map(|ty| ty.clone()).unwrap_or(ty);
         TypeEncoder {
             encoder,
             ty

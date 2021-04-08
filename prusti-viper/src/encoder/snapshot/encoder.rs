@@ -176,38 +176,47 @@ impl SnapshotEncoder {
         encoder: &'p Encoder<'v, 'tcx>,
         expr: Expr,
     ) -> EncodingResult<Expr> {
-        match expr.get_type() {
-            vir::Type::TypedRef(ref name) => {
-                let ty = encoder.decode_type_predicate(name)?;
-                let (ty, expr) = strip_refs_and_boxes_expr(encoder, ty, expr)?;
-                // TODO: move to snapshot mod?
-                Ok(match ty.kind() {
-                    ty::TyKind::Int(_)
-                    | ty::TyKind::Uint(_)
-                    | ty::TyKind::Char => Expr::field(
-                        expr.clone(),
-                        vir::Field::new("val_int", Type::Int),
-                    ),
-                    ty::TyKind::Bool => Expr::field(
-                        expr.clone(),
-                        vir::Field::new("val_bool", Type::Bool),
-                    ),
-                    ty::TyKind::Param(_) => self.snap_unit(),
-                    ty::TyKind::Tuple(substs) if substs.is_empty() => self.snap_unit(),
-                    ty::TyKind::Adt(adt_def, _) if adt_def.variants.is_empty() => self.snap_unit(),
-                    ty::TyKind::Adt(adt_def, _) if adt_def.variants.len() == 1 && adt_def.variants[rustc_target::abi::VariantIdx::from_u32(0)].fields.is_empty() => self.snap_unit(),
-                    ty::TyKind::Tuple(_)
-                    | ty::TyKind::Adt(_, _)
-                    | ty::TyKind::Closure(_, _) => {
-                        let snapshot = self.encode_snapshot(encoder, ty)?;
-                        self.snap_app_complex(expr, snapshot.get_type())
-                    },
-                    _ => self.snap_unit(),
-                })
+        match expr {
+            Expr::LabelledOld(label, box expr, pos)
+                => Ok(Expr::LabelledOld(label, box self.snap_app(encoder, expr)?, pos)),
+            // TODO: there may be other cases where the snap_app needs to happen deeper
+            // what if old(...) is a sub-expression?
+            expr => match expr.get_type() {
+                vir::Type::TypedRef(ref name) => {
+                    let ty = encoder.decode_type_predicate(name)?;
+                    let (ty, expr) = strip_refs_and_boxes_expr(encoder, ty, expr)?;
+                    // TODO: move to snapshot mod?
+                    Ok(match ty.kind() {
+                        ty::TyKind::Int(_)
+                        | ty::TyKind::Uint(_)
+                        | ty::TyKind::Char => Expr::field(
+                            expr.clone(),
+                            vir::Field::new("val_int", Type::Int),
+                        ),
+                        ty::TyKind::Bool => Expr::field(
+                            expr.clone(),
+                            vir::Field::new("val_bool", Type::Bool),
+                        ),
+                        ty::TyKind::Param(_) => self.snap_unit(),
+                        ty::TyKind::Tuple(substs) if substs.is_empty() => self.snap_unit(),
+                        ty::TyKind::Adt(adt_def, _) if adt_def.variants.is_empty() => self.snap_unit(),
+                        ty::TyKind::Adt(adt_def, _) if adt_def.variants.len() == 1 && adt_def.variants[rustc_target::abi::VariantIdx::from_u32(0)].fields.is_empty() => self.snap_unit(),
+                        ty::TyKind::Tuple(_)
+                        | ty::TyKind::Adt(_, _)
+                        | ty::TyKind::Closure(_, _) => {
+                            let snapshot = self.encode_snapshot(encoder, ty)?;
+                            self.snap_app_complex(expr, snapshot.get_type())
+                        },
+                        _ => self.snap_unit(),
+                    })
+                }
+                // TODO: why is SnapApp applied to already-snapshot types?
+                vir::Type::Snapshot(_)
+                | vir::Type::Domain(_) // TODO: restrict to Unit
+                | vir::Type::Bool // TODO: restrict to snapshot-produced Bools and Ints...
+                | vir::Type::Int => Ok(expr),
+                _ => unreachable!("invalid SnapApp {:?}", expr), // TODO: proper error
             }
-            // TODO: why is SnapApp applied to already-snapshot types?
-            vir::Type::Snapshot(_) | vir::Type::Bool | vir::Type::Int => Ok(expr),
-            _ => unreachable!("invalid SnapApp"), // TODO: proper error
         }
     }
 

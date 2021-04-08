@@ -4,7 +4,9 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+use crate::encoder::Encoder;
 use crate::encoder::places;
+use crate::encoder::fn_signatures::{extract_fn_sig, ExtractedFnKind};
 use prusti_interface::data::ProcedureDefId;
 // use prusti_interface::specifications::{
 //     AssertionKind, SpecificationSet, TypedAssertion, TypedExpression, TypedSpecification,
@@ -70,6 +72,7 @@ impl<P: fmt::Debug> fmt::Display for BorrowInfo<P> {
 /// general procedure info because we want to be able to translate
 /// procedure calls before translating call targets.
 /// TODO: Move to some properly named module.
+/// TODO: perhaps specification does not actually belong to the contract
 #[derive(Clone, Debug)]
 pub struct ProcedureContractGeneric<'tcx, L, P>
 where
@@ -96,31 +99,45 @@ where
     /// TODO: Implement support for `blocked_lifetimes` via nested magic wands.
     pub borrow_infos: Vec<BorrowInfo<P>>,
     /// The functional specification: precondition and postcondition
-    pub specification: typed::SpecificationSet<'tcx>,
+    pub specification: ProcedureContractSpecification<'tcx>,
+}
+
+#[derive(Clone, Debug)]
+pub enum ProcedureContractSpecification<'tcx> {
+    /// Contract of a procedure or regular procedure call.
+    ProcedureSpecification(typed::ProcedureSpecification<'tcx>),
+    /// Contract of an indirect call (Fn*::call).
+    SpecFunctions(ty::Ty<'tcx>),
 }
 
 impl<'tcx, L: fmt::Debug, P: fmt::Debug> ProcedureContractGeneric<'tcx, L, P> {
     pub fn functional_precondition(&self) -> &[typed::Assertion<'tcx>] {
-        if let typed::SpecificationSet::Procedure(spec) = &self.specification {
-            &spec.pres
-        } else {
-            unreachable!("Unexpected: {:?}", self.specification)
+        match &self.specification {
+            ProcedureContractSpecification::ProcedureSpecification(specs) => &specs.pres,
+            _ => unreachable!(),
         }
     }
 
     pub fn functional_postcondition(&self) -> &[typed::Assertion<'tcx>] {
-        if let typed::SpecificationSet::Procedure(spec) = &self.specification {
-            &spec.posts
-        } else {
-            unreachable!("Unexpected: {:?}", self.specification)
+        match &self.specification {
+            ProcedureContractSpecification::ProcedureSpecification(specs) => &specs.posts,
+            _ => unreachable!(),
         }
     }
 
     pub fn pledges(&self) -> &[typed::Pledge<'tcx>] {
-        if let typed::SpecificationSet::Procedure(spec) = &self.specification {
-            &spec.pledges
-        } else {
-            unreachable!("Unexpected: {:?}", self.specification)
+        match &self.specification {
+            ProcedureContractSpecification::ProcedureSpecification(specs) => &specs.pledges,
+            _ => &[], // TODO: pledges in closures???
+        }
+    }
+}
+
+impl<'tcx> ProcedureContractSpecification<'tcx> {
+    pub fn expect_mut_procedure(&mut self) -> &mut typed::ProcedureSpecification<'tcx> {
+        match self {
+            ProcedureContractSpecification::ProcedureSpecification(specs) => specs,
+            _ => unreachable!(),
         }
     }
 }
@@ -415,30 +432,27 @@ impl<'tcx> TypeVisitor<'tcx> for BorrowInfoCollectingVisitor<'tcx> {
     }
 }
 
-pub fn compute_procedure_contract<'p, 'a, 'tcx>(
+pub fn compute_procedure_contract<'p, 'a: 'p, 'tcx: 'a>(
     proc_def_id: ProcedureDefId,
     tcx: TyCtxt<'tcx>,
-    specification: typed::SpecificationSet<'tcx>,
+    specification: typed::ProcedureSpecification<'tcx>,
     maybe_tymap: Option<&HashMap<ty::Ty<'tcx>, ty::Ty<'tcx>>>,
-) -> EncodingResult<ProcedureContractMirDef<'tcx>>
-where
-    'a: 'p,
-    'tcx: 'a,
-{
-    trace!("[compute_borrow_infos] enter name={:?}", proc_def_id);
-
-    let args_ty:Vec<(mir::Local, ty::Ty<'tcx>)>;
+) -> EncodingResult<ProcedureContractMirDef<'tcx>> {
+    trace!("[compute_procedure_contract] enter name={:?}", proc_def_id);
+    let args_ty:Vec<ty::Ty<'tcx>>;
     let return_ty;
 
     if !tcx.is_closure(proc_def_id) {
         // FIXME: "skip_binder" is most likely wrong
         // FIXME: Replace with FakeMirEncoder.
-        let fn_sig: FnSig = tcx.fn_sig(proc_def_id).skip_binder();
-        args_ty = (0usize .. fn_sig.inputs().len())
-            .map(|i| (mir::Local::from_usize(i + 1), fn_sig.inputs()[i]))
-            .collect();
+        let fn_sig = tcx.fn_sig(proc_def_id).skip_binder();
+        args_ty = fn_sig.inputs().to_vec();
         return_ty = fn_sig.output().clone(); // FIXME: Shouldn't this also go through maybe_tymap?
     } else {
+        // TODO: relying on MIR here is not the best solution; we cannot use
+        // tcx.fn_sig(...) because the compiler wants us to do
+        // subst.as_closure().sig(), but we have no substs when getting here
+        // from the encoder's processing queue.
         let (mir, _) = tcx.mir_promoted(ty::WithOptConstParam::unknown(proc_def_id.expect_local()));
         let mir = mir.borrow();
         // local_decls:
@@ -447,10 +461,63 @@ where
         // _2... - actual arguments
         // arg_count includes the extra self _1
         args_ty = (1usize ..= mir.arg_count)
-            .map(|i| (mir::Local::from_usize(i), mir.local_decls[mir::Local::from_usize(i)].ty))
+            .map(|i| mir.local_decls[mir::Local::from_usize(i)].ty)
             .collect();
         return_ty = mir.local_decls[mir::Local::from_usize(0)].ty;
     }
+
+    compute_procedure_contract_internal(
+        proc_def_id,
+        args_ty,
+        return_ty,
+        tcx,
+        ProcedureContractSpecification::ProcedureSpecification(specification),
+        maybe_tymap,
+    )
+}
+
+pub fn compute_procedure_contract_of_type<'p, 'v: 'p, 'tcx: 'v>(
+    encoder: &'p Encoder<'v, 'tcx>,
+    fn_type: ty::Ty<'tcx>,
+    // TODO: should there be a tymap?
+    // maybe_tymap: Option<&HashMap<ty::Ty<'tcx>, ty::Ty<'tcx>>>,
+) -> EncodingResult<ProcedureContractMirDef<'tcx>> {
+    trace!("[compute_procedure_contract] enter type={:?}", fn_type);
+    let fn_sig = extract_fn_sig(encoder, fn_type);
+
+    let specification = match fn_sig.kind {
+        ExtractedFnKind::FnDef
+        | ExtractedFnKind::Closure => ProcedureContractSpecification::ProcedureSpecification(
+            encoder
+                .get_procedure_specs(fn_sig.def_id)
+                .unwrap_or_else(|| typed::ProcedureSpecification::empty()),
+        ),
+        ExtractedFnKind::Param => ProcedureContractSpecification::SpecFunctions(fn_type),
+    };
+
+    compute_procedure_contract_internal(
+        fn_sig.def_id,
+        fn_sig.inputs.clone(),
+        fn_sig.output,
+        encoder.env().tcx(),
+        specification,
+        None, // maybe_tymap,
+    )
+}
+
+fn compute_procedure_contract_internal<'p, 'v: 'p, 'tcx: 'v>(
+    proc_def_id: ProcedureDefId,
+    args_ty: Vec<ty::Ty<'tcx>>,
+    return_ty: ty::Ty<'tcx>,
+    tcx: TyCtxt<'tcx>,
+    specification: ProcedureContractSpecification<'tcx>,
+    maybe_tymap: Option<&HashMap<ty::Ty<'tcx>, ty::Ty<'tcx>>>,
+) -> EncodingResult<ProcedureContractMirDef<'tcx>> {
+    let args_ty = args_ty
+        .into_iter()
+        .enumerate()
+        .map(|(arg_num, arg_ty)| (mir::Local::from_usize(arg_num + 1), arg_ty))
+        .collect::<Vec<_>>();
 
     let mut fake_mir_args = Vec::new();
     let mut fake_mir_args_ty = Vec::new();
@@ -495,6 +562,6 @@ where
         specification,
     };
 
-    trace!("[compute_borrow_infos] exit result={}", contract);
+    trace!("[compute_procedure_contract] exit result={}", contract);
     Ok(contract)
 }

@@ -33,3 +33,4 @@ mod type_encoder;
 mod utils;
 mod snapshot;
 mod mirror_function_encoder;
+mod fn_signatures;

@@ -4,7 +4,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-use crate::encoder::borrows::ProcedureContract;
+use crate::encoder::borrows::{ProcedureContract, ProcedureContractSpecification};
 use crate::encoder::builtin_encoder::BuiltinMethodKind;
 use crate::encoder::errors::{
     SpannedEncodingError, ErrorCtxt, PanicCause, EncodingError, WithSpan, RunIfErr,
@@ -271,7 +271,7 @@ impl<'p, 'v: 'p, 'tcx: 'v> ProcedureEncoder<'p, 'v, 'tcx> {
                         posts: proc_post_specs,
                         pledges: proc_pledge_specs,
                         ..
-                    } = self.mut_contract().specification.expect_mut_procedure();
+                    } = &mut self.mut_contract().specification.expect_mut_procedure();
 
                     if proc_pre_specs.is_empty() {
                         proc_pre_specs
@@ -2059,34 +2059,6 @@ impl<'p, 'v: 'p, 'tcx: 'v> ProcedureEncoder<'p, 'v, 'tcx> {
                             );
                         }
 
-                        "std::ops::Fn::call" |
-                        "std::ops::FnMut::call_mut" => {
-                            let cl_type: ty::Ty = substs[0].expect_ty();
-                            match cl_type.kind() {
-                                ty::TyKind::Closure(cl_def_id, _) => {
-                                    debug!("Encoding call to closure {:?} with func {:?}", cl_def_id, func_const_val);
-                                    stmts.extend(
-                                        self.encode_impure_function_call(
-                                            location,
-                                            term.source_info.span,
-                                            args,
-                                            destination,
-                                            *cl_def_id,
-                                            self_ty,
-                                        ).run_if_err(|| cleanup(&self))?
-                                    );
-                                }
-
-                                _ => {
-                                    cleanup(&self);
-                                    return Err(SpannedEncodingError::unsupported(
-                                        format!("only calls to closures are supported. The term is a {:?}, not a closure.", cl_type.kind()),
-                                        term.source_info.span,
-                                    ));
-                                }
-                            }
-                        }
-
                         _ => {
                             let is_pure_function = self.encoder.is_pure(def_id);
                             if is_pure_function {
@@ -2320,10 +2292,16 @@ impl<'p, 'v: 'p, 'tcx: 'v> ProcedureEncoder<'p, 'v, 'tcx> {
         let full_func_proc_name = &self
             .encoder
             .env()
-            .tcx()
-            .def_path_str(called_def_id);
-            // .absolute_item_path_str(called_def_id);
+            .get_absolute_item_name(called_def_id);
         debug!("Encoding non-pure function call '{}' with args {:?}", full_func_proc_name, mir_args);
+
+        // TODO: this is not the cleanest approach to detecting indirect calls
+        let indirect_call = matches!(
+            full_func_proc_name.as_str(),
+            "std::ops::Fn::call"
+            | "std::ops::FnMut::call_mut"
+            | "std::ops::FnOnce::call_once"
+        );
 
         // First we construct the "operands" vector. This construction differs
         // for closure calls, where we need to unpack a tuple into the actual
@@ -2337,9 +2315,11 @@ impl<'p, 'v: 'p, 'tcx: 'v> ProcedureEncoder<'p, 'v, 'tcx> {
             .map(|arg| self.mir_encoder.encode_operand_place(&arg))
             .collect::<Result<Vec<Option<vir::Expr>>, _>>()
             .with_span(call_site_span)?;
-        if self.encoder.env().tcx().is_closure(called_def_id) {
-            // Closure calls are wrapped around std::ops::Fn::call(), which receives
-            // two arguments: The closure instance, and the tupled-up arguments
+
+        if indirect_call {
+            // Indirect calls are wrapped around std::ops::Fn*::call*(), which
+            // receives two arguments: the closure instance and the tupled-up
+            // arguments
             assert_eq!(mir_args.len(), 2);
 
             let cl_ty = self.mir_encoder.get_operand_ty(&mir_args[0]);
@@ -2357,6 +2337,7 @@ impl<'p, 'v: 'p, 'tcx: 'v> ProcedureEncoder<'p, 'v, 'tcx> {
 
             let arg_tuple_ty = self.mir_encoder.get_operand_ty(&mir_args[1]);
             if let ty::TyKind::Tuple(substs) = arg_tuple_ty.kind() {
+                let arg_tuple = encoded_operands[1].take().unwrap();
                 for (field_num, ty) in substs.iter().enumerate() {
                     let arg_ty = ty.expect_ty();
                     let arg = self.locals.get_fresh(arg_ty);
@@ -2368,7 +2349,7 @@ impl<'p, 'v: 'p, 'tcx: 'v> ProcedureEncoder<'p, 'v, 'tcx> {
                         &mir_args[1], // not actually used ...
                         arg,
                         arg_ty,
-                        Some(encoded_operands[1].take().unwrap().field(value_field)),
+                        Some(arg_tuple.clone().field(value_field)),
                     ));
                 }
             } else {
@@ -2389,7 +2370,7 @@ impl<'p, 'v: 'p, 'tcx: 'v> ProcedureEncoder<'p, 'v, 'tcx> {
                     encoded_operand.take(),
                 ));
             }
-        };
+        }
 
         // Arguments can be places or constants. For constants, we pretend they're places by
         // creating a new local variable of the same type. For arguments that are not just local
@@ -2511,7 +2492,12 @@ impl<'p, 'v: 'p, 'tcx: 'v> ProcedureEncoder<'p, 'v, 'tcx> {
             expr
         };
 
-        let procedure_contract = {
+        let procedure_contract = if indirect_call {
+            let contract = self.encoder.get_procedure_contract_of_type(
+                self.mir_encoder.get_operand_ty(&mir_args[0]),
+            ).with_span(call_site_span)?;
+            contract.to_call_site_contract(&arguments, target_local)
+        } else {
             self.encoder.get_procedure_contract_for_call(
                 self_ty,
                 called_def_id,
@@ -3014,31 +3000,45 @@ impl<'p, 'v: 'p, 'tcx: 'v> ProcedureEncoder<'p, 'v, 'tcx> {
             .iter()
             .map(|local| self.encode_prusti_local(*local).into())
             .collect();
-        let func_precondition = contract.functional_precondition();
-        for assertion in func_precondition {
-            // FIXME
-            let value = self.encoder.encode_assertion(
-                &assertion,
-                &self.mir,
-                None,
-                &encoded_args,
-                None,
-                false,
-                None,
-                ErrorCtxt::GenericExpression,
-            )?;
-            func_spec.push(value);
+        let precondition_spans;
+        match contract.specification {
+            ProcedureContractSpecification::ProcedureSpecification(ref specs) => {
+                let func_precondition = &specs.pres;
+                for assertion in func_precondition {
+                    // FIXME
+                    let value = self.encoder.encode_assertion(
+                        &assertion,
+                        &self.mir,
+                        None,
+                        &encoded_args,
+                        None,
+                        false,
+                        None,
+                        ErrorCtxt::GenericExpression,
+                    )?;
+                    func_spec.push(value);
+                }
+                precondition_spans = MultiSpan::from_spans(
+                    func_precondition
+                        .iter()
+                        .flat_map(|ts| typed::Spanned::get_spans(
+                            ts,
+                            &self.mir,
+                            self.encoder.env().tcx()
+                        ))
+                        .collect(),
+                );
+            }
+            ProcedureContractSpecification::SpecFunctions(ty) => {
+                // TODO: spans should refer to where the precondition of the
+                // spec entailment. Add this as an output to SF encoder.
+                func_spec.push(self.encoder.encode_spec_call_pre(
+                    ty,
+                    encoded_args.clone(),
+                ).with_span(self.procedure.get_span())?);
+                precondition_spans = MultiSpan::from_spans(vec![]);
+            }
         }
-        let precondition_spans = MultiSpan::from_spans(
-            func_precondition
-                .iter()
-                .flat_map(|ts| typed::Spanned::get_spans(
-                    ts,
-                    &self.mir,
-                    self.encoder.env().tcx()
-                ))
-                .collect(),
-        );
 
         let mut invs_spec: Vec<vir::Expr> = vec![];
         for arg in contract.args.iter() {
@@ -3409,29 +3409,45 @@ impl<'p, 'v: 'p, 'tcx: 'v> ProcedureEncoder<'p, 'v, 'tcx> {
 
         // Encode functional specification
         let mut func_spec = vec![];
-        let mut func_spec_spans = vec![];
-        let func_postcondition = contract.functional_postcondition();
-        for typed_assertion in func_postcondition {
-            let mut assertion = self.encoder.encode_assertion(
-                &typed_assertion,
-                &self.mir,
-                Some(pre_label),
-                &encoded_args,
-                Some(&encoded_return),
-                false,
-                None,
-                ErrorCtxt::GenericExpression,
-            )?;
-            func_spec_spans.extend(typed::Spanned::get_spans(typed_assertion, &self.mir, self.encoder.env().tcx()));
-            assertion = self.wrap_arguments_into_old(
-                assertion,
-                pre_label,
-                contract,
-                &encoded_args
-            )?;
-            func_spec.push(assertion);
+        let postcondition_span;
+        match contract.specification {
+            ProcedureContractSpecification::ProcedureSpecification(ref specs) => {
+                let func_postcondition = &specs.posts;
+                let mut func_spec_spans = vec![];
+                for typed_assertion in func_postcondition {
+                    let mut assertion = self.encoder.encode_assertion(
+                        &typed_assertion,
+                        &self.mir,
+                        Some(pre_label),
+                        &encoded_args,
+                        Some(&encoded_return),
+                        false,
+                        None,
+                        ErrorCtxt::GenericExpression,
+                    )?;
+                    func_spec_spans.extend(typed::Spanned::get_spans(typed_assertion, &self.mir, self.encoder.env().tcx()));
+                    assertion = self.wrap_arguments_into_old(
+                        assertion,
+                        pre_label,
+                        contract,
+                        &encoded_args
+                    )?;
+                    func_spec.push(assertion);
+                }
+                postcondition_span = MultiSpan::from_spans(func_spec_spans);
+            }
+            ProcedureContractSpecification::SpecFunctions(ty) => {
+                // TODO: spans (see same comment in precondition encoding)
+                func_spec.push(self.encoder.encode_spec_call_post(
+                    pre_label,
+                    ty,
+                    encoded_args.clone(),
+                    encoded_return.clone(),
+                ).with_span(self.procedure.get_span())?);
+                postcondition_span = MultiSpan::from_spans(vec![]);
+            }
         }
-        let postcondition_span = MultiSpan::from_spans(func_spec_spans);
+
         let func_spec_pos = self.encoder.error_manager()
             .register_span(postcondition_span.clone());
 
@@ -5298,7 +5314,114 @@ impl<'p, 'v: 'p, 'tcx: 'v> ProcedureEncoder<'p, 'v, 'tcx> {
 
             &mir::AggregateKind::Closure(def_id, internal_substs) => {
                 debug_assert!(!self.encoder.is_spec_closure(def_id), "spec closure: {:?}", def_id);
+                stmts.push(vir::Stmt::comment(format!("Closure assign: {:?}", def_id)));
                 let closure_substs = internal_substs.as_closure();
+
+                // inhale specification entailment if available
+                if let Some(specs) = self.encoder.get_procedure_specs(def_id) {
+                    // TODO: contract.args instead of fn_sig.inputs()? generics???
+
+                    let fn_sig = closure_substs.sig().skip_binder(); // FIXME: skip_binder
+                    let fn_args = match fn_sig.inputs()[0].kind() {
+                        ty::TyKind::Tuple(substs) => substs
+                            .iter()
+                            .map(|ty| ty.expect_ty())
+                            .collect::<Vec<_>>(),
+                        _ => unreachable!("closure fn_sig arg should be a tuple"),
+                    };
+                    let cl_mir = self.encoder.env().local_mir(def_id.expect_local());
+
+                    // encode call arguments as forall variables
+                    let qargs_pre: Vec<vir::LocalVar> = fn_args
+                        .iter()
+                        .map(|arg_ty| self.encoder.encode_type(arg_ty))
+                        .collect::<Result<Vec<_>, _>>()
+                        .with_span(span)?
+                        .into_iter()
+                        .enumerate()
+                        .map(|(arg_num, arg_ty)| vir::LocalVar::new(
+                            format!("_{}_forall_precl", arg_num),
+                            arg_ty,
+                        ))
+                        .collect();
+                    // TODO: mutable arguments should be duplicated (pre/post state)
+                    let qargs_post: Vec<vir::LocalVar> = fn_args
+                        .iter()
+                        .map(|arg_ty| self.encoder.encode_type(arg_ty))
+                        .collect::<Result<Vec<_>, _>>()
+                        .with_span(span)?
+                        .into_iter()
+                        .enumerate()
+                        .map(|(arg_num, arg_ty)| vir::LocalVar::new(
+                            format!("_{}_forall_postcl", arg_num),
+                            arg_ty,
+                        ))
+                        .collect();
+                    let qret_post = vir::LocalVar::new(
+                        "ret_forall_cl",
+                        self.encoder.encode_type(fn_sig.output()).with_span(span)?,
+                    );
+
+                    let mut qargs_pre_expr = qargs_pre
+                        .iter()
+                        .cloned()
+                        .map(vir::Expr::local)
+                        .collect::<Vec<_>>();
+                    qargs_pre_expr.insert(0, dst.clone());
+                    let mut qargs_post_expr = qargs_post
+                        .iter()
+                        .cloned()
+                        .map(vir::Expr::local)
+                        .collect::<Vec<_>>();
+                    qargs_post_expr.insert(0, dst.clone());
+                    let qret_post_expr = vir::Expr::local(qret_post.clone());
+
+                    // encode sub-expressions and sub-assertions
+                    let encoded_pre = specs.pres.iter()
+                        .map(|x| self.encoder.encode_assertion(
+                            x,
+                            &cl_mir,
+                            None,
+                            &qargs_pre_expr,
+                            None,
+                            true,
+                            None,
+                            ErrorCtxt::GenericExpression,
+                        ))
+                        .collect::<Result<Vec<_>, _>>()?
+                        .into_iter()
+                        .conjoin();
+                    let encoded_post = specs.posts.iter()
+                        .map(|x| self.encoder.encode_assertion(
+                            x,
+                            &cl_mir,
+                            None,
+                            &qargs_post_expr,
+                            Some(&qret_post_expr),
+                            true,
+                            None,
+                            ErrorCtxt::GenericExpression,
+                        ))
+                        .collect::<Result<Vec<_>, _>>()?
+                        .into_iter()
+                        .conjoin();
+
+                    stmts.push(vir::Stmt::Inhale(
+                        self.encoder.encode_spec_entailment(
+                            false,
+                            dst,
+                            ty,
+                            qargs_pre,
+                            qargs_post,
+                            qret_post,
+                            encoded_pre,
+                            encoded_post,
+                        ).with_span(span)?,
+                        vir::FoldingBehaviour::Stmt,
+                    ));
+                }
+
+                // assign captured state
                 let fields;
                 if let Some(closure_specs) = self.encoder.get_closure_specs(def_id) {
                     fields = closure_substs

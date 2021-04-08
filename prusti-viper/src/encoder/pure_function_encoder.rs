@@ -4,7 +4,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-use crate::encoder::borrows::{compute_procedure_contract, ProcedureContract};
+use crate::encoder::borrows::ProcedureContract;
 use crate::encoder::builtin_encoder::BuiltinFunctionKind;
 use crate::encoder::errors::{PanicCause, RunIfErr};
 use crate::encoder::errors::{SpannedEncodingError, ErrorCtxt, WithSpan};

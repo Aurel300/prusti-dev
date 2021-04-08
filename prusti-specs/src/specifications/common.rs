@@ -247,6 +247,15 @@ pub struct SpecEntailmentVars<EID, AT> {
     pub result: AT,
 }
 
+impl<EID: Display, AT> SpecEntailmentVars<EID, AT> {
+    pub fn forall_ids(&self) -> (String, String) {
+        (
+            format!("{}_{}", self.spec_id, self.pre_id),
+            format!("{}_{}", self.spec_id, self.post_id),
+        )
+    }
+}
+
 #[derive(Debug, Clone)]
 /// An assertion kind used in the specification.
 pub enum AssertionKind<EID, ET, AT> {

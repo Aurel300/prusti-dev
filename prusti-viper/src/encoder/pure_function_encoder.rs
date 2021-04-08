@@ -5,7 +5,7 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 use std::mem;
-use crate::encoder::borrows::{compute_procedure_contract, ProcedureContract};
+use crate::encoder::borrows::ProcedureContract;
 use crate::encoder::builtin_encoder::BuiltinFunctionKind;
 use crate::encoder::errors::{SpannedEncodingError, EncodingError, ErrorCtxt, WithSpan, PanicCause};
 use crate::encoder::foldunfold;

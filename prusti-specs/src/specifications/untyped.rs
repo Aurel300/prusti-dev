@@ -315,6 +315,13 @@ impl AssignExpressionId<AssertionKind> for common::AssertionKind<(), syn::Expr, 
                          Assertion { kind: assertion.kind.assign_id(spec_id, id_generator) })
                      .collect(),
             },
+            CallDescriptor {closure, arg_binders, once, pre, post} => CallDescriptor {
+                closure: closure.assign_id(spec_id, id_generator),
+                arg_binders: arg_binders.assign_id(spec_id, id_generator),
+                once,
+                pre: Assertion { kind: pre.kind.assign_id(spec_id, id_generator) },
+                post: Assertion { kind: post.kind.assign_id(spec_id, id_generator) },
+            },
             x => unimplemented!("{:?}", x),
         }
     }
@@ -437,8 +444,7 @@ impl EncodeTypeCheck for Assertion {
                 tokens.extend(typeck_call_cl);
 
                 let span = Span::call_site();
-                let pre_id = format!("{}_{}", arg_binders.spec_id, arg_binders.pre_id);
-                let post_id = format!("{}_{}", arg_binders.spec_id, arg_binders.post_id);
+                let (pre_id, post_id) = arg_binders.forall_ids();
 
                 let vec_of_args = &arg_binders.args;
                 let vec_of_args_with_result: Vec<_> =
@@ -456,6 +462,53 @@ impl EncodeTypeCheck for Assertion {
                 for post in posts {
                     post.encode_type_check(&mut post_assertion);
                 }
+
+                let typeck_call = quote_spanned! { span =>
+                    #[prusti::spec_only]
+                    #[prusti::expr_id = #pre_id]
+                    |#(#vec_of_args),*| {
+                        #pre_assertion
+                    };
+                    #[prusti::spec_only]
+                    #[prusti::expr_id = #post_id]
+                    |#(#vec_of_args_with_result),*| {
+                        #post_assertion
+                    };
+                };
+                tokens.extend(typeck_call);
+            }
+            AssertionKind::CallDescriptor {closure, arg_binders, once, pre, post} => {
+                // TODO: remove duplication between this and SpecEntailment
+                // TODO: helper function to encode non-boolean expressions
+                // cl needs special handling because it's not a boolean expression
+                let span = closure.expr.span();
+                let expr = &closure.expr;
+                let cl_id = format!("{}_{}", closure.spec_id, closure.id);
+                let typeck_call_cl = quote_spanned! { span =>
+                    #[prusti::spec_only]
+                    #[prusti::expr_id = #cl_id]
+                    || {
+                        &#expr
+                    };
+                };
+                tokens.extend(typeck_call_cl);
+
+                let span = Span::call_site();
+                let (pre_id, post_id) = arg_binders.forall_ids();
+
+                let vec_of_args = &arg_binders.args;
+                let vec_of_args_with_result: Vec<_> =
+                    arg_binders.args
+                        .clone()
+                        .into_iter()
+                        .chain(std::iter::once(arg_binders.result.clone()))
+                        .collect();
+
+                let mut pre_assertion = TokenStream::new();
+                pre.encode_type_check(&mut pre_assertion);
+
+                let mut post_assertion = TokenStream::new();
+                post.encode_type_check(&mut post_assertion);
 
                 let typeck_call = quote_spanned! { span =>
                     #[prusti::spec_only]

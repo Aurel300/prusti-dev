@@ -20,6 +20,13 @@ pub enum AssertionKind {
         pres: Vec<Assertion>,
         posts: Vec<Assertion>,
     },
+    CallDescriptor {
+        closure: Expression,
+        arg_binders: SpecEntailmentVars,
+        once: bool,
+        pre: Assertion,
+        post: Assertion,
+    },
 }
 
 #[derive(Serialize, Deserialize)]
@@ -135,6 +142,13 @@ impl untyped::AssertionKind {
                 once: *once,
                 pres: pres.iter().map(|pre| pre.to_structure()).collect(),
                 posts: posts.iter().map(|post| post.to_structure()).collect(),
+            },
+            CallDescriptor {closure, arg_binders, once, pre, post} => AssertionKind::CallDescriptor {
+                closure: closure.to_structure(),
+                arg_binders: arg_binders.to_structure(),
+                once: *once,
+                pre: pre.to_structure(),
+                post: post.to_structure(),
             },
             x => {
                 unimplemented!("{:?}", x);

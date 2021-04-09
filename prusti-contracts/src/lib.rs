@@ -87,6 +87,10 @@ pub fn old<T>(arg: T) -> T {
     arg
 }
 
+pub fn outer<T>(arg: T) -> T {
+    arg
+}
+
 /// This function evaluates to [true] when the history invariant of a closure
 /// type is preserved between [_old] and [_new].
 ///

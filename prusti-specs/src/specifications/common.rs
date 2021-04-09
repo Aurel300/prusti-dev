@@ -282,6 +282,14 @@ pub enum AssertionKind<EID, ET, AT> {
         pres: Vec<Assertion<EID, ET, AT>>,
         posts: Vec<Assertion<EID, ET, AT>>,
     },
+    /// Call descriptor
+    CallDescriptor {
+        closure: Expression<EID, ET>,
+        arg_binders: SpecEntailmentVars<EID, AT>,
+        once: bool,
+        pre: Assertion<EID, ET, AT>,
+        post: Assertion<EID, ET, AT>,
+    },
 }
 
 #[derive(Debug, Clone)]

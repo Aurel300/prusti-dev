@@ -7,9 +7,7 @@ use prusti_contracts::*;
 ])]
 #[ensures(result == 16)]
 fn call_add<F: Fn (i32, i32) -> i32>(add: F) -> i32 {
-    // TODO: higher-order calls cannot be encoded yet
-    // add(7, 9)
-    16
+    add(7, 9)
 }
 
 #[requires(a >= 0)]

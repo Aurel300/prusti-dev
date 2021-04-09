@@ -18,14 +18,19 @@ fn main() {
     let x = f(41, 1);
     assert!(x == 42);
 
-    //let mut count = 0;
+    let mut count = 0;
+    let mut other_count = 0;
     let mut add = closure!(
-        //#[view(count: i32, 0)]
+        // TODO: the order or views matters for now
+        #[view(count: i32)]
+        #[view(other_count: i32)]
         #[requires(a >= 0 && b >= 0)]
         #[ensures(result == a + b)]
-        //#[ensures(*views.count == old(*views.count) + 1)]
+        #[ensures(*views.count == old(*views.count) + 1)]
+        #[ensures(*views.other_count == old(*views.other_count) + 2)]
         |a: i32, b: i32| -> i32 {
-            //count += 1;
+            count += 1;
+            other_count += 2;
             a + b
         }
     );

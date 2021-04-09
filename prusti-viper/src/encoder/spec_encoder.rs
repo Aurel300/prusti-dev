@@ -305,6 +305,11 @@ impl<'p, 'v: 'p, 'tcx: 'v> SpecEncoder<'p, 'v, 'tcx> {
                     encoded_post,
                 ).with_span(mir.span)? // TODO: spans...
             }
+            box typed::AssertionKind::CallDescriptor {
+                ..
+            } => {
+                unimplemented!("encode call desc");
+            }
         })
     }
 

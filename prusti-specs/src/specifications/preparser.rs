@@ -601,6 +601,7 @@ impl Parser {
                         pre_id: (),
                         post_id: (),
                         args: vars,
+                        // TODO: parse result type
                         result: Arg { name: syn::Ident::new("result", Span::call_site()),
                                       typ: syn::parse2(quote! { i32 }).unwrap() },
                     },
@@ -618,6 +619,76 @@ impl Parser {
         } else {
             return Err(self.error_expected_bracket());
         }
+    }
+    fn resolve_call_desc(&mut self, once: bool) -> syn::Result<()> {
+        // handles the case when there is no lhs of the |= operator
+        if !self.expected_operator {
+            return Err(self.error_expected_assertion());
+        }
+
+        // handles the case when there is no rhs of the |= operator
+        if self.input.is_empty() {
+            return Err(self.error_expected_assertion());
+        }
+
+        let lhs = self.extract_rust_expression()?;
+
+        // call descriptors are in the form:
+        //   expr ~> |arg: T, arg: T, ...| { ... } { ... }
+        //   expr ~>! |arg: T, arg: T, ...| { ... } { ... }
+
+        // parse args
+        if !self.input.check_and_consume_operator("|") {
+            return Err(self.error_no_call_desc_arguments());
+        }
+        let token_stream = self.input.create_stream_until("|");
+        let all_args: SpecEntArgs = syn::parse2(token_stream)?;
+        if !self.input.check_and_consume_operator("|") {
+            return Err(self.error_expected_or());
+        }
+        let vars = all_args.args.into_iter()
+             .map(|var| Arg { typ: var.typ, name: var.name })
+             .collect();
+
+        let pre = if let Some(group) = self.input.check_and_consume_block(Delimiter::Brace) {
+            let mut parser = Parser::from_token_stream(group.stream());
+            parser.extract_assertion()?
+        } else {
+            // TODO: proper error
+            return Err(self.error_expected_bracket());
+        };
+
+        let post = if let Some(group) = self.input.check_and_consume_block(Delimiter::Brace) {
+            let mut parser = Parser::from_token_stream(group.stream());
+            parser.extract_assertion()?
+        } else {
+            // TODO: proper error
+            return Err(self.error_expected_bracket());
+        };
+
+        let conjunct = AssertionWithoutId {
+            kind: Box::new(common::AssertionKind::CallDescriptor {
+                closure: lhs,
+                arg_binders: SpecEntailmentVars {
+                    spec_id: common::SpecificationId::dummy(),
+                    pre_id: (),
+                    post_id: (),
+                    args: vars,
+                    // TODO: parse result type
+                    result: Arg { name: syn::Ident::new("result", Span::call_site()),
+                                  typ: syn::parse2(quote! { i32 }).unwrap() },
+                },
+                once,
+                pre,
+                post,
+            })
+        };
+
+        self.conjuncts.push(conjunct);
+        self.previous_expression_resolved = true;
+        self.expected_only_operator = true;
+        self.expected_operator = true;
+        return Ok(());
     }
     fn resolve_parenthesized_block(&mut self, group: Group) -> syn::Result<()>{
         // handling a parenthesized block
@@ -695,6 +766,16 @@ impl Parser {
             }
             else if self.input.check_and_consume_operator("|=") {
                 if let Err(err) = self.resolve_spec_ent(false) {
+                    return Err(err);
+                }
+            }
+            else if self.input.check_and_consume_operator("~>!") {
+                if let Err(err) = self.resolve_call_desc(true) {
+                    return Err(err);
+                }
+            }
+            else if self.input.check_and_consume_operator("~>") {
+                if let Err(err) = self.resolve_call_desc(false) {
                     return Err(err);
                 }
             }
@@ -850,5 +931,8 @@ impl Parser {
     }
     fn error_no_quantifier_arguments(&self) -> syn::Error {
         syn::Error::new(self.input.span, "a quantifier must have at least one argument")
+    }
+    fn error_no_call_desc_arguments(&self) -> syn::Error {
+        syn::Error::new(self.input.span, "a call descriptor must have at least one argument")
     }
 }

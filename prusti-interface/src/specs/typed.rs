@@ -136,6 +136,17 @@ impl<'tcx> Spanned<'tcx> for Assertion<'tcx> {
                     .collect::<Vec<Span>>());
                 spans
             }
+            AssertionKind::CallDescriptor {
+                closure: ref closure,
+                pre: ref pre,
+                post: ref post,
+                ..
+            } => {
+                let mut spans = closure.get_spans(mir_body, tcx);
+                spans.extend(pre.get_spans(mir_body, tcx));
+                spans.extend(post.get_spans(mir_body, tcx));
+                spans
+            }
         }
     }
 }
@@ -277,6 +288,13 @@ impl<'tcx> StructuralToTyped<'tcx, AssertionKind<'tcx>> for json::AssertionKind 
                 posts: posts.into_iter()
                     .map(|post| post.to_typed(typed_expressions, tcx))
                     .collect(),
+            },
+            CallDescriptor {closure, arg_binders, once, pre, post} => AssertionKind::CallDescriptor {
+                closure: closure.to_typed(typed_expressions, tcx),
+                arg_binders: arg_binders.to_typed(typed_expressions, tcx),
+                once,
+                pre: pre.to_typed(typed_expressions, tcx),
+                post: post.to_typed(typed_expressions, tcx),
             },
         }
     }

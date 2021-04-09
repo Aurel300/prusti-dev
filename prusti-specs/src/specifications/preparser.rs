@@ -169,9 +169,9 @@ impl Parser {
         }
     }
     fn parse_conjunction(&mut self) -> syn::Result<AssertionWithoutId> {
-        let mut conjuncts = vec![self.parse_entailment()?];
+        let mut conjuncts = vec![self.parse_entailment_or_descriptor()?];
         while self.consume_operator("&&") {
-            conjuncts.push(self.parse_entailment()?);
+            conjuncts.push(self.parse_entailment_or_descriptor()?);
         }
         if conjuncts.len() == 1 {
             Ok(conjuncts.pop().unwrap())
@@ -181,7 +181,7 @@ impl Parser {
             })
         }
     }
-    fn parse_entailment(&mut self) -> syn::Result<AssertionWithoutId> {
+    fn parse_entailment_or_descriptor(&mut self) -> syn::Result<AssertionWithoutId> {
         if (self.peek_group(Delimiter::Parenthesis) && !self.is_part_of_rust_expr()) ||
            self.peek_keyword("forall") ||
            self.peek_keyword("exists") {
@@ -190,29 +190,46 @@ impl Parser {
             let lhs = self.parse_rust_until(",")?;
             if self.peek_operator("|=!") || self.peek_operator("|=") {
                 let once = self.peek_operator("|=!");
-                if once {
-                    self.consume_operator("|=!");
-                } else {
-                    self.consume_operator("|=");
-                }
-                let vars = if self.consume_operator("|") {
-                    let arg_tokens = self.create_stream_until("|");
-                    let all_args: SpecEntArgs = syn::parse2(arg_tokens)?;
-                    if !self.consume_operator("|") {
-                        return Err(self.error_expected("`|`"));
-                    }
-                    all_args.args.into_iter()
-                                 .map(|var| Arg { typ: var.typ, name: var.name })
-                                 .collect()
-                } else {
-                    vec![]
-                };
-
+                self.consume_operator(if once { "|=!" } else { "|=" });
+                let args = self.extract_closure_signature()?;
                 if let Some(stream) = self.consume_group(Delimiter::Bracket) {
-                    self.from_token_stream_last_span(stream).extract_entailment_rhs(lhs, once, vars)
+                    self.from_token_stream_last_span(stream).extract_entailment_rhs(lhs, once, call_desc, args)
                 } else {
                     Err(self.error_expected("`[`"))
                 }
+            } else if self.peek_operator("~>!") || self.peek_operator("~>") {
+                let once = self.peek_operator("~>!");
+                self.consume_operator(if once { "~>!" } else { "~>" });
+                let args = self.extract_closure_signature()?;
+
+                let pre = if let Some(stream) = self.consume_group(Delimiter::Brace) {
+                    self.from_token_stream_last_span(stream).extract_assertion()?
+                } else {
+                    return Err(self.error_expected("`{`"));
+                };
+                let post = if let Some(stream) = self.consume_group(Delimiter::Brace) {
+                    self.from_token_stream_last_span(stream).extract_assertion()?
+                } else {
+                    return Err(self.error_expected("`{`"));
+                };
+
+                Ok(AssertionWithoutId {
+                    kind: Box::new(common::AssertionKind::CallDescriptor {
+                        closure: lhs,
+                        arg_binders: SpecEntailmentVars {
+                            spec_id: common::SpecificationId::dummy(),
+                            pre_id: (),
+                            post_id: (),
+                            args,
+                            // TODO: parse result type
+                            result: Arg { name: syn::Ident::new("result", Span::call_site()),
+                                          typ: syn::parse2(quote! { i32 }).unwrap() },
+                        },
+                        once,
+                        pre,
+                        post,
+                    }),
+                })
             } else {
                 Ok(AssertionWithoutId {
                     kind: Box::new(common::AssertionKind::Expr(lhs))
@@ -220,8 +237,26 @@ impl Parser {
             }
         }
     }
-    fn extract_entailment_rhs(&mut self, lhs: ExpressionWithoutId, once: bool, vars: Vec<Arg>) ->
-            syn::Result<AssertionWithoutId> {
+    fn extract_closure_signature(&mut self) -> syn::Result<Vec<Arg>> {
+        if self.consume_operator("|") {
+            let arg_tokens = self.create_stream_until("|");
+            let all_args: SpecEntArgs = syn::parse2(arg_tokens)?;
+            if !self.consume_operator("|") {
+                return Err(self.error_expected("`|`"));
+            }
+            Ok(all_args.args.into_iter()
+                         .map(|var| Arg { typ: var.typ, name: var.name })
+                         .collect())
+        } else {
+            Err(self.error_expected("`|`"))
+        }
+    }
+    fn extract_entailment_rhs(
+        &mut self,
+        lhs: ExpressionWithoutId,
+        once: bool,
+        args: Vec<Arg>,
+    ) -> syn::Result<AssertionWithoutId> {
         let mut pres = vec![];
         let mut posts = vec![];
         let mut first = true;
@@ -255,14 +290,15 @@ impl Parser {
                     spec_id: common::SpecificationId::dummy(),
                     pre_id: (),
                     post_id: (),
-                    args: vars,
+                    args,
+                    // TODO: parse result type
                     result: Arg { name: syn::Ident::new("result", Span::call_site()),
                                   typ: syn::parse2(quote! { i32 }).unwrap() },
                 },
                 once,
                 pres,
                 posts,
-            })
+            }),
         })
     }
     /// parse a paren-delimited expression
@@ -357,6 +393,8 @@ impl Parser {
 
         while !self.peek_operator("|=!") &&
               !self.peek_operator("|=") &&
+              !self.peek_operator("~>!") &&
+              !self.peek_operator("~>") &&
               !self.peek_operator("&&") &&
               !self.peek_operator("==>") &&
               !self.peek_operator(terminator) &&
@@ -385,6 +423,8 @@ impl Parser {
         if let Some(token) = self.tokens.pop_front() {
             if self.peek_operator("|=!") ||
                self.peek_operator("|=") ||
+               self.peek_operator("~>!") ||
+               self.peek_operator("~>") ||
                self.peek_operator("&&") ||
                self.peek_operator("==>") ||
                self.tokens.front().is_none() {

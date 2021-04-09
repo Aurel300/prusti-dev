@@ -123,7 +123,7 @@ impl<'v, 'tcx: 'v> FallibleExprFolder for SnapshotPatcher<'v, 'tcx> {
                         self.snapshot_encoder.encode_type(self.encoder, ty)?,
                     );
                     patched_vars.push(patched_var.clone());
-                    let mut fixer = ForallFixer {
+                    let mut fixer = QuantifierFixer {
                         var,
                         patched_var,
                     };
@@ -157,6 +157,72 @@ impl<'v, 'tcx: 'v> FallibleExprFolder for SnapshotPatcher<'v, 'tcx> {
             pos,
         ))
     }
+
+    fn fallible_fold_exists(
+        &mut self,
+        vars: Vec<vir::LocalVar>,
+        triggers: Vec<vir::Trigger>,
+        expr: Box<vir::Expr>,
+        pos: vir::Position,
+    ) -> Result<vir::Expr, Self::Error> {
+        // TODO: reduce duplication
+        // TODO: check is_quantifiable
+        let mut expr = *expr;
+        let mut patched_vars = vec![];
+
+        // unpack triggers into Vec<Vec<Expr>>
+        let mut trigger_exprs = triggers
+            .into_iter()
+            .map(|trigger| trigger
+                .elements()
+                .iter()
+                .cloned()
+                .collect::<Vec<_>>())
+            .collect::<Vec<_>>();
+
+        for var in vars {
+            match var.typ {
+                vir::Type::TypedRef(ref name) => {
+                    let ty = self.encoder.decode_type_predicate(name)?;
+                    let patched_var = vir::LocalVar::new(
+                        &var.name,
+                        self.snapshot_encoder.encode_type(self.encoder, ty)?,
+                    );
+                    patched_vars.push(patched_var.clone());
+                    let mut fixer = QuantifierFixer {
+                        var,
+                        patched_var,
+                    };
+                    expr = fixer.fold(expr);
+                    trigger_exprs = trigger_exprs
+                        .into_iter()
+                        .map(|trigger| trigger
+                            .into_iter()
+                            .map(|expr| fixer.fold(expr))
+                            .collect())
+                        .collect();
+                }
+                _ => patched_vars.push(var.clone()),
+            }
+        }
+        let expr = FallibleExprFolder::fallible_fold(self, expr)?;
+
+        Ok(vir::Expr::Exists(
+            patched_vars,
+            trigger_exprs
+                .into_iter()
+                .map(|trigger| trigger
+                    .into_iter()
+                    .map(|expr| FallibleExprFolder::fallible_fold(self, expr))
+                    .collect::<Result<Vec<_>, _>>())
+                .collect::<Result<Vec<_>, _>>()?
+                .into_iter()
+                .map(vir::Trigger::new)
+                .collect(),
+            box expr,
+            pos,
+        ))
+    }
 }
 
 impl<'v, 'tcx: 'v> FallibleStmtFolder for SnapshotPatcher<'v, 'tcx> {
@@ -170,12 +236,12 @@ impl<'v, 'tcx: 'v> FallibleStmtFolder for SnapshotPatcher<'v, 'tcx> {
     }
 }
 
-struct ForallFixer {
+struct QuantifierFixer {
     var: vir::LocalVar,
     patched_var: vir::LocalVar,
 }
 
-impl ExprFolder for ForallFixer {
+impl ExprFolder for QuantifierFixer {
     fn fold_snap_app(
         &mut self,
         expr: Box<vir::Expr>,

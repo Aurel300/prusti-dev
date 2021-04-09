@@ -190,7 +190,11 @@ impl SpecFunctionEncoder {
                 encoded_pre_renamed,
                 vir::Expr::implies(
                     post_app,
-                    encoded_post,
+                    patch_old_views(
+                        encoded_post,
+                        qvars_post[0].clone(),
+                        qvars_post[qvars_post.len() - 1].clone(),
+                    ),
                 ),
             ),
         );
@@ -275,4 +279,31 @@ impl SpecFunctionEncoder {
             body: None,
         })
     }
+}
+
+fn patch_old_views(
+    expr: vir::Expr,
+    cl_pre: vir::LocalVar,
+    cl_post: vir::LocalVar,
+) -> vir::Expr {
+    struct OldPatcher {
+        cl_pre: vir::Expr,
+        cl_post: vir::Expr,
+    };
+    // old(**... cl_pre) -> cl_post
+    impl vir::ExprFolder for OldPatcher {
+        fn fold_labelled_old(
+            &mut self,
+            label: String,
+            body: Box<vir::Expr>,
+            pos: vir::Position
+        ) -> vir::Expr {
+            // TODO: check if label == ""?
+            (*body).replace_place(&self.cl_pre, &self.cl_post)
+        }
+    }
+    vir::ExprFolder::fold(&mut OldPatcher {
+        cl_pre: vir::Expr::local(cl_pre),
+        cl_post: vir::Expr::local(cl_post),
+    }, expr)
 }

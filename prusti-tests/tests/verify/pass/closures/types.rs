@@ -30,8 +30,6 @@ fn main() {
     );
     f3(10);
 
-    // TODO: these should work as well
-    /*
     let f4 = closure!(
         #[requires(i.foo >= 10)]
         #[ensures(result == 1)]
@@ -45,5 +43,4 @@ fn main() {
         |i: Bar| -> i32 { 1 }
     );
     f5(Bar::Bar(10));
-    */
 }

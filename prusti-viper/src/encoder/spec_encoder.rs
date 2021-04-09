@@ -538,46 +538,7 @@ impl<'p, 'v: 'p, 'tcx: 'v> SpecEncoder<'p, 'v, 'tcx> {
         // Replacements to use the provided `target_args` and `target_return`
         let mut replacements: Vec<(vir::Expr, vir::Expr)> = vec![];
 
-        // Replacement 1: replace closure views with closure field access.
-        // TODO: closure views disabled temporarily
-        /*
-        match mir.local_decls[1usize.into()].ty.kind() {
-            ty::TyKind::Ref(_, ref ty, _) => match ty.kind() {
-                ty::TyKind::Adt(adt_def, _) if (self.encoder.get_item_name(adt_def.did).ends_with("::_Prusti_ClosureViews")) => {
-                    replacements.push((
-                        vir::Expr::field(
-                            vir::Expr::try_deref(
-                                &vir::Expr::local(
-                                    mir_encoder.encode_local(1usize.into()).unwrap(),
-                                ),
-                            ).unwrap_or_else(|| vir::Expr::local(
-                                // FIXME: why do we get a non-ref closure when encoding spec funcs?
-                                mir_encoder.encode_local(1usize.into()).unwrap(),
-                            )),
-                            vir::Field::new(
-                                // TODO: for each field
-                                "f$count",
-                                vir::Type::TypedRef("i32".to_string()),
-                            ),
-                        ),
-                        vir::Expr::field(
-                            vir::Expr::try_deref(
-                                &self.target_args[0],
-                            ).unwrap_or_else(|| self.target_args[0].clone()), // FIXME: same as above
-                            vir::Field::new(
-                                "f$count",
-                                vir::Type::TypedRef("i32".to_string()),
-                            ),
-                        ),
-                    ));
-                }
-                _ => {}
-            }
-            _ => {}
-        }
-        */
-
-        // Replacement 2: replace the arguments with the `target_args`.
+        // Replacement 1: replace the arguments with the `target_args`.
         replacements.extend(
             mir.args_iter()
                 .zip(self.target_args.iter())
@@ -598,7 +559,7 @@ impl<'p, 'v: 'p, 'tcx: 'v> SpecEncoder<'p, 'v, 'tcx> {
                 })
         );
 
-        // Replacement 3: replace the fake return variable (last argument) of SPEC items with
+        // Replacement 2: replace the fake return variable (last argument) of SPEC items with
         // `target_return`
         if let Some(target_return) = self.target_return {
             let fake_return_local = mir.args_iter().last().unwrap();

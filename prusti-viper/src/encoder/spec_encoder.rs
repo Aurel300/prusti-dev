@@ -306,9 +306,47 @@ impl<'p, 'v: 'p, 'tcx: 'v> SpecEncoder<'p, 'v, 'tcx> {
                 ).with_span(mir.span)? // TODO: spans...
             }
             box typed::AssertionKind::CallDescriptor {
-                ..
+                closure: ref closure,
+                arg_binders: ref vars,
+                once,
+                pre: ref pre,
+                post: ref post,
             } => {
-                unimplemented!("encode call desc");
+                // TODO: reduce duplication with SpecEntailment
+
+                let mir = self.encoder.env().local_mir(closure.expr);
+                let result = &mir.local_decls[(0 as u32).into()];
+                let ty_repl = self.encoder.resolve_deref_typaram(result.ty);
+
+                let (forall_pre_id, forall_post_id) = vars.forall_ids();
+
+                // encode call arguments as forall variables
+                let qargs_pre = vars.args
+                    .iter()
+                    .map(|(arg, arg_ty)| self.encode_forall_arg(*arg, arg_ty, &forall_pre_id))
+                    .collect::<Vec<_>>();
+                // TODO: mutable arguments should be duplicated (pre/post state)
+                let qargs_post = vars.args
+                    .iter()
+                    .map(|(arg, arg_ty)| self.encode_forall_arg(*arg, arg_ty, &forall_post_id))
+                    .collect::<Vec<_>>();
+                let qret_post = self.encode_forall_arg(vars.result.0, vars.result.1, &forall_post_id);
+
+                // encode sub-expressions and sub-assertions
+                let cl_expr = self.encode_expression(closure)?;
+                let encoded_pre = self.encode_assertion(pre)?;
+                let encoded_post = self.encode_assertion(post)?;
+
+                self.encoder.encode_call_descriptor(
+                    once,
+                    &cl_expr,
+                    ty_repl,
+                    qargs_pre,
+                    qargs_post,
+                    qret_post,
+                    encoded_pre,
+                    encoded_post,
+                ).with_span(mir.span)? // TODO: spans...
             }
         })
     }

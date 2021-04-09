@@ -816,6 +816,32 @@ impl<'v, 'tcx> Encoder<'v, 'tcx> {
             )
     }
 
+    pub fn encode_call_descriptor(
+        &self,
+        once: bool,
+        cl_expr: &vir::Expr,
+        cl_type: ty::Ty<'tcx>,
+        qargs_pre: Vec<vir::LocalVar>,
+        qargs_post: Vec<vir::LocalVar>,
+        qret_post: vir::LocalVar,
+        encoded_pre: vir::Expr,
+        encoded_post: vir::Expr,
+    ) -> EncodingResult<vir::Expr> {
+        self.spec_function_encoder
+            .borrow_mut()
+            .encode_call_descriptor(
+                self,
+                once,
+                cl_expr,
+                cl_type,
+                qargs_pre,
+                qargs_post,
+                qret_post,
+                encoded_pre,
+                encoded_post,
+            )
+    }
+
     pub fn encode_spec_call_pre(
         &self,
         cl_type: ty::Ty<'tcx>,

@@ -8,6 +8,7 @@ use crate::encoder::Encoder;
 use crate::encoder::errors::EncodingResult;
 use crate::encoder::fn_signatures::{extract_fn_sig, ExtractedFnSig, ExtractedFnKind};
 use prusti_common::vir;
+use prusti_common::vir::ExprIterator;
 use rustc_middle::ty;
 use rustc_hir::def_id::DefId;
 use std::collections::HashMap;
@@ -200,6 +201,80 @@ impl SpecFunctionEncoder {
         );
 
         Ok(vir::Expr::and(pre_conjunct, post_conjunct))
+    }
+
+    pub fn encode_call_descriptor<'p, 'v: 'p, 'tcx: 'v>(
+        &mut self,
+        encoder: &'p Encoder<'v, 'tcx>,
+        once: bool,
+        cl_expr: &vir::Expr,
+        cl_type: ty::Ty<'tcx>,
+        qargs_pre: Vec<vir::LocalVar>,
+        qargs_post: Vec<vir::LocalVar>,
+        qret_post: vir::LocalVar,
+        encoded_pre: vir::Expr,
+        encoded_post: vir::Expr,
+    ) -> EncodingResult<vir::Expr> {
+        // TODO: history invariant
+
+        let spec_funcs = self.encode_spec_functions(encoder, cl_type)?;
+        let cl_type_vir = encoder.encode_type(cl_type)?;
+        let cl_expr = vir::Expr::labelled_old("", cl_expr.clone());
+
+        // We use qargs_post here on purpose, to ensure the quantified variables
+        // use the ID we use for the actuall existential. Note that there is
+        // still a difference between qvars_pre and qvars_post: the result and
+        // poststate values are only present in qvars_post.
+        let mut qvars_pre = qargs_post.clone();
+        if !once {
+            qvars_pre.insert(0, vir::LocalVar::new("_cl".to_string(), cl_type_vir.clone()));
+        }
+        let mut sf_pre_args = qvars_pre.iter()
+            .cloned()
+            .map(vir::Expr::local)
+            .collect::<Vec<_>>();
+        if once {
+            sf_pre_args.insert(0, cl_expr.clone());
+        }
+
+        let pre_app = spec_funcs.pre.apply(sf_pre_args);
+
+        let mut qvars_post: Vec<_> = qargs_post.clone();
+        if !once {
+            qvars_post.insert(0, vir::LocalVar::new("_cl_pre".to_string(), cl_type_vir.clone()));
+        }
+        qvars_post.push(qret_post);
+        qvars_post.push(vir::LocalVar::new("_cl_post".to_string(), cl_type_vir.clone()));
+        let mut sf_post_args = qvars_post.iter()
+            .cloned()
+            .map(vir::Expr::local)
+            .collect::<Vec<_>>();
+        if once {
+            sf_post_args.insert(0, cl_expr.clone());
+        }
+
+        let encoded_pre_renamed = (0 .. qargs_pre.len())
+            .fold(encoded_pre, |e, i| {
+                e.replace_place(&vir::Expr::local(qargs_pre[i].clone()),
+                                &vir::Expr::local(qargs_post[i].clone()))
+            });
+
+        let post_app = spec_funcs.post.apply(sf_post_args);
+
+        Ok(vir::Expr::exists(
+            qvars_post.clone(),
+            // TODO: are these triggers correct?
+            vec![], //vec![vir::Trigger::new(vec![pre_app.clone(), post_app.clone()])],
+            vec![
+                // history invariant (old(f), cl_pre)
+                // history invariant (cl_post, f)
+                pre_app,
+                encoded_pre_renamed,
+                post_app,
+                encoded_post,
+                // history invariant (cl_pre, cl_post)
+            ].into_iter().conjoin(),
+        ))
     }
 
     fn encode_spec_functions<'p, 'v: 'p, 'tcx: 'v>(

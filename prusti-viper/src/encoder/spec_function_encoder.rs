@@ -61,7 +61,12 @@ struct SpecFunctionSet {
     /// TODO: arguments in the poststate
     post: vir::Function,
 
-    // hist_inv: vir::Function,
+    /// History invariant. Arguments:
+    /// - closure prestate
+    /// - closure poststate
+    /// Only available if has_self, since there can be no history invariant for
+    /// a function with no state.
+    hist_inv: Option<vir::Function>,
 }
 
 pub struct SpecFunctionEncoder {
@@ -81,6 +86,9 @@ impl SpecFunctionEncoder {
         for sf_set in self.encoded.values() {
             funcs.push(sf_set.pre.clone());
             funcs.push(sf_set.post.clone());
+            if let Some(hist_inv) = &sf_set.hist_inv {
+                funcs.push(hist_inv.clone());
+            }
         }
         funcs
     }
@@ -127,6 +135,8 @@ impl SpecFunctionEncoder {
         encoded_pre: vir::Expr,
         encoded_post: vir::Expr,
     ) -> EncodingResult<vir::Expr> {
+        // TODO: history invariant
+
         let spec_funcs = self.encode_spec_functions(encoder, cl_type)?;
         let cl_type_vir = encoder.encode_type(cl_type)?;
 
@@ -290,10 +300,16 @@ impl SpecFunctionEncoder {
         }
 
         // otherwise, encode and store
+        let has_self = matches!(fn_sig.kind, ExtractedFnKind::Closure | ExtractedFnKind::Param);
         let sf_set = SpecFunctionSet {
-            has_self: matches!(fn_sig.kind, ExtractedFnKind::Closure | ExtractedFnKind::Param),
+            has_self,
             pre: self.encode_pre_spec_func(encoder, &fn_sig)?,
             post: self.encode_post_spec_func(encoder, &fn_sig)?,
+            hist_inv: if has_self {
+                Some(self.encode_history_invariant(encoder, &fn_sig)?)
+            } else {
+                None
+            },
         };
         self.encoded.insert(fn_sig.def_id, sf_set.clone());
 
@@ -344,6 +360,30 @@ impl SpecFunctionEncoder {
 
         Ok(vir::Function {
             name: encode_spec_func_name(encoder, fn_sig.def_id, SpecFunctionKind::Post),
+            formal_args: formal_args.iter()
+                .enumerate()
+                .map(|(num, ty)| vir::LocalVar::new(format!("_{}", num), ty.clone()))
+                .collect(),
+            return_type: vir::Type::Bool,
+            pres: vec![],
+            posts: vec![],
+            body: None,
+        })
+    }
+
+    fn encode_history_invariant<'p, 'v: 'p, 'tcx: 'v>(
+        &mut self,
+        encoder: &'p Encoder<'v, 'tcx>,
+        fn_sig: &ExtractedFnSig<'tcx>,
+    ) -> EncodingResult<vir::Function> {
+        let cl_type = encoder.encode_snapshot_type(fn_sig.ty)?;
+        let formal_args = vec![
+            cl_type.clone(), // cl_pre
+            cl_type, // cl_post
+        ];
+
+        Ok(vir::Function {
+            name: encode_spec_func_name(encoder, fn_sig.def_id, SpecFunctionKind::HistInv),
             formal_args: formal_args.iter()
                 .enumerate()
                 .map(|(num, ty)| vir::LocalVar::new(format!("_{}", num), ty.clone()))

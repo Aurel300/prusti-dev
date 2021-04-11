@@ -1135,6 +1135,41 @@ impl Expr {
         OldLabelReplacer { f }.fold(self)
     }
 
+    /// Performs a place replacement only within old(...) expressions with the
+    /// given label. The old(...) is dropped after the replacement.
+    pub fn replace_place_in_old(
+        self,
+        target: &Expr,
+        replacement: &Expr,
+        target_label: &str,
+    ) -> Self {
+        struct OldPatcher<'a> {
+            target: &'a Expr,
+            replacement: &'a Expr,
+            target_label: &'a str,
+        };
+        // old(**... cl_pre) -> cl_post
+        impl ExprFolder for OldPatcher<'_> {
+            fn fold_labelled_old(
+                &mut self,
+                label: String,
+                body: Box<Expr>,
+                pos: Position
+            ) -> Expr {
+                if label == self.target_label {
+                    (*body).replace_place(&self.target, &self.replacement)
+                } else {
+                    Expr::LabelledOld(label, body, pos)
+                }
+            }
+        }
+        OldPatcher {
+            target,
+            replacement,
+            target_label,
+        }.fold(self)
+    }
+
     pub fn replace_place(self, target: &Expr, replacement: &Expr) -> Self {
         debug_assert!(target.is_place());
         // TODO: disabled temporarily for _n.val_int -> _n snapshot patches
@@ -1778,30 +1813,12 @@ where
     T: Iterator<Item = Expr>,
 {
     fn conjoin(&mut self) -> Expr {
-        fn rfold<T>(s: &mut T) -> Expr
-        where
-            T: Iterator<Item = Expr>,
-        {
-            if let Some(conjunct) = s.next() {
-                Expr::and(conjunct, rfold(s))
-            } else {
-                true.into()
-            }
-        }
-        rfold(self)
+        self.reduce(|a, b| Expr::and(a, b))
+            .unwrap_or_else(|| true.into())
     }
 
     fn disjoin(&mut self) -> Expr {
-        fn rfold<T>(s: &mut T) -> Expr
-        where
-            T: Iterator<Item = Expr>,
-        {
-            if let Some(conjunct) = s.next() {
-                Expr::or(conjunct, rfold(s))
-            } else {
-                false.into()
-            }
-        }
-        rfold(self)
+        self.reduce(|a, b| Expr::or(a, b))
+            .unwrap_or_else(|| false.into())
     }
 }

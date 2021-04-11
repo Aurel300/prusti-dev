@@ -106,6 +106,8 @@ where
 pub enum ProcedureContractSpecification<'tcx> {
     /// Contract of a procedure or regular procedure call.
     ProcedureSpecification(typed::ProcedureSpecification<'tcx>),
+    /// Contract of a closure or closure call.
+    ClosureSpecification(typed::ClosureSpecification<'tcx>),
     /// Contract of an indirect call (Fn*::call).
     SpecFunctions(ty::Ty<'tcx>),
 }
@@ -114,6 +116,7 @@ impl<'tcx, L: fmt::Debug, P: fmt::Debug> ProcedureContractGeneric<'tcx, L, P> {
     pub fn functional_precondition(&self) -> &[typed::Assertion<'tcx>] {
         match &self.specification {
             ProcedureContractSpecification::ProcedureSpecification(specs) => &specs.pres,
+            ProcedureContractSpecification::ClosureSpecification(specs) => &specs.proc_spec.pres,
             _ => unreachable!(),
         }
     }
@@ -121,14 +124,23 @@ impl<'tcx, L: fmt::Debug, P: fmt::Debug> ProcedureContractGeneric<'tcx, L, P> {
     pub fn functional_postcondition(&self) -> &[typed::Assertion<'tcx>] {
         match &self.specification {
             ProcedureContractSpecification::ProcedureSpecification(specs) => &specs.posts,
+            ProcedureContractSpecification::ClosureSpecification(specs) => &specs.proc_spec.posts,
             _ => unreachable!(),
+        }
+    }
+
+    pub fn history_invariant(&self) -> &[typed::Assertion<'tcx>] {
+        match &self.specification {
+            ProcedureContractSpecification::ClosureSpecification(specs) => &specs.invariants,
+            _ => &[],
         }
     }
 
     pub fn pledges(&self) -> &[typed::Pledge<'tcx>] {
         match &self.specification {
             ProcedureContractSpecification::ProcedureSpecification(specs) => &specs.pledges,
-            _ => &[], // TODO: pledges in closures???
+            ProcedureContractSpecification::ClosureSpecification(specs) => &specs.proc_spec.pledges,
+            _ => &[],
         }
     }
 }
@@ -137,6 +149,7 @@ impl<'tcx> ProcedureContractSpecification<'tcx> {
     pub fn expect_mut_procedure(&mut self) -> &mut typed::ProcedureSpecification<'tcx> {
         match self {
             ProcedureContractSpecification::ProcedureSpecification(specs) => specs,
+            ProcedureContractSpecification::ClosureSpecification(specs) => &mut specs.proc_spec,
             _ => unreachable!(),
         }
     }
@@ -163,6 +176,8 @@ impl<L: fmt::Debug, P: fmt::Debug> fmt::Display for ProcedureContractGeneric<'_,
         for borrow_info in self.borrow_infos.iter() {
             writeln!(f, "{}", borrow_info)?;
         }
+        writeln!(f, "SPECS:")?;
+        writeln!(f, "  {:?}", self.specification);
         writeln!(f, "}}")
     }
 }
@@ -435,12 +450,13 @@ impl<'tcx> TypeVisitor<'tcx> for BorrowInfoCollectingVisitor<'tcx> {
 pub fn compute_procedure_contract<'p, 'a: 'p, 'tcx: 'a>(
     proc_def_id: ProcedureDefId,
     tcx: TyCtxt<'tcx>,
-    specification: typed::ProcedureSpecification<'tcx>,
+    specification: typed::SpecificationSet<'tcx>,
     maybe_tymap: Option<&HashMap<ty::Ty<'tcx>, ty::Ty<'tcx>>>,
 ) -> EncodingResult<ProcedureContractMirDef<'tcx>> {
     trace!("[compute_procedure_contract] enter name={:?}", proc_def_id);
     let args_ty:Vec<ty::Ty<'tcx>>;
     let return_ty;
+    let spec;
 
     if !tcx.is_closure(proc_def_id) {
         // FIXME: "skip_binder" is most likely wrong
@@ -448,6 +464,9 @@ pub fn compute_procedure_contract<'p, 'a: 'p, 'tcx: 'a>(
         let fn_sig = tcx.fn_sig(proc_def_id).skip_binder();
         args_ty = fn_sig.inputs().to_vec();
         return_ty = fn_sig.output().clone(); // FIXME: Shouldn't this also go through maybe_tymap?
+        spec = ProcedureContractSpecification::ProcedureSpecification(
+            specification.expect_procedure().clone(),
+        );
     } else {
         // TODO: relying on MIR here is not the best solution; we cannot use
         // tcx.fn_sig(...) because the compiler wants us to do
@@ -464,6 +483,9 @@ pub fn compute_procedure_contract<'p, 'a: 'p, 'tcx: 'a>(
             .map(|i| mir.local_decls[mir::Local::from_usize(i)].ty)
             .collect();
         return_ty = mir.local_decls[mir::Local::from_usize(0)].ty;
+        spec = ProcedureContractSpecification::ClosureSpecification(
+            specification.expect_closure().clone(),
+        );
     }
 
     compute_procedure_contract_internal(
@@ -471,7 +493,7 @@ pub fn compute_procedure_contract<'p, 'a: 'p, 'tcx: 'a>(
         args_ty,
         return_ty,
         tcx,
-        ProcedureContractSpecification::ProcedureSpecification(specification),
+        spec,
         maybe_tymap,
     )
 }
@@ -486,11 +508,15 @@ pub fn compute_procedure_contract_of_type<'p, 'v: 'p, 'tcx: 'v>(
     let fn_sig = extract_fn_sig(encoder, fn_type);
 
     let specification = match fn_sig.kind {
-        ExtractedFnKind::FnDef
-        | ExtractedFnKind::Closure => ProcedureContractSpecification::ProcedureSpecification(
+        ExtractedFnKind::FnDef => ProcedureContractSpecification::ProcedureSpecification(
             encoder
                 .get_procedure_specs(fn_sig.def_id)
                 .unwrap_or_else(|| typed::ProcedureSpecification::empty()),
+        ),
+        ExtractedFnKind::Closure => ProcedureContractSpecification::ClosureSpecification(
+            encoder
+                .get_closure_specs(fn_sig.def_id)
+                .unwrap_or_else(|| typed::ClosureSpecification::empty()),
         ),
         ExtractedFnKind::Param => ProcedureContractSpecification::SpecFunctions(fn_type),
     };

@@ -123,6 +123,21 @@ impl SpecFunctionEncoder {
         Ok(post_app)
     }
 
+    pub fn encode_spec_call_hist_inv<'p, 'v: 'p, 'tcx: 'v>(
+        &mut self,
+        encoder: &'p Encoder<'v, 'tcx>,
+        cl_type: ty::Ty<'tcx>,
+        cl_pre: vir::Expr,
+        cl_post: vir::Expr,
+    ) -> EncodingResult<vir::Expr> {
+        let spec_funcs = self.encode_spec_functions(encoder, cl_type)?;
+        if let Some(hist_inv) = spec_funcs.hist_inv {
+            Ok(hist_inv.apply(vec![cl_pre, cl_post]))
+        } else {
+            Ok(true.into())
+        }
+    }
+
     pub fn encode_spec_entailment<'p, 'v: 'p, 'tcx: 'v>(
         &mut self,
         encoder: &'p Encoder<'v, 'tcx>,
@@ -134,9 +149,8 @@ impl SpecFunctionEncoder {
         qret_post: vir::LocalVar,
         encoded_pre: vir::Expr,
         encoded_post: vir::Expr,
+        encoded_inv: Option<vir::Expr>,
     ) -> EncodingResult<vir::Expr> {
-        // TODO: history invariant
-
         let spec_funcs = self.encode_spec_functions(encoder, cl_type)?;
         let cl_type_vir = encoder.encode_type(cl_type)?;
 
@@ -148,7 +162,7 @@ impl SpecFunctionEncoder {
         // we do not need to quantify over the closure.
         let mut qvars_pre = qargs_pre.clone();
         if !once {
-            qvars_pre.insert(0, vir::LocalVar::new("_cl".to_string(), cl_type_vir.clone()));
+            qvars_pre.insert(0, vir::LocalVar::new("_cl", cl_type_vir.clone()));
         }
         let mut sf_pre_args = qvars_pre.iter()
             .cloned()
@@ -158,12 +172,26 @@ impl SpecFunctionEncoder {
             sf_pre_args.insert(0, cl_expr.clone());
         }
         let pre_app = spec_funcs.pre.apply(sf_pre_args);
+        let mut pre_conjunct_lhs = encoded_pre.clone();
+
+        // hist_inv(closure_cur, closure_pre) && ... => ...
+        if let Some(ref hist_inv) = spec_funcs.hist_inv {
+            pre_conjunct_lhs = vir::Expr::and(
+                hist_inv.apply(vec![cl_expr.clone(), if once {
+                    cl_expr.clone()
+                } else {
+                    vir::Expr::local(vir::LocalVar::new("_cl", cl_type_vir.clone()))
+                }]),
+                pre_conjunct_lhs,
+            );
+        }
+
         let pre_conjunct = vir::Expr::forall(
             qvars_pre.clone(),
             vec![vir::Trigger::new(vec![pre_app.clone()])],
             vir::Expr::implies(
-                encoded_pre.clone(),
-                pre_app,
+                pre_conjunct_lhs,
+                pre_app.clone(),
             ),
         );
 
@@ -177,10 +205,10 @@ impl SpecFunctionEncoder {
         // over the closure pre-state.
         let mut qvars_post: Vec<_> = qargs_post.clone();
         if !once {
-            qvars_post.insert(0, vir::LocalVar::new("_cl_pre".to_string(), cl_type_vir.clone()));
+            qvars_post.insert(0, vir::LocalVar::new("_cl_pre", cl_type_vir.clone()));
         }
         qvars_post.push(qret_post);
-        qvars_post.push(vir::LocalVar::new("_cl_post".to_string(), cl_type_vir.clone()));
+        qvars_post.push(vir::LocalVar::new("_cl_post", cl_type_vir.clone()));
         let mut sf_post_args = qvars_post.iter()
             .cloned()
             .map(vir::Expr::local)
@@ -194,23 +222,80 @@ impl SpecFunctionEncoder {
                                 &vir::Expr::local(qargs_post[i].clone()))
             });
         let post_app = spec_funcs.post.apply(sf_post_args);
+        let post_lhs = if let Some(ref hist_inv) = spec_funcs.hist_inv {
+            vir::Expr::and(
+                post_app.clone(),
+                hist_inv.apply(vec![if once {
+                    cl_expr.clone()
+                } else {
+                    vir::Expr::local(vir::LocalVar::new("_cl_pre", cl_type_vir.clone()))
+                }, vir::Expr::local(vir::LocalVar::new("_cl_post", cl_type_vir.clone()))]),
+            )
+        } else {
+            post_app.clone()
+        };
+
+        let encoded_post = encoded_post.replace_place_in_old(
+            &vir::Expr::local(qvars_post[qvars_post.len() - 1].clone()),
+            &vir::Expr::local(qvars_post[0].clone()),
+            "",
+        );
         let post_conjunct = vir::Expr::forall(
             qvars_post.clone(),
-            vec![vir::Trigger::new(vec![post_app.clone()])],
+            vec![vir::Trigger::new(vec![post_app])],
             vir::Expr::implies(
                 encoded_pre_renamed,
                 vir::Expr::implies(
-                    post_app,
-                    patch_old_views(
-                        encoded_post,
-                        qvars_post[0].clone(),
-                        qvars_post[qvars_post.len() - 1].clone(),
-                    ),
+                    post_lhs,
+                    encoded_post,
                 ),
             ),
         );
 
-        Ok(vir::Expr::and(pre_conjunct, post_conjunct))
+        let prepost_conjunct = vir::Expr::and(pre_conjunct, post_conjunct);
+
+        // Encode the history invariant conjunct of the form:
+        // forall closure_pre, closure_post ::
+        //   hist_inv(closure_cur, closure_pre) =>
+        //     (hist_inv(closure_pre, closure_post) =>
+        //       <history invariant>)
+        let inv_conjunct = if let Some(ref hist_inv) = spec_funcs.hist_inv {
+            if let Some(encoded_inv) = encoded_inv {
+                let cl_pre_var = vir::LocalVar::new("_cl_pre", cl_type_vir.clone());
+                let cl_post_var = vir::LocalVar::new("_cl_post", cl_type_vir.clone());
+                let cl_pre = vir::Expr::local(cl_pre_var.clone());
+                let cl_post = vir::Expr::local(cl_post_var.clone());
+                // TODO: one less implication if once?
+                vir::Expr::forall(
+                    vec![cl_pre_var.clone(), cl_post_var.clone()],
+                    // TODO: trigger correct?
+                    // does it make a difference to also have .apply(cl_expr, ...)?
+                    vec![vir::Trigger::new(vec![
+                        hist_inv.apply(vec![cl_pre.clone(), cl_post.clone()]),
+                    ])],
+                    vir::Expr::implies(
+                        hist_inv.apply(vec![cl_expr.clone(), cl_pre.clone()]),
+                        vir::Expr::implies(
+                            hist_inv.apply(vec![cl_pre.clone(), cl_post.clone()]),
+                            encoded_inv.replace_place_in_old(
+                                &vir::Expr::local(cl_pre_var),
+                                &vir::Expr::local(cl_post_var),
+                                "",
+                            ),
+                        ),
+                    ),
+                )
+            } else {
+                true.into()
+            }
+        } else {
+            true.into()
+        };
+
+        Ok(vir::Expr::and(
+            inv_conjunct,
+            prepost_conjunct,
+        ))
     }
 
     pub fn encode_call_descriptor<'p, 'v: 'p, 'tcx: 'v>(
@@ -232,12 +317,12 @@ impl SpecFunctionEncoder {
         let cl_expr = vir::Expr::labelled_old("", cl_expr.clone());
 
         // We use qargs_post here on purpose, to ensure the quantified variables
-        // use the ID we use for the actuall existential. Note that there is
+        // use the ID we use for the actual existential. Note that there is
         // still a difference between qvars_pre and qvars_post: the result and
         // poststate values are only present in qvars_post.
         let mut qvars_pre = qargs_post.clone();
         if !once {
-            qvars_pre.insert(0, vir::LocalVar::new("_cl".to_string(), cl_type_vir.clone()));
+            qvars_pre.insert(0, vir::LocalVar::new("_cl", cl_type_vir.clone()));
         }
         let mut sf_pre_args = qvars_pre.iter()
             .cloned()
@@ -251,10 +336,10 @@ impl SpecFunctionEncoder {
 
         let mut qvars_post: Vec<_> = qargs_post.clone();
         if !once {
-            qvars_post.insert(0, vir::LocalVar::new("_cl_pre".to_string(), cl_type_vir.clone()));
+            qvars_post.insert(0, vir::LocalVar::new("_cl_pre", cl_type_vir.clone()));
         }
         qvars_post.push(qret_post);
-        qvars_post.push(vir::LocalVar::new("_cl_post".to_string(), cl_type_vir.clone()));
+        qvars_post.push(vir::LocalVar::new("_cl_post", cl_type_vir.clone()));
         let mut sf_post_args = qvars_post.iter()
             .cloned()
             .map(vir::Expr::local)
@@ -394,31 +479,4 @@ impl SpecFunctionEncoder {
             body: None,
         })
     }
-}
-
-fn patch_old_views(
-    expr: vir::Expr,
-    cl_pre: vir::LocalVar,
-    cl_post: vir::LocalVar,
-) -> vir::Expr {
-    struct OldPatcher {
-        cl_pre: vir::Expr,
-        cl_post: vir::Expr,
-    };
-    // old(**... cl_pre) -> cl_post
-    impl vir::ExprFolder for OldPatcher {
-        fn fold_labelled_old(
-            &mut self,
-            label: String,
-            body: Box<vir::Expr>,
-            pos: vir::Position
-        ) -> vir::Expr {
-            // TODO: check if label == ""?
-            (*body).replace_place(&self.cl_pre, &self.cl_post)
-        }
-    }
-    vir::ExprFolder::fold(&mut OldPatcher {
-        cl_pre: vir::Expr::local(cl_pre),
-        cl_post: vir::Expr::local(cl_post),
-    }, expr)
 }

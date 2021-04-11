@@ -294,7 +294,7 @@ impl<'p, 'v: 'p, 'tcx: 'v> SpecEncoder<'p, 'v, 'tcx> {
                     .into_iter()
                     .conjoin();
 
-                self.encoder.encode_spec_entailment(
+                let spec_ent = self.encoder.encode_spec_entailment(
                     once,
                     &cl_expr,
                     ty_repl,
@@ -303,7 +303,16 @@ impl<'p, 'v: 'p, 'tcx: 'v> SpecEncoder<'p, 'v, 'tcx> {
                     qret_post,
                     encoded_pre,
                     encoded_post,
-                ).with_span(mir.span)? // TODO: spans...
+                    None, // TODO: invariants in spec ents?
+                ).with_span(mir.span)?; // TODO: spans...
+
+                let hist_inv = self.encoder.encode_spec_call_hist_inv(
+                    ty_repl,
+                    cl_expr.clone(),
+                    cl_expr.clone(),
+                ).with_span(mir.span)?; // TODO: spans...
+
+                vir::Expr::and(spec_ent, hist_inv)
             }
             box typed::AssertionKind::CallDescriptor {
                 closure: ref closure,

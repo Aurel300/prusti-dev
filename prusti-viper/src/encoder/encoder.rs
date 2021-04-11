@@ -395,9 +395,15 @@ impl<'v, 'tcx> Encoder<'v, 'tcx> {
     fn get_procedure_contract(&self, proc_def_id: ProcedureDefId)
         -> EncodingResult<ProcedureContractMirDef<'tcx>>
     {
-        let spec = self
-            .get_procedure_specs(proc_def_id)
-            .unwrap_or_else(|| typed::ProcedureSpecification::empty());
+        let spec = if self.env.tcx().is_closure(proc_def_id) {
+            typed::SpecificationSet::Closure(self
+                .get_closure_specs(proc_def_id)
+                .unwrap_or_else(|| typed::ClosureSpecification::empty()))
+        } else {
+            typed::SpecificationSet::Procedure(self
+                .get_procedure_specs(proc_def_id)
+                .unwrap_or_else(|| typed::ProcedureSpecification::empty()))
+        };
         compute_procedure_contract(proc_def_id, self.env().tcx(), spec, None)
     }
 
@@ -475,7 +481,7 @@ impl<'v, 'tcx> Encoder<'v, 'tcx> {
         let contract = compute_procedure_contract(
             proc_def_id,
             self.env().tcx(),
-            final_spec,
+            typed::SpecificationSet::Procedure(final_spec),
             Some(&tymap[0])
         )?;
         Ok(contract.to_call_site_contract(args, target))
@@ -800,6 +806,7 @@ impl<'v, 'tcx> Encoder<'v, 'tcx> {
         qret_post: vir::LocalVar,
         encoded_pre: vir::Expr,
         encoded_post: vir::Expr,
+        encoded_inv: Option<vir::Expr>,
     ) -> EncodingResult<vir::Expr> {
         self.spec_function_encoder
             .borrow_mut()
@@ -813,6 +820,7 @@ impl<'v, 'tcx> Encoder<'v, 'tcx> {
                 qret_post,
                 encoded_pre,
                 encoded_post,
+                encoded_inv,
             )
     }
 
@@ -871,6 +879,22 @@ impl<'v, 'tcx> Encoder<'v, 'tcx> {
                 cl_type,
                 args,
                 ret,
+            )
+    }
+
+    pub fn encode_spec_call_hist_inv(
+        &self,
+        cl_type: ty::Ty<'tcx>,
+        cl_pre: vir::Expr,
+        cl_post: vir::Expr,
+    ) -> EncodingResult<vir::Expr> {
+        self.spec_function_encoder
+            .borrow_mut()
+            .encode_spec_call_hist_inv(
+                self,
+                cl_type,
+                cl_pre,
+                cl_post,
             )
     }
 

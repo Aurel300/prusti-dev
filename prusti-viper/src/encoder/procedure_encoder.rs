@@ -5419,7 +5419,7 @@ impl<'p, 'v: 'p, 'tcx: 'v> ProcedureEncoder<'p, 'v, 'tcx> {
                     .collect::<Vec<_>>();
                 qargs_pre_expr.insert(
                     0,
-                    vir::Expr::local(vir::LocalVar::new("_cl_post", cl_type_vir.clone())),
+                    vir::Expr::local(vir::LocalVar::new("_cl", cl_type_vir.clone())),
                 );
                 let mut qargs_post_expr = qargs_post
                     .iter()

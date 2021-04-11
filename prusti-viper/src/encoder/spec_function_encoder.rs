@@ -217,10 +217,16 @@ impl SpecFunctionEncoder {
             sf_post_args.insert(0, cl_expr.clone());
         }
         let encoded_pre_renamed = (0 .. qargs_pre.len())
-            .fold(encoded_pre, |e, i| {
-                e.replace_place(&vir::Expr::local(qargs_pre[i].clone()),
-                                &vir::Expr::local(qargs_post[i].clone()))
-            });
+            // patch arguments
+            .fold(encoded_pre, |e, i| e.replace_place(
+                &vir::Expr::local(qargs_pre[i].clone()),
+                &vir::Expr::local(qargs_post[i].clone()),
+            ))
+            // patch closure self
+            .replace_place(
+                &vir::Expr::local(qvars_pre[0].clone()),
+                &vir::Expr::local(qvars_post[0].clone()),
+            );
         let post_app = spec_funcs.post.apply(sf_post_args);
         let post_lhs = if let Some(ref hist_inv) = spec_funcs.hist_inv {
             vir::Expr::and(

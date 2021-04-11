@@ -429,6 +429,13 @@ pub struct ClosureSpecification<EID, ET, AT> {
 }
 
 impl<EID, ET, AT> ClosureSpecification<EID, ET, AT> {
+    pub fn empty() -> Self {
+        Self {
+            proc_spec: ProcedureSpecification::empty(),
+            invariants: vec![],
+            views: vec![],
+        }
+    }
     pub fn is_empty(&self) -> bool {
         self.proc_spec.is_empty() && self.invariants.is_empty() && self.views.is_empty()
     }

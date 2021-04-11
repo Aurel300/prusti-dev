@@ -380,6 +380,10 @@ impl<'v, 'tcx> Encoder<'v, 'tcx> {
     /// Get the specifications attached to the `def_id` closure.
     pub fn get_closure_specs(&self, def_id: DefId) -> Option<typed::ClosureSpecification<'tcx>> {
         assert!(self.env.tcx().is_closure(def_id));
+        if self.is_spec_closure(def_id) {
+            // TODO: spec closures should not be encoded at all
+            return None;
+        }
         let spec = self.def_spec.get(&def_id)?;
         Some(spec.expect_closure().clone())
     }

@@ -156,7 +156,7 @@ pub trait PlaceEncoder<'v, 'tcx: 'v> {
                         (encoded_projection, field_ty, None)
                     }
 
-                    ty::TyKind::Closure(def_id, ref closure_subst) => {
+                    ty::TyKind::Closure(def_id, ref closure_subst)/* if !self.encoder().is_spec_closure(*def_id)*/ => {
                         debug!("def_id={:?} closure_subst {:?}", def_id, closure_subst);
 
                         let closure_subst = closure_subst.as_closure();

@@ -3025,7 +3025,7 @@ impl<'p, 'v: 'p, 'tcx: 'v> ProcedureEncoder<'p, 'v, 'tcx> {
                         &typed_assertion,
                         &self.mir,
                         None,
-                        &encoded_args, // TODO: the invariant should not need these
+                        &[encoded_args[0].clone()],
                         None,
                         false,
                         None,
@@ -3461,8 +3461,8 @@ impl<'p, 'v: 'p, 'tcx: 'v> ProcedureEncoder<'p, 'v, 'tcx> {
                         &typed_assertion,
                         &self.mir,
                         Some(pre_label),
-                        &encoded_args, // TODO: the invariant should not need these
-                        Some(&encoded_return),
+                        &[encoded_args[0].clone()],
+                        None,
                         false,
                         None,
                         ErrorCtxt::GenericExpression,

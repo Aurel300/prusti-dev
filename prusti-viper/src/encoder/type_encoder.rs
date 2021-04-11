@@ -384,7 +384,7 @@ impl<'p, 'v, 'r: 'v, 'tcx: 'v> TypeEncoder<'p, 'v, 'tcx> {
                 vec![vir::Predicate::new_abstract(typ)]
             }
 
-            ty::TyKind::Closure(def_id, internal_substs) => {
+            ty::TyKind::Closure(def_id, internal_substs)/* if !self.encoder.is_spec_closure(*def_id)*/ => {
                 let closure_substs = internal_substs.as_closure();
                 let fields;
                 if let Some(closure_specs) = self.encoder.get_closure_specs(*def_id) {

@@ -10,6 +10,9 @@ fn test1<F: FnMut (i32, i32) -> i32>(add: &mut F) -> i32 {
     add(7, 9)
 }
 
+#[requires(f |= || [])]
+fn test2<F: Fn() -> i32>(f: F) {}
+
 fn main() {
     let f = closure!(
         #[ensures(result == i + 1)]
@@ -28,6 +31,7 @@ fn main() {
         #[ensures(result == a + b)]
         #[ensures(*views.count == old(*views.count) + 1)]
         #[ensures(*views.other_count == old(*views.other_count) + 2)]
+        #[invariant(*views.count >= old(*views.count))]
         |a: i32, b: i32| -> i32 {
             count += 1;
             other_count += 2;
@@ -35,4 +39,6 @@ fn main() {
         }
     );
     test1(&mut add);
+
+    test2(closure!(|| -> i32 { 0 }));
 }

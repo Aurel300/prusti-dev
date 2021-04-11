@@ -3,7 +3,7 @@ use prusti_contracts::*;
 fn main() {
     let mut count: i32 = 0;
     let mut cl = closure!(
-        #[view(count: i32, 0)]
+        #[view(count: i32)]
         #[requires(i != *views.count)]
         #[ensures(*views.count == old(*views.count) + 1)]
         |i: i32| -> i32 {

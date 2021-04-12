@@ -5709,6 +5709,22 @@ impl<'p, 'v: 'p, 'tcx: 'v> ProcedureEncoder<'p, 'v, 'tcx> {
         Ok(stmts)
     }
 
+    fn encode_deep_copy_closure(
+        &mut self,
+        src: vir::Expr,
+        dst: vir::Expr,
+        location: mir::Location,
+    ) -> Vec<vir::Stmt> {
+        vec![
+            vir::Stmt::Inhale(
+                vir::Expr::eq_cmp(
+                    vir::Expr::snap_app(src),
+                    vir::Expr::snap_app(dst),
+                ),
+            ),
+        ]
+    }
+
     fn encode_copy2(
         &mut self,
         src: vir::Expr,
@@ -5733,10 +5749,7 @@ impl<'p, 'v: 'p, 'tcx: 'v> ProcedureEncoder<'p, 'v, 'tcx> {
             }
 
             ty::TyKind::Closure(_, _) => {
-                // TODO: (can a closure be copy-assigned?)
-                // encode a closure deep copy or at least a stub
-                debug!("warning: ty::TyKind::Closure not implemented yet");
-                Vec::new()
+                self.encode_deep_copy_closure(src, dst, location)
             }
 
             _ => {

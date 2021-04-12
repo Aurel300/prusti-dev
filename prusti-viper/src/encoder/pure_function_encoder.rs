@@ -15,6 +15,7 @@ use crate::encoder::mir_interpreter::{
     run_backward_interpretation, BackwardMirInterpreter, MultiExprBackwardInterpreterState,
 };
 use crate::encoder::snapshot;
+use crate::encoder::fn_signatures::{extract_fn_sig, ExtractedFnKind};
 use crate::encoder::Encoder;
 use prusti_common::{vir, vir_local};
 use prusti_common::vir::ExprIterator;
@@ -924,6 +925,69 @@ impl<'p, 'v: 'p, 'tcx: 'v> BackwardMirInterpreter<'tcx>
                                 assert_eq!(own_substs.len(), 1);
                                 assert_eq!(substs.len(), 1);
                                 unimplemented!("hist_inv");
+                            }
+
+                            "std::ops::Fn::call" => {
+                                let fn_type = substs[0].expect_ty();
+                                let fn_sig = extract_fn_sig(self.encoder, fn_type);
+                                // assert!(fn_sig.is_pure); // TODO: proper error
+
+                                let mut untupled_args = match substs[1].expect_ty().kind() {
+                                    ty::TyKind::Tuple(substs) => substs.iter()
+                                        .enumerate()
+                                        .map(|(field_num, field_ty)| {
+                                            let field_name = format!("tuple_{}", field_num);
+                                            let encoded_field = self.encoder
+                                                .encode_raw_ref_field(field_name, field_ty.expect_ty())
+                                                .with_span(span)?;
+                                            Ok(encoded_args[1].clone().field(encoded_field))
+                                        })
+                                        .collect::<Result<Vec<_>, _>>()?,
+                                    _ => unreachable!("call args should be a tuple"),
+                                };
+
+                                let pos = self
+                                    .encoder
+                                    .error_manager()
+                                    .register(span, ErrorCtxt::PureFunctionCall, self.parent_def_id);
+
+                                let encoded_rhs = match fn_sig.kind {
+                                    ExtractedFnKind::FnDef => {
+                                        let (function_name, return_type) = self.encoder
+                                            .encode_pure_function_use(fn_sig.def_id, self.parent_def_id)
+                                            .with_span(span)?;
+                                        // TODO: avoid duplication of match etc
+                                        let formal_args = match substs[1].expect_ty().kind() {
+                                            ty::TyKind::Tuple(substs) => substs.iter()
+                                                .enumerate()
+                                                .map(|(i, ty)| {
+                                                    self.encoder.encode_snapshot_type(ty.expect_ty())
+                                                        .map(|ty| vir::LocalVar::new(format!("_{}", i), ty))
+                                                })
+                                                .collect::<Result<Vec<_>, _>>()
+                                                .with_span(span)?,
+                                            _ => unreachable!("call args should be a tuple"),
+                                        };
+                                        assert_eq!(untupled_args.len(), formal_args.len());
+                                        vir::Expr::func_app(
+                                           function_name,
+                                           untupled_args,
+                                           formal_args,
+                                           return_type,
+                                           pos,
+                                       )
+                                    }
+                                    _ => {
+                                        untupled_args.insert(0, encoded_args[0].clone());
+                                        self.encoder
+                                            .encode_spec_call_stub(fn_type, untupled_args)
+                                            .with_span(span)?
+                                    }
+                                };
+
+                                let mut state = states[&target_block].clone();
+                                state.substitute_value(&lhs_value, encoded_rhs);
+                                state
                             }
 
                             // simple function call

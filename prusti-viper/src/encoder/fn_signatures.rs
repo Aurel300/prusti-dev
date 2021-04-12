@@ -26,6 +26,8 @@ pub struct ExtractedFnSig<'tcx> {
     pub output: ty::Ty<'tcx>,
     /// DefId of the function, closure, or GenericParamDef.
     pub def_id: DefId,
+    /// Whether the function is pure.
+    pub is_pure: bool,
 }
 
 /// Extracts the function signature from the given MIR type. The supported type
@@ -44,6 +46,7 @@ pub fn extract_fn_sig<'p, 'v: 'p, 'tcx: 'v>(
     let mut inputs;
     let output;
     let def_id;
+    let mut is_pure = false;
     //let span;
     let fn_type = encoder.resolve_deref_typaram(original_fn_type);
     // TODO: skip_binder is most likely wrong, figure out how to properly
@@ -55,6 +58,7 @@ pub fn extract_fn_sig<'p, 'v: 'p, 'tcx: 'v>(
             inputs = fn_sig.inputs().to_vec();
             output = fn_sig.output();
             def_id = *fn_def_id;
+            is_pure = encoder.is_pure(def_id);
             //span = tcx.def_span(*def_id);
         }
         ty::TyKind::Closure(cl_def_id, substs) => {
@@ -70,6 +74,7 @@ pub fn extract_fn_sig<'p, 'v: 'p, 'tcx: 'v>(
             });
             output = fn_sig.output();
             def_id = *cl_def_id;
+            is_pure = encoder.is_pure(def_id);
             //span = tcx.def_span(*def_id); // TODO: span of assertion?
         }
         ty::TyKind::Param(param) => {
@@ -82,14 +87,22 @@ pub fn extract_fn_sig<'p, 'v: 'p, 'tcx: 'v>(
             let predicates = tcx.predicates_of(owner);
             let mut inputs_opt = None;
             let mut output_opt = None;
+            is_pure = param.name.as_str().starts_with("Ghost");
             for (predicate, _) in predicates.predicates {
                 let kind = predicate.kind().skip_binder(); // FIXME: skip_binder
                 match kind {
                     ty::PredicateKind::Trait(pred, _) if pred.self_ty() == fn_type
-                        && (encoder.env().get_absolute_item_name(pred.def_id()) == "std::ops::Fn"
-                            || encoder.env().get_absolute_item_name(pred.def_id()) == "std::ops::FnMut"
-                            || encoder.env().get_absolute_item_name(pred.def_id()) == "std::ops::FnOnce")
+                        && matches!(
+                            encoder.env().get_absolute_item_name(pred.def_id()).as_str(),
+                            "std::ops::Fn" | "std::ops::FnMut" | "std::ops::FnOnce",
+                        )
                     => {
+                        if matches!(
+                            encoder.env().get_absolute_item_name(pred.def_id()).as_str(),
+                            "std::ops::FnMut" | "std::ops::FnOnce",
+                        ) {
+                            is_pure = false;
+                        }
                         // TODO: this makes an assumption about the order
                         // of substitutions of Fn/FnMut
                         assert!(inputs_opt.is_none());
@@ -124,5 +137,6 @@ pub fn extract_fn_sig<'p, 'v: 'p, 'tcx: 'v>(
         inputs,
         output,
         def_id,
+        is_pure,
     }
 }

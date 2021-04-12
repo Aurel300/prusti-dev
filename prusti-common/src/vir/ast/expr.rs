@@ -1472,7 +1472,7 @@ impl Expr {
                 let new_expr = if Some(label.clone()) == old_current_label {
                     new_base
                 } else {
-                    new_base.old(label).set_pos(pos)
+                    Expr::LabelledOld(label, box new_base, pos)
                 };
                 self.current_label = old_current_label;
                 new_expr

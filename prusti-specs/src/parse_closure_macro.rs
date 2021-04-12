@@ -5,6 +5,7 @@ pub(crate) struct ClosureWithSpec {
     pub posts: Vec<syn::Expr>,
     pub invariants: Vec<syn::Expr>,
     pub views: Vec<ClosureView>,
+    pub pure: bool,
     pub cl: syn::ExprClosure,
 }
 
@@ -21,6 +22,7 @@ impl Parse for ClosureWithSpec {
         let mut posts: Vec<syn::Result<syn::Expr>> = vec![];
         let mut invariants: Vec<syn::Result<syn::Expr>> = vec![];
         let mut views: Vec<syn::Result<ClosureView>> = vec![];
+        let mut pure = false;
 
         // collect and remove any specification attributes
         // leave other attributes intact
@@ -31,6 +33,7 @@ impl Parse for ClosureWithSpec {
                     "ensures" => posts.push(syn::parse2(attr.tokens.clone())),
                     "invariant" => invariants.push(syn::parse2(attr.tokens.clone())),
                     "view" => views.push(syn::parse2(attr.tokens.clone())),
+                    "pure" => pure = true,
                     _ => return false
                 }
                 true
@@ -44,6 +47,7 @@ impl Parse for ClosureWithSpec {
             posts: posts.into_iter().collect::<syn::Result<Vec<_>>>()?,
             invariants: invariants.into_iter().collect::<syn::Result<Vec<_>>>()?,
             views: views.into_iter().collect::<syn::Result<Vec<_>>>()?,
+            pure,
             cl,
         })
     }

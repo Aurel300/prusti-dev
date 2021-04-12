@@ -763,7 +763,16 @@ impl<'p, 'v: 'p, 'tcx: 'v> BackwardMirInterpreter<'tcx>
                             "std::ops::Fn::call" => {
                                 let fn_type = substs[0].expect_ty();
                                 let fn_sig = extract_fn_sig(self.encoder, fn_type);
-                                // assert!(fn_sig.is_pure); // TODO: proper error
+                                if !fn_sig.is_pure {
+                                    cleanup();
+                                    return Err(SpannedEncodingError::incorrect(
+                                        format!(
+                                            "use of impure function {:?} in pure code is not allowed",
+                                            self.encoder.get_item_name(fn_sig.def_id),
+                                        ),
+                                        span,
+                                    ));
+                                };
 
                                 let mut untupled_args = match substs[1].expect_ty().kind() {
                                     ty::TyKind::Tuple(substs) => substs.iter()
@@ -779,6 +788,9 @@ impl<'p, 'v: 'p, 'tcx: 'v> BackwardMirInterpreter<'tcx>
                                         .run_if_err(cleanup)?,
                                     _ => unreachable!("call args should be a tuple"),
                                 };
+                                if fn_sig.has_self() {
+                                    untupled_args.insert(0, encoded_args[0].clone());
+                                }
 
                                 let pos = self
                                     .encoder
@@ -786,13 +798,14 @@ impl<'p, 'v: 'p, 'tcx: 'v> BackwardMirInterpreter<'tcx>
                                     .register(span, ErrorCtxt::PureFunctionCall);
 
                                 let encoded_rhs = match fn_sig.kind {
-                                    ExtractedFnKind::FnDef => {
+                                    ExtractedFnKind::FnDef
+                                    | ExtractedFnKind::Closure => {
                                         let (function_name, return_type) = self.encoder
                                             .encode_pure_function_use(fn_sig.def_id)
                                             .with_span(span)
                                             .run_if_err(cleanup)?;
                                         // TODO: avoid duplication of match etc
-                                        let formal_args = match substs[1].expect_ty().kind() {
+                                        let mut formal_args = match substs[1].expect_ty().kind() {
                                             ty::TyKind::Tuple(substs) => substs.iter()
                                                 .enumerate()
                                                 .map(|(i, ty)| {
@@ -804,6 +817,14 @@ impl<'p, 'v: 'p, 'tcx: 'v> BackwardMirInterpreter<'tcx>
                                                 .run_if_err(cleanup)?,
                                             _ => unreachable!("call args should be a tuple"),
                                         };
+                                        if fn_sig.has_self() {
+                                            formal_args.insert(0, vir::LocalVar::new(
+                                                "_cl",
+                                                self.encoder.encode_snapshot_type(fn_type)
+                                                    .with_span(span)
+                                                    .run_if_err(cleanup)?,
+                                            ));
+                                        }
                                         assert_eq!(untupled_args.len(), formal_args.len());
                                         vir::Expr::func_app(
                                            function_name,
@@ -814,7 +835,6 @@ impl<'p, 'v: 'p, 'tcx: 'v> BackwardMirInterpreter<'tcx>
                                        )
                                     }
                                     _ => {
-                                        untupled_args.insert(0, encoded_args[0].clone());
                                         self.encoder
                                             .encode_spec_call_stub(fn_type, untupled_args)
                                             .with_span(span)

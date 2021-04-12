@@ -356,6 +356,12 @@ pub fn closure(tokens: TokenStream, drop_spec: bool) -> TokenStream {
         */
     }
 
+    if cl_spec.pure {
+        cl_annotations.extend(quote_spanned! { callsite_span =>
+            #[prusti::pure]
+        });
+    }
+
     let syn::ExprClosure {
         attrs, asyncness, movability, capture, or1_token,
         inputs, or2_token, output, body

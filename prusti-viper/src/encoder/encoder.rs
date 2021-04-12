@@ -902,6 +902,20 @@ impl<'v, 'tcx> Encoder<'v, 'tcx> {
             )
     }
 
+    pub fn encode_spec_call_stub(
+        &self,
+        cl_type: ty::Ty<'tcx>,
+        args: Vec<vir::Expr>,
+    ) -> EncodingResult<vir::Expr> {
+        self.spec_function_encoder
+            .borrow_mut()
+            .encode_spec_call_stub(
+                self,
+                cl_type,
+                args,
+            )
+    }
+
     pub fn encode_value_type(&self, ty: ty::Ty<'tcx>)
         -> EncodingResult<vir::Type>
     {

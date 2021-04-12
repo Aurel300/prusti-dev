@@ -17,6 +17,7 @@ pub enum SpecFunctionKind {
     Pre,
     Post,
     HistInv,
+    Stub,
 }
 
 impl std::fmt::Display for SpecFunctionKind {
@@ -25,6 +26,7 @@ impl std::fmt::Display for SpecFunctionKind {
             SpecFunctionKind::Pre => "pre",
             SpecFunctionKind::Post => "post",
             SpecFunctionKind::HistInv => "histinv",
+            SpecFunctionKind::Stub => "stub",
         })
     }
 }
@@ -72,11 +74,13 @@ struct SpecFunctionSet {
 pub struct SpecFunctionEncoder {
     encoded: HashMap<DefId, SpecFunctionSet>,
     // encoded_dyn: // TODO: sets for signatures (Box<dyn Fn...>)
+    stubs: HashMap<DefId, vir::Function>,
 }
 impl SpecFunctionEncoder {
     pub fn new() -> Self {
         Self {
             encoded: HashMap::new(),
+            stubs: HashMap::new(),
         }
     }
 
@@ -89,6 +93,9 @@ impl SpecFunctionEncoder {
             if let Some(hist_inv) = &sf_set.hist_inv {
                 funcs.push(hist_inv.clone());
             }
+        }
+        for stub in self.stubs.values() {
+            funcs.push(stub.clone())
         }
         funcs
     }
@@ -136,6 +143,39 @@ impl SpecFunctionEncoder {
         } else {
             Ok(true.into())
         }
+    }
+
+    pub fn encode_spec_call_stub<'p, 'v: 'p, 'tcx: 'v>(
+        &mut self,
+        encoder: &'p Encoder<'v, 'tcx>,
+        cl_type: ty::Ty<'tcx>,
+        args: Vec<vir::Expr>,
+    ) -> EncodingResult<vir::Expr> {
+        let fn_sig = extract_fn_sig(encoder, cl_type);
+
+        if let Some(stub) = self.stubs.get(&fn_sig.def_id) {
+            return Ok(stub.apply(args));
+        }
+
+        let mut formal_args = fn_sig.inputs
+            .iter()
+            .map(|arg_ty| encoder.encode_snapshot_type(arg_ty))
+            .collect::<Result<Vec<_>, _>>()?;
+        let return_type = encoder.encode_snapshot_type(fn_sig.output.clone())?;
+
+        let stub = vir::Function {
+            name: encode_spec_func_name(encoder, fn_sig.def_id, SpecFunctionKind::Stub),
+            formal_args: formal_args.iter()
+                .enumerate()
+                .map(|(num, ty)| vir::LocalVar::new(format!("_{}", num), ty.clone()))
+                .collect(),
+            return_type,
+            pres: vec![],
+            posts: vec![],
+            body: None,
+        };
+        self.stubs.insert(fn_sig.def_id, stub.clone());
+        Ok(stub.apply(args))
     }
 
     pub fn encode_spec_entailment<'p, 'v: 'p, 'tcx: 'v>(

@@ -30,6 +30,16 @@ pub struct ExtractedFnSig<'tcx> {
     pub is_pure: bool,
 }
 
+impl ExtractedFnSig<'_> {
+    pub fn has_self(&self) -> bool {
+        match self.kind {
+            ExtractedFnKind::Closure
+            | ExtractedFnKind::Param => true,
+            _ => false
+        }
+    }
+}
+
 /// Extracts the function signature from the given MIR type. The supported type
 /// kinds are:
 /// - FnDef - regular functions

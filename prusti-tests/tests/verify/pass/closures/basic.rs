@@ -16,6 +16,7 @@ fn test2<F: Fn() -> i32>(f: F) {}
 fn main() {
     let f = closure!(
         #[ensures(result == i + 1)]
+        #[pure]
         |i: i32, j: u32| -> i32 { i + 1 }
     );
     let x = f(41, 1);

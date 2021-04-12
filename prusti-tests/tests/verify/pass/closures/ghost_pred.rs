@@ -17,4 +17,10 @@ fn main() {
     let y = 10;
     // FIXME: inlining 5 and 10 does not work
     foo(x, y, is_five_and_ten);
+
+    foo(y, x, closure!(
+        #[pure]
+        #[requires(true)]
+        |a: i32, b: i32| -> bool { a == 10 && b == 5 }
+    ));
 }

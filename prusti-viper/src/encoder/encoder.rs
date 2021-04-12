@@ -991,9 +991,7 @@ impl<'v, 'tcx> Encoder<'v, 'tcx> {
         &self,
         ty: ty::Ty<'tcx>,
         args: Vec<vir::Expr>,
-    )
-        -> EncodingResult<vir::Expr>
-    {
+    ) -> EncodingResult<vir::Expr> {
         self.snapshot_encoder.borrow_mut().encode_constructor(self, ty, args)
     }
 

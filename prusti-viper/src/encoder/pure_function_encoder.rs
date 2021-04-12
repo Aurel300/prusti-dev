@@ -994,6 +994,7 @@ impl<'p, 'v: 'p, 'tcx: 'v> BackwardMirInterpreter<'tcx>
                                 } else {
                                     unreachable!()
                                 };
+                                let mut field_exprs = vec![];
                                 for (field_num, operand) in operands.iter().enumerate() {
                                     let field_name = format!("tuple_{}", field_num);
                                     let field_ty = field_types[field_num];
@@ -1007,6 +1008,7 @@ impl<'p, 'v: 'p, 'tcx: 'v> BackwardMirInterpreter<'tcx>
                                     match encoded_operand {
                                         Some(encoded_rhs) => {
                                             // Substitute a place
+                                            field_exprs.push(encoded_rhs.clone());
                                             state.substitute_place(&field_place, encoded_rhs);
                                         }
                                         None => {
@@ -1014,6 +1016,7 @@ impl<'p, 'v: 'p, 'tcx: 'v> BackwardMirInterpreter<'tcx>
                                             let rhs_expr =
                                                 self.mir_encoder.encode_operand_expr(operand)
                                                     .with_span(span)?;
+                                            field_exprs.push(rhs_expr.clone());
                                             state.substitute_value(
                                                 &self.encoder.encode_value_expr(field_place, field_ty.expect_ty()),
                                                 rhs_expr,
@@ -1021,6 +1024,11 @@ impl<'p, 'v: 'p, 'tcx: 'v> BackwardMirInterpreter<'tcx>
                                         }
                                     }
                                 }
+                                let snapshot = self.encoder.encode_snapshot_constructor(
+                                    ty,
+                                    field_exprs,
+                                ).with_span(span)?;
+                                state.substitute_place(&encoded_lhs, snapshot);
                             }
 
                             &mir::AggregateKind::Adt(adt_def, variant_index, subst, _, _) => {

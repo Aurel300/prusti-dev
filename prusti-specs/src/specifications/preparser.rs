@@ -222,7 +222,7 @@ impl Parser {
                             post_id: (),
                             args,
                             // TODO: parse result type
-                            result: Arg { name: syn::Ident::new("result", Span::call_site()),
+                            result: Arg { name: syn::Ident::new("cl_result", Span::call_site()),
                                           typ: syn::parse2(quote! { i32 }).unwrap() },
                         },
                         once,
@@ -292,7 +292,7 @@ impl Parser {
                     post_id: (),
                     args,
                     // TODO: parse result type
-                    result: Arg { name: syn::Ident::new("result", Span::call_site()),
+                    result: Arg { name: syn::Ident::new("cl_result", Span::call_site()),
                                   typ: syn::parse2(quote! { i32 }).unwrap() },
                 },
                 once,

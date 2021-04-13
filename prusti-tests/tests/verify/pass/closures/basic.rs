@@ -3,7 +3,7 @@ use prusti_contracts::*;
 #[requires(add |= |a: i32, b: i32| [
     requires(a >= 0),
     requires(b >= 0),
-    ensures(result == a + b)
+    ensures(cl_result == a + b)
 ])]
 #[ensures(result == 16)]
 fn test1<F: FnMut (i32, i32) -> i32>(add: &mut F) -> i32 {

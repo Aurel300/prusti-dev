@@ -374,6 +374,7 @@ impl SpecFunctionEncoder {
         &mut self,
         encoder: &'p Encoder<'v, 'tcx>,
         once: bool,
+        pre_label: &str,
         cl_expr: &vir::Expr,
         cl_type: ty::Ty<'tcx>,
         qargs_pre: Vec<vir::LocalVar>,
@@ -384,7 +385,7 @@ impl SpecFunctionEncoder {
     ) -> EncodingResult<vir::Expr> {
         let spec_funcs = self.encode_spec_functions(encoder, cl_type)?;
         let cl_type_vir = encoder.encode_type(cl_type)?;
-        let cl_expr = vir::Expr::labelled_old("", cl_expr.clone());
+        let cl_expr_old = vir::Expr::labelled_old(pre_label, cl_expr.clone());
 
         // We use qargs_post here on purpose, to ensure the quantified variables
         // use the ID we use for the actual existential. Note that there is
@@ -399,7 +400,7 @@ impl SpecFunctionEncoder {
             .map(vir::Expr::local)
             .collect::<Vec<_>>();
         if once {
-            sf_pre_args.insert(0, cl_expr.clone());
+            sf_pre_args.insert(0, cl_expr_old.clone());
         }
 
         let pre_app = spec_funcs.pre.apply(sf_pre_args);
@@ -415,7 +416,7 @@ impl SpecFunctionEncoder {
             .map(vir::Expr::local)
             .collect::<Vec<_>>();
         if once {
-            sf_post_args.insert(0, cl_expr.clone());
+            sf_post_args.insert(0, cl_expr_old.clone());
         }
 
         let encoded_pre_renamed = (0 .. qargs_pre.len())

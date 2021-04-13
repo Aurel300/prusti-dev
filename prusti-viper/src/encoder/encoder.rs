@@ -829,6 +829,7 @@ impl<'v, 'tcx> Encoder<'v, 'tcx> {
     pub fn encode_call_descriptor(
         &self,
         once: bool,
+        pre_label: &str,
         cl_expr: &vir::Expr,
         cl_type: ty::Ty<'tcx>,
         qargs_pre: Vec<vir::LocalVar>,
@@ -842,6 +843,7 @@ impl<'v, 'tcx> Encoder<'v, 'tcx> {
             .encode_call_descriptor(
                 self,
                 once,
+                pre_label,
                 cl_expr,
                 cl_type,
                 qargs_pre,

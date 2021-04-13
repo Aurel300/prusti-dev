@@ -348,6 +348,7 @@ impl<'p, 'v: 'p, 'tcx: 'v> SpecEncoder<'p, 'v, 'tcx> {
 
                 self.encoder.encode_call_descriptor(
                     once,
+                    self.pre_label, // TODO: does old[](...) get filled in properly?
                     &cl_expr,
                     ty_repl,
                     qargs_pre,

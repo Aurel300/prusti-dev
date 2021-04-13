@@ -262,6 +262,7 @@ impl<'v, 'tcx> Encoder<'v, 'tcx> {
         let mut domains = vec![];
         domains.extend(self.snapshot_encoder.borrow().get_viper_domains());
         domains.extend(self.mirror_encoder.borrow().get_viper_domains());
+        domains.push(self.spec_function_encoder.borrow().get_viper_domain());
 
         if config::enable_manual_axiomatization() {
             let builtin_encoder =  BuiltinEncoder::new();
@@ -304,7 +305,6 @@ impl<'v, 'tcx> Encoder<'v, 'tcx> {
         }
         functions.extend(self.snapshot_encoder.borrow().get_viper_functions());
         functions.extend(self.mirror_encoder.borrow().get_viper_functions());
-        functions.extend(self.spec_function_encoder.borrow().get_viper_functions());
         functions.sort_by_key(|f| f.get_identifier());
         functions
     }

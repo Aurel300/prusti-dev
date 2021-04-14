@@ -17,6 +17,7 @@ use crate::encoder::mir_encoder::{MirEncoder, FakeMirEncoder, PlaceEncoder};
 use crate::encoder::mir_encoder::PRECONDITION_LABEL;
 use crate::encoder::mir_successor::MirSuccessor;
 use crate::encoder::places::{Local, LocalVariableManager, Place};
+use crate::encoder::spec_function_encoder::encode_prepost_state;
 use crate::encoder::Encoder;
 use prusti_common::{
     config,
@@ -3026,7 +3027,7 @@ impl<'p, 'v: 'p, 'tcx: 'v> ProcedureEncoder<'p, 'v, 'tcx> {
         let precondition_spans;
         match contract.specification {
             ProcedureContractSpecification::ProcedureSpecification(_)
-            | ProcedureContractSpecification::ClosureSpecification(_) => {
+            | ProcedureContractSpecification::ClosureSpecification(_, _) => {
                 let func_precondition = contract.functional_precondition();
                 let invariants = contract.history_invariant();
                 for assertion in func_precondition {
@@ -3453,9 +3454,38 @@ impl<'p, 'v: 'p, 'tcx: 'v> ProcedureEncoder<'p, 'v, 'tcx> {
         // Encode functional specification
         let mut func_spec = vec![];
         let postcondition_span;
+        if !function_end {
+            match contract.specification {
+                ProcedureContractSpecification::ClosureSpecification(_, ty)
+                | ProcedureContractSpecification::SpecFunctions(ty) => {
+                    // TODO: spans
+                    let span = self.procedure.get_span();
+
+                    // for indirect calls we inhale the SF version of the post and
+                    // the history invariant
+                    func_spec.push(self.encoder.encode_spec_call_post(
+                        pre_label,
+                        ty,
+                        encoded_args.clone(),
+                        encoded_return.clone(),
+                    ).with_span(span)?);
+                    let (cl_pre, cl_post) = encode_prepost_state(
+                        self.encoder,
+                        pre_label,
+                        encoded_args[0].clone()
+                    ).with_span(span)?;
+                    func_spec.push(self.encoder.encode_spec_call_hist_inv(
+                        ty,
+                        cl_pre,
+                        cl_post,
+                    ).with_span(span)?);
+                }
+                _ => {}
+            }
+        }
         match contract.specification {
             ProcedureContractSpecification::ProcedureSpecification(_)
-            | ProcedureContractSpecification::ClosureSpecification(_) => {
+            | ProcedureContractSpecification::ClosureSpecification(_, _) => {
                 let func_postcondition = contract.functional_postcondition();
                 let invariants = contract.history_invariant();
                 let mut func_spec_spans = vec![];
@@ -5552,7 +5582,6 @@ impl<'p, 'v: 'p, 'tcx: 'v> ProcedureEncoder<'p, 'v, 'tcx> {
                     vir::FoldingBehaviour::Stmt,
                     vir::Position::default(),
                 ));
-                // TODO: we just asserted the concrete invariant, can we avoid this?
                 stmts_after_assign.push(vir::Stmt::Inhale(
                     self.encoder.encode_spec_call_hist_inv(
                         ty,

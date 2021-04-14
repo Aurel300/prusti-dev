@@ -41,6 +41,42 @@ fn encode_spec_func_name<'p, 'v: 'p, 'tcx: 'v>(
     encoder.encode_item_name_prefixed(def_id, &format!("sf_{}", kind))
 }
 
+fn encode_post_state<'p, 'v: 'p, 'tcx: 'v>(
+    encoder: &'p Encoder<'v, 'tcx>,
+    pre_label: &str,
+    cl_expr: vir::Expr,
+) -> EncodingResult<vir::Expr> {
+    // note we patch snapshots eagerly here to prevent the old label
+    // being applied incorrectly
+    // TODO: add some way to signal to the patcher how the snap_app
+    // should be applied?
+    let cl_post_outer = encoder.patch_snapshots(vir::Expr::snap_app(cl_expr))?;
+    Ok(match cl_post_outer {
+        vir::Expr::FuncApp(name, args, formal_args, return_type, pos) => vir::Expr::FuncApp(
+            name,
+            vec![vir::Expr::LabelledOld(
+                pre_label.to_string(),
+                box args[0].clone(),
+                vir::Position::default(),
+            )],
+            formal_args,
+            return_type,
+            pos,
+        ),
+        _ => cl_post_outer,
+    })
+}
+
+pub fn encode_prepost_state<'p, 'v: 'p, 'tcx: 'v>(
+    encoder: &'p Encoder<'v, 'tcx>,
+    pre_label: &str,
+    cl_expr: vir::Expr,
+) -> EncodingResult<(vir::Expr, vir::Expr)> {
+    let cl_pre = vir::Expr::snap_app(cl_expr.clone()).old(pre_label);
+    let cl_post = encode_post_state(encoder, pre_label, cl_expr)?;
+    Ok((cl_pre, cl_post))
+}
+
 #[derive(Clone)]
 struct SpecFunctionSet {
     /// Whether the first argument of the specification functions represents
@@ -135,7 +171,7 @@ impl SpecFunctionEncoder {
             .collect::<Vec<_>>();
         app_args.push(ret);
         if spec_funcs.has_self {
-            app_args.push(args[0].clone());
+            app_args.push(encode_post_state(encoder, pre_label, args[0].clone())?);
         }
         let post_app = spec_funcs.post.apply(app_args);
         Ok(post_app)
@@ -350,8 +386,8 @@ impl SpecFunctionEncoder {
                         vir::Expr::implies(
                             hist_inv.apply(vec![cl_pre.clone(), cl_post.clone()]),
                             encoded_inv.replace_place_in_old(
-                                &vir::Expr::local(cl_pre_var),
                                 &vir::Expr::local(cl_post_var),
+                                &vir::Expr::local(cl_pre_var),
                                 "",
                             ),
                         ),
@@ -619,15 +655,15 @@ impl SpecFunctionEncoder {
                         vec![vir::Trigger::new(vec![
                             func.apply(vec![s1_expr.clone(), s1_expr.clone()]),
                         ])],
-                        vir::Expr::exists(
-                            vec![s2_var],
-                            vec![vir::Trigger::new(vec![
+                        vir::Expr::implies(
+                            vir::Expr::exists(
+                                vec![s2_var],
+                                vec![vir::Trigger::new(vec![
+                                    func.apply(vec![s2_expr.clone(), s1_expr.clone()]),
+                                ])],
                                 func.apply(vec![s2_expr.clone(), s1_expr.clone()]),
-                            ])],
-                            vir::Expr::implies(
-                                func.apply(vec![s2_expr.clone(), s1_expr.clone()]),
-                                func.apply(vec![s1_expr.clone(), s1_expr.clone()]),
                             ),
+                            func.apply(vec![s1_expr.clone(), s1_expr.clone()]),
                         ),
                     ),
                     domain_name: SF_DOMAIN_NAME.to_string(),

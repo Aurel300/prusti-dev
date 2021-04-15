@@ -167,14 +167,13 @@ impl SpecFunctionEncoder {
     ) -> EncodingResult<vir::Expr> {
         let spec_funcs = self.encode_spec_functions(encoder, cl_type)?;
         let mut app_args = args.iter()
-            .map(|arg| vir::Expr::labelled_old(pre_label, arg.clone()))
+            .map(|arg| vir::Expr::labelled_old(pre_label, vir::Expr::snap_app(arg.clone())))
             .collect::<Vec<_>>();
         app_args.push(ret);
         if spec_funcs.has_self {
             app_args.push(encode_post_state(encoder, pre_label, args[0].clone())?);
         }
-        let post_app = spec_funcs.post.apply(app_args);
-        Ok(post_app)
+        Ok(spec_funcs.post.apply(app_args))
     }
 
     pub fn encode_spec_call_hist_inv<'p, 'v: 'p, 'tcx: 'v>(
@@ -376,8 +375,6 @@ impl SpecFunctionEncoder {
                 // TODO: one less implication if once?
                 vir::Expr::forall(
                     vec![cl_pre_var.clone(), cl_post_var.clone()],
-                    // TODO: trigger correct?
-                    // does it make a difference to also have .apply(cl_expr, ...)?
                     vec![vir::Trigger::new(vec![
                         hist_inv.apply(vec![cl_pre.clone(), cl_post.clone()]),
                     ])],
@@ -421,7 +418,8 @@ impl SpecFunctionEncoder {
     ) -> EncodingResult<vir::Expr> {
         let spec_funcs = self.encode_spec_functions(encoder, cl_type)?;
         let cl_type_vir = encoder.encode_type(cl_type)?;
-        let cl_expr_old = vir::Expr::labelled_old(pre_label, cl_expr.clone());
+        let cl_expr_old = vir::Expr::labelled_old(pre_label, vir::Expr::snap_app(cl_expr.clone()));
+        // let cl_expr_new = encode_post_state(encoder, pre_label, cl_expr.clone())?;
 
         // We use qargs_post here on purpose, to ensure the quantified variables
         // use the ID we use for the actual existential. Note that there is
@@ -464,13 +462,14 @@ impl SpecFunctionEncoder {
         let post_app = spec_funcs.post.apply(sf_post_args);
 
         let mut conjuncts = vec![
-            pre_app,
+            pre_app.clone(),
             encoded_pre_renamed,
-            post_app,
+            post_app.clone(),
             encoded_post,
         ];
 
         if let Some(ref hist_inv) = spec_funcs.hist_inv {
+            // TODO: fold/unfold issue if inv(post, new) is enabled
             if once {
                 // history invariant (old(f), cl_post)
                 // history invariant (cl_post, f)
@@ -481,7 +480,7 @@ impl SpecFunctionEncoder {
                     ]),
                     /*hist_inv.apply(vec![
                         vir::Expr::local(vir::LocalVar::new("_cl_post", cl_type_vir.clone())),
-                        cl_expr.clone(),
+                        cl_expr_new.clone(),
                     ]),*/
                 ]);
             } else {
@@ -499,7 +498,7 @@ impl SpecFunctionEncoder {
                     ]),
                     /*hist_inv.apply(vec![
                         vir::Expr::local(vir::LocalVar::new("_cl_post", cl_type_vir.clone())),
-                        cl_expr.clone(),
+                        cl_expr_new.clone(),
                     ]),*/
                 ]);
             }
@@ -507,7 +506,7 @@ impl SpecFunctionEncoder {
 
         Ok(vir::Expr::exists(
             qvars_post.clone(),
-            vec![], //vec![vir::Trigger::new(vec![pre_app.clone(), post_app.clone()])],
+            vec![vir::Trigger::new(vec![pre_app.clone(), post_app.clone()])],
             conjuncts.into_iter().conjoin(),
         ))
     }

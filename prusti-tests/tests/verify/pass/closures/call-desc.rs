@@ -17,7 +17,7 @@ fn map<F: FnOnce(i32) -> i32>(slf: BoxNum, f: F) -> BoxNum {
 }
 
 #[requires(f |=! || [ requires(true), ensures(cl_result == 42) ])]
-#[ensures(f ~>! || {} { cl_result == 42 })]
+#[ensures(f ~> || {} { cl_result == 42 })]
 #[ensures(result == 42)]
 fn call_no_args<F: FnOnce() -> i32>(f: F) -> i32 {
     f()

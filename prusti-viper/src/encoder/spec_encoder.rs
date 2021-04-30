@@ -168,7 +168,8 @@ impl<'p, 'v: 'p, 'tcx: 'v> SpecEncoder<'p, 'v, 'tcx> {
                 error: None,
                 span: self.encoder.env().tcx().def_span(term.expr).into(),
             };
-            vir::ExprWalker::walk(&mut checker, &encoded_expr);
+            // TODO: trigger check disabled temporarily
+            // vir::ExprWalker::walk(&mut checker, &encoded_expr);
             if let Some(error) = checker.error {
                 return Err(error);
             }

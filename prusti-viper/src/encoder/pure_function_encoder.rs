@@ -835,6 +835,7 @@ impl<'p, 'v: 'p, 'tcx: 'v> BackwardMirInterpreter<'tcx>
                                        )
                                     }
                                     _ => {
+                                        println!("call to stub with args: {:?}", untupled_args);
                                         self.encoder
                                             .encode_spec_call_stub(fn_type, untupled_args)
                                             .with_span(span)

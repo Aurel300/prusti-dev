@@ -209,6 +209,8 @@ impl SpecFunctionEncoder {
             .collect::<Result<Vec<_>, _>>()?;
         let return_type = encoder.encode_snapshot_type(fn_sig.output.clone())?;
 
+        println!("stub encoded with args: {:?}", formal_args);
+
         let stub = vir::DomainFunc {
             name: encode_spec_func_name(encoder, fn_sig.def_id, SpecFunctionKind::Stub),
             formal_args: formal_args.iter()
@@ -419,7 +421,7 @@ impl SpecFunctionEncoder {
         let spec_funcs = self.encode_spec_functions(encoder, cl_type)?;
         let cl_type_vir = encoder.encode_type(cl_type)?;
         let cl_expr_old = vir::Expr::labelled_old(pre_label, vir::Expr::snap_app(cl_expr.clone()));
-        // let cl_expr_new = encode_post_state(encoder, pre_label, cl_expr.clone())?;
+        let cl_expr_new = encode_post_state(encoder, pre_label, cl_expr.clone())?;
 
         // We use qargs_post here on purpose, to ensure the quantified variables
         // use the ID we use for the actual existential. Note that there is
@@ -427,7 +429,7 @@ impl SpecFunctionEncoder {
         // poststate values are only present in qvars_post.
         let mut qvars_pre = qargs_post.clone();
         if !once {
-            qvars_pre.insert(0, vir::LocalVar::new("_cl", cl_type_vir.clone()));
+            qvars_pre.insert(0, vir::LocalVar::new("_cl_pre", cl_type_vir.clone()));
         }
         let mut sf_pre_args = qvars_pre.iter()
             .cloned()
@@ -453,7 +455,7 @@ impl SpecFunctionEncoder {
             sf_post_args.insert(0, cl_expr_old.clone());
         }
 
-        let encoded_pre_renamed = (0 .. qargs_pre.len())
+        let mut encoded_pre_renamed = (0 .. qargs_pre.len())
             .fold(encoded_pre, |e, i| {
                 e.replace_place(&vir::Expr::local(qargs_pre[i].clone()),
                                 &vir::Expr::local(qargs_post[i].clone()))

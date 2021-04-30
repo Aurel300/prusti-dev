@@ -166,7 +166,8 @@ impl<'p, 'v: 'p, 'tcx: 'v> SpecEncoder<'p, 'v, 'tcx> {
                 error: None,
                 span: self.encoder.env().tcx().def_span(term.expr).into(),
             };
-            vir::ExprWalker::walk(&mut checker, &encoded_expr);
+            // TODO: trigger check disabled temporarily
+            // vir::ExprWalker::walk(&mut checker, &encoded_expr);
             if let Some(error) = checker.error {
                 return Err(error);
             }
@@ -250,6 +251,38 @@ impl<'p, 'v: 'p, 'tcx: 'v> SpecEncoder<'p, 'v, 'tcx> {
                     vir::Expr::implies(bounds.into_iter().conjoin(), encoded_body)
                 };
                 vir::Expr::forall(
+                    encoded_args,
+                    encoded_triggers,
+                    final_body,
+                )
+            },
+            box typed::AssertionKind::Exists(ref vars, ref trigger_set, ref body) => {
+                let mut encoded_args = Vec::new();
+                let mut bounds = Vec::new();
+                for (arg, ty) in &vars.vars {
+                    let encoded_arg = self.encode_forall_arg(*arg, ty, &format!("{}_{}", vars.spec_id, vars.id));
+                    if config::check_overflows() {
+                        bounds.extend(self.encoder.encode_type_bounds(&encoded_arg.clone().into(), ty));
+                    } else if config::encode_unsigned_num_constraint() {
+                        if let ty::TyKind::Uint(_) = ty.kind() {
+                            let expr = vir::Expr::le_cmp(0.into(), encoded_arg.clone().into());
+                            bounds.push(expr);
+                        }
+                    }
+                    encoded_args.push(encoded_arg);
+                }
+                let mut encoded_triggers = Vec::new();
+                for trigger in trigger_set.triggers() {
+                    let encoded_trigger = self.encode_trigger(trigger, &encoded_args)?;
+                    encoded_triggers.push(encoded_trigger);
+                }
+                let encoded_body = self.encode_assertion(body)?;
+                let final_body = if bounds.is_empty() {
+                    encoded_body
+                } else {
+                    vir::Expr::implies(bounds.into_iter().conjoin(), encoded_body)
+                };
+                vir::Expr::exists(
                     encoded_args,
                     encoded_triggers,
                     final_body,

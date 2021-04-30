@@ -18,8 +18,10 @@ use log::debug;
 ///
 /// Note: this seems to be required to workaround some Silicon incompleteness.
 pub fn fix_quantifiers(cfg: vir::CfgMethod) -> vir::CfgMethod {
-    let mut optimizer = Optimizer::new();
-    optimizer.replace_cfg(cfg)
+    // TODO: temporarily disabled
+    //let mut optimizer = Optimizer::new();
+    //optimizer.replace_cfg(cfg.clone());
+    cfg
 }
 
 struct Optimizer {
@@ -92,20 +94,20 @@ impl vir::ExprFolder for Optimizer {
         body: Box<vir::Expr>,
         pos: vir::Position,
     ) -> vir::Expr {
-        debug!("original body: {}", body);
+        println!("original body: {}", body);
         let folded_body = self.fold_boxed(body);
-        debug!("Folded body: {}", folded_body);
+        println!("Folded body: {}", folded_body);
         let old_counter = self.counter;
         let mut replacer = Replacer::new(&variables, &mut self.counter);
         let replaced_body = replacer.fold_boxed(folded_body);
-        debug!("replaced body: {}", replaced_body);
+        println!("replaced body: {}", replaced_body);
         let mut forall = vir::Expr::ForAll(variables, triggers, replaced_body, pos);
 
         if *replacer.counter > old_counter {
             for (expr, variable) in replacer.map {
                 forall = vir::Expr::LetExpr(variable, box expr, box forall, pos);
             }
-            debug!("replaced quantifier: {}", forall);
+            println!("replaced quantifier: {}", forall);
         }
 
         forall

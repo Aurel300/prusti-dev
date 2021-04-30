@@ -414,7 +414,7 @@ impl Parser {
             kind: box common::AssertionKind::Implies(lhs.unwrap(), rhs.unwrap())
         });
     }
-    fn resolve_forall(&mut self) -> syn::Result<()> {
+    fn resolve_quantifier(&mut self, exists: bool) -> syn::Result<()> {
         if self.expected_operator {
             return Err(self.error_expected_operator());
         }
@@ -496,15 +496,27 @@ impl Parser {
             }
 
             let conjunct = AssertionWithoutId {
-                kind: box common::AssertionKind::ForAll(
-                    ForAllVars {
-                        spec_id: common::SpecificationId::dummy(),
-                        id: (),
-                        vars
-                    },
-                    trigger_set,
-                    body,
-                )
+                kind: if exists {
+                    box common::AssertionKind::Exists(
+                        ForAllVars {
+                            spec_id: common::SpecificationId::dummy(),
+                            id: (),
+                            vars
+                        },
+                        trigger_set,
+                        body,
+                    )
+                } else {
+                    box common::AssertionKind::ForAll(
+                        ForAllVars {
+                            spec_id: common::SpecificationId::dummy(),
+                            id: (),
+                            vars
+                        },
+                        trigger_set,
+                        body,
+                    )
+                }
             };
 
             self.conjuncts.push(conjunct);
@@ -539,17 +551,29 @@ impl Parser {
         // by this point we have already consumed expr and |=
 
         // parse args
-        let vars = if !self.input.check_and_consume_operator("|") {
-            vec![]
+        let vars: Vec<Arg>;
+        let result_ty;
+
+        if !self.input.check_and_consume_operator("|") {
+            vars = vec![];
+            result_ty = None;
         } else {
             let token_stream = self.input.create_stream_until("|");
             let all_args: SpecEntArgs = syn::parse2(token_stream)?;
             if !self.input.check_and_consume_operator("|") {
                 return Err(self.error_expected_or());
             }
-            all_args.args.into_iter()
-                         .map(|var| Arg { typ: var.typ, name: var.name })
-                         .collect()
+            vars = all_args.args.into_iter()
+                 .map(|var| Arg { typ: var.typ, name: var.name })
+                 .collect();
+
+            // parse return type
+            if self.input.check_and_consume_operator("->") {
+                // TODO: this is disgusting
+                result_ty = Some(syn::parse2(quote! { bool }).unwrap());
+            } else {
+                result_ty = None;
+            }
         };
 
         if let Some(group) = self.input.check_and_consume_block(Delimiter::Bracket) {
@@ -601,9 +625,8 @@ impl Parser {
                         pre_id: (),
                         post_id: (),
                         args: vars,
-                        // TODO: parse result type
                         result: Arg { name: syn::Ident::new("cl_result", Span::call_site()),
-                                      typ: syn::parse2(quote! { i32 }).unwrap() },
+                                      typ: result_ty.unwrap_or_else(|| syn::parse2(quote! { i32 }).unwrap()) },
                     },
                     once,
                     pres,
@@ -650,6 +673,15 @@ impl Parser {
              .map(|var| Arg { typ: var.typ, name: var.name })
              .collect();
 
+         let result_ty;
+         // parse return type
+         if self.input.check_and_consume_operator("->") {
+             // TODO: this is disgusting
+             result_ty = Some(syn::parse2(quote! { bool }).unwrap());
+         } else {
+             result_ty = None;
+         }
+
         let pre = if let Some(group) = self.input.check_and_consume_block(Delimiter::Brace) {
             let mut parser = Parser::from_token_stream(group.stream());
             parser.extract_assertion()?
@@ -676,7 +708,7 @@ impl Parser {
                     args: vars,
                     // TODO: parse result type
                     result: Arg { name: syn::Ident::new("cl_result", Span::call_site()),
-                                  typ: syn::parse2(quote! { i32 }).unwrap() },
+                                  typ: result_ty.unwrap_or_else(|| syn::parse2(quote! { i32 }).unwrap()) },
                 },
                 once,
                 pre,
@@ -755,7 +787,12 @@ impl Parser {
                 return self.resolve_implies();
             }
             else if self.input.check_and_consume_keyword("forall") {
-                if let Err(err) = self.resolve_forall() {
+                if let Err(err) = self.resolve_quantifier(false) {
+                    return Err(err);
+                }
+            }
+            else if self.input.check_and_consume_keyword("exists") {
+                if let Err(err) = self.resolve_quantifier(true) {
                     return Err(err);
                 }
             }

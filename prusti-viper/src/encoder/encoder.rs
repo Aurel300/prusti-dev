@@ -60,6 +60,8 @@ use crate::encoder::mirror_function_encoder;
 use crate::encoder::mirror_function_encoder::MirrorEncoder;
 use crate::encoder::snapshot::{Snapshot, encoder::SnapshotEncoder};
 
+type SubstsKey = (ProcedureDefId, String); //(ProcedureDefId, Vec<vir::Type>);
+
 pub struct Encoder<'v, 'tcx: 'v> {
     env: &'v Environment<'tcx>,
     def_spec: &'v typed::DefSpecificationMap<'tcx>,
@@ -71,11 +73,11 @@ pub struct Encoder<'v, 'tcx: 'v> {
     builtin_methods: RefCell<HashMap<BuiltinMethodKind, vir::BodylessMethod>>,
     builtin_functions: RefCell<HashMap<BuiltinFunctionKind, vir::Function>>,
     procedures: RefCell<HashMap<ProcedureDefId, vir::CfgMethod>>,
-    pure_function_bodies: RefCell<HashMap<(ProcedureDefId, String), vir::Expr>>,
-    pure_functions: RefCell<HashMap<(ProcedureDefId, String), vir::Function>>,
+    pure_function_bodies: RefCell<HashMap<SubstsKey, vir::Expr>>,
+    pure_functions: RefCell<HashMap<SubstsKey, vir::Function>>,
     /// Stub pure functions. Generated when an impure Rust function is invoked
     /// where a pure function is required.
-    stub_pure_functions: RefCell<HashMap<(ProcedureDefId, String), vir::Function>>,
+    stub_pure_functions: RefCell<HashMap<SubstsKey, vir::Function>>,
     type_predicate_names: RefCell<HashMap<ty::TyKind<'tcx>, String>>,
     type_invariant_names: RefCell<HashMap<ty::TyKind<'tcx>, String>>,
     type_tag_names: RefCell<HashMap<ty::TyKind<'tcx>, String>>,
@@ -1231,9 +1233,7 @@ impl<'v, 'tcx> Encoder<'v, 'tcx> {
     pub fn encode_pure_expression(&self, proc_def_id: ProcedureDefId)
         -> SpannedEncodingResult<vir::Expr>
     {
-        let mir_span = self.env.tcx().def_span(proc_def_id);
-        let substs_key = self.type_substitution_key().with_span(mir_span)?;
-        let key = (proc_def_id, substs_key);
+        let key = self.type_substitution_key(proc_def_id)?;
         if !self.pure_function_bodies.borrow().contains_key(&key) {
             let procedure = self.env.get_procedure(proc_def_id);
             let pure_function_encoder = PureFunctionEncoder::new(
@@ -1278,12 +1278,17 @@ impl<'v, 'tcx> Encoder<'v, 'tcx> {
             tymap_stack.pop();
         };
 
-        // FIXME: Using substitutions as a key is most likely wrong.
-        let mir_span = self.env.tcx().def_span(proc_def_id);
-        let substs_key = self.type_substitution_key().with_span(mir_span).run_if_err(cleanup)?;
-        let key = (proc_def_id, substs_key);
+        let key = self.type_substitution_key(proc_def_id).run_if_err(cleanup)?;
+
+        // DEBUG!!!!!!!
+        if key.1 != "" {
+            println!("skipping {:?}", proc_def_id);
+            cleanup();
+            return Ok(());
+        }
 
         if !self.pure_functions.borrow().contains_key(&key) {
+            println!("encoding {} {:?}", self.get_item_name(proc_def_id), key);
             trace!("not encoded: {:?}", key);
             let wrapper_def_id = self.get_wrapper_def_id(proc_def_id);
             let procedure = self.env.get_procedure(wrapper_def_id);
@@ -1366,8 +1371,7 @@ impl<'v, 'tcx> Encoder<'v, 'tcx> {
         let body = self.env.external_mir(proc_def_id);
         let stub_encoder = StubFunctionEncoder::new(self, proc_def_id, &body);
 
-        let substs_key = self.type_substitution_key().with_span(body.span)?;
-        let key = (proc_def_id, substs_key);
+        let key = self.type_substitution_key(proc_def_id)?;
 
         // If we haven't seen this particular stub before, generate and insert it.
         if !self.pure_functions.borrow().contains_key(&key) {
@@ -1544,17 +1548,55 @@ impl<'v, 'tcx> Encoder<'v, 'tcx> {
             .collect::<Result<_, _>>()
     }
 
-    /// TODO: This is a hack, it generates a String that can be used for uniquely identifying this
-    /// type substitution.
-    pub fn type_substitution_key(&self) -> EncodingResult<String> {
+    /// TODO: This is a hack, it generates a tuple that can be used for uniquely
+    /// identifying the given pure function with the current type substitutions applied.
+    fn type_substitution_key(&self, proc_def_id: ProcedureDefId)
+        -> SpannedEncodingResult<SubstsKey>
+    {
+        // TODO: reduce duplication with borrows.rs
+
+        // TODO: this seems like a saner approach to substs keys, but results
+        // in more (too much?) code output and canonical encodings of functions
+        // with incorrect substitutions
+        /*
+        let mut mir_types = vec![];
+
+        if !self.env.tcx().is_closure(proc_def_id) {
+            // FIXME: "skip_binder" is most likely wrong
+            let fn_sig = self.env.tcx().fn_sig(proc_def_id).skip_binder();
+            mir_types.extend(fn_sig.inputs().to_vec());
+            mir_types.push(fn_sig.output().clone());
+        } else {
+            // TODO: relying on MIR here is not the best solution; we cannot use
+            // tcx.fn_sig(...) because the compiler wants us to do
+            // subst.as_closure().sig(), but we have no substs when getting here
+            // from the encoder's processing queue.
+            let (mir, _) = self.env.tcx()
+                .mir_promoted(ty::WithOptConstParam::unknown(proc_def_id.expect_local()));
+            let mir = mir.borrow();
+            mir_types.extend((0usize ..= mir.arg_count)
+                .map(|i| mir.local_decls[mir::Local::from_usize(i)].ty)
+                .collect::<Vec<_>>());
+        }
+
+        let mir_span = self.env.tcx().def_span(proc_def_id);
+        let encoded_types = mir_types.into_iter()
+            .map(|ty| self.encode_snapshot_type(ty))
+            .collect::<Result<Vec<_>, _>>()
+            .with_span(mir_span)?;
+        Ok((proc_def_id, encoded_types))
+        */
+
+        let mir_span = self.env.tcx().def_span(proc_def_id);
         let mut substs: Vec<_> = self
-            .type_substitution_strings()?
+            .type_substitution_strings()
+            .with_span(mir_span)?
             .into_iter()
             .filter(|(typ, subst)| typ != subst)
             .map(|(typ, subst)| format!("({},{})", typ, subst))
             .collect();
         substs.sort();
-        Ok(substs.join(";"))
+        Ok((proc_def_id, substs.join(";")))
     }
 
     pub fn intern_viper_identifier<S: AsRef<str>>(&self, full_name: S, short_name: S) -> String {

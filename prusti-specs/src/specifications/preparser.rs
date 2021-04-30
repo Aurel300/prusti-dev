@@ -182,23 +182,25 @@ impl Parser {
         }
     }
     fn parse_entailment_or_descriptor(&mut self) -> syn::Result<AssertionWithoutId> {
-        if (self.peek_group(Delimiter::Parenthesis) && !self.is_part_of_rust_expr()) || self.peek_keyword("forall") {
+        if (self.peek_group(Delimiter::Parenthesis) && !self.is_part_of_rust_expr()) ||
+           self.peek_keyword("forall") ||
+           self.peek_keyword("exists") {
             self.parse_primary()
         } else {
             let lhs = self.parse_rust_until(",")?;
             if self.peek_operator("|=!") || self.peek_operator("|=") {
                 let once = self.peek_operator("|=!");
                 self.consume_operator(if once { "|=!" } else { "|=" });
-                let args = self.extract_closure_signature()?;
+                let signature = self.extract_closure_signature()?;
                 if let Some(stream) = self.consume_group(Delimiter::Bracket) {
-                    self.from_token_stream_last_span(stream).extract_entailment_rhs(lhs, once, call_desc, args)
+                    self.from_token_stream_last_span(stream).extract_entailment_rhs(lhs, once, signature)
                 } else {
                     Err(self.error_expected("`[`"))
                 }
             } else if self.peek_operator("~>!") || self.peek_operator("~>") {
                 let once = self.peek_operator("~>!");
                 self.consume_operator(if once { "~>!" } else { "~>" });
-                let args = self.extract_closure_signature()?;
+                let signature = self.extract_closure_signature()?;
 
                 let pre = if let Some(stream) = self.consume_group(Delimiter::Brace) {
                     self.from_token_stream_last_span(stream).extract_assertion()?
@@ -218,10 +220,9 @@ impl Parser {
                             spec_id: common::SpecificationId::dummy(),
                             pre_id: (),
                             post_id: (),
-                            args,
-                            // TODO: parse result type
+                            args: signature.0,
                             result: Arg { name: syn::Ident::new("cl_result", Span::call_site()),
-                                          typ: syn::parse2(quote! { i32 }).unwrap() },
+                                          typ: signature.1.unwrap_or_else(|| syn::parse2(quote! { i32 }).unwrap()) },
                         },
                         once,
                         pre,
@@ -235,25 +236,35 @@ impl Parser {
             }
         }
     }
-    fn extract_closure_signature(&mut self) -> syn::Result<Vec<Arg>> {
-        if self.consume_operator("|") {
+    fn extract_closure_signature(&mut self) -> syn::Result<(Vec<Arg>, Option<syn::Type>)> {
+        let args = if self.consume_operator("|") {
             let arg_tokens = self.create_stream_until("|");
             let all_args: SpecEntArgs = syn::parse2(arg_tokens)?;
             if !self.consume_operator("|") {
                 return Err(self.error_expected("`|`"));
             }
-            Ok(all_args.args.into_iter()
+            all_args.args.into_iter()
                          .map(|var| Arg { typ: var.typ, name: var.name })
-                         .collect())
+                         .collect()
         } else {
-            Err(self.error_expected("`|`"))
-        }
+            return Err(self.error_expected("`|`"));
+        };
+
+        // parse return type
+        let result = if self.consume_operator("->") {
+            // TODO: this is disgusting
+            Some(syn::parse2(quote! { bool }).unwrap())
+        } else {
+            None
+        };
+
+        Ok((args, result))
     }
     fn extract_entailment_rhs(
         &mut self,
         lhs: ExpressionWithoutId,
         once: bool,
-        args: Vec<Arg>,
+        signature: (Vec<Arg>, Option<syn::Type>),
     ) -> syn::Result<AssertionWithoutId> {
         let mut pres = vec![];
         let mut posts = vec![];
@@ -288,10 +299,9 @@ impl Parser {
                     spec_id: common::SpecificationId::dummy(),
                     pre_id: (),
                     post_id: (),
-                    args,
-                    // TODO: parse result type
+                    args: signature.0,
                     result: Arg { name: syn::Ident::new("cl_result", Span::call_site()),
-                                  typ: syn::parse2(quote! { i32 }).unwrap() },
+                                  typ: signature.1.unwrap_or_else(|| syn::parse2(quote! { i32 }).unwrap()) },
                 },
                 once,
                 pres,
@@ -305,15 +315,21 @@ impl Parser {
             self.from_token_stream_last_span(stream).extract_assertion()
         } else if self.consume_keyword("forall") {
             if let Some(stream) = self.consume_group(Delimiter::Parenthesis) {
-                self.from_token_stream_last_span(stream).extract_forall_rhs()
+                self.from_token_stream_last_span(stream).extract_quantifier_rhs(false)
+            } else {
+                Err(self.error_expected("`(`"))
+            }
+        } else if self.consume_keyword("exists") {
+            if let Some(stream) = self.consume_group(Delimiter::Parenthesis) {
+                self.from_token_stream_last_span(stream).extract_quantifier_rhs(true)
             } else {
                 Err(self.error_expected("`(`"))
             }
         } else {
-            Err(self.error_expected("`(` or `forall`"))
+            Err(self.error_expected("`(`, `forall` or `exists`"))
         }
     }
-    fn extract_forall_rhs(&mut self) -> syn::Result<AssertionWithoutId> {
+    fn extract_quantifier_rhs(&mut self, exists: bool) -> syn::Result<AssertionWithoutId> {
         if !self.consume_operator("|") {
             return Err(self.error_expected("`|`"));
         }
@@ -367,15 +383,27 @@ impl Parser {
         }
 
         Ok(AssertionWithoutId {
-            kind: box common::AssertionKind::ForAll(
-                ForAllVars {
-                    spec_id: common::SpecificationId::dummy(),
-                    id: (),
-                    vars,
-                },
-                trigger_set,
-                body,
-            )
+            kind: if exists {
+                box common::AssertionKind::ForAll(
+                    ForAllVars {
+                        spec_id: common::SpecificationId::dummy(),
+                        id: (),
+                        vars,
+                    },
+                    trigger_set,
+                    body,
+                )
+            } else {
+                box common::AssertionKind::Exists(
+                    ForAllVars {
+                        spec_id: common::SpecificationId::dummy(),
+                        id: (),
+                        vars,
+                    },
+                    trigger_set,
+                    body,
+                )
+            }
         })
     }
 

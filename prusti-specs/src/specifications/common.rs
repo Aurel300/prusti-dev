@@ -273,6 +273,11 @@ pub enum AssertionKind<EID, ET, AT> {
         TriggerSet<EID, ET>,
         Assertion<EID, ET, AT>,
     ),
+    Exists(
+        ForAllVars<EID, AT>,
+        TriggerSet<EID, ET>,
+        Assertion<EID, ET, AT>,
+    ),
     /// Specification entailment
     SpecEntailment {
         closure: Expression<EID, ET>,

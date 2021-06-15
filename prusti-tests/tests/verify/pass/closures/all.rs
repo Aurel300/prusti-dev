@@ -1,14 +1,14 @@
 use prusti_contracts::*;
 
-#[requires(f |= |arg: i32| -> [ requires(vec_contains(v, arg)) ])]
+#[requires(f |= |arg: i32| -> bool [ requires(vec_contains(v, arg)) ])]
 #[ensures(
     result ==>
         forall(|idx: usize| 0 <= idx && idx < vec_len(v)
-            ==> f ~>! |arg: i32| -> { arg == vec_lookup(v, idx) } { cl_result })
+            ==> f ~>! |arg: i32| -> bool { arg == vec_lookup(v, idx) } { cl_result })
 )]
 #[ensures(
     !result ==> exists(|idx: usize| 0 <= idx && idx < vec_len(v)
-        && f ~>! |arg: i32| -> { arg == vec_lookup(v, idx) } { !cl_result })
+        && f ~>! |arg: i32| -> bool { arg == vec_lookup(v, idx) } { !cl_result })
 )]
 fn all_vec<T: Fn(i32) -> bool>(v: &Vec<i32>, f: T) -> bool {
     let mut i = 0;
@@ -16,7 +16,7 @@ fn all_vec<T: Fn(i32) -> bool>(v: &Vec<i32>, f: T) -> bool {
         body_invariant!(i >= 0 && i < vec_len(v));
         body_invariant!(
             forall(|idx: usize| 0 <= idx && idx < i
-                ==> f ~>! |arg: i32| -> { arg == vec_lookup(v, idx) } { cl_result })
+                ==> f ~>! |arg: i32| -> bool { arg == vec_lookup(v, idx) } { cl_result })
         );
         let el = vec_lookup(v, i);
         if !f(el) {

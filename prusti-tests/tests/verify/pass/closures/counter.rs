@@ -2,7 +2,7 @@ use prusti_contracts::*;
 
 // From Kassios and Müller (2010) (simplified)
 
-#[requires(f |= || [ requires(true), ensures(cl_result >= 2) ])]
+#[requires(f |= || -> i32 [ requires(true), ensures(cl_result >= 2) ])]
 fn foo<T: FnMut() -> i32>(f: T) {}
 
 fn main() {

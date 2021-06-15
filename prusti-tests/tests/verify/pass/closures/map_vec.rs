@@ -1,10 +1,10 @@
 use prusti_contracts::*;
 
-#[requires(f |= |arg: i32| [ requires(vec_contains(v, arg)) ])]
+#[requires(f |= |arg: i32| -> i32 [ requires(vec_contains(v, arg)) ])]
 #[ensures(vec_len(&result) == old(vec_len(v)))]
 #[ensures(
     forall(|idx: usize| 0 <= idx && idx < vec_len(v)
-        ==> f ~> |arg: i32|
+        ==> f ~> |arg: i32| -> i32
             { arg == vec_lookup(v, idx) }
             { cl_result == vec_lookup(&result, idx) })
 )]

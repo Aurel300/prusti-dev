@@ -569,8 +569,18 @@ impl Parser {
 
             // parse return type
             if self.input.check_and_consume_operator("->") {
-                // TODO: this is disgusting
-                result_ty = Some(syn::parse2(quote! { bool }).unwrap());
+                let mut t = vec![];
+                while !self.input.is_empty() {
+                    if let Some(TokenTree::Group(group)) = self.input.tokens.front() {
+                        if group.delimiter() == Delimiter::Bracket {
+                            break;
+                        }
+                    }
+                    t.push(self.input.pop().unwrap());
+                }
+                let mut result_stream = TokenStream::new();
+                result_stream.extend(t.into_iter());
+                result_ty = Some(syn::parse2(result_stream).unwrap());
             } else {
                 result_ty = None;
             }
@@ -626,7 +636,7 @@ impl Parser {
                         post_id: (),
                         args: vars,
                         result: Arg { name: syn::Ident::new("cl_result", Span::call_site()),
-                                      typ: result_ty.unwrap_or_else(|| syn::parse2(quote! { i32 }).unwrap()) },
+                                      typ: result_ty.unwrap_or_else(|| syn::parse2(quote! { () }).unwrap()) },
                     },
                     once,
                     pres,
@@ -676,8 +686,19 @@ impl Parser {
          let result_ty;
          // parse return type
          if self.input.check_and_consume_operator("->") {
-             // TODO: this is disgusting
-             result_ty = Some(syn::parse2(quote! { bool }).unwrap());
+             // TODO: deduplicate with spec entailment
+             let mut t = vec![];
+             while !self.input.is_empty() {
+                 if let Some(TokenTree::Group(group)) = self.input.tokens.front() {
+                     if group.delimiter() == Delimiter::Brace {
+                         break;
+                     }
+                 }
+                 t.push(self.input.pop().unwrap());
+             }
+             let mut result_stream = TokenStream::new();
+             result_stream.extend(t.into_iter());
+             result_ty = Some(syn::parse2(result_stream).unwrap());
          } else {
              result_ty = None;
          }
@@ -708,7 +729,7 @@ impl Parser {
                     args: vars,
                     // TODO: parse result type
                     result: Arg { name: syn::Ident::new("cl_result", Span::call_site()),
-                                  typ: result_ty.unwrap_or_else(|| syn::parse2(quote! { i32 }).unwrap()) },
+                                  typ: result_ty.unwrap_or_else(|| syn::parse2(quote! { () }).unwrap()) },
                 },
                 once,
                 pre,

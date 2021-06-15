@@ -2,11 +2,11 @@ use prusti_contracts::*;
 
 // From Kassios and Müller (2010)
 
-#[requires(h |=! || [ requires(true) ])]
-#[requires(g |=! || [ requires(true) ])]
+#[requires(h |=! || -> i32 [ requires(true) ])]
+#[requires(g |=! || -> i32 [ requires(true) ])]
 #[ensures(*y == 4)]
-#[ensures(h ~> || {} {})]
-#[ensures(g ~> || {} {})]
+#[ensures(h ~> || -> i32 {} {})]
+#[ensures(g ~> || -> i32 {} {})]
 fn f<T: FnMut() -> i32, U: FnMut() -> i32>(
     y: &mut i32,
     h: &mut T,

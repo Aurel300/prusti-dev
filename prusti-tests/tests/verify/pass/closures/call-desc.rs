@@ -4,9 +4,9 @@ struct BoxNum {
     x: i32,
 }
 
-#[requires(f |= |x: i32| [ requires(true) ])]
+#[requires(f |= |x: i32| -> i32 [ requires(true) ])]
 #[ensures(
-    f ~>! |x: i32|
+    f ~>! |x: i32| -> i32
         { x == slf.x }
         { cl_result == result.x }
 )]
@@ -16,15 +16,15 @@ fn map<F: FnOnce(i32) -> i32>(slf: BoxNum, f: F) -> BoxNum {
     }
 }
 
-#[requires(f |=! || [ requires(true), ensures(cl_result == 42) ])]
-#[ensures(f ~> || {} { cl_result == 42 })]
+#[requires(f |=! || -> i32 [ requires(true), ensures(cl_result == 42) ])]
+#[ensures(f ~> || -> i32 {} { cl_result == 42 })]
 #[ensures(result == 42)]
 fn call_no_args<F: FnOnce() -> i32>(f: F) -> i32 {
     f()
 }
 
-#[requires(f |= |x: i32| [ requires(x == 5), ensures(cl_result == 0) ])]
-#[ensures(f ~>! |x: i32| { x == 5 } { cl_result == 0 })]
+#[requires(f |= |x: i32| -> i32 [ requires(x == 5), ensures(cl_result == 0) ])]
+#[ensures(f ~>! |x: i32| -> i32 { x == 5 } { cl_result == 0 })]
 fn call_const<F: FnMut(i32) -> i32>(mut f: F) {
     f(5);
 }

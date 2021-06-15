@@ -1,11 +1,11 @@
 use prusti_contracts::*;
 
-#[requires(f |= || [ requires(true), ensures(true) ])]
+#[requires(f |= || -> i32 [ requires(true), ensures(true) ])]
 #[requires(n >= 0)]
 #[ensures(vec_len(&result) == n)]
 #[ensures(
     forall(|idx: usize| 0 <= idx && idx < vec_len(&result)
-        ==> (f ~> || {} { cl_result == vec_lookup(&result, idx) }))
+        ==> (f ~> || -> i32 {} { cl_result == vec_lookup(&result, idx) }))
 )]
 fn repeat_with_n<F: FnMut() -> i32>(mut f: F, n: usize) -> Vec<i32> {
     let mut ret = vec_new();

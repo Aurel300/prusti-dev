@@ -1,6 +1,6 @@
 use prusti_contracts::*;
 
-#[requires(add |= |a: i32, b: i32| [
+#[requires(add |= |a: i32, b: i32| -> i32 [
     requires(a >= 0),
     requires(b >= 0),
     ensures(cl_result == a + b)
@@ -10,7 +10,7 @@ fn test1<F: FnMut (i32, i32) -> i32>(add: &mut F) -> i32 {
     add(7, 9)
 }
 
-#[requires(f |= || [])]
+#[requires(f |= || -> i32 [])]
 fn test2<F: Fn() -> i32>(f: F) {}
 
 fn main() {

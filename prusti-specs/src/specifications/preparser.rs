@@ -222,7 +222,7 @@ impl Parser {
                             post_id: (),
                             args: signature.0,
                             result: Arg { name: syn::Ident::new("cl_result", Span::call_site()),
-                                          typ: signature.1.unwrap_or_else(|| syn::parse2(quote! { i32 }).unwrap()) },
+                                          typ: signature.1.unwrap_or_else(|| syn::parse2(quote! { () }).unwrap()) },
                         },
                         once,
                         pre,
@@ -252,8 +252,15 @@ impl Parser {
 
         // parse return type
         let result = if self.consume_operator("->") {
-            // TODO: this is disgusting
-            Some(syn::parse2(quote! { bool }).unwrap())
+            let mut tokens = vec![];
+            while !self.tokens.is_empty() &&
+                  !self.peek_group(Delimiter::Bracket) &&
+                  !self.peek_group(Delimiter::Brace) {
+                tokens.push(self.pop().unwrap());
+            }
+            let mut result_stream = TokenStream::new();
+            result_stream.extend(tokens.into_iter());
+            Some(syn::parse2(result_stream)?)
         } else {
             None
         };
@@ -301,7 +308,7 @@ impl Parser {
                     post_id: (),
                     args: signature.0,
                     result: Arg { name: syn::Ident::new("cl_result", Span::call_site()),
-                                  typ: signature.1.unwrap_or_else(|| syn::parse2(quote! { i32 }).unwrap()) },
+                                  typ: signature.1.unwrap_or_else(|| syn::parse2(quote! { () }).unwrap()) },
                 },
                 once,
                 pres,

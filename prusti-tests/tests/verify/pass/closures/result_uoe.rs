@@ -14,14 +14,14 @@ fn main() {
 impl MyResult {
     #[requires(
         !self.is_ok() ==>
-            f |=! |arg: i32| [ requires(arg == self.unwrap_err()) ]
+            f |=! |arg: i32| -> i32 [ requires(arg == self.unwrap_err()) ]
     )]
     #[ensures(
         old(self.is_ok()) ==> result == old(self.unwrap_ok())
     )]
     #[ensures(
         !old(self.is_ok()) ==>
-            f ~>! |arg: i32|
+            f ~>! |arg: i32| -> i32
                 { arg == old(self.unwrap_err()) }
                 { cl_result == result }
     )]

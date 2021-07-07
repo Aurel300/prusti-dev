@@ -1,4 +1,5 @@
 #![deny(unused_must_use)]
+#![feature(drain_filter)]
 
 #[macro_use]
 mod parse_quote_spanned;

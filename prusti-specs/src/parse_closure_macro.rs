@@ -16,6 +16,7 @@ pub(crate) struct ClosureView {
 
 impl Parse for ClosureWithSpec {
     fn parse(input: ParseStream) -> syn::Result<Self> {
+        let mut attrs = input.call(syn::Attribute::parse_outer)?;
         let mut cl: syn::ExprClosure = input.parse()?;
 
         let mut pres: Vec<syn::Result<syn::Expr>> = vec![];
@@ -26,7 +27,7 @@ impl Parse for ClosureWithSpec {
 
         // collect and remove any specification attributes
         // leave other attributes intact
-        cl.attrs.drain_filter(|attr| {
+        attrs.drain_filter(|attr| {
             if let Some(id) = attr.path.get_ident() {
                 match id.to_string().as_ref() {
                     "requires" => pres.push(syn::parse2(attr.tokens.clone())),
@@ -41,6 +42,7 @@ impl Parse for ClosureWithSpec {
                 false
             }
         });
+        cl.attrs = attrs;
 
         Ok(Self {
             pres: pres.into_iter().collect::<syn::Result<Vec<_>>>()?,

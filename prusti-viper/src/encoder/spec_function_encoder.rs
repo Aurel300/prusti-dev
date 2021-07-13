@@ -273,7 +273,7 @@ impl SpecFunctionEncoder {
             );
         }
 
-        let pre_conjunct = vir::Expr::forall(
+        let pre_conjunct = vir::Expr::forall_or_body(
             qvars_pre.clone(),
             vec![vir::Trigger::new(vec![pre_app.clone()])],
             vir::Expr::implies(
@@ -351,7 +351,7 @@ impl SpecFunctionEncoder {
             &vir::Expr::local(qvars_post[0].clone()),
             "",
         );
-        let post_conjunct = vir::Expr::forall(
+        let post_conjunct = vir::Expr::forall_or_body(
             qvars_post.clone(),
             vec![vir::Trigger::new(vec![post_app])],
             vir::Expr::implies(
@@ -374,7 +374,7 @@ impl SpecFunctionEncoder {
                 let cl_pre = vir::Expr::local(cl_pre_var.clone());
                 let cl_post = vir::Expr::local(cl_post_var.clone());
                 // TODO: one less implication if once?
-                vir::Expr::forall(
+                vir::Expr::forall_or_body(
                     vec![cl_pre_var.clone(), cl_post_var.clone()],
                     vec![vir::Trigger::new(vec![
                         hist_inv.apply(vec![cl_pre.clone(), cl_post.clone()]),
@@ -626,7 +626,7 @@ impl SpecFunctionEncoder {
                 let s3_expr = vir::Expr::local(s3_var.clone());
                 vir::DomainAxiom {
                     name: format!("{}$transitivity", func.name),
-                    expr: vir::Expr::forall(
+                    expr: vir::Expr::forall_or_body(
                         vec![s1_var, s2_var, s3_var],
                         vec![vir::Trigger::new(vec![
                             func.apply(vec![s1_expr.clone(), s2_expr.clone()]),
@@ -650,7 +650,7 @@ impl SpecFunctionEncoder {
                 let s2_expr = vir::Expr::local(s2_var.clone());
                 vir::DomainAxiom {
                     name: format!("{}$reflexivity", func.name),
-                    expr: vir::Expr::forall(
+                    expr: vir::Expr::forall_or_body(
                         vec![s1_var],
                         vec![vir::Trigger::new(vec![
                             func.apply(vec![s1_expr.clone(), s1_expr.clone()]),

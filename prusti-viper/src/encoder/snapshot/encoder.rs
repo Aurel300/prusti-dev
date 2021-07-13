@@ -93,20 +93,6 @@ fn strip_refs_and_boxes_expr<'p, 'v: 'p, 'tcx: 'v>(
     }
 }
 
-/// Returns a `forall` quantifier if `vars` is not empty, otherwise returns
-/// the `body` directly.
-fn forall_or_body(
-    vars: Vec<vir::LocalVar>,
-    triggers: Vec<vir::Trigger>,
-    body: Expr,
-) -> Expr {
-    if vars.is_empty() {
-        body
-    } else {
-        Expr::forall(vars, triggers, body)
-    }
-}
-
 impl SnapshotEncoder {
     pub fn new() -> Self {
         Self {
@@ -1525,7 +1511,7 @@ impl SnapshotEncoder {
 
                 domain_axioms.push(vir::DomainAxiom {
                     name: format!("{}${}$injectivity", domain_name, variant_idx),
-                    expr: forall_or_body(
+                    expr: Expr::forall_or_body(
                         forall_vars,
                         vec![vir::Trigger::new(vec![lhs_call.clone(), rhs_call.clone()])],
                         Expr::implies(
@@ -1544,7 +1530,7 @@ impl SnapshotEncoder {
                     let call = encode_constructor_call(&args);
                     vir::DomainAxiom {
                         name: format!("{}${}$discriminant_axiom", domain_name, variant_idx),
-                        expr: forall_or_body(
+                        expr: Expr::forall_or_body(
                             args.iter().cloned().collect(),
                             vec![vir::Trigger::new(vec![
                                 call.clone(),
@@ -1584,7 +1570,7 @@ impl SnapshotEncoder {
 
                     vir::DomainAxiom {
                         name: format!("{}${}$field${}$axiom", domain_name, variant_idx, field.name),
-                        expr: forall_or_body(
+                        expr: Expr::forall_or_body(
                             args.clone(),
                             vec![vir::Trigger::new(vec![
                                 field_of_cons.clone(),

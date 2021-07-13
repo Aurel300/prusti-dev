@@ -502,6 +502,16 @@ impl Expr {
         Expr::ForAll(vars, triggers, box body, Position::default())
     }
 
+    /// Returns a `forall` quantifier if `vars` is not empty, otherwise returns
+    /// the `body` directly.
+    pub fn forall_or_body(vars: Vec<LocalVar>, triggers: Vec<Trigger>, body: Expr) -> Self {
+        if vars.is_empty() {
+            body
+        } else {
+            Expr::forall(vars, triggers, body)
+        }
+    }
+
     pub fn exists(vars: Vec<LocalVar>, triggers: Vec<Trigger>, body: Expr) -> Self {
         assert!(!vars.is_empty(), "A quantifier must have at least one variable.");
         Expr::Exists(vars, triggers, box body, Position::default())

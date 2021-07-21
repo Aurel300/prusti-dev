@@ -36,14 +36,14 @@ fn main() {
         |i: Foo| -> i32 { 1 }
     );
     assert!(f4(Foo { foo: 10 }) == 1);
-
+    /*
     let f5 = closure!(
         #[requires(matches!(i, Bar::Bar(x) if x >= 10))]
         #[ensures(result == 1)]
         |i: Bar| -> i32 { 1 }
     );
     assert!(f5(Bar::Bar(10)) == 1);
-
+*/
     let f6 = closure!(
         #[ensures(result)]
         || -> bool { true }

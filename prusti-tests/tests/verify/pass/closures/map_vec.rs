@@ -16,7 +16,7 @@ fn map_vec<F: FnMut(i32) -> i32>(v: &Vec<i32>, f: &mut F) -> Vec<i32> {
         body_invariant!(vec_len(&ret) == i);
         body_invariant!(
             forall(|idx: usize| 0 <= idx && idx < i
-                ==> f ~> |arg: i32|
+                ==> f ~> |arg: i32| -> i32
                     { arg == vec_lookup(v, idx) }
                     { cl_result == vec_lookup(&ret, idx) })
         );

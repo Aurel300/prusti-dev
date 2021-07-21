@@ -1280,15 +1280,15 @@ impl<'v, 'tcx> Encoder<'v, 'tcx> {
 
         let key = self.type_substitution_key(proc_def_id).run_if_err(cleanup)?;
 
-        // DEBUG!!!!!!!
+        // FIXME: generics hack ...
         if key.1 != "" {
-            println!("skipping {:?}", proc_def_id);
+            // println!("skipping {:?}", proc_def_id);
             cleanup();
             return Ok(());
         }
 
         if !self.pure_functions.borrow().contains_key(&key) {
-            println!("encoding {} {:?}", self.get_item_name(proc_def_id), key);
+            // println!("encoding {} {:?}", self.get_item_name(proc_def_id), key);
             trace!("not encoded: {:?}", key);
             let wrapper_def_id = self.get_wrapper_def_id(proc_def_id);
             let procedure = self.env.get_procedure(wrapper_def_id);

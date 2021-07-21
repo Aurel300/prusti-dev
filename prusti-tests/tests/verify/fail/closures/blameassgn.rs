@@ -2,7 +2,7 @@ use prusti_contracts::*;
 
 // From Findler and Felleisen (2002)
 
-#[requires(f |= |i: i32| [
+#[requires(f |= |i: i32| -> i32 [
     requires(i > 9),
     ensures(cl_result >= 0 && cl_result <= 99),
 ])]

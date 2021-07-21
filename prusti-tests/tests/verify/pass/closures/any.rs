@@ -18,7 +18,7 @@ fn any_vec<T: Fn(i32) -> bool>(v: &Vec<i32>, f: T) -> bool {
         body_invariant!(i >= 0 && i < vec_len(v));
         body_invariant!(
             forall(|idx: usize| 0 <= idx && idx < i
-                ==> f ~>! |arg: i32| -> { arg == vec_lookup(v, idx) } { !cl_result })
+                ==> f ~>! |arg: i32| -> bool { arg == vec_lookup(v, idx) } { !cl_result })
         );
         let el = vec_lookup(v, i);
         if f(el) {

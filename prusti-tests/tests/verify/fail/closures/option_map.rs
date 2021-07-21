@@ -2,12 +2,12 @@ use prusti_contracts::*;
 
 #[requires(
     opt.is_some() ==>
-        f |=! |arg: i32| [ requires(arg == opt.unwrap()) ]
+        f |=! |arg: i32| -> i32 [ requires(arg == opt.unwrap()) ]
 )]
 #[ensures(old(opt.is_some()) == result.is_some())]
 #[ensures(
     old(opt.is_some()) ==>
-        f ~>! |arg: i32|
+        f ~>! |arg: i32| -> i32
             { arg == old(opt.unwrap()) }
             { cl_result == result.unwrap() }
 )]

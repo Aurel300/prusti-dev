@@ -1,0 +1,257 @@
+domain Vec {}
+
+function length(v: Vec): Int
+  ensures result >= 0
+function lookup(v: Vec, idx: Int): Int
+  requires 0 <= idx && idx < length(v)
+function extensionality_Vec(v1: Vec, v2: Vec): Bool
+  requires length(v1) == length(v2)
+  requires (forall idx: Int :: 0 <= idx && idx < length(v1) ==> lookup(v1, idx) == lookup(v2, idx))
+  ensures v1 == v2
+  ensures result == true // this is bogus
+function empty(): Vec
+  ensures length(result) == 0
+function push_back(v: Vec, i: Int): Vec
+  ensures length(result) == length(v) + 1
+  ensures lookup(result, length(v)) == i
+  ensures forall idx: Int :: {lookup(result, idx)}
+    0 <= idx && idx < length(v) ==> lookup(result, idx) == lookup(v, idx)
+function push_front(i: Int, v: Vec): Vec
+  ensures length(result) == length(v) + 1
+  ensures lookup(result, 0) == i
+  ensures forall idx: Int :: {lookup(result, idx)}
+    1 <= idx && idx < length(result) ==> lookup(result, idx) == lookup(v, idx-1)
+function concat(v1: Vec, v2: Vec): Vec
+  ensures length(result) == length(v1) + length(v2)
+  ensures forall idx: Int :: {lookup(result, idx)}
+    0 <= idx && idx < length(result) ==>
+      (idx < length(v1) ? lookup(result, idx) == lookup(v1, idx)
+       : lookup(result, idx) == lookup(v2, idx - length(v1)))
+function reverse(v: Vec): Vec
+  ensures length(result) == length(v)
+  ensures forall idx: Int :: {lookup(result, idx)}
+    0 <= idx && idx < length(result) ==> lookup(result, idx) == lookup(v, length(v) - 1 - idx)
+
+field el: Int
+field next: Ref
+
+predicate Node(r: Ref) {
+    acc(r.el) && acc(r.next) && (r.next != null ==> acc(Node(r.next)))
+}
+
+function read(): Perm
+  ensures result > 0/1 && result < 1/1
+
+domain Node_snap {
+    function get_el(n: Node_snap): Int
+    function has_next(n: Node_snap): Bool
+    function get_next(n: Node_snap): Node_snap
+}
+function to_snap_Node(n: Ref): Node_snap
+  requires acc(Node(n), read())
+  ensures get_el(result) == unfolding acc(Node(n), read()) in n.el
+  ensures has_next(result) == unfolding acc(Node(n), read()) in (n.next != null)
+  ensures has_next(result) ==> unfolding acc(Node(n), read()) in (get_next(result) == to_snap_Node(n.next))
+
+function elements_Node_snap(n: Node_snap): Vec {
+  has_next(n) ? push_front(get_el(n), elements_Node_snap(get_next(n)))
+    : push_front(get_el(n), empty())
+}
+
+function contains(n: Ref, i: Int): Bool
+  requires acc(Node(n), read())
+{
+    unfolding acc(Node(n), read()) in
+        (n.el == i) ? true
+        : (n.next == null ? false : contains(n.next, i))
+}
+
+function length_Node(n: Ref): Int
+  requires acc(Node(n), read())
+{
+    unfolding acc(Node(n), read()) in
+      (n.next == null ? 1 : (1 + length_Node(n.next)))
+}
+
+function lookup_Node(n: Ref, i: Int): Int
+  requires acc(Node(n), read())
+  requires 0 <= i && i < length_Node(n)
+{
+    unfolding acc(Node(n), read()) in
+      (i == 0 ? n.el : lookup_Node(n.next, i-1))
+}
+
+function elements(n: Ref): Vec
+  requires acc(Node(n), read())
+  ensures length(result) == length_Node(n)
+  ensures forall idx: Int ::
+    0 <= idx && idx < length(result) ==>
+      lookup(result, idx) == lookup_Node(n, idx)
+
+
+domain CL {
+  function pre(cl: CL, n: Node_snap): Bool
+  function post(oldcl: CL, cl: CL, oldn: Node_snap): Bool
+  function hist_inv(oldcl: CL, cl: CL): Bool
+  axiom hist_inv_transitive {
+      forall cl1: CL, cl2: CL, cl3: CL :: {hist_inv(cl1, cl2), hist_inv(cl2, cl3)}
+        hist_inv(cl1, cl2) && hist_inv(cl2, cl3) ==> hist_inv(cl1, cl3)
+  }
+  axiom hist_inv_pseudo_reflexive {
+      forall cl: CL :: {hist_inv(cl, cl)}
+        (exists ocl: CL :: {hist_inv(ocl, cl)} hist_inv(ocl, cl)) ==> hist_inv(cl, cl)
+  }
+}
+
+predicate fresh_F(r: Ref)
+function to_snap_fresh_F(r: Ref): CL
+  requires acc(fresh_F(r), read())
+function fresh_inv(v: Vec, f: CL): Bool
+
+method do_fold(n: Ref, f: Ref, ghost_arg: Vec)
+  requires acc(Node(n)) && acc(fresh_F(f))
+  requires fresh_inv(ghost_arg, to_snap_fresh_F(f))
+  requires hist_inv(to_snap_fresh_F(f), to_snap_fresh_F(f))
+  requires forall v: Vec, f_trigger: CL :: {fresh_inv(v, f_trigger)} // f_trigger is only used for triggering
+      forall of_: CL, on_: Node_snap :: {pre(of_, on_)}
+        hist_inv(to_snap_fresh_F(f), of_) ==>
+          ((contains(n, get_el(on_)) && fresh_inv(v, of_)) ==> pre(of_, on_))
+      && forall of: CL, nf: CL, on: Node_snap :: {post(of, nf, on)}
+        hist_inv(to_snap_fresh_F(f), of) ==>
+          ((contains(n, get_el(on)) && fresh_inv(v, of)) ==>
+              ((post(of, nf, on) && hist_inv(of, nf)) ==> fresh_inv(push_back(v, get_el(on)), nf)))
+  ensures fresh_F(f) && hist_inv(old(to_snap_fresh_F(f)), to_snap_fresh_F(f))
+  ensures fresh_inv(concat(ghost_arg, old(elements(n))), to_snap_fresh_F(f))
+{
+    var n_els: Vec := elements(n)
+    unfold Node(n)
+    var cur: Ref := n
+    var nxt: Ref := cur.next
+    cur.next := null
+    var cur_el: Int := cur.el
+    fold Node(cur)
+
+    var oldf: CL := to_snap_fresh_F(f)
+    var oldn: Node_snap := to_snap_Node(cur)
+    assert pre(oldf, oldn) && hist_inv(oldf, oldf)
+    exhale fresh_F(f) && Node(cur)
+    inhale fresh_F(f) && Node(cur)
+    var newf: CL := to_snap_fresh_F(f)
+    var newn: Node_snap := to_snap_Node(cur)
+    assume post(oldf, newf, oldn) && hist_inv(oldf, newf)
+
+    assert fresh_inv(push_back(ghost_arg, cur_el), newf)
+
+    if (nxt != null) {
+        var nxt_els: Vec := elements(nxt)
+        do_fold(nxt, f, push_back(ghost_arg, cur_el))
+        assert fresh_inv(concat(push_back(ghost_arg, cur_el), nxt_els), to_snap_fresh_F(f))
+        assert nxt_els == old(unfolding acc(Node(n)) in elements(n.next))
+        assert extensionality_Vec(push_front(cur_el, nxt_els), n_els)
+        assert push_front(cur_el, nxt_els) == n_els
+        assert extensionality_Vec(concat(push_back(ghost_arg, cur_el), nxt_els), concat(ghost_arg, n_els))
+        assert concat(push_back(ghost_arg, cur_el), nxt_els) == concat(ghost_arg, n_els)
+        assert fresh_inv(concat(ghost_arg, old(elements(n))), to_snap_fresh_F(f))
+    } else {
+        assert length(n_els) == 1
+        assert lookup(n_els, 0) == cur_el
+        assert extensionality_Vec(push_back(ghost_arg, cur_el), concat(ghost_arg, n_els))
+    }
+}
+
+
+field rev_head: Ref
+predicate CCL(ccl: Ref) { // the concrete closure defined in main()
+  acc(ccl.rev_head) && (ccl.rev_head != null ==> acc(Node(ccl.rev_head)))
+}
+
+function get_rev_head_els(cl: CL): Vec
+function to_snap_CCL(ccl: Ref): CL
+  requires acc(CCL(ccl), read())
+  ensures unfolding acc(CCL(ccl), read()) in
+    (ccl.rev_head != null ==>
+       get_rev_head_els(result) == elements(ccl.rev_head))
+    && (ccl.rev_head == null ==> length(get_rev_head_els(result)) == 0)
+
+function concr_inv(v: Vec, cl: CL): Bool {
+  get_rev_head_els(cl) == reverse(v)
+}
+
+method main() {
+    var list: Ref
+    inhale acc(Node(list))
+    assume length(elements(list)) == 3
+    assume lookup_Node(list, 0) == 0 && lookup_Node(list, 1) == 1 && lookup_Node(list, 2) == 2
+
+    var ccl: Ref
+    inhale acc(CCL(ccl))
+    assume unfolding acc(CCL(ccl)) in ccl.rev_head == null
+    var ccl_snap: CL := to_snap_CCL(ccl)
+    assume hist_inv(ccl_snap, ccl_snap)
+    assume forall oc: CL, on: Node_snap :: {pre(oc, on)}
+      hist_inv(ccl_snap, oc) ==> (true ==> pre(oc, on))
+    assume forall oc: CL, nc: CL, on: Node_snap :: {post(oc, nc, on)}
+      hist_inv(ccl_snap, oc) ==> (
+        true ==> (
+          post(oc, nc, on) ==> (
+            get_rev_head_els(nc) == push_front(get_el(on), get_rev_head_els(oc))
+          )
+        )
+      )
+
+    // Some sequence massaging to get extensionality
+    assert length(get_rev_head_els(to_snap_CCL(ccl))) == 0
+    assert extensionality_Vec(empty(), get_rev_head_els(to_snap_CCL(ccl)))
+    assert get_rev_head_els(to_snap_CCL(ccl)) == empty()
+    assert extensionality_Vec(empty(), reverse(empty()))
+    assert forall x: Int, v: Vec, vr: Vec :: {push_front(x, vr), reverse(push_back(v, x))}
+      vr == reverse(v) ==>
+        (extensionality_Vec(push_front(x, reverse(v)), reverse(push_back(v, x)))
+           ==> push_front(x, reverse(v)) == reverse(push_back(v, x)))
+    assert forall v: Vec, on: Node_snap, of: CL, nf: CL ::
+      {concr_inv(v, of), concr_inv(push_back(v, get_el(on)), nf)}
+      concr_inv(v, of) && get_rev_head_els(nf) == push_front(get_el(on), get_rev_head_els(of)) ==>
+        concr_inv(push_back(v, get_el(on)), nf)
+
+    // Encode call to do_fold
+    label before_fold
+    assert concr_inv(empty(), to_snap_CCL(ccl))
+    assert hist_inv(to_snap_CCL(ccl), to_snap_CCL(ccl))
+    assert forall v: Vec ::
+        forall of_: CL, on_: Node_snap :: {pre(of_, on_)}
+          hist_inv(to_snap_CCL(ccl), of_) ==>
+            ((contains(list, get_el(on_)) && concr_inv(v, of_)) ==> pre(of_, on_))
+        && forall of: CL, nf: CL, on: Node_snap :: {post(of, nf, on)}
+          hist_inv(to_snap_CCL(ccl), of) ==>
+            ((contains(list, get_el(on)) && concr_inv(v, of)) ==>
+                ((post(of, nf, on) && hist_inv(of, nf)) ==> concr_inv(push_back(v, get_el(on)), nf)))
+    exhale acc(Node(list)) && acc(CCL(ccl))
+    inhale acc(CCL(ccl))
+    assume hist_inv(old[before_fold](to_snap_CCL(ccl)), to_snap_CCL(ccl))
+    assume concr_inv(concat(empty(), old[before_fold](elements(list))), to_snap_CCL(ccl))
+
+    unfold acc(CCL(ccl))
+    var rev_list: Ref := ccl.rev_head
+    var rv: Vec := elements(rev_list)
+    assert length(rv) == 3
+    assert lookup(rv, 0) == 2 && lookup(rv, 1) == 1 && lookup(rv, 2) == 0
+}
+
+method concr_cl(ccl: Ref, n: Ref)
+  requires acc(CCL(ccl)) && acc(Node(n))
+  ensures acc(CCL(ccl))
+  ensures get_rev_head_els(to_snap_CCL(ccl)) ==
+    push_front(old(get_el(to_snap_Node(n))), old(get_rev_head_els(to_snap_CCL(ccl))))
+{
+    unfold acc(CCL(ccl))
+    unfold acc(Node(n))
+
+    n.next := ccl.rev_head
+    ccl.rev_head := n
+
+    fold acc(Node(n))
+    fold acc(CCL(ccl))
+
+    assert extensionality_Vec(get_rev_head_els(to_snap_CCL(ccl)),
+               push_front(old(get_el(to_snap_Node(n))), old(get_rev_head_els(to_snap_CCL(ccl)))))
+}

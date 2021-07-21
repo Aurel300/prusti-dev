@@ -12,33 +12,33 @@ import glob
 import time 
 import signal
 
-BENCHMARK_RUNS = 10
-CLOSURE_TESTS_BASEDIR = "prusti-tests/tests/verify/pass/closures/"
+BENCHMARK_RUNS = 1
+CLOSURE_TESTS_BASEDIR = "prusti-tests/tests/verify/"
 CLOSURE_TESTS_PASS = [
-  "basic.rs",
-  "call-desc.rs",
-  "ghost_pred.rs",
-  "invariant.rs",
-  "outer.rs",
-  "thesis-1.rs",
-  "types.rs",
-  "views.rs",
-
-  "closure-examples/all.rs",
-  "closure-examples/any.rs",
-  "closure-examples/blameassgn.rs",
-  "closure-examples/counter.rs",
-  "closure-examples/delegation.rs",
-  "closure-examples/map_vec.rs",
-  "closure-examples/option_map.rs",
-  "closure-examples/repeat_with_n.rs",
-  "closure-examples/result_uoe.rs",
+  "pass/closures/all.rs",
+  "pass/closures/any.rs",
+  "pass/closures/basic.rs",
+  "pass/closures/blameassgn.rs",
+  "pass/closures/call-desc.rs",
+  "pass/closures/counter.rs",
+  "pass/closures/delegation.rs",
+  "pass/closures/ghost_pred.rs",
+  "pass/closures/invariant.rs",
+  "pass/closures/map_vec.rs",
+  "pass/closures/option.rs",
+  "pass/closures/outer.rs",
+  "pass/closures/repeat_with_n.rs",
+  "pass/closures/result_uoe.rs",
+  "pass/closures/thesis-1.rs",
+  "pass/closures/types.rs",
+  "pass/closures/views.rs",
 ]
 CLOSURE_TESTS_FAIL = [
-  "closure-examples/any_err.rs",
-  "closure-examples/blameassgn_err.rs",
-  "closure-examples/counter_err.rs",
-  "closure-examples/option_map_err.rs",
+  "fail/closures/any.rs",
+  "fail/closures/basic.rs",
+  "fail/closures/blameassgn.rs",
+  "fail/closures/counter.rs",
+  "fail/closures/option_map.rs",
 ]
 
 def default_linux_java_loc():
@@ -107,7 +107,7 @@ def measure_prusti_time(input_path, env):
     return (code, elapsed)
 
 env = get_env()
-print(env)
+#print(env)
 
 print("")
 print("starting benchmark...")

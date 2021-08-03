@@ -4,7 +4,7 @@ use prusti_contracts::*;
 
 #[requires(f |= |i: i32| -> i32 [
     requires(i > 9),
-    ensures(cl_result >= 0 && cl_result <= 99),
+    ensures(cl_result >= 0 && cl_result <= 99)
 ])]
 #[ensures(result >= 0 && result <= 99)]
 fn g<T: FnMut(i32) -> i32>(mut f: T) -> i32 {

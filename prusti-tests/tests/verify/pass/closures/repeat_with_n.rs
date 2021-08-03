@@ -15,7 +15,7 @@ fn repeat_with_n<F: FnMut() -> i32>(mut f: F, n: usize) -> Vec<i32> {
         body_invariant!(vec_len(&ret) == i);
         body_invariant!(
             forall(|idx: usize| 0 <= idx && idx < i
-                ==> f ~> || {} { cl_result == vec_lookup(&ret, idx) })
+                ==> f ~> || -> i32 {} { cl_result == vec_lookup(&ret, idx) })
         );
         vec_push(&mut ret, f());
         i += 1;

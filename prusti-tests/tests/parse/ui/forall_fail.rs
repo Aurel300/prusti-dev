@@ -17,31 +17,28 @@ fn test3() {}
 #[requires(forall(||) 1+1)]
 fn test4() {}
 
-#[requires(forall(|a, b| true))]
+#[requires(forall(||) || forall(||))]
 fn test5() {}
 
-#[requires(forall(||) || forall(||))]
+#[requires(forall(|| 1+1 == 1+1, triggers=[1]))]
 fn test6() {}
 
-#[requires(forall(|| 1+1 == 1+1, triggers=[1]))]
+#[requires(forall(|| true, triggers=[(1,2), 1]))]
 fn test7() {}
 
-#[requires(forall(|| true, triggers=[(1,2), 1]))]
+#[requires(forall(|| true, triggers=1))]
 fn test8() {}
 
-#[requires(forall(|| true, triggers=1))]
+#[requires(forall(||))]
 fn test9() {}
 
-#[requires(forall(||))]
+#[requires(forall(|| 1+1 == 1+1))]
 fn test10() {}
 
-#[requires(forall(|| 1+1 == 1+1))]
+#[requires(forall(||, triggers=[]))]
 fn test11() {}
 
-#[requires(forall(||, triggers=[]))]
-fn test12() {}
-
 #[requires(forall(|| 1+1 == 1+1, triggers=[(1,)]))]
-fn test13() {}
+fn test12() {}
 
 fn main() {}

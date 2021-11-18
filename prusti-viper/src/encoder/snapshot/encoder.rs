@@ -309,9 +309,12 @@ impl SnapshotEncoder {
                         expr,
                     )))
             },
-            _ => Err(EncodingError::internal(
-                format!("invalid snapshot field (not Complex): {:?}", expr),
-            )),
+            _ => {
+                println!("snapshot is: {:?}", snapshot);
+                Err(EncodingError::internal(
+                    format!("invalid snapshot field (not Complex): {:?}", expr),
+                ))
+            }
         }
     }
 
@@ -333,9 +336,12 @@ impl SnapshotEncoder {
                 .ok_or_else(|| EncodingError::internal(
                     format!("cannot snap_field {} of {:?}", field.name, expr),
                 )),
-            _ => Err(EncodingError::internal(
-                format!("invalid snapshot field (not Complex): {:?}", expr),
-            )),
+            (_, snapshot) => {
+                println!("snapshot is: {:?}", snapshot);
+                Err(EncodingError::internal(
+                    format!("invalid snapshot field (not Complex): {:?}", expr),
+                ))
+            }
         }
     }
 
@@ -436,9 +442,13 @@ impl SnapshotEncoder {
 
                 Ok(cons.apply(args))
             }
-            _ => Err(EncodingError::internal(
-                format!("invalid constructor (not Complex): {}", ty),
-            )),
+            Snapshot::Unit => Ok(self.snap_unit()),
+            snapshot => {
+                println!("snapshot is: {:?}", snapshot);
+                Err(EncodingError::internal(
+                    format!("invalid snapshot field (not Complex): {}", ty),
+                ))
+            }
         }
     }
 

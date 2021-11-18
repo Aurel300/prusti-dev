@@ -6,7 +6,7 @@ use syn::parse::{Parse, ParseStream};
 use syn::spanned::Spanned;
 
 pub use common::{ExpressionId, SpecType, SpecificationId};
-pub use super::preparser::{Parser, Arg};
+pub use super::preparser::Arg;
 use crate::specifications::common::{QuantifierVars, SpecEntailmentVars};
 
 /// A specification that has no types associated with it.

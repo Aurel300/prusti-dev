@@ -62,23 +62,25 @@ impl Substs {
         // Use `repls_regex` to find typaram replacements
         let mut repls = HashMap::new();
         trace! ("regex {:?} from {:?} to {:?}", repls_regex, from, to);
-        let captures = repls_regex.captures(to).unwrap();
-        for i in 1..captures.len() {
-            let from_typaram = found_typarams[i - 1].to_string();
-            let to_typaram = captures.get(i).unwrap().as_str();
-            let old_entry = repls.insert(from_typaram.clone(), to_typaram.to_string());
-            // What if there was something in `repls`? Check that we didn't change it.
-            if let Some(x) = old_entry {
-                assert!(
-                    to == x,
-                    "Error in learn({:?}, {:?}). from_typaram: {:?}, to_typaram: {:?}, old_entry: {:?}, repls_regex_str: {:?}",
-                    from,
-                    to,
-                    from_typaram,
-                    to_typaram,
-                    Some(x),
-                    repls_regex_str
-                );
+        let captures = repls_regex.captures(to);
+        if let Some(captures) = captures {
+            for i in 1..captures.len() {
+                let from_typaram = found_typarams[i - 1].to_string();
+                let to_typaram = captures.get(i).unwrap().as_str();
+                let old_entry = repls.insert(from_typaram.clone(), to_typaram.to_string());
+                // What if there was something in `repls`? Check that we didn't change it.
+                if let Some(x) = old_entry {
+                    assert!(
+                        to == x,
+                        "Error in learn({:?}, {:?}). from_typaram: {:?}, to_typaram: {:?}, old_entry: {:?}, repls_regex_str: {:?}",
+                        from,
+                        to,
+                        from_typaram,
+                        to_typaram,
+                        Some(x),
+                        repls_regex_str
+                    );
+                }
             }
         }
         Substs {

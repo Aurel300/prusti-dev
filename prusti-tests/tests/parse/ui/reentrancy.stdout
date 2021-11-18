@@ -1,0 +1,92 @@
+// compile-flags: -Pprint_desugared_specs=true -Pprint_typeckd_specs=true -Pno_verify=true -Phide_uuids=true
+// normalize-stdout-test: "[a-z0-9]{32}" -> "$(NUM_UUID)"
+// normalize-stdout-test: "[a-z0-9]{8}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{12}" -> "$(UUID)"
+
+
+
+
+
+
+
+
+#![feature(type_ascription)]
+#![feature(register_tool)]
+#![register_tool(prusti)]
+#[prelude_import]
+use std::prelude::rust_2018::*;
+#[macro_use]
+extern crate std;
+use prusti_contracts::*;
+#[prusti::pure]
+fn foo(x: bool) -> bool { true }
+#[allow(unused_must_use, unused_parens, unused_variables, dead_code)]
+#[prusti::spec_only]
+#[prusti::spec_id = "$(NUM_UUID)"]
+fn prusti_pre_item_test1_$(NUM_UUID)() -> bool {
+    ((implication(true, foo(implication(true, true)))): bool)
+}
+#[prusti::pre_spec_id_ref = "$(NUM_UUID)"]
+fn test1() { }
+#[allow(unused_must_use, unused_parens, unused_variables, dead_code)]
+#[prusti::spec_only]
+#[prusti::spec_id = "$(NUM_UUID)"]
+fn prusti_pre_item_test2_$(NUM_UUID)() -> bool {
+    ((implication(true,
+                  forall((),
+                         |x: usize| -> bool
+                             { ((implication(false, true)): bool) }))): bool)
+}
+#[prusti::pre_spec_id_ref = "$(NUM_UUID)"]
+fn test2() { }
+#[allow(unused_must_use, unused_parens, unused_variables, dead_code)]
+#[prusti::spec_only]
+#[prusti::spec_id = "$(NUM_UUID)"]
+fn prusti_post_item_test3_$(NUM_UUID)(result: ())
+ -> bool {
+    ((match true {
+          b =>
+          (forall((),
+                  |i: usize| -> bool { ((implication(true, false)): bool) })),
+      }): bool)
+}
+#[prusti::post_spec_id_ref = "$(NUM_UUID)"]
+fn test3() { }
+#[allow(unused_must_use, unused_parens, unused_variables, dead_code)]
+#[prusti::spec_only]
+#[prusti::spec_id = "$(NUM_UUID)"]
+fn prusti_post_item_test4_$(NUM_UUID)(x: i32,
+                                                           result: bool)
+ -> bool {
+    ((result ==
+          (forall((),
+                  |i: i32| -> bool
+                      { ((implication(i < x, foo(true))): bool) }))): bool)
+}
+#[prusti::post_spec_id_ref = "$(NUM_UUID)"]
+fn test4(x: i32) -> bool { true }
+#[allow(unused_must_use, unused_parens, unused_variables, dead_code)]
+#[prusti::spec_only]
+#[prusti::spec_id = "$(NUM_UUID)"]
+fn prusti_post_item_test5_$(NUM_UUID)(result:
+                                                               Result<i32,
+                                                                      i32>)
+ -> bool {
+    ((match result {
+          Ok(x) =>
+          (forall((),
+                  |i: i32| -> bool { ((implication(i < 1, true)): bool) })) &&
+              false,
+          Err(_) =>
+          (forall((),
+                  |i: i32| -> bool { ((implication(i < 1, true)): bool) })),
+      }): bool)
+}
+#[prusti::post_spec_id_ref = "$(NUM_UUID)"]
+fn test5() -> Result<i32, i32> { Ok(0) }
+fn main() { }
+Procedure(ProcedureSpecification { pres: [], posts: [], pledges: [], predicate_body: None, pure: true, trusted: false })
+Procedure(ProcedureSpecification { pres: [DefId(0:6 ~ reentrancy[6de6]::prusti_pre_item_test1_$(NUM_UUID))], posts: [], pledges: [], predicate_body: None, pure: false, trusted: false })
+Procedure(ProcedureSpecification { pres: [DefId(0:8 ~ reentrancy[6de6]::prusti_pre_item_test2_$(NUM_UUID))], posts: [], pledges: [], predicate_body: None, pure: false, trusted: false })
+Procedure(ProcedureSpecification { pres: [], posts: [DefId(0:11 ~ reentrancy[6de6]::prusti_post_item_test3_$(NUM_UUID))], pledges: [], predicate_body: None, pure: false, trusted: false })
+Procedure(ProcedureSpecification { pres: [], posts: [DefId(0:14 ~ reentrancy[6de6]::prusti_post_item_test4_$(NUM_UUID))], pledges: [], predicate_body: None, pure: false, trusted: false })
+Procedure(ProcedureSpecification { pres: [], posts: [DefId(0:17 ~ reentrancy[6de6]::prusti_post_item_test5_$(NUM_UUID))], pledges: [], predicate_body: None, pure: false, trusted: false })

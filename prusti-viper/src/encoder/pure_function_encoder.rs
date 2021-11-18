@@ -73,6 +73,7 @@ impl<'p, 'v: 'p, 'tcx: 'v> PureFunctionEncoder<'p, 'v, 'tcx> {
         );
         let subst_strings = self.encoder.type_substitution_strings().with_span(self.mir.span)?;
         let patched_body_expr = body_expr.patch_types(&subst_strings);
+        println!("patched body: {}", patched_body_expr);
         Ok(patched_body_expr)
     }
 
@@ -907,17 +908,141 @@ impl<'p, 'v: 'p, 'tcx: 'v> BackwardMirInterpreter<'tcx>
                                 state
                             }
 
-                            "prusti_contracts::implication" => {
-                                trace!("Encoding implication expression {:?} ==> {:?}", args[0], args[1]);
-                                assert_eq!(args.len(), 2);
-                                let encoded_rhs = vir::Expr::implies(
-                                    vir::Expr::snap_app(encoded_args[0].clone()),
-                                    vir::Expr::snap_app(encoded_args[1].clone()),
-                                );
-                                let mut state = states[&target_block].clone();
-                                state.substitute_value(&lhs_value, encoded_rhs);
-                                state
-                            }
+    // TODO: put into own module (re-use SpecEncoder), clean up
+    "prusti_contracts::implication" => {
+        trace!("Encoding implication expression {:?} ==> {:?}", args[0], args[1]);
+        assert_eq!(args.len(), 2);
+        let encoded_rhs = vir::Expr::implies(
+            vir::Expr::snap_app(encoded_args[0].clone()),
+            vir::Expr::snap_app(encoded_args[1].clone()),
+        );
+        let mut state = states[&target_block].clone();
+        state.substitute_value(&lhs_value, encoded_rhs);
+        state
+    }
+    "prusti_contracts::forall" => {
+        // Quantifiers are encoded as:
+        //   forall(
+        //     (
+        //       ( // trigger set 1
+        //         |qvars...| -> bool { <trigger expr 1> },
+        //         |qvars...| -> bool { <trigger expr 2> },
+        //       ),
+        //       ...,
+        //     ),
+        //     |qvars| -> bool { <body expr> },
+        //   )
+
+        let cl_type_body = substs.type_at(1);
+        let body_def_id;
+        let args;
+        match cl_type_body.kind() {
+            ty::TyKind::Closure(def_id, substs) => {
+                body_def_id = def_id;
+                let cl_substs = substs.as_closure();
+                let sig = cl_substs.sig().no_bound_vars().unwrap();
+                args = sig.inputs()[0].tuple_fields().collect::<Vec<_>>();
+            }
+            _ => panic!(),
+        }
+
+        let mut encoded_qvars = vec![];
+        let mut bounds = vec![];
+        for (arg_idx, arg_ty) in args.iter().enumerate() {
+            let qvar_ty = self.encoder.encode_type(arg_ty).unwrap();
+            let qvar_name = format!("_{}_quant_{}", arg_idx, body_def_id.index.index());
+            let encoded_qvar = vir::LocalVar::new(qvar_name, qvar_ty);
+            if config::check_overflows() {
+                bounds.extend(self.encoder.encode_type_bounds(&encoded_qvar.clone().into(), ty));
+            } else if config::encode_unsigned_num_constraint() {
+                if let ty::TyKind::Uint(_) = ty.kind() {
+                    let expr = vir::Expr::le_cmp(0.into(), encoded_qvar.clone().into());
+                    bounds.push(expr);
+                }
+            }
+            encoded_qvars.push(encoded_qvar);
+        }
+
+        let mut encoded_trigger_sets = vec![];
+        for (trigger_set_idx, ty_trigger_set) in substs.type_at(0).tuple_fields().enumerate() {
+            let mut encoded_triggers = vec![];
+            for (trigger_idx, ty_trigger) in ty_trigger_set.tuple_fields().enumerate() {
+                let trigger_def_id = match ty_trigger.kind() {
+                    ty::TyKind::Closure(def_id, substs) => def_id,
+                    _ => panic!(),
+                };
+                let mir = self.encoder.env().local_mir(trigger_def_id.expect_local());
+                let mir_encoder = MirEncoder::new(self.encoder, &mir, *trigger_def_id);
+                let mut body_replacements = vec![];
+                for (arg_idx, arg_local) in mir.args_iter().enumerate() {
+                    let local = mir_encoder.encode_local(arg_local).unwrap();
+                    let local_ty = mir.local_decls[arg_local].ty;
+                    let local_span = mir_encoder.get_local_span(arg_local);
+                    body_replacements.push((
+                        self.encoder.encode_value_expr(
+                            vir::Expr::local(local),
+                            local_ty,
+                        ).with_span(local_span)?,
+                        if arg_idx == 0 {
+                            let set_field = self.encoder
+                                .encode_raw_ref_field(format!("tuple_{}", trigger_set_idx), ty_trigger_set)
+                                .with_span(span)?;
+                            let trigger_field = self.encoder
+                                .encode_raw_ref_field(format!("tuple_{}", trigger_idx), ty_trigger)
+                                .with_span(span)?;
+                            encoded_args[0].clone()
+                                .field(set_field)
+                                .field(trigger_field)
+                        } else {
+                            vir::Expr::local(encoded_qvars[arg_idx - 1].clone())
+                        },
+                    ));
+                }
+                encoded_triggers.push(self.encoder.encode_pure_expression(*trigger_def_id)?
+                    .replace_multiple_places(&body_replacements));
+            }
+            encoded_trigger_sets.push(vir::Trigger::new(encoded_triggers));
+        }
+
+        println!("encoded trigger sets: {:?}", encoded_trigger_sets);
+
+        let mir = self.encoder.env().local_mir(body_def_id.expect_local());
+        let mir_encoder = MirEncoder::new(self.encoder, &mir, *body_def_id);
+        let mut body_replacements = vec![];
+        for (arg_idx, arg_local) in mir.args_iter().enumerate() {
+            let local = mir_encoder.encode_local(arg_local).unwrap();
+            let local_ty = mir.local_decls[arg_local].ty;
+            let local_span = mir_encoder.get_local_span(arg_local);
+            body_replacements.push((
+                self.encoder.encode_value_expr(
+                    vir::Expr::local(local),
+                    local_ty,
+                ).with_span(local_span)?,
+                if arg_idx == 0 {
+                    encoded_args[1].clone()
+                } else {
+                    vir::Expr::local(encoded_qvars[arg_idx - 1].clone())
+                },
+            ));
+        }
+
+        let encoded_body = self.encoder.encode_pure_expression(*body_def_id)?
+            .replace_multiple_places(&body_replacements);
+
+        let final_body = if bounds.is_empty() {
+            encoded_body
+        } else {
+            vir::Expr::implies(bounds.into_iter().conjoin(), encoded_body)
+        };
+        let forall_expr = vir::Expr::forall(
+            encoded_qvars,
+            encoded_trigger_sets,
+            final_body,
+        );
+        let mut state = states[target_block].clone();
+        state.substitute_value(&lhs_value, forall_expr);
+        state
+    }
 
                             // simple function call
                             _ => {
@@ -1071,7 +1196,8 @@ impl<'p, 'v: 'p, 'tcx: 'v> BackwardMirInterpreter<'tcx>
         stmt: &mir::Statement<'tcx>,
         state: &mut Self::State,
     ) -> Result<(), Self::Error> {
-        trace!("apply_statement {:?}, state: {}", stmt, state);
+        //trace!("apply_statement {:?}, state: {}", stmt, state);
+        println!("apply_statement {:?}, state: {}", stmt, state);
         let span = stmt.source_info.span;
         let location = mir::Location {
             block: bb,
@@ -1091,9 +1217,12 @@ impl<'p, 'v: 'p, 'tcx: 'v> BackwardMirInterpreter<'tcx>
             mir::StatementKind::Assign(box (ref lhs, ref rhs)) => {
                 let (encoded_lhs, ty, _) = self.encode_place(lhs).unwrap();
 
+                println!("assign rhs: {:?}", rhs);
+
                 if !state.use_place(&encoded_lhs) {
                     // If the lhs is not mentioned in our state, do nothing
                     trace!("The state does not mention {:?}", encoded_lhs);
+                    println!("skip, no lhs??? {:?}", encoded_lhs);
                     return Ok(());
                 }
 
@@ -1138,7 +1267,8 @@ impl<'p, 'v: 'p, 'tcx: 'v> BackwardMirInterpreter<'tcx>
                     }
 
                     &mir::Rvalue::Aggregate(ref aggregate, ref operands) => {
-                        debug!("Encode aggregate {:?}, {:?}", aggregate, operands);
+                        //debug!("Encode aggregate {:?}, {:?}", aggregate, operands);
+                        println!("Encode aggregate {:?}, {:?}", aggregate, operands);
                         match aggregate.as_ref() {
                             &mir::AggregateKind::Tuple => {
                                 let field_types = if let ty::TyKind::Tuple(ref x) = ty.kind() {
@@ -1161,6 +1291,7 @@ impl<'p, 'v: 'p, 'tcx: 'v> BackwardMirInterpreter<'tcx>
                                         Some(encoded_rhs) => {
                                             // Substitute a place
                                             field_exprs.push(encoded_rhs.clone());
+                                            println!("tuple subst1 {} -> {}", field_place, encoded_rhs);
                                             state.substitute_place(&field_place, encoded_rhs);
                                         }
                                         None => {
@@ -1169,8 +1300,10 @@ impl<'p, 'v: 'p, 'tcx: 'v> BackwardMirInterpreter<'tcx>
                                                 self.mir_encoder.encode_operand_expr(operand)
                                                     .with_span(span)?;
                                             field_exprs.push(rhs_expr.clone());
+                                            let lhs = self.encoder.encode_value_expr(field_place, field_ty.expect_ty()).with_span(span)?;
+                                            println!("tuple subst2 {} -> {}", lhs, rhs_expr);
                                             state.substitute_value(
-                                                &self.encoder.encode_value_expr(field_place, field_ty.expect_ty()).with_span(span)?,
+                                                &lhs,
                                                 rhs_expr,
                                             );
                                         }
@@ -1180,6 +1313,7 @@ impl<'p, 'v: 'p, 'tcx: 'v> BackwardMirInterpreter<'tcx>
                                     ty,
                                     field_exprs,
                                 ).with_span(span)?;
+                                println!("tuple substs3 {} -> {}", encoded_lhs, snapshot);
                                 state.substitute_place(&encoded_lhs, snapshot);
                             }
 
@@ -1258,6 +1392,65 @@ impl<'p, 'v: 'p, 'tcx: 'v> BackwardMirInterpreter<'tcx>
                                 ).with_span(span)?;
 
                                 state.substitute_place(&encoded_lhs, snapshot);
+                            }
+
+                            // TODO: clean up (duplication with Adt case)
+                            &mir::AggregateKind::Closure(def_id, substs) => {
+                                let cl_substs = substs.as_closure();
+                                let cl_deref = self.encoder
+                                    .encode_dereference_field(ty)
+                                    .with_span(span)?;
+                                for (field_index, field_ty) in cl_substs.upvar_tys().enumerate() {
+                                    let operand = &operands[field_index];
+                                    let field_name = format!("closure_{}", field_index);
+                                    let tcx = self.encoder.env().tcx();
+
+                                    println!("closure aggregate, field: {}", field_name);
+                                    println!("operand: {:?}", operand);
+                                    println!("field ty? {}", field_ty);
+                                    println!("cl ty? {}", ty);
+                                    let encoded_field = self.encoder
+                                        .encode_raw_ref_field(field_name, field_ty)
+                                        .with_span(span)?;
+                                    let inner_ty = match field_ty.kind() {
+                                        ty::TyKind::Ref(_, inner, _) => inner,
+                                        _ => unreachable!(),
+                                    };
+                                    let field_deref = self.encoder
+                                        .encode_dereference_field(inner_ty)
+                                        .with_span(span)?;
+
+                                    println!(" -> encoded: {:?}", encoded_field);
+
+                                    let field_place = encoded_lhs.clone()
+                                        .field(cl_deref.clone())
+                                        .field(encoded_field);
+                                        //.field(field_deref);
+
+                                    println!(" -> place:   {:?}", field_place);
+
+                                    let encoded_operand = self.encode_operand_place(operand)
+                                        .with_span(span)?;
+
+                                    println!(" -> encoded operand: {:?}", encoded_operand);
+
+                                    match encoded_operand {
+                                        Some(encoded_rhs) => {
+                                            // Substitute a place
+                                            state.substitute_place(&field_place, encoded_rhs);
+                                        }
+                                        None => {
+                                            // Substitute a place of a value with an expression
+                                            let rhs_expr =
+                                                self.mir_encoder.encode_operand_expr(operand)
+                                                    .with_span(span)?;
+                                            state.substitute_value(
+                                                &self.encoder.encode_value_expr(field_place, field_ty).with_span(span)?,
+                                                rhs_expr,
+                                            );
+                                        }
+                                    }
+                                }
                             }
 
                             ref x => unimplemented!("{:?}", x),

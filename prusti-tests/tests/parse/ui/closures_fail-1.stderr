@@ -3,8 +3,8 @@ error: expected one of `:`, `@`, or `|`, found `)`
    |
 13 |       let f = closure!(
    |  _____________^
-14 | |         requires(i >= 0),
-15 | |         ensures(result == i + 1),
+14 | |         #[requires(i >= 0)]
+15 | |         #[ensures(result == i + 1)]
 16 | |         |i| -> i32 { i + 1 }
    | |           - expected one of `:`, `@`, or `|`
 17 | |     );

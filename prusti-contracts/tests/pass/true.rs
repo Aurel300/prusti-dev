@@ -1,5 +1,6 @@
 // These feature flags are not needed when executing under Prusti
 // because it generates them for us.
+#![feature(type_ascription)]
 #![feature(register_tool)]
 #![register_tool(prusti)]
 

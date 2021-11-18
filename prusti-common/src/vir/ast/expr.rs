@@ -1238,10 +1238,10 @@ impl Expr {
                 body: Box<Expr>,
                 pos: Position,
             ) -> Expr {
-                if vars.contains(&self.target.get_base()) {
-                    // Do nothing
-                    Expr::ForAll(vars, triggers, body, pos)
-                } else {
+                //if vars.contains(&self.target.get_base()) {
+                //    // Do nothing
+                //    Expr::ForAll(vars, triggers, body, pos)
+                //} else {
                     Expr::ForAll(
                         vars,
                         triggers
@@ -1251,7 +1251,7 @@ impl Expr {
                         self.fold_boxed(body),
                         pos,
                     )
-                }
+                //}
             }
 
             fn fold_exists(
@@ -1261,10 +1261,10 @@ impl Expr {
                 body: Box<Expr>,
                 pos: Position,
             ) -> Expr {
-                if vars.contains(&self.target.get_base()) {
-                    // Do nothing
-                    Expr::Exists(vars, triggers, body, pos)
-                } else {
+                //if vars.contains(&self.target.get_base()) {
+                //    // Do nothing
+                //    Expr::Exists(vars, triggers, body, pos)
+                //} else {
                     Expr::Exists(
                         vars,
                         triggers
@@ -1274,7 +1274,7 @@ impl Expr {
                         self.fold_boxed(body),
                         pos,
                     )
-                }
+                //}
             }
         }
         let typaram_substs = match (&target, &replacement) {

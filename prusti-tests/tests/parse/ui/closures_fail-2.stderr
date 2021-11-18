@@ -3,8 +3,8 @@ error: closure must specify return type
    |
 11 |       let f = closure!(
    |  _____________^
-12 | |         requires(i >= 0),
-13 | |         ensures(result == i + 1),
+12 | |         #[requires(i >= 0)]
+13 | |         #[ensures(result == i + 1)]
 14 | |         |i: i32| i + 1
 15 | |     );
    | |_____^

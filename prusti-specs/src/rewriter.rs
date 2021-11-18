@@ -4,7 +4,11 @@ use proc_macro2::{TokenStream, Span};
 use syn::{Type, punctuated::Punctuated, Pat, Token};
 use syn::spanned::Spanned;
 use quote::{quote_spanned, format_ident, ToTokens};
-use crate::specifications::preparser::Parser;
+use crate::specifications::preparser::{
+    parse_prusti,
+    parse_prusti_pledge_rhs_only,
+    parse_prusti_pledge,
+};
 
 pub(crate) struct AstRewriter {
     spec_id_generator: SpecificationIdGenerator,
@@ -82,7 +86,7 @@ impl AstRewriter {
         &mut self,
         spec_type: SpecItemType,
         spec_id: untyped::SpecificationId,
-        expr: syn::Expr,
+        expr: TokenStream,
         item: &untyped::AnyFnItem,
     ) -> syn::Result<syn::Item> {
         if let Some(span) = self.check_contains_keyword_in_params(item, "result") {
@@ -99,11 +103,11 @@ impl AstRewriter {
         let spec_id_str = spec_id.to_string();
 
         let mut spec_item: syn::ItemFn = parse_quote_spanned! {item_span=>
-            #[allow(unused_must_use, unused_variables, dead_code)]
+            #[allow(unused_must_use, unused_parens, unused_variables, dead_code)]
             #[prusti::spec_only]
             #[prusti::spec_id = #spec_id_str]
             fn #item_name() -> bool {
-                #expr
+                ((#expr) : bool)
             }
         };
         spec_item.sig.generics = item.sig().generics.clone();
@@ -129,7 +133,7 @@ impl AstRewriter {
         self.generate_spec_item_fn(
             spec_type,
             spec_id,
-            Parser::from_token_stream(tokens).extract_assertion_expr()?,
+            parse_prusti(tokens)?,
             item
         )
     }
@@ -144,7 +148,7 @@ impl AstRewriter {
         self.generate_spec_item_fn(
             SpecItemType::Pledge,
             spec_id,
-            Parser::from_token_stream(tokens).extract_pledge_rhs_only_expr()?,
+            parse_prusti_pledge_rhs_only(tokens)?,
             &item
         )
     }
@@ -159,7 +163,7 @@ impl AstRewriter {
         self.generate_spec_item_fn(
             SpecItemType::Pledge,
             spec_id,
-            Parser::from_token_stream(tokens).extract_pledge_expr()?,
+            parse_prusti_pledge(tokens)?,
             &item
         )
     }
@@ -170,7 +174,7 @@ impl AstRewriter {
         spec_id: untyped::SpecificationId,
         tokens: TokenStream,
     ) -> syn::Result<TokenStream> {
-        let expr = Parser::from_token_stream(tokens).extract_assertion_expr()?;
+        let expr = parse_prusti(tokens)?;
         let spec_id_str = spec_id.to_string();
         let callsite_span = Span::call_site();
         Ok(quote_spanned! {callsite_span=>
@@ -192,11 +196,11 @@ impl AstRewriter {
         &mut self,
         inputs: Punctuated<Pat, Token![,]>,
         output: Type,
-        preconds: Vec<(untyped::SpecificationId, syn::Item)>,
-        postconds: Vec<(untyped::SpecificationId, syn::Item)>,
+        preconds: Vec<(untyped::SpecificationId, syn::Expr)>,
+        postconds: Vec<(untyped::SpecificationId, syn::Expr)>,
     ) -> syn::Result<(TokenStream, TokenStream)> {
         let process_cond = |is_post: bool, id: &untyped::SpecificationId,
-                            assertion: &syn::Item| -> TokenStream
+                            assertion: &syn::Expr| -> TokenStream
         {
             let spec_id_str = id.to_string();
             let name = format_ident!("prusti_{}_closure_{}", if is_post { "post" } else { "pre" }, spec_id_str);
@@ -234,8 +238,8 @@ impl AstRewriter {
         &mut self,
         spec_id: untyped::SpecificationId,
         tokens: TokenStream,
-    ) -> syn::Result<syn::Item> {
-        let expr = Parser::from_token_stream(tokens).extract_assertion_expr()?;
+    ) -> syn::Result<syn::Expr> {
+        let expr = parse_prusti(tokens)?;
         let spec_id_str = spec_id.to_string();
         let callsite_span = Span::call_site();
         Ok(parse_quote_spanned! {callsite_span=>
@@ -288,7 +292,11 @@ pub fn translate_implication(lhs: syn::Expr, rhs: syn::Expr) -> syn::Expr {
 }
 
 pub fn translate_conjunction(conjuncts: Vec<syn::Expr>) -> syn::Expr {
-    debug_assert!(conjuncts.len() != 0, "empty conjuncts given");
+    //debug_assert!(conjuncts.len() != 0, "empty conjuncts given");
+    if conjuncts.len() == 0 {
+        // TODO: figure out span
+        return parse_quote_spanned!{Span::call_site()=> true };
+    }
     conjuncts.into_iter().reduce(|a, b| {
         parse_quote_spanned! {a.span().join(b.span()).unwrap()=>
             #a && #b
@@ -313,18 +321,23 @@ pub fn translate_spec_entailment(closure: syn::Expr, args: Vec<(syn::Ident, syn:
     let pre_conjuncts = translate_conjunction(pres);
     let post_conjuncts = translate_conjunction(posts);
     parse_quote_spanned! {Span::call_site()=> // TODO: get the right span
-        entailment(#closure,
-                   |#arg_tokens| { // TODO: pass this as a tuple
-                       #pre_conjuncts
-                   },
-                   |#arg_tokens, cl_result: i32| { // TODO: get the right type
-                       #post_conjuncts
-                   }
+        entailment(
+            #closure,
+            |#arg_tokens| { // TODO: pass this as a tuple
+                #pre_conjuncts
+            },
+            |#arg_tokens, cl_result: i32| { // TODO: get the right type
+                #post_conjuncts
+            },
         )
     }
 }
 
 fn tuple_to_tokens(exprs: Vec<syn::Expr>) -> TokenStream {
+    if exprs.len() == 0 {
+        // TODO: figure out span
+        return quote_spanned! {Span::call_site()=> () };
+    }
     let inner = exprs.into_iter().map(|a| {
         a.to_token_stream()
     }).reduce(|a, b| {
@@ -338,13 +351,35 @@ fn tuple_to_tokens(exprs: Vec<syn::Expr>) -> TokenStream {
     }
 }
 
-pub fn translate_forall(vars: Vec<(syn::Ident, syn::Type)>, trigger_set: Vec<syn::Expr>, body: syn::Expr) -> syn::Expr {
+pub fn translate_quantifier(
+    vars: Vec<(syn::Ident, syn::Type)>,
+    trigger_set: Vec<Vec<syn::Expr>>,
+    body: syn::Expr,
+    is_forall: bool,
+) -> syn::Expr {
+    let span = body.span();
     let arg_tokens = args_to_tokens(vars);
-    let trigger_tuple = tuple_to_tokens(trigger_set);
-    parse_quote_spanned! {Span::call_site()=> // TODO: get the right span
-        forall(#trigger_tuple,
-               |#arg_tokens| -> bool {
-                   #body
-               })
-    }
+    let trigger_tuple = tuple_to_tokens(trigger_set.into_iter()
+        .map(|trigger| syn::parse2(tuple_to_tokens(trigger)).unwrap())
+        .collect());
+    let res = if is_forall {
+        parse_quote_spanned! {span=>
+            forall(
+                #trigger_tuple,
+                |#arg_tokens| -> bool {
+                    #body
+                },
+            )
+        }
+    } else {
+        parse_quote_spanned! {span=>
+            exists(
+                #trigger_tuple,
+                |#arg_tokens| -> bool {
+                    #body
+                },
+            )
+        }
+    };
+    res
 }

@@ -69,6 +69,8 @@ impl SpecificationSet {
     }
 }
 
+// TODO: reduce duplication with ProcedureSpecification in prusti-specs!
+//       (also for the other types)
 #[derive(Debug, Clone)]
 pub struct ProcedureSpecification {
     pub pres: Vec<LocalDefId>,
@@ -88,6 +90,43 @@ impl ProcedureSpecification {
             predicate_body: None,
             pure: false,
             trusted: false,
+        }
+    }
+    /// Trait implementation method refinement
+    /// Choosing alternative C as discussed in
+    /// https://ethz.ch/content/dam/ethz/special-interest/infk/chair-program-method/pm/documents/Education/Theses/Matthias_Erdin_MA_report.pdf
+    /// pp 19-23
+    ///
+    /// In other words, any pre-/post-condition provided by `other` will overwrite any provided by
+    /// `self`.
+    pub fn refine(&self, other: &Self) -> Self {
+        let pres = if other.pres.is_empty() {
+            self.pres.clone()
+        } else {
+            other.pres.clone()
+        };
+        let posts = if other.posts.is_empty() {
+            self.posts.clone()
+        } else {
+            other.posts.clone()
+        };
+        let pledges = if other.pledges.is_empty() {
+            self.pledges.clone()
+        } else {
+            other.pledges.clone()
+        };
+        let predicate_body = if other.predicate_body.is_none() {
+            self.predicate_body.clone()
+        } else {
+            other.predicate_body.clone()
+        };
+        Self {
+            pres,
+            posts,
+            pledges,
+            predicate_body,
+            pure: other.pure,
+            trusted: other.trusted,
         }
     }
 }
@@ -131,6 +170,12 @@ pub trait Spanned<'tcx> {
     /// to resolve positions of `rustc_middle::mir::Local` indices, `tcx` is
     /// used to resolve positions of global items.
     fn get_spans(&self, mir_body: &mir::Body<'tcx>, tcx: TyCtxt<'tcx>) -> Vec<Span>;
+}
+
+impl<'tcx> Spanned<'tcx> for DefId {
+    fn get_spans(&self, mir_body: &mir::Body<'tcx>, tcx: TyCtxt<'tcx>) -> Vec<Span> {
+        vec![tcx.def_span(*self)]
+    }
 }
 
 // impl<'tcx> Spanned<'tcx> for Expression {

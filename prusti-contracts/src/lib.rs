@@ -93,12 +93,17 @@ pub fn implication(lhs: bool, rhs: bool) -> bool {
 }
 
 #[allow(unused_variables, unused_mut)]
-pub fn entailment<F1, F2, F3>(f: F1, pres: F2, posts: F3) -> bool {
+pub fn specification_entailment<F1, F2, F3>(once: bool, f: &F1, pres: F2, posts: F3) -> bool {
     true
 }
 
 #[allow(unused_variables, unused_mut)]
 pub fn forall<T, F>(trigger_set: T, closure: F) -> bool {
+    true
+}
+
+#[allow(unused_variables, unused_mut)]
+pub fn exists<T, F>(trigger_set: T, closure: F) -> bool {
     true
 }
 

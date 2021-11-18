@@ -17,31 +17,28 @@ fn test3() {}
 #[requires(exists(||) 1+1)]
 fn test4() {}
 
-#[requires(exists(|a, b| true))]
+#[requires(exists(||) || exists(||))]
 fn test5() {}
 
-#[requires(exists(||) || exists(||))]
+#[requires(exists(|| 1+1 == 1+1, triggers=[1]))]
 fn test6() {}
 
-#[requires(exists(|| 1+1 == 1+1, triggers=[1]))]
+#[requires(exists(|| true, triggers=[(1,2), 1]))]
 fn test7() {}
 
-#[requires(exists(|| true, triggers=[(1,2), 1]))]
+#[requires(exists(|| true, triggers=1))]
 fn test8() {}
 
-#[requires(exists(|| true, triggers=1))]
+#[requires(exists(||))]
 fn test9() {}
 
-#[requires(exists(||))]
+#[requires(exists(|| 1+1 == 1+1))]
 fn test10() {}
 
-#[requires(exists(|| 1+1 == 1+1))]
+#[requires(exists(||, triggers=[]))]
 fn test11() {}
 
-#[requires(exists(||, triggers=[]))]
-fn test12() {}
-
 #[requires(exists(|| 1+1 == 1+1, triggers=[(1,)]))]
-fn test13() {}
+fn test12() {}
 
 fn main() {}

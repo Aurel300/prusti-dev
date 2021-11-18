@@ -482,6 +482,7 @@ impl<'p, 'v: 'p, 'tcx: 'v> ProcedureEncoder<'p, 'v, 'tcx> {
             .encoder
             .error_manager()
             .register(self.mir.span, ErrorCtxt::Unexpected);
+        //println!("method before F/U: {}", self.cfg_method);
         let method_with_fold_unfold = foldunfold::add_fold_unfold(
             self.encoder,
             self.cfg_method,
@@ -3348,8 +3349,9 @@ impl<'p, 'v: 'p, 'tcx: 'v> ProcedureEncoder<'p, 'v, 'tcx> {
                 .iter()
                 .map(|(place, mutability)| encode_place_perm(place, *mutability, pre_label))
                 .collect::<SpannedEncodingResult<_>>()?;
-            unimplemented!();
-            // if let Some(typed::Pledge { reference, lhs: body_lhs, rhs: body_rhs}) = pledges.first() {
+            if let Some(typed::Pledge { reference, lhs: body_lhs, rhs: body_rhs}) = pledges.first() {
+                println!("pledge: {:?} // {:?} // {:?}", reference, body_lhs, body_rhs);
+                todo!();
             //     debug!(
             //         "pledge reference={:?} lhs={:?} rhs={:?}",
             //         reference, body_lhs, body_rhs
@@ -3412,14 +3414,14 @@ impl<'p, 'v: 'p, 'tcx: 'v> ProcedureEncoder<'p, 'v, 'tcx> {
             //     assertion_rhs = assertion_rhs.remove_redundant_old();
             //     lhs.push(assertion_lhs);
             //     rhs.push(assertion_rhs);
-            // }
-            // let lhs = lhs
-            //     .into_iter()
-            //     .conjoin();
-            // let rhs = rhs
-            //     .into_iter()
-            //     .conjoin();
-            // Ok(Some((lhs, rhs)))
+            }
+            let lhs = lhs
+                .into_iter()
+                .conjoin();
+            let rhs = rhs
+                .into_iter()
+                .conjoin();
+            Ok(Some((lhs, rhs)))
         } else {
             Ok(None)
         }
@@ -4436,25 +4438,24 @@ impl<'p, 'v: 'p, 'tcx: 'v> ProcedureEncoder<'p, 'v, 'tcx> {
                 .map(|local| self.mir_encoder.encode_local(local).map(|l| l.into()))
                 .collect::<Result<Vec<_>, _>>()?;
             for assertion in &specs {
-                unimplemented!();
-                // // TODO: Mmm... are these parameters correct?
-                // let encoded_spec = self.encoder.encode_assertion(
-                //     &assertion,
-                //     &self.mir,
-                //     Some(PRECONDITION_LABEL),
-                //     &encoded_args,
-                //     None,
-                //     false,
-                //     Some(loop_inv_block),
-                //     ErrorCtxt::GenericExpression,
-                // )?;
-                // let spec_spans = typed::Spanned::get_spans(assertion, &self.mir, self.encoder.env().tcx());
-                // let spec_pos = self
-                //     .encoder
-                //     .error_manager()
-                //     .register_span(spec_spans.clone());
-                // encoded_specs.push(encoded_spec.set_default_pos(spec_pos));
-                // encoded_spec_spans.extend(spec_spans);
+                // TODO: Mmm... are these parameters correct?
+                let encoded_spec = self.encoder.encode_assertion(
+                    &assertion,
+                    &self.mir,
+                    Some(PRECONDITION_LABEL),
+                    &encoded_args,
+                    None,
+                    false,
+                    Some(loop_inv_block),
+                    ErrorCtxt::GenericExpression,
+                )?;
+                let spec_spans = typed::Spanned::get_spans(&assertion.to_def_id(), &self.mir, self.encoder.env().tcx());
+                let spec_pos = self
+                    .encoder
+                    .error_manager()
+                    .register_span(spec_spans.clone());
+                encoded_specs.push(encoded_spec.set_default_pos(spec_pos));
+                encoded_spec_spans.extend(spec_spans);
             }
             trace!("encoded_specs: {:?}", encoded_specs);
         }

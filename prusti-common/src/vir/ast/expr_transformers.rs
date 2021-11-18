@@ -402,12 +402,17 @@ pub trait ExprWalker: Sized {
     fn walk_forall(
         &mut self,
         vars: &Vec<LocalVar>,
-        _triggers: &Vec<Trigger>,
+        triggers: &Vec<Trigger>,
         body: &Expr,
         _pos: &Position
     ) {
         for var in vars {
             self.walk_local_var(var);
+        }
+        for trigger in triggers {
+            for expr in trigger.elements() {
+                self.walk(expr);
+            }
         }
         self.walk(body);
     }

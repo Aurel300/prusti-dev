@@ -566,6 +566,14 @@ impl<'tcx> Environment<'tcx> {
         called_def_id: ProcedureDefId, // what are we calling?
         call_substs: SubstsRef<'tcx>,
     ) -> (ProcedureDefId, SubstsRef<'tcx>) {
+        // normalise substitutions first
+        let param_env = self.tcx.param_env(caller_def_id);
+        let call_substs = self.tcx.subst_and_normalize_erasing_regions(
+            call_substs,
+            param_env,
+            self.identity_substs(called_def_id),
+        );
+
         use prusti_rustc_interface::middle::ty::TypeVisitable;
 
         // avoids a compiler-internal panic
@@ -573,7 +581,6 @@ impl<'tcx> Environment<'tcx> {
             return (called_def_id, call_substs);
         }
 
-        let param_env = self.tcx.param_env(caller_def_id);
         traits::resolve_instance(self.tcx, param_env.and((called_def_id, call_substs)))
             .map(|opt_instance| opt_instance
                 .map(|instance| (instance.def_id(), instance.substs))

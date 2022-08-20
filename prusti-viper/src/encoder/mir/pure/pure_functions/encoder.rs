@@ -103,12 +103,14 @@ impl<'p, 'v: 'p, 'tcx: 'v> PureFunctionEncoder<'p, 'v, 'tcx> {
         let span = encoder.get_spec_span(proc_def_id);
 
         // TODO: move this to a signatures module
-        let sig = encoder.env().tcx().fn_sig(proc_def_id);
-        let sig = encoder.env().tcx().subst_and_normalize_erasing_regions(
-            substs,
-            encoder.env().tcx().param_env(parent_def_id),
+        use prusti_rustc_interface::middle::ty::Subst;
+        let tcx = encoder.env().tcx();
+        let sig = tcx.fn_sig(proc_def_id);
+        let sig = ty::EarlyBinder(sig).subst(tcx, substs);
+        let sig = tcx.try_normalize_erasing_regions(
+            tcx.param_env(parent_def_id),
             sig,
-        );
+        ).unwrap_or(sig);
 
         PureFunctionEncoder {
             encoder,
@@ -170,12 +172,12 @@ impl<'p, 'v: 'p, 'tcx: 'v> PureFunctionEncoder<'p, 'v, 'tcx> {
             let ty = self.sig.output();
             let param_env = self.encoder.env().tcx().param_env(self.proc_def_id);
 
-            if !self.encoder.env().type_is_copy(ty, param_env) {
-                return Err(SpannedEncodingError::unsupported(
-                    "return type of pure function does not implement Copy",
-                    self.get_return_span(),
-                ));
-            }
+            // if !self.encoder.env().type_is_copy(ty, param_env) {
+            //     return Err(SpannedEncodingError::unsupported(
+            //         "return type of pure function does not implement Copy",
+            //         self.get_return_span(),
+            //     ));
+            // }
 
             body_expr = vir::Expr::snap_app(body_expr);
         }
@@ -530,12 +532,12 @@ impl<'p, 'v: 'p, 'tcx: 'v> PureFunctionEncoder<'p, 'v, 'tcx> {
 
         // Return an error for unsupported return types
         let param_env = self.encoder.env().tcx().param_env(self.parent_def_id);
-        if !self.encoder.env().type_is_copy(ty, param_env) {
-            return Err(SpannedEncodingError::incorrect(
-                "return type of pure function does not implement Copy",
-                self.get_return_span(),
-            ));
-        }
+        // if !self.encoder.env().type_is_copy(ty, param_env) {
+        //     return Err(SpannedEncodingError::incorrect(
+        //         "return type of pure function does not implement Copy",
+        //         self.get_return_span(),
+        //     ));
+        // }
 
         self.encoder
             .encode_snapshot_type(ty.skip_binder())

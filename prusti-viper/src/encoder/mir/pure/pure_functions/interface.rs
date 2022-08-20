@@ -43,12 +43,17 @@ fn compute_key<'v, 'tcx: 'v>(
         tcx.fn_sig(proc_def_id)
     };
     let param_env = tcx.param_env(caller_def_id);
-    let sig = tcx.subst_and_normalize_erasing_regions(substs, param_env, sig);
-    let substs = tcx.subst_and_normalize_erasing_regions(
-        substs,
+
+    use prusti_rustc_interface::middle::ty::Subst;
+
+    let substs = tcx.try_normalize_erasing_regions(
         param_env,
-        encoder.env().identity_substs(proc_def_id),
-    );
+        substs,
+    ).unwrap_or(substs);
+
+    let sig = ty::EarlyBinder(sig).subst(tcx, substs);
+    let sig = tcx.try_normalize_erasing_regions(param_env, sig).unwrap_or(sig);
+
     Ok((proc_def_id, substs, sig.inputs_and_output().skip_binder()))
 }
 

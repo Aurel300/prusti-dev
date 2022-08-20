@@ -356,7 +356,8 @@ impl<'tcx> Environment<'tcx> {
             .entry((substs, caller_def_id))
             .or_insert_with(|| {
                 let param_env = self.tcx.param_env(caller_def_id);
-                self.tcx.subst_and_normalize_erasing_regions(substs, param_env, body.base_body.clone())
+                let body = ty::EarlyBinder(body.base_body.clone()).subst(self.tcx, substs);
+                self.tcx.try_normalize_erasing_regions(param_env, body.clone()).unwrap_or(body)
             })
             .clone()
     }
@@ -568,11 +569,15 @@ impl<'tcx> Environment<'tcx> {
     ) -> (ProcedureDefId, SubstsRef<'tcx>) {
         // normalise substitutions first
         let param_env = self.tcx.param_env(caller_def_id);
-        let call_substs = self.tcx.subst_and_normalize_erasing_regions(
-            call_substs,
+        let call_substs_res = self.tcx.try_normalize_erasing_regions(
             param_env,
-            self.identity_substs(called_def_id),
+            call_substs,
         );
+
+        if call_substs_res.is_err() {
+            return (called_def_id, call_substs);
+        }
+        let call_substs = call_substs_res.unwrap();
 
         use prusti_rustc_interface::middle::ty::TypeVisitable;
 

@@ -141,8 +141,6 @@ pub fn test_entrypoint<'tcx>(
                 let res = crate::encoders::MirImpureEncoder::encode(def_id.to_def_id());
                 assert!(res.is_ok());
 
-                let res = crate::encoders::MirFunctionEncoder::encode(def_id.to_def_id());
-                assert!(res.is_ok());
 
                 /*
                 match res {
@@ -168,12 +166,6 @@ pub fn test_entrypoint<'tcx>(
     for output in crate::encoders::MirImpureEncoder::all_outputs() {
         viper_code.push_str(&format!("{:?}\n", output.method));
     }
-
-    header(&mut viper_code, "functions");
-    for output in crate::encoders::MirFunctionEncoder::all_outputs() {
-        viper_code.push_str(&format!("{:?}\n", output.method));
-    }
-
 
     header(&mut viper_code, "MIR builtins");
     for output in crate::encoders::MirBuiltinEncoder::all_outputs() {

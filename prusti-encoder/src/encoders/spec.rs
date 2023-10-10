@@ -1,12 +1,6 @@
-use prusti_rustc_interface::{
-    //middle::{mir, ty},
-    span::def_id::DefId,
-};
-use prusti_interface::specs::typed::DefSpecificationMap;
-use task_encoder::{
-    TaskEncoder,
-    TaskEncoderDependencies,
-};
+use prusti_interface::specs::typed::{DefSpecificationMap, SpecificationItem};
+use prusti_rustc_interface::span::def_id::DefId;
+use task_encoder::{TaskEncoder, TaskEncoderDependencies};
 
 pub struct SpecEncoder;
 
@@ -78,27 +72,47 @@ impl TaskEncoder for SpecEncoder {
     fn do_encode_full<'vir>(
         task_key: &Self::TaskKey<'vir>,
         deps: &mut TaskEncoderDependencies<'vir>,
-    ) -> Result<(
-        Self::OutputFullLocal<'vir>,
-        Self::OutputFullDependency<'vir>,
-    ), (
-        Self::EncodingError,
-        Option<Self::OutputFullDependency<'vir>>,
-    )> {
+    ) -> Result<
+        (
+            Self::OutputFullLocal<'vir>,
+            Self::OutputFullDependency<'vir>,
+        ),
+        (
+            Self::EncodingError,
+            Option<Self::OutputFullDependency<'vir>>,
+        ),
+    > {
         deps.emit_output_ref::<Self>(task_key.clone(), ());
-        vir::with_vcx(|vcx| with_def_spec(|def_spec| {
-            let specs = def_spec.get_proc_spec(&task_key.0);
-            if let Some(specs) = specs {
-                Ok((SpecEncoderOutput {
-                    pres: vcx.alloc_slice(specs.base_spec.pres.expect_inherent()),
-                    posts: vcx.alloc_slice(specs.base_spec.posts.expect_inherent()),
-                }, ()))
-            } else {
-                Ok((SpecEncoderOutput {
-                    pres: &[],
-                    posts: &[],
-                }, ()))
-            }
-        }))
+        vir::with_vcx(|vcx| {
+            with_def_spec(|def_spec| {
+                let specs = def_spec.get_proc_spec(&task_key.0);
+                if let Some(specs) = specs {
+                    Ok((
+                        // QUESTION: Is this correct what i am doing here?
+                        SpecEncoderOutput {
+                            pres: match &specs.base_spec.pres {
+                                SpecificationItem::Inherent(inh) => vcx.alloc_slice(inh),
+                                SpecificationItem::Empty => &[],
+                                _ => todo!(),
+                            },
+                            posts: match &specs.base_spec.posts {
+                                SpecificationItem::Inherent(inh) => vcx.alloc_slice(inh),
+                                SpecificationItem::Empty => &[],
+                                _ => todo!(),
+                            },
+                        },
+                        (),
+                    ))
+                } else {
+                    Ok((
+                        SpecEncoderOutput {
+                            pres: &[],
+                            posts: &[],
+                        },
+                        (),
+                    ))
+                }
+            })
+        })
     }
 }

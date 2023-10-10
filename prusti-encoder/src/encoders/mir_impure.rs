@@ -646,21 +646,31 @@ impl<'vir, 'enc> mir::visit::Visitor<'vir> for EncoderVisitor<'vir, 'enc> {
                                 rhs: self.encode_operand_snap(r),
                             })))],
                         )),
-                    mir::Rvalue::BinaryOp(mir::BinOp::Lt, box (l, r)) =>
+                    mir::Rvalue::BinaryOp(mir::BinOp::Lt, box (l, r)) => {
+                        let ty_l = self.deps.require_ref::<crate::encoders::TypeEncoder>(
+                            l.ty(self.local_decls, self.vcx.tcx),
+                        ).unwrap();
+                        let ty_l = vir::vir_format!(self.vcx, "{}_val", ty_l.snapshot_name); // TODO: get the `_val` function differently
+                        let ty_r = self.deps.require_ref::<crate::encoders::TypeEncoder>(
+                            r.ty(self.local_decls, self.vcx.tcx),
+                        ).unwrap();
+                        let ty_r = vir::vir_format!(self.vcx, "{}_val", ty_r.snapshot_name); // TODO: get the `_val` function differently
+
                         Some(self.vcx.mk_func_app(
                             "s_Bool_cons", // TODO: go through type encoder
                             &[self.vcx.alloc(vir::ExprData::BinOp(self.vcx.alloc(vir::BinOpData {
                                 kind: vir::BinOpKind::CmpLt,
-                                lhs: self.vcx.mk_func_app( // TODO: go through type encoder
-                                    "s_Int_i32_val",
+                                lhs: self.vcx.mk_func_app(
+                                    ty_l,
                                     &[self.encode_operand_snap(l)],
                                 ),
-                                rhs: self.vcx.mk_func_app( // TODO: go through type encoder
-                                    "s_Int_i32_val",
+                                rhs: self.vcx.mk_func_app(
+                                    ty_r,
                                     &[self.encode_operand_snap(r)],
                                 ),
                             })))],
-                        )),
+                        ))
+                    }
                     //mir::Rvalue::BinaryOp(BinOp, Box<(Operand<'tcx>, Operand<'tcx>)>) => {}
 
                     //mir::Rvalue::CheckedBinaryOp(BinOp, Box<(Operand<'tcx>, Operand<'tcx>)>) => {}

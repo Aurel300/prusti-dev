@@ -273,14 +273,49 @@ pub trait TaskEncoder {
     {
         let task_key = Self::task_to_key(&task);
 
-        // TODO: check for full output first?
+        // QUESTION: is this what was meant with "check for full output first?"
 
-        // enqueue
+
+        // FIXME: clean up this mess
         let task_key_clone = task_key.clone();
-        assert!(Self::with_cache(move |cache| cache.borrow_mut().insert(
-            task_key_clone,
-            TaskEncoderCacheState::Enqueued,
-        ).is_none()));
+        let in_queue = Self::with_cache(move |cache| {
+            let mut cache = cache.borrow_mut();
+
+            match cache.get(&task_key_clone) {
+                Some(e) => match e {
+                    TaskEncoderCacheState::ErrorEnqueue { error } => Some(Err(error.clone())),
+                    TaskEncoderCacheState::Enqueued => panic!(),
+                    TaskEncoderCacheState::Started { output_ref } => panic!(),
+                    TaskEncoderCacheState::Encoded {
+                        output_ref,
+                        deps,
+                        output_local,
+                        output_dep,
+                    } => Some(Ok((
+                        output_ref.clone(),
+                        output_local.clone(),
+                        output_dep.clone(),
+                    ))),
+                    TaskEncoderCacheState::ErrorEncode {
+                        output_ref,
+                        deps,
+                        error,
+                        output_dep,
+                    } => todo!(),
+                },
+                None => {
+                    // enqueue
+
+                    cache.insert(task_key_clone, TaskEncoderCacheState::Enqueued);
+                    None
+                }
+            }
+        });
+
+        match in_queue {
+            None => {}
+            Some(x) => return x,
+        }
 
         let mut deps: TaskEncoderDependencies<'vir> = Default::default();
         let encode_result = Self::do_encode_full(&task_key, &mut deps);

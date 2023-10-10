@@ -2,6 +2,7 @@ mod generic;
 mod mir_builtin;
 mod mir_impure;
 mod mir_pure;
+mod mir_pure_function;
 mod spec;
 mod typ;
 mod viper_tuple;
@@ -34,3 +35,6 @@ pub use viper_tuple::{
     ViperTupleEncoderOutputRef,
     ViperTupleEncoderOutput,
 };
+
+
+pub use mir_pure_function::MirFunctionEncoder;

@@ -210,7 +210,7 @@ pub fn test_entrypoint<'tcx>(
             viper_code.push_str(&format!("{:?}\n", domain));
         }
     }
-    
+
     std::fs::write("local-testing/simple.vpr", viper_code).unwrap();
 
     vir::with_vcx(|vcx| vcx.alloc(vir::ProgramData {

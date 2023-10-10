@@ -1,6 +1,12 @@
+use prusti_rustc_interface::{
+    //middle::{mir, ty},
+    span::def_id::DefId,
+};
 use prusti_interface::specs::typed::{DefSpecificationMap, SpecificationItem};
-use prusti_rustc_interface::span::def_id::DefId;
-use task_encoder::{TaskEncoder, TaskEncoderDependencies};
+use task_encoder::{
+    TaskEncoder,
+    TaskEncoderDependencies,
+};
 
 pub struct SpecEncoder;
 

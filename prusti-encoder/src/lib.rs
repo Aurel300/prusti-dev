@@ -137,11 +137,8 @@ pub fn test_entrypoint<'tcx>(
                     continue;
                 }
 
-
                 let res = crate::encoders::MirImpureEncoder::encode(def_id.to_def_id());
                 assert!(res.is_ok());
-
-
                 /*
                 match res {
                     Ok(res) => println!("ok: {:?}", res),

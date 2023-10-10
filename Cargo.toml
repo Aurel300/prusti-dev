@@ -18,8 +18,8 @@ members = [
     "smt-log-analyzer",
     "task-encoder",
     "test-crates",
-    #"viper",
-    #"viper-defs",
+    "viper",
+    "viper-defs",
     "vir",
     "vir-proc-macro",
 ]

@@ -94,7 +94,6 @@ impl TaskEncoder for SpecEncoder {
                 let specs = def_spec.get_proc_spec(&task_key.0);
                 if let Some(specs) = specs {
                     Ok((
-                        // QUESTION: Is this correct what i am doing here?
                         SpecEncoderOutput {
                             pres: match &specs.base_spec.pres {
                                 SpecificationItem::Inherent(inh) => vcx.alloc_slice(inh),

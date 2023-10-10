@@ -153,9 +153,7 @@ pub fn test_entrypoint<'tcx>(
     }
     //println!("all items in crate: {:?}", tcx.hir_crate_items(()).definitions().collect::<Vec<_>>());
 
-    debug!("generating viper code");
     fn header(code: &mut String, title: &str) {
-        debug!("generating viper code header: {title}");
         code.push_str("// -----------------------------\n");
         code.push_str(&format!("// {}\n", title));
         code.push_str("// -----------------------------\n");

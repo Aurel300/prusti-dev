@@ -22,6 +22,8 @@ pub enum BinOpKind {
     CmpEq,
     CmpGt,
     CmpLt,
+    CmpGe,
+    CmpLe,
     And,
     Add,
     // ...

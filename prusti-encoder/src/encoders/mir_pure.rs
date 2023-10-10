@@ -628,20 +628,32 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
                             rhs: self.encode_operand(curr_ver, r),
                         })))],
                     ),
-                    mir::BinOp::Gt => self.vcx.mk_func_app(
-                        "s_Bool_cons", // TODO: go through type encoder
-                        &[self.vcx.alloc(ExprRetData::BinOp(self.vcx.alloc(vir::BinOpGenData {
-                            kind: vir::BinOpKind::CmpGt,
-                            lhs: self.vcx.mk_func_app(
-                                "s_Int_i32_val",
-                                &[self.encode_operand(curr_ver, l)],
-                            ),
-                            rhs: self.vcx.mk_func_app(
-                                "s_Int_i32_val",
-                                &[self.encode_operand(curr_ver, r)],
-                            ),
-                        })))],
-                    ),
+                    mir::BinOp::Gt | mir::BinOp::Ge | mir::BinOp::Lt | mir::BinOp::Le => {
+                        let vir_op = match op {
+                            mir::BinOp::Gt => vir::BinOpKind::CmpGt,
+                            mir::BinOp::Ge => vir::BinOpKind::CmpGe,
+                            mir::BinOp::Lt => vir::BinOpKind::CmpLt,
+                            mir::BinOp::Le => vir::BinOpKind::CmpLe,
+                            _ => unreachable!()
+                        };
+
+                        self.vcx.mk_func_app(
+                            "s_Bool_cons", // TODO: go through type encoder
+                            &[self.vcx.alloc(ExprRetData::BinOp(self.vcx.alloc(vir::BinOpGenData {
+                                kind: vir_op,
+                                lhs: self.vcx.mk_func_app(
+                                    "s_Int_i32_val",
+                                    &[self.encode_operand(curr_ver, l)],
+                                ),
+                                rhs: self.vcx.mk_func_app(
+                                    "s_Int_i32_val",
+                                    &[self.encode_operand(curr_ver, r)],
+                                ),
+                            })))],
+                        )
+                    }
+
+                 
                     k => todo!("binop {k:?}"),
                 }
             }

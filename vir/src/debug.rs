@@ -51,7 +51,9 @@ impl<'vir, Curr, Next> Debug for BinOpGenData<'vir, Curr, Next> {
         write!(f, ") {} (", match self.kind {
             BinOpKind::CmpEq => "==",
             BinOpKind::CmpGt => ">",
+            BinOpKind::CmpGe => ">=",
             BinOpKind::CmpLt => "<",
+            BinOpKind::CmpLe => "<=",
             BinOpKind::And => "&&",
             BinOpKind::Add => "+",
         })?;

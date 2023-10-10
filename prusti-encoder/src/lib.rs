@@ -9,7 +9,6 @@ extern crate rustc_type_ir;
 
 mod encoders;
 
-use log::debug;
 use prusti_rustc_interface::{
     middle::ty,
     hir,
@@ -212,7 +211,6 @@ pub fn test_entrypoint<'tcx>(
         }
     }
     
-    debug!("writing viper code to file");
     std::fs::write("local-testing/simple.vpr", viper_code).unwrap();
 
     vir::with_vcx(|vcx| vcx.alloc(vir::ProgramData {

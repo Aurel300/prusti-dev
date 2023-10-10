@@ -2078,7 +2078,6 @@ dependencies = [
 name = "prusti-encoder"
 version = "0.1.0"
 dependencies = [
- "log",
  "mir-ssa-analysis",
  "mir-state-analysis",
  "prusti-interface",

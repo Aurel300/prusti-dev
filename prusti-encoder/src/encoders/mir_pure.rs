@@ -628,7 +628,7 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
                             rhs: self.encode_operand(curr_ver, r),
                         })))],
                     ),
-                    mir::BinOp::Gt =>  mir::BinOp::Ge | mir::BinOp::Lt | mir::BinOp::Le => {
+                    mir::BinOp::Gt | mir::BinOp::Ge | mir::BinOp::Lt | mir::BinOp::Le => {
                         let vir_op = match op {
                             mir::BinOp::Gt => vir::BinOpKind::CmpGt,
                             mir::BinOp::Ge => vir::BinOpKind::CmpGe,

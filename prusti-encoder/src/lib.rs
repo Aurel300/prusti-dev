@@ -9,10 +9,8 @@ extern crate rustc_type_ir;
 
 mod encoders;
 
-use prusti_rustc_interface::{
-    middle::ty,
-    hir,
-};
+use prusti_interface::specs::typed::{SpecificationId, SpecificationItem};
+use prusti_rustc_interface::{hir, middle::ty};
 
 /*
 struct MirBodyPureEncoder;
@@ -99,7 +97,7 @@ impl<'vir, 'tcx> TaskEncoder<'vir, 'tcx> for MirBodyImpureEncoder<'vir, 'tcx> {
     );
     // TaskKey, OutputRef same as above
     type OutputFull = vir::Method<'vir>;
-} 
+}
 
 struct MirTyEncoder<'vir, 'tcx>(PhantomData<&'vir ()>, PhantomData<&'tcx ()>);
 impl<'vir, 'tcx> TaskEncoder<'vir, 'tcx> for MirTyEncoder<'vir, 'tcx> {
@@ -119,7 +117,7 @@ pub fn test_entrypoint<'tcx>(
 ) -> vir::Program<'tcx> {
     use task_encoder::TaskEncoder;
 
-    crate::encoders::init_def_spec(def_spec);
+    crate::encoders::init_def_spec(def_spec.clone());
     vir::init_vcx(vir::VirCtxt::new(tcx));
 
     // TODO: this should be a "crate" encoder, which will deps.require all the methods in the crate
@@ -139,6 +137,19 @@ pub fn test_entrypoint<'tcx>(
 
                 let res = crate::encoders::MirImpureEncoder::encode(def_id.to_def_id());
                 assert!(res.is_ok());
+
+                let kind = def_spec
+                    .get_proc_spec(&def_id.to_def_id())
+                    .map(|e| e.base_spec.kind);
+                if let Some(SpecificationItem::Inherent(
+                    prusti_interface::specs::typed::ProcedureSpecificationKind::Pure,
+                )) = kind
+                {
+                    log::debug!("Encoding {def_id:?} as a pure function because it is labeled as pure");
+                    let res = crate::encoders::MirFunctionEncoder::encode(def_id.to_def_id());
+                    assert!(res.is_ok());
+                }
+
                 /*
                 match res {
                     Ok(res) => println!("ok: {:?}", res),
@@ -161,6 +172,11 @@ pub fn test_entrypoint<'tcx>(
 
     header(&mut viper_code, "methods");
     for output in crate::encoders::MirImpureEncoder::all_outputs() {
+        viper_code.push_str(&format!("{:?}\n", output.method));
+    }
+
+    header(&mut viper_code, "functions");
+    for output in crate::encoders::MirFunctionEncoder::all_outputs() {
         viper_code.push_str(&format!("{:?}\n", output.method));
     }
 
@@ -202,20 +218,20 @@ pub fn test_entrypoint<'tcx>(
 
     std::fs::write("local-testing/simple.vpr", viper_code).unwrap();
 
-    vir::with_vcx(|vcx| vcx.alloc(vir::ProgramData {
-        fields: &[],
-        domains: &[],
-        predicates: &[],
-        functions: vcx.alloc_slice(&[
-            vcx.alloc(vir::FunctionData {
+    vir::with_vcx(|vcx| {
+        vcx.alloc(vir::ProgramData {
+            fields: &[],
+            domains: &[],
+            predicates: &[],
+            functions: vcx.alloc_slice(&[vcx.alloc(vir::FunctionData {
                 name: "test_function",
                 args: &[],
                 ret: &vir::TypeData::Bool,
                 pres: &[],
                 posts: &[],
                 expr: None,
-            }),
-        ]),
-        methods: &[],
-    }))
+            })]),
+            methods: &[],
+        })
+    })
 }

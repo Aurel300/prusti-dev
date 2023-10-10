@@ -501,7 +501,7 @@ impl<'vir, 'enc> EncoderVisitor<'vir, 'enc> {
                     ty::TyKind::Uint(uint_ty) => {
                         let scalar_val = const_val.try_to_scalar_int().unwrap();
                         self.vcx.alloc(vir::ExprData::Todo(
-                            vir::vir_format!(self.vcx, "s_Int_{}_cons({})", uint_ty.name_str(), scalar_val.try_to_uint(scalar_val.size()).unwrap()),
+                            vir::vir_format!(self.vcx, "s_Uint_{}_cons({})", uint_ty.name_str(), scalar_val.try_to_uint(scalar_val.size()).unwrap()),
                         ))
                     }
                     ty::TyKind::Bool => self.vcx.alloc(vir::ExprData::Todo(

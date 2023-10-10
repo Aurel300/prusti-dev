@@ -64,7 +64,8 @@ impl<'vir> TypeEncoderOutputRef<'vir> {
                 //    vcx.alloc(vir::ConstData::Bool(val != 0)),
                 //)));
             }
-            name if name.starts_with("s_Int_") => vir::with_vcx(|vcx| vir::vir_format!(vcx, "{name}_cons")),
+            name if name.starts_with("s_Int_") || name.starts_with("s_Uint_") =>
+                vir::with_vcx(|vcx| vir::vir_format!(vcx, "{name}_cons")),
             k => todo!("unsupported type in expr_from_u128 {k:?}"),
         };
         vir::with_vcx(|vcx| vcx.mk_func_app(
@@ -672,13 +673,13 @@ impl TaskEncoder for TypeEncoder {
             }
             TyKind::Int(_) |
             TyKind::Uint(_) => {
-                let name_str = match task_key.kind() {
-                    TyKind::Int(kind) => kind.name_str(),
-                    TyKind::Uint(kind) => kind.name_str(),
+                let (sign, name_str) = match task_key.kind() {
+                    TyKind::Int(kind) => ("Int", kind.name_str()),
+                    TyKind::Uint(kind) => ("Uint", kind.name_str()),
                     _ => unreachable!(),
                 };
-                let name_s = vir::vir_format!(vcx, "s_Int_{name_str}");
-                let name_p = vir::vir_format!(vcx, "p_Int_{name_str}");
+                let name_s = vir::vir_format!(vcx, "s_{sign}_{name_str}");
+                let name_p = vir::vir_format!(vcx, "p_{sign}_{name_str}");
                 let name_cons = vir::vir_format!(vcx, "{name_s}_cons");
                 let name_val = vir::vir_format!(vcx, "{name_s}_val");
                 let name_field = vir::vir_format!(vcx, "f_{name_s}");

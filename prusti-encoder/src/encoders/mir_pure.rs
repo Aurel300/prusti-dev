@@ -696,9 +696,18 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
                             ty::TyKind::Tuple(tys) if tys.len() == 0 => self.vcx.alloc(ExprRetData::Todo(
                                 vir::vir_format!(self.vcx, "s_Tuple0_cons()"),
                             )),
-                            ty::TyKind::Int(ty::IntTy::I32) => self.vcx.alloc(ExprRetData::Todo(
-                                vir::vir_format!(self.vcx, "s_Int_i32_cons({})", const_val.try_to_scalar_int().unwrap()),
-                            )),
+                            ty::TyKind::Int(int_ty) => {
+                                let scalar_val = const_val.try_to_scalar_int().unwrap();
+                                self.vcx.alloc(ExprRetData::Todo(
+                                    vir::vir_format!(self.vcx, "s_Int_{}_cons({})", int_ty.name_str(), scalar_val.try_to_int(scalar_val.size()).unwrap()),
+                                ))
+                            }
+                            ty::TyKind::Uint(uint_ty) => {
+                                let scalar_val = const_val.try_to_scalar_int().unwrap();
+                                self.vcx.alloc(ExprRetData::Todo(
+                                    vir::vir_format!(self.vcx, "s_Int_{}_cons({})", uint_ty.name_str(), scalar_val.try_to_uint(scalar_val.size()).unwrap()),
+                                ))
+                            }
                             ty::TyKind::Bool => self.vcx.alloc(ExprRetData::Todo(
                                 vir::vir_format!(self.vcx, "s_Bool_cons({})", const_val.try_to_bool().unwrap()),
                             )),

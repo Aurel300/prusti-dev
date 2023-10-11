@@ -34,4 +34,3 @@ pub use viper_tuple::{
     ViperTupleEncoderOutputRef,
     ViperTupleEncoderOutput,
 };
-

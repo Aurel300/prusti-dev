@@ -115,7 +115,6 @@ impl TaskEncoder for MirPureEncoder {
                     assert_eq!(lctx.0, def_id);
 
                     // check: are we providing the expected number of arguments?
-
                     assert_eq!(lctx.1.len(), body.arg_count);
 
                     use vir::Reify;

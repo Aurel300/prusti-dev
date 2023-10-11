@@ -10,7 +10,10 @@ extern crate rustc_type_ir;
 mod encoders;
 
 use prusti_interface::{specs::typed::{SpecificationId, SpecificationItem}, environment::EnvBody};
-use prusti_rustc_interface::{hir, middle::ty};
+use prusti_rustc_interface::{
+    middle::ty,
+    hir,
+};
 
 /*
 struct MirBodyPureEncoder;
@@ -97,7 +100,7 @@ impl<'vir, 'tcx> TaskEncoder<'vir, 'tcx> for MirBodyImpureEncoder<'vir, 'tcx> {
     );
     // TaskKey, OutputRef same as above
     type OutputFull = vir::Method<'vir>;
-}
+} 
 
 struct MirTyEncoder<'vir, 'tcx>(PhantomData<&'vir ()>, PhantomData<&'tcx ()>);
 impl<'vir, 'tcx> TaskEncoder<'vir, 'tcx> for MirTyEncoder<'vir, 'tcx> {
@@ -203,12 +206,12 @@ pub fn test_entrypoint<'tcx>(
 
     std::fs::write("local-testing/simple.vpr", viper_code).unwrap();
 
-    vir::with_vcx(|vcx| {
-        vcx.alloc(vir::ProgramData {
+    vir::with_vcx(|vcx| { vcx.alloc(vir::ProgramData {
             fields: &[],
             domains: &[],
             predicates: &[],
-            functions: vcx.alloc_slice(&[vcx.alloc(vir::FunctionData {
+            functions: vcx.alloc_slice(&[
+                vcx.alloc(vir::FunctionData {
                 name: "test_function",
                 args: &[],
                 ret: &vir::TypeData::Bool,

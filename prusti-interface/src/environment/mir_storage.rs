@@ -79,7 +79,7 @@ pub unsafe fn retrieve_promoted_mir_body<'tcx>(
 ) -> mir::Body<'tcx> {
     let body_without_facts: mir::Body<'static> = SHARED_STATE_WITHOUT_FACTS.with(|state| {
         let mut map = state.borrow_mut();
-        map.get(&def_id).unwrap().clone()
+        map.remove(&def_id).unwrap()
     });
     // SAFETY: See the module level comment.
     unsafe { std::mem::transmute(body_without_facts) }

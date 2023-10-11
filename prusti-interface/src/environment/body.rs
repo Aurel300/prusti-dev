@@ -219,7 +219,7 @@ impl<'tcx> EnvBody<'tcx> {
         let mut impure = self.local_impure_fns.borrow_mut();
         impure
             .entry(def_id)
-            .or_insert_with(|| Self::load_local_mir_with_facts_raw(self.tcx, def_id))
+            .or_insert_with(|| self.load_local_mir_with_facts(def_id))
             .body
             .clone()
     }

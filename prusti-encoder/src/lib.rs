@@ -218,6 +218,6 @@ pub fn test_entrypoint<'tcx>(
                 expr: None,
             }),
         ]),
-         methods: &[],
+        methods: &[],
     }))
 }

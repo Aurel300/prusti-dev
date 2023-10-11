@@ -180,6 +180,11 @@ pub fn test_entrypoint<'tcx>(
         viper_code.push_str(&format!("{:?}\n", output.method));
     }
 
+    header(&mut viper_code, "functions");
+    for output in crate::encoders::MirFunctionEncoder::all_outputs() {
+        viper_code.push_str(&format!("{:?}\n", output.method));
+    }
+
     header(&mut viper_code, "MIR builtins");
     for output in crate::encoders::MirBuiltinEncoder::all_outputs() {
         viper_code.push_str(&format!("{:?}\n", output.function));

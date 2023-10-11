@@ -25,7 +25,7 @@ pub struct MirFunctionEncoderOutput<'vir> {
     pub method: vir::Function<'vir>,
 }
 
-use std::cell::RefCell;
+use std::{cell::RefCell, ops::Deref};
 thread_local! {
     static CACHE: task_encoder::CacheStaticRef<MirFunctionEncoder> = RefCell::new(Default::default());
 }
@@ -77,8 +77,14 @@ impl TaskEncoder for MirFunctionEncoder {
             let method_name = vir::vir_format!(vcx, "pure_{}", vcx.tcx.item_name(*def_id));
             deps.emit_output_ref::<Self>(*task_key, MirFunctionEncoderOutputRef { method_name });
 
+
+
+
             let local_def_id = def_id.expect_local();
             let body = vcx.body.borrow_mut().load_local_mir(local_def_id);
+            log::debug!("MirBody {local_def_id:?} {:?}", body.body().basic_blocks.deref());
+            let depth = 0; //TODO??
+
 
             // let body = vcx.tcx.mir_promoted(local_def_id).0.borrow();
 
@@ -104,10 +110,7 @@ impl TaskEncoder for MirFunctionEncoder {
             let pre_args = vcx.alloc_slice(
                 &(1..=body.arg_count)
                     .map(|local| {
-                        vcx.mk_func_app(
-                            local_types[local.into()].function_snap,
-                            &[vcx.mk_local_ex(vir::vir_format!(vcx, "_{local}p"))],
-                        )
+                        vcx.mk_local_ex(vir::vir_format!(vcx, "_{local}p"))
                     })
                     .collect::<Vec<vir::Expr<'_>>>(),
             );
@@ -135,17 +138,11 @@ impl TaskEncoder for MirFunctionEncoder {
             // TODO: duplication ...
             let mut post_args = (1..=body.arg_count)
                 .map(|local| {
-                    vcx.mk_func_app(
-                        local_types[local.into()].function_snap,
-                        &[vcx.mk_local_ex(vir::vir_format!(vcx, "_{local}p"))],
-                    )
+                    vcx.mk_local_ex(vir::vir_format!(vcx, "_{local}p"))
                 })
                 .collect::<Vec<vir::Expr<'_>>>();
 
-            post_args.push(vcx.mk_func_app(
-                local_types[mir::RETURN_PLACE].function_snap,
-                &[vcx.mk_local_ex(vir::vir_format!(vcx, "_0p"))],
-            ));
+            post_args.push(vcx.mk_local_ex(vir::vir_format!(vcx, "result")));
             let post_args = vcx.alloc_slice(&post_args);
             let spec_posts = specs
                 .posts
@@ -179,9 +176,9 @@ impl TaskEncoder for MirFunctionEncoder {
             let mut pres = Vec::new(); // TODO: capacity
 
             let mut args = Vec::with_capacity(arg_count * 2);
-            for arg_idx in 0..=body.arg_count {
+            for arg_idx in 1..=body.arg_count {
                 let name_p = vir::vir_format!(vcx, "_{arg_idx}p");
-                args.push(vir::vir_local_decl! { vcx; [name_p] : Int }); //FIXME: real type
+                args.push(vir::vir_local_decl! { vcx; [name_p] : s_Int_i32 }); //FIXME: real type
             }
             pres.extend(spec_pres);
 
@@ -189,7 +186,7 @@ impl TaskEncoder for MirFunctionEncoder {
 
             posts.extend(spec_posts);
 
-            let expr = deps
+            let expr_from_enc = deps
                 .require_local::<crate::encoders::MirPureEncoder>(
                     crate::encoders::MirPureEncoderTask {
                         encoding_depth: 8,
@@ -202,19 +199,25 @@ impl TaskEncoder for MirFunctionEncoder {
                 .unwrap()
                 .expr;
 
-            let expr = expr.reify(vcx, (*def_id, post_args));
+            let expr_inner = crate::encoders::mir_pure::Encoder::new(vcx, depth, &body, deps).encode_body();
+
+            let expr_inner = expr_inner.reify(vcx, (*def_id, post_args));
+            let expr_from_enc = expr_from_enc.reify(vcx, (*def_id, post_args));
 
             log::debug!("finished {def_id:?}");
+            log::debug!("  expr_inner {expr_inner:?}");
+            log::debug!("  expr_from_enc {expr_from_enc:?}");
+
 
             Ok((
                 MirFunctionEncoderOutput {
                     method: vcx.alloc(vir::FunctionData {
                         name: method_name,
                         args: vcx.alloc_slice(&args),
-                        ret: &vir::TypeData::Int, // FIXME: real type
+                        ret: &vir::TypeData::Domain("s_Int_i32"), // FIXME: real type
                         pres: vcx.alloc_slice(&pres),
                         posts: vcx.alloc_slice(&posts),
-                        expr: Some(expr),
+                        expr: Some(expr_from_enc),
                     }),
                 },
                 (),

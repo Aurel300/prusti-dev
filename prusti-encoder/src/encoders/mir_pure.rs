@@ -100,6 +100,8 @@ impl TaskEncoder for MirPureEncoder {
         let expr = vir::with_vcx(move |vcx| {
             //let body = vcx.tcx.mir_promoted(local_def_id).0.borrow();
             let body = vcx.body.borrow_mut().load_local_mir_with_facts(local_def_id).body;
+            //log::debug!("MirBody {local_def_id:?} {:?}", body.body().basic_blocks);
+
 
             let expr_inner = Encoder::new(vcx, task_key.0, &body, deps).encode_body();
 
@@ -161,7 +163,7 @@ impl<'vir> Update<'vir> {
     }
 }
 
-struct Encoder<'vir, 'enc>
+pub(crate) struct Encoder<'vir, 'enc>
     where 'vir: 'enc
 {
     vcx: &'vir vir::VirCtxt<'vir>,
@@ -176,7 +178,7 @@ struct Encoder<'vir, 'enc>
 impl<'vir, 'enc> Encoder<'vir, 'enc>
     where 'vir: 'enc
 {
-    fn new(
+    pub fn new(
         vcx: &'vir vir::VirCtxt<'vir>,
         encoding_depth: usize,
         body: &'enc mir::Body<'vir>,
@@ -283,7 +285,7 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
         )
     }
 
-    fn encode_body(&mut self) -> ExprRet<'vir> {
+    pub fn encode_body(&mut self) -> ExprRet<'vir> {
         let end_blocks = self.body.basic_blocks.reverse_postorder()
             .iter()
             .filter(|bb| matches!(

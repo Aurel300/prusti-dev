@@ -96,11 +96,10 @@ impl TaskEncoder for MirPureEncoder {
         let def_id = task_key.1; //.parent_def_id;
         let local_def_id = def_id.expect_local();
 
+        log::debug!("encoding {def_id:?}");
         let expr = vir::with_vcx(move |vcx| {
             //let body = vcx.tcx.mir_promoted(local_def_id).0.borrow();
             let body = vcx.body.borrow_mut().load_local_mir_with_facts(local_def_id).body;
-            log::debug!("encoding {def_id:?} {body:?}");
-
 
             let expr_inner = Encoder::new(vcx, task_key.0, &body, deps).encode_body();
 

@@ -317,7 +317,6 @@ impl<'tcx> EnvBody<'tcx> {
         self.set_monomorphised(def_id, substs, Some(caller_def_id), body)
     }
 
-
     ///// Get Polonius facts of a local procedure.
     //pub fn local_mir_borrowck_facts(&self, def_id: LocalDefId) -> Rc<BorrowckFacts> {
     //    self.try_get_local_mir_borrowck_facts(def_id).unwrap()
@@ -356,7 +355,6 @@ impl<'tcx> EnvBody<'tcx> {
 
     pub(crate) fn load_pure_fn_body(&mut self, def_id: LocalDefId) {
         assert!(!self.pure_fns.local.contains_key(&def_id));
-
         let body = self.load_local_mir( def_id);
         self.pure_fns.local.insert(def_id, body);
         let bwbf = self.load_local_mir_with_facts(def_id);

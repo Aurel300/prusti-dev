@@ -204,7 +204,7 @@ pub fn test_entrypoint<'tcx>(
 
     std::fs::write("local-testing/simple.vpr", viper_code).unwrap();
 
-    vir::with_vcx(|vcx| { vcx.alloc(vir::ProgramData {
+    vir::with_vcx(|vcx| vcx.alloc(vir::ProgramData {
         fields: &[],
         domains: &[],
         predicates: &[],
@@ -216,9 +216,8 @@ pub fn test_entrypoint<'tcx>(
                 pres: &[],
                 posts: &[],
                 expr: None,
-            })
+            }),
         ]),
          methods: &[],
-        })
-    })
+    }))
 }

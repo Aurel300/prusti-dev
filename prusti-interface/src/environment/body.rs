@@ -13,7 +13,7 @@ use crate::environment::mir_storage;
 
 /// Stores any possible MIR body (from the compiler) that
 /// Prusti might want to work with. Cheap to clone
-#[derive(Clone, TyEncodable, TyDecodable, Debug)]
+#[derive(Clone, TyEncodable, TyDecodable)]
 pub struct MirBody<'tcx>(Rc<mir::Body<'tcx>>);
 impl<'tcx> MirBody<'tcx> {
     pub fn body(&self) -> Rc<mir::Body<'tcx>> {
@@ -28,7 +28,7 @@ impl<'tcx> std::ops::Deref for MirBody<'tcx> {
 }
 
 /// Stores body of functions which we'll need to encode as impure
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct BodyWithBorrowckFacts<'tcx> {
     pub body: MirBody<'tcx>,
     ///// Cached borrowck information.
@@ -40,7 +40,6 @@ pub struct BodyWithBorrowckFacts<'tcx> {
 type DynamicallyLoadedBodies<T> = RefCell<FxHashMap<LocalDefId, T>>;
 /// Bodies which must be exported across crates and thus must be
 /// loaded prior to exporting (which happens before encoding).
-#[derive(Debug)]
 struct PreLoadedBodies<'tcx> {
     local: FxHashMap<LocalDefId, MirBody<'tcx>>,
     external: FxHashMap<DefId, MirBody<'tcx>>,
@@ -145,7 +144,7 @@ impl<'tcx> EnvBody<'tcx> {
 
         BodyWithBorrowckFacts {
             body: MirBody(Rc::new(body_with_facts.body)),
-            // borrowck_facts: Rc::new(facts),
+           // borrowck_facts: Rc::new(facts),
         }
     }
 

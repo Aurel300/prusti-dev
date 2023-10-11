@@ -78,7 +78,7 @@ pub unsafe fn retrieve_promoted_mir_body<'tcx>(
     def_id: LocalDefId,
 ) -> mir::Body<'tcx> {
     let body_without_facts: mir::Body<'static> = SHARED_STATE_WITHOUT_FACTS.with(|state| {
-        let mut map = state.borrow_mut();
+        let map = state.borrow_mut();
         map.get(&def_id).unwrap().clone()
     });
     // SAFETY: See the module level comment.

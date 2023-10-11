@@ -9,7 +9,7 @@ extern crate rustc_type_ir;
 
 mod encoders;
 
-use prusti_interface::{specs::typed::{SpecificationId, SpecificationItem}, environment::EnvBody};
+use prusti_interface::environment::EnvBody;
 use prusti_rustc_interface::{
     middle::ty,
     hir,

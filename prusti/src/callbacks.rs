@@ -174,7 +174,6 @@ impl prusti_rustc_interface::driver::Callbacks for PrustiCompilerCalls {
                         test_free_pcs(&mir, tcx);
                     }
                 } else {*/
-
                     verify(env, def_spec);
                 //}
             }

@@ -83,9 +83,7 @@ impl TaskEncoder for MirImpureEncoder {
                 method_name,
             });
 
-            let local_def_id = def_id.expect_local();
-
-           
+            let local_def_id = def_id.expect_local();           
             let body = vcx.body.borrow_mut().load_local_mir(local_def_id);
             // let body = vcx.tcx.mir_promoted(local_def_id).0.borrow();
 

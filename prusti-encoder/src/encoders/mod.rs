@@ -5,7 +5,6 @@ mod mir_pure;
 mod spec;
 mod typ;
 mod viper_tuple;
-mod mir_pure_function;
 
 pub use generic::{
     GenericEncoder,
@@ -36,5 +35,3 @@ pub use viper_tuple::{
     ViperTupleEncoderOutput,
 };
 
-
-pub use mir_pure_function::MirFunctionEncoder;

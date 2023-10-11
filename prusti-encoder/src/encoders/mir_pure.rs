@@ -98,10 +98,6 @@ impl TaskEncoder for MirPureEncoder {
 
         let expr = vir::with_vcx(move |vcx| {
             //let body = vcx.tcx.mir_promoted(local_def_id).0.borrow();
-            // let body = unsafe {
-            //     prusti_interface::environment::mir_storage::retrieve_mir_body(vcx.tcx, local_def_id)
-            // }.body;
-
             let body = vcx.body.borrow_mut().load_local_mir_with_facts(local_def_id).body;
             log::debug!("encoding {def_id:?} {body:?}");
 
@@ -120,10 +116,7 @@ impl TaskEncoder for MirPureEncoder {
 
                     // check: are we providing the expected number of arguments?
 
-                    // FIXME: make this a panic again.
-                    if lctx.1.len() != body.arg_count {
-                        log::error!("{} != {}", lctx.1.len() , body.arg_count);
-                    }
+                    assert_eq!(lctx.1.len(), body.arg_count);
 
                     use vir::Reify;
                     expr_inner.reify(vcx, lctx)

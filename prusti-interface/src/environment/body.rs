@@ -234,11 +234,7 @@ impl<'tcx> EnvBody<'tcx> {
     /// with the given type substitutions.
     ///
     /// FIXME: This function is called only in pure contexts???
-    pub fn get_impure_fn_body(
-        &self,
-        def_id: LocalDefId,
-        substs: GenericArgsRef<'tcx>,
-    ) -> MirBody<'tcx> {
+    pub fn get_impure_fn_body(&self, def_id: LocalDefId, substs: GenericArgsRef<'tcx>) -> MirBody<'tcx> {
         if let Some(body) = self.get_monomorphised(def_id.to_def_id(), substs, None) {
             return body;
         }

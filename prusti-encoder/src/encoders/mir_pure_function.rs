@@ -69,15 +69,11 @@ impl TaskEncoder for MirFunctionEncoder {
             Option<Self::OutputFullDependency<'vir>>,
         ),
     > {
-
-
         use mir::visit::Visitor;
         vir::with_vcx(|vcx| {
-
             let def_id = task_key;
 
             log::debug!("encoding {def_id:?}");
-
 
             let method_name = vir::vir_format!(vcx, "pure_{}", vcx.tcx.item_name(*def_id));
             deps.emit_output_ref::<Self>(*task_key, MirFunctionEncoderOutputRef { method_name });
@@ -146,8 +142,11 @@ impl TaskEncoder for MirFunctionEncoder {
                     )
                 })
                 .collect::<Vec<vir::Expr<'_>>>();
-           
-           
+
+            post_args.push(vcx.mk_func_app(
+                local_types[mir::RETURN_PLACE].function_snap,
+                &[vcx.mk_local_ex(vir::vir_format!(vcx, "_0p"))],
+            ));
             let post_args = vcx.alloc_slice(&post_args);
             let spec_posts = specs
                 .posts
@@ -184,12 +183,11 @@ impl TaskEncoder for MirFunctionEncoder {
             for arg_idx in 0..=body.arg_count {
                 let name_p = vir::vir_format!(vcx, "_{arg_idx}p");
                 args.push(vir::vir_local_decl! { vcx; [name_p] : Int }); //FIXME: real type
-               
             }
             pres.extend(spec_pres);
 
             let mut posts = Vec::new(); // TODO: capacity
-   
+
             posts.extend(spec_posts);
 
             let expr = deps
@@ -208,7 +206,6 @@ impl TaskEncoder for MirFunctionEncoder {
             let expr = expr.reify(vcx, (*def_id, post_args));
 
             log::debug!("finished {def_id:?}");
-
 
             Ok((
                 MirFunctionEncoderOutput {

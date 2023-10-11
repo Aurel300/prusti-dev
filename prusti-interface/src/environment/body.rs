@@ -129,7 +129,7 @@ impl<'tcx> EnvBody<'tcx> {
 
     /// Get local MIR body of non-spec functions. Retrieves the body from global state,
     /// which was filled earlier by `mir_borrowck` (relatively expensive).
-    pub fn load_local_mir_with_facts_raw(
+    fn load_local_mir_with_facts_raw(
         tcx: TyCtxt<'tcx>,
         def_id: LocalDefId,
     ) -> BodyWithBorrowckFacts<'tcx> {
@@ -160,7 +160,7 @@ impl<'tcx> EnvBody<'tcx> {
 
     /// Get local MIR body of spec or pure functions. Retrieves the body from
     /// the compiler (relatively cheap).
-    pub fn load_local_mir_raw(tcx: TyCtxt<'tcx>, def_id: LocalDefId) -> MirBody<'tcx> {
+    fn load_local_mir_raw(tcx: TyCtxt<'tcx>, def_id: LocalDefId) -> MirBody<'tcx> {
         // SAFETY: This is safe because we are feeding in the same `tcx`
         // that was used to store the data.
         let body = unsafe { mir_storage::retrieve_promoted_mir_body(tcx, def_id) };
@@ -328,14 +328,6 @@ impl<'tcx> EnvBody<'tcx> {
     }
 
 
-    pub fn get_spec_body2(
-        &self,
-        def_id: DefId,
-    ) -> MirBody<'tcx> {
-  
-       self.specs.expect(def_id)
-    }
-
     ///// Get Polonius facts of a local procedure.
     //pub fn local_mir_borrowck_facts(&self, def_id: LocalDefId) -> Rc<BorrowckFacts> {
     //    self.try_get_local_mir_borrowck_facts(def_id).unwrap()
@@ -372,21 +364,9 @@ impl<'tcx> EnvBody<'tcx> {
             .insert(def_id, self.load_local_mir(def_id));
     }
 
-    pub fn get_pure_fn_body2(&mut self, def_id: LocalDefId) -> MirBody<'tcx> {
-        //log::debug!("get_pure_fn_body2 {def_id:?} {self:#?}");
-        //self.load_pure_fn_body(def_id.clone());
-        self.local_impure_fns
-            .borrow()
-            .get(&def_id)
-            .unwrap()
-            .body
-            .clone()
-    }
 
     pub(crate) fn load_pure_fn_body(&mut self, def_id: LocalDefId) {
-        if (self.pure_fns.local.contains_key(&def_id)) {
-            return;
-        }
+        assert!(!self.pure_fns.local.contains_key(&def_id));
 
         let body = self.load_local_mir( def_id);
         self.pure_fns.local.insert(def_id, body);

@@ -84,9 +84,9 @@ impl TaskEncoder for MirImpureEncoder {
             });
 
             let local_def_id = def_id.expect_local();
-            let body = unsafe {
-                prusti_interface::environment::mir_storage::retrieve_promoted_mir_body(vcx.tcx, local_def_id)
-            };
+
+           
+            let body = vcx.body.borrow_mut().load_local_mir(local_def_id);
             // let body = vcx.tcx.mir_promoted(local_def_id).0.borrow();
 
             //let ssa_analysis = SsaAnalysis::analyse(&body);

@@ -141,8 +141,6 @@ pub fn test_entrypoint<'tcx>(
 
                 let res = crate::encoders::MirImpureEncoder::encode(def_id.to_def_id());
                 assert!(res.is_ok());
-
-
                 /*
                 match res {
                     Ok(res) => println!("ok: {:?}", res),
@@ -207,19 +205,20 @@ pub fn test_entrypoint<'tcx>(
     std::fs::write("local-testing/simple.vpr", viper_code).unwrap();
 
     vir::with_vcx(|vcx| { vcx.alloc(vir::ProgramData {
-            fields: &[],
-            domains: &[],
-            predicates: &[],
-            functions: vcx.alloc_slice(&[
-                vcx.alloc(vir::FunctionData {
+        fields: &[],
+        domains: &[],
+        predicates: &[],
+        functions: vcx.alloc_slice(&[
+            vcx.alloc(vir::FunctionData {
                 name: "test_function",
                 args: &[],
                 ret: &vir::TypeData::Bool,
                 pres: &[],
                 posts: &[],
                 expr: None,
-            })]),
-            methods: &[],
+            })
+        ]),
+         methods: &[],
         })
     })
 }

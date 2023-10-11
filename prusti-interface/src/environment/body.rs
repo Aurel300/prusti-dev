@@ -201,18 +201,12 @@ impl<'tcx> EnvBody<'tcx> {
         {
             let monomorphised = if let Some(caller_def_id) = caller_def_id {
                 let param_env = self.tcx.param_env(caller_def_id);
-                self.tcx.subst_and_normalize_erasing_regions(
-                    substs,
-                    param_env,
-                    ty::EarlyBinder::bind(body.0),
-                )
+                self.tcx
+                    .subst_and_normalize_erasing_regions(substs, param_env, ty::EarlyBinder::bind(body.0))
             } else {
                 let param_env = self.tcx.param_env(def_id);
-                self.tcx.subst_and_normalize_erasing_regions(
-                    substs,
-                    param_env,
-                    ty::EarlyBinder::bind(body.0),
-                )
+                self.tcx
+                    .subst_and_normalize_erasing_regions(substs, param_env, ty::EarlyBinder::bind(body.0))
             };
             v.insert(MirBody(monomorphised)).clone()
         } else {
@@ -359,7 +353,6 @@ impl<'tcx> EnvBody<'tcx> {
             .local
             .insert(def_id, self.load_local_mir(def_id));
     }
-
 
     pub(crate) fn load_pure_fn_body(&mut self, def_id: LocalDefId) {
         assert!(!self.pure_fns.local.contains_key(&def_id));

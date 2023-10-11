@@ -1,4 +1,4 @@
-use crate::{environment::{Environment}, utils::has_trait_bounds_type_cond_spec, PrustiError};
+use crate::{environment::Environment, utils::has_trait_bounds_type_cond_spec, PrustiError};
 pub use common::{SpecIdRef, SpecType, SpecificationId};
 use prusti_rustc_interface::{
     hir::def_id::{DefId, LocalDefId},

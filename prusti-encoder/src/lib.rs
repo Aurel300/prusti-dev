@@ -121,7 +121,7 @@ pub fn test_entrypoint<'tcx>(
 ) -> vir::Program<'tcx> {
     use task_encoder::TaskEncoder;
 
-    crate::encoders::init_def_spec(def_spec.clone());
+    crate::encoders::init_def_spec(def_spec);
     vir::init_vcx(vir::VirCtxt::new(tcx, body));
 
     // TODO: this should be a "crate" encoder, which will deps.require all the methods in the crate

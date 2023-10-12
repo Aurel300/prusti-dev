@@ -16,7 +16,7 @@ pub enum MirFunctionEncoderError {
 
 #[derive(Clone, Debug)]
 pub struct MirFunctionEncoderOutputRef<'vir> {
-    pub method_name: &'vir str,
+    pub function_name: &'vir str,
 }
 impl<'vir> task_encoder::OutputRefAny<'vir> for MirFunctionEncoderOutputRef<'vir> {}
 
@@ -73,7 +73,7 @@ impl TaskEncoder for MirFunctionEncoder {
             log::debug!("encoding {def_id:?}");
 
             let method_name = vir::vir_format!(vcx, "f_{}", vcx.tcx.item_name(*def_id));
-            deps.emit_output_ref::<Self>(*task_key, MirFunctionEncoderOutputRef { method_name });
+            deps.emit_output_ref::<Self>(*task_key, MirFunctionEncoderOutputRef { function_name: method_name });
 
             let local_def_id = def_id.expect_local();
             let body = vcx.body.borrow_mut().load_local_mir(local_def_id);

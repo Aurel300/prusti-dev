@@ -2,7 +2,11 @@ use prusti_rustc_interface::{middle::ty, span::def_id::DefId};
 
 use task_encoder::{TaskEncoder, TaskEncoderDependencies};
 use vir::Reify;
+use std::cell::RefCell;
 
+use crate::encoders::{
+    MirPureEncoder, MirPureEncoderTask, SpecEncoder, SpecEncoderTask, TypeEncoder,
+};
 pub struct MirFunctionEncoder;
 
 #[derive(Clone, Debug)]
@@ -21,17 +25,11 @@ pub struct MirFunctionEncoderOutput<'vir> {
     pub method: vir::Function<'vir>,
 }
 
-use std::{cell::RefCell, ops::Deref};
-
-use crate::encoders::{
-    MirPureEncoder, MirPureEncoderTask, SpecEncoder, SpecEncoderTask, TypeEncoder,
-};
 thread_local! {
     static CACHE: task_encoder::CacheStaticRef<MirFunctionEncoder> = RefCell::new(Default::default());
 }
 
 impl TaskEncoder for MirFunctionEncoder {
-    // TODO: local def id (+ promoted, substs, etc)
     type TaskDescription<'vir> = DefId;
 
     type OutputRef<'vir> = MirFunctionEncoderOutputRef<'vir>;
@@ -79,19 +77,6 @@ impl TaskEncoder for MirFunctionEncoder {
 
             let local_def_id = def_id.expect_local();
             let body = vcx.body.borrow_mut().load_local_mir(local_def_id);
-            log::debug!(
-                "MirBody {local_def_id:?} {:?}",
-                body.body().basic_blocks.deref()
-            );
-
-            // let local_types = body
-            //     .local_decls
-            //     .iter()
-            //     .map(|local_decl| {
-            //         deps.require_ref::<crate::encoders::TypeEncoder>(local_decl.ty)
-            //             .unwrap()
-            //     })
-            //     .collect::<IndexVec<mir::Local, _>>();
 
             let specs = deps
                 .require_local::<SpecEncoder>(SpecEncoderTask { def_id: *def_id })
@@ -142,16 +127,16 @@ impl TaskEncoder for MirFunctionEncoder {
                 })
                 .collect::<Vec<vir::Expr<'_>>>();
 
-            let mut args = Vec::with_capacity(body.arg_count);
+            let mut func_args = Vec::with_capacity(body.arg_count);
 
-            for (arg_idx0, arglocal) in body.args_iter().enumerate() {
+            for (arg_idx0, arg_local) in body.args_iter().enumerate() {
                 let arg_idx = arg_idx0 + 1; // enumerate is 0 based but we want to start at 1
 
-                let arg_decl = body.local_decls.get(arglocal).unwrap();
+                let arg_decl = body.local_decls.get(arg_local).unwrap();
                 let arg_type_ref = deps.require_ref::<TypeEncoder>(arg_decl.ty).unwrap();
 
                 let name_p = vir::vir_format!(vcx, "_{arg_idx}p");
-                args.push(vcx.alloc(vir::LocalDeclData {
+                func_args.push(vcx.alloc(vir::LocalDeclData {
                     name: name_p,
                     ty: arg_type_ref.snapshot,
                 }));
@@ -171,18 +156,19 @@ impl TaskEncoder for MirFunctionEncoder {
 
             let expr_from_enc = expr.reify(vcx, (*def_id, pre_args));
 
-            log::debug!("finished {def_id:?}");
-
             // Snapshot type of the return type
             let ret = deps
                 .require_ref::<TypeEncoder>(body.return_ty())
                 .unwrap()
                 .snapshot;
+
+            log::debug!("finished {def_id:?}");
+
             Ok((
                 MirFunctionEncoderOutput {
                     method: vcx.alloc(vir::FunctionData {
                         name: method_name,
-                        args: vcx.alloc_slice(&args),
+                        args: vcx.alloc_slice(&func_args),
                         ret,
                         pres: vcx.alloc_slice(&spec_pres),
                         posts: vcx.alloc_slice(&spec_posts),

@@ -142,7 +142,7 @@ impl TaskEncoder for MirFunctionEncoder {
                 })
                 .collect::<Vec<vir::Expr<'_>>>();
 
-            let mut args = Vec::new();
+            let mut args = Vec::with_capacity(body.arg_count);
 
             for (arg_idx0, arglocal) in body.args_iter().enumerate() {
                 let arg_idx = arg_idx0 + 1; // enumerate is 0 based but we want to start at 1

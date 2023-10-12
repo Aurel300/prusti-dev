@@ -5,7 +5,7 @@ use prusti_rustc_interface::{
 };
 
 use task_encoder::{TaskEncoder, TaskEncoderDependencies};
-use vir::Reify;
+use vir::{Reify, TypeData};
 
 pub struct MirFunctionEncoder;
 
@@ -74,32 +74,24 @@ impl TaskEncoder for MirFunctionEncoder {
 
             log::debug!("encoding {def_id:?}");
 
-            let method_name = vir::vir_format!(vcx, "pure_{}", vcx.tcx.item_name(*def_id));
+            let method_name = vir::vir_format!(vcx, "f_{}", vcx.tcx.item_name(*def_id));
             deps.emit_output_ref::<Self>(*task_key, MirFunctionEncoderOutputRef { method_name });
-
-
-
 
             let local_def_id = def_id.expect_local();
             let body = vcx.body.borrow_mut().load_local_mir(local_def_id);
-            log::debug!("MirBody {local_def_id:?} {:?}", body.body().basic_blocks.deref());
-            let depth = 0; //TODO??
+            log::debug!(
+                "MirBody {local_def_id:?} {:?}",
+                body.body().basic_blocks.deref()
+            );
 
-
-            // let body = vcx.tcx.mir_promoted(local_def_id).0.borrow();
-
-            //let ssa_analysis = SsaAnalysis::analyse(&body);
-
-            let fpcs_analysis = mir_state_analysis::run_free_pcs(&body, vcx.tcx);
-
-            let local_types = body
-                .local_decls
-                .iter()
-                .map(|local_decl| {
-                    deps.require_ref::<crate::encoders::TypeEncoder>(local_decl.ty)
-                        .unwrap()
-                })
-                .collect::<IndexVec<mir::Local, _>>();
+            // let local_types = body
+            //     .local_decls
+            //     .iter()
+            //     .map(|local_decl| {
+            //         deps.require_ref::<crate::encoders::TypeEncoder>(local_decl.ty)
+            //             .unwrap()
+            //     })
+            //     .collect::<IndexVec<mir::Local, _>>();
 
             let specs = deps
                 .require_local::<crate::encoders::SpecEncoder>(crate::encoders::SpecEncoderTask {
@@ -107,13 +99,11 @@ impl TaskEncoder for MirFunctionEncoder {
                 })
                 .unwrap();
 
-            let pre_args = vcx.alloc_slice(
-                &(1..=body.arg_count)
-                    .map(|local| {
-                        vcx.mk_local_ex(vir::vir_format!(vcx, "_{local}p"))
-                    })
-                    .collect::<Vec<vir::Expr<'_>>>(),
-            );
+            let mut post_args = (1..=body.arg_count)
+                .map(|local| vcx.mk_local_ex(vir::vir_format!(vcx, "_{local}p")))
+                .collect::<Vec<vir::Expr<'_>>>();
+
+            let pre_args = vcx.alloc_slice(&post_args);
 
             let spec_pres = specs
                 .pres
@@ -132,13 +122,6 @@ impl TaskEncoder for MirFunctionEncoder {
                         .unwrap()
                         .expr;
                     expr.reify(vcx, (*spec_def_id, pre_args))
-                })
-                .collect::<Vec<vir::Expr<'_>>>();
-
-            // TODO: duplication ...
-            let mut post_args = (1..=body.arg_count)
-                .map(|local| {
-                    vcx.mk_local_ex(vir::vir_format!(vcx, "_{local}p"))
                 })
                 .collect::<Vec<vir::Expr<'_>>>();
 
@@ -164,29 +147,25 @@ impl TaskEncoder for MirFunctionEncoder {
                 })
                 .collect::<Vec<vir::Expr<'_>>>();
 
-            let block_count = body.basic_blocks.reverse_postorder().len();
+            let mut args = Vec::new();
 
-            let arg_count = body.arg_count;
+            for (arg_idx0, arglocal) in body.args_iter().enumerate() {
+                let arg_idx = arg_idx0 + 1; // enumerate is 0 based but we want to start at 1
 
-            // Local count for the Viper method:
-            // - one for each basic block;
-            // - one (`Ref`) for each non-argument, non-return local.
-            let _local_count = block_count + 1 * (body.local_decls.len() - body.arg_count - 1);
+                let arg_decl = body.local_decls.get(arglocal).unwrap();
+                let res = deps
+                    .require_ref::<crate::encoders::TypeEncoder>(arg_decl.ty)
+                    .unwrap();
+                let arg_type = res.snapshot;
 
-            let mut pres = Vec::new(); // TODO: capacity
-
-            let mut args = Vec::with_capacity(arg_count * 2);
-            for arg_idx in 1..=body.arg_count {
                 let name_p = vir::vir_format!(vcx, "_{arg_idx}p");
-                args.push(vir::vir_local_decl! { vcx; [name_p] : s_Int_i32 }); //FIXME: real type
+                args.push(vcx.alloc(vir::LocalDeclData {
+                    name: name_p,
+                    ty: arg_type,
+                }));
             }
-            pres.extend(spec_pres);
 
-            let mut posts = Vec::new(); // TODO: capacity
-
-            posts.extend(spec_posts);
-
-            let expr_from_enc = deps
+            let expr = deps
                 .require_local::<crate::encoders::MirPureEncoder>(
                     crate::encoders::MirPureEncoderTask {
                         encoding_depth: 8,
@@ -199,15 +178,9 @@ impl TaskEncoder for MirFunctionEncoder {
                 .unwrap()
                 .expr;
 
-            let expr_inner = crate::encoders::mir_pure::Encoder::new(vcx, depth, &body, deps).encode_body();
-
-            let expr_inner = expr_inner.reify(vcx, (*def_id, post_args));
-            let expr_from_enc = expr_from_enc.reify(vcx, (*def_id, post_args));
+            let expr_from_enc = expr.reify(vcx, (*def_id, post_args));
 
             log::debug!("finished {def_id:?}");
-            log::debug!("  expr_inner {expr_inner:?}");
-            log::debug!("  expr_from_enc {expr_from_enc:?}");
-
 
             Ok((
                 MirFunctionEncoderOutput {
@@ -215,8 +188,8 @@ impl TaskEncoder for MirFunctionEncoder {
                         name: method_name,
                         args: vcx.alloc_slice(&args),
                         ret: &vir::TypeData::Domain("s_Int_i32"), // FIXME: real type
-                        pres: vcx.alloc_slice(&pres),
-                        posts: vcx.alloc_slice(&posts),
+                        pres: vcx.alloc_slice(&spec_pres),
+                        posts: vcx.alloc_slice(&spec_posts),
                         expr: Some(expr_from_enc),
                     }),
                 },

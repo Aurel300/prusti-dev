@@ -101,13 +101,11 @@ impl TaskEncoder for MirPureEncoder {
         let expr = vir::with_vcx(move |vcx| {
             //let body = vcx.tcx.mir_promoted(local_def_id).0.borrow();
             let body = vcx.body.borrow_mut().load_local_mir_with_facts(local_def_id).body;
-            //log::debug!("MirBody {local_def_id:?} {:?}", body.body().basic_blocks);
-
 
             let expr_inner = Encoder::new(vcx, task_key.0, &body, deps).encode_body();
 
 
-            let expr_inner = if   is_spec_fn(vcx.tcx, def_id) {
+            let expr_inner = if is_spec_fn(vcx.tcx, def_id) {
                 // TODO: use type encoder
                 vcx.mk_func_app(
                     "s_Bool_val",

@@ -13,7 +13,7 @@ use crate::environment::mir_storage;
 
 /// Stores any possible MIR body (from the compiler) that
 /// Prusti might want to work with. Cheap to clone
-#[derive(Clone, TyEncodable, TyDecodable, Debug)]
+#[derive(Clone, TyEncodable, TyDecodable)]
 pub struct MirBody<'tcx>(Rc<mir::Body<'tcx>>);
 impl<'tcx> MirBody<'tcx> {
     pub fn body(&self) -> Rc<mir::Body<'tcx>> {

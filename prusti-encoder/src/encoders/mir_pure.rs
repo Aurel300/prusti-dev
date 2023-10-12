@@ -116,7 +116,7 @@ impl TaskEncoder for MirPureEncoder {
                     assert_eq!(lctx.0, def_id);
 
                     // check: are we providing the expected number of arguments?
-                    assert!(lctx.1.len() == body.arg_count);
+                    assert_eq!(lctx.1.len(), body.arg_count);
 
                     use vir::Reify;
                     expr_inner.reify(vcx, lctx)
@@ -160,7 +160,7 @@ impl<'vir> Update<'vir> {
     }
 }
 
-pub(crate) struct Encoder<'vir, 'enc>
+struct Encoder<'vir, 'enc>
     where 'vir: 'enc
 {
     vcx: &'vir vir::VirCtxt<'vir>,
@@ -175,7 +175,7 @@ pub(crate) struct Encoder<'vir, 'enc>
 impl<'vir, 'enc> Encoder<'vir, 'enc>
     where 'vir: 'enc
 {
-    pub fn new(
+    fn new(
         vcx: &'vir vir::VirCtxt<'vir>,
         encoding_depth: usize,
         body: &'enc mir::Body<'vir>,
@@ -282,7 +282,7 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
         )
     }
 
-    pub fn encode_body(&mut self) -> ExprRet<'vir> {
+    fn encode_body(&mut self) -> ExprRet<'vir> {
         let end_blocks = self.body.basic_blocks.reverse_postorder()
             .iter()
             .filter(|bb| matches!(

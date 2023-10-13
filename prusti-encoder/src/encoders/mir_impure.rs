@@ -848,7 +848,15 @@ impl<'vir, 'enc> mir::visit::Visitor<'vir> for EncoderVisitor<'vir, 'enc> {
 
                
 
-                let is_pure = true; //TODO
+                // TODO: dedup with mir_pure. 
+                let attrs = self.vcx.tcx.get_attrs_unchecked(*func_def_id);
+                let is_pure = attrs.iter()
+                .filter(|attr| !attr.is_doc_comment())
+                .map(|attr| attr.get_normal_item()).any(|item| 
+                    item.path.segments.len() == 2
+                    && item.path.segments[0].ident.as_str() == "prusti"
+                    && item.path.segments[1].ident.as_str() == "pure"
+                );
 
 
                 let dest = self.encode_place(destination);
@@ -935,7 +943,15 @@ impl<'vir, 'enc> mir::visit::Visitor<'vir> for EncoderVisitor<'vir, 'enc> {
                     })));
 
 
-                    let assign_call = "reassign_p_Int_i32"; //TODO: correct type
+                    let assign_call = {
+                        //TODO: can we get the method_reassign is a better way? Maybe from the MirFunctionEncoder
+                        let body = self.vcx.body.borrow_mut().load_local_mir(func_def_id.expect_local());
+                        let return_type = self.deps
+                        .require_ref::<crate::encoders::TypeEncoder>(body.return_ty())
+                        .unwrap();
+                        return_type.method_reassign
+
+                    };
 
                     self.stmt(vir::StmtData::MethodCall(self.vcx.alloc(vir::MethodCallData {
                         targets: &[],

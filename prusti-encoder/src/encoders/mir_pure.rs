@@ -466,7 +466,6 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
                         let normal_attrs = attrs.iter()
                             .filter(|attr| !attr.is_doc_comment())
                             .map(|attr| attr.get_normal_item()).collect::<Vec<_>>();
-
                         normal_attrs.iter()
                             .filter(|item| item.path.segments.len() == 2
                                 && item.path.segments[0].ident.as_str() == "prusti"

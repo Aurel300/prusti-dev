@@ -864,8 +864,6 @@ impl<'vir, 'enc> mir::visit::Visitor<'vir> for EncoderVisitor<'vir, 'enc> {
                         let ty_out = self.deps.require_ref::<crate::encoders::TypeEncoder>(
                             constant.ty(),
                         ).unwrap();
-
-                    
                         let name = vir::vir_format!(self.vcx, "_tmp{}", self.tmp_ctr);
                         self.tmp_ctr += 1;
                         self.stmt(vir::StmtData::LocalDecl(
@@ -873,8 +871,6 @@ impl<'vir, 'enc> mir::visit::Visitor<'vir> for EncoderVisitor<'vir, 'enc> {
                             None,
                         ));
                         let tmp_ex = self.vcx.mk_local_ex(name);
-                       
-
                         let rhs = self.encode_constant(constant);
                         self.stmt(vir::StmtData::MethodCall(self.vcx.alloc(vir::MethodCallData {
                             targets: &[],
@@ -898,8 +894,6 @@ impl<'vir, 'enc> mir::visit::Visitor<'vir> for EncoderVisitor<'vir, 'enc> {
                         }
                     });
                     // self.encode_operand(op)
-                  
-
 
                 if is_pure {
                     let func_args = call_args.collect::<Vec<_>>();
@@ -938,9 +932,6 @@ impl<'vir, 'enc> mir::visit::Visitor<'vir> for EncoderVisitor<'vir, 'enc> {
                         args: self.vcx.alloc_slice(&meth_args),
                     })));
                 }
-
-               
-
 
                 self.vcx.alloc(vir::TerminatorStmtData::Goto(
                     self.vcx.alloc(vir::CfgBlockLabelData::BasicBlock(target.unwrap().as_usize())),

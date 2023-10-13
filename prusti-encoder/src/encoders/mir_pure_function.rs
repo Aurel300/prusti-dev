@@ -142,19 +142,35 @@ impl TaskEncoder for MirFunctionEncoder {
                 }));
             }
 
-            // Encode the body of the function
-            let expr = deps
-                .require_local::<MirPureEncoder>(MirPureEncoderTask {
-                    encoding_depth: 0,
-                    parent_def_id: *def_id,
-                    promoted: None,
-                    param_env: vcx.tcx.param_env(def_id),
-                    substs: ty::List::identity_for_item(vcx.tcx, *def_id),
-                })
-                .unwrap()
-                .expr;
+            // TODO: dedup with mir_pure
+            let attrs = vcx.tcx.get_attrs_unchecked(*def_id);
+            let is_trusted = attrs
+                .iter()
+                .filter(|attr| !attr.is_doc_comment())
+                .map(|attr| attr.get_normal_item())
+                .any(|item| {
+                    item.path.segments.len() == 2
+                        && item.path.segments[0].ident.as_str() == "prusti"
+                        && item.path.segments[1].ident.as_str() == "trusted"
+                });
 
-            let expr_from_enc = expr.reify(vcx, (*def_id, pre_args));
+            let expr = if is_trusted {
+                None
+            } else {
+                // Encode the body of the function
+                let expr = deps
+                    .require_local::<MirPureEncoder>(MirPureEncoderTask {
+                        encoding_depth: 0,
+                        parent_def_id: *def_id,
+                        promoted: None,
+                        param_env: vcx.tcx.param_env(def_id),
+                        substs: ty::List::identity_for_item(vcx.tcx, *def_id),
+                    })
+                    .unwrap()
+                    .expr;
+
+                Some(expr.reify(vcx, (*def_id, pre_args)))
+            };
 
             // Snapshot type of the return type
             let ret = deps
@@ -172,7 +188,7 @@ impl TaskEncoder for MirFunctionEncoder {
                         ret,
                         pres: vcx.alloc_slice(&spec_pres),
                         posts: vcx.alloc_slice(&spec_posts),
-                        expr: Some(expr_from_enc),
+                        expr: expr,
                     }),
                 },
                 (),

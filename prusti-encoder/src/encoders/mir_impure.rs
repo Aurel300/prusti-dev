@@ -230,29 +230,51 @@ impl TaskEncoder for MirImpureEncoder {
             }))));
             posts.extend(spec_posts);
 
-            let mut visitor = EncoderVisitor {
-                vcx,
-                deps,
-                local_decls: &body.local_decls,
-                //ssa_analysis,
-                fpcs_analysis,
-                local_types,
+           
 
-                tmp_ctr: 0,
 
-                current_fpcs: None,
-
-                current_stmts: None,
-                current_terminator: None,
-                encoded_blocks,
+             // TODO: dedup with mir_pure
+             let attrs = vcx.tcx.get_attrs_unchecked(*def_id);
+             let is_trusted = attrs
+                 .iter()
+                 .filter(|attr| !attr.is_doc_comment())
+                 .map(|attr| attr.get_normal_item())
+                 .any(|item| {
+                     item.path.segments.len() == 2
+                         && item.path.segments[0].ident.as_str() == "prusti"
+                         && item.path.segments[1].ident.as_str() == "trusted"
+                 });
+                
+            let blocks = if is_trusted {
+                None
+            }
+            else {
+                let mut visitor = EncoderVisitor {
+                    vcx,
+                    deps,
+                    local_decls: &body.local_decls,
+                    //ssa_analysis,
+                    fpcs_analysis,
+                    local_types,
+    
+                    tmp_ctr: 0,
+    
+                    current_fpcs: None,
+    
+                    current_stmts: None,
+                    current_terminator: None,
+                    encoded_blocks,
+                };
+                visitor.visit_body(&body);
+    
+                visitor.encoded_blocks.push(vcx.alloc(vir::CfgBlockData {
+                    label: vcx.alloc(vir::CfgBlockLabelData::End),
+                    stmts: &[],
+                    terminator: vcx.alloc(vir::TerminatorStmtData::Exit),
+                }));
+                
+                Some(vcx.alloc_slice(&visitor.encoded_blocks))
             };
-            visitor.visit_body(&body);
-
-            visitor.encoded_blocks.push(vcx.alloc(vir::CfgBlockData {
-                label: vcx.alloc(vir::CfgBlockLabelData::End),
-                stmts: &[],
-                terminator: vcx.alloc(vir::TerminatorStmtData::Exit),
-            }));
 
             Ok((MirImpureEncoderOutput {
                 method: vcx.alloc(vir::MethodData {
@@ -261,7 +283,7 @@ impl TaskEncoder for MirImpureEncoder {
                     rets: &[],
                     pres: vcx.alloc_slice(&pres),
                     posts: vcx.alloc_slice(&posts),
-                    blocks: Some(vcx.alloc_slice(&visitor.encoded_blocks)),
+                    blocks,
                 }),
             }, ()))
         })

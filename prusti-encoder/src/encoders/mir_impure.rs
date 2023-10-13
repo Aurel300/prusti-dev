@@ -230,9 +230,6 @@ impl TaskEncoder for MirImpureEncoder {
             }))));
             posts.extend(spec_posts);
 
-           
-
-
              // TODO: dedup with mir_pure
              let attrs = vcx.tcx.get_attrs_unchecked(*def_id);
              let is_trusted = attrs
@@ -272,7 +269,7 @@ impl TaskEncoder for MirImpureEncoder {
                     stmts: &[],
                     terminator: vcx.alloc(vir::TerminatorStmtData::Exit),
                 }));
-                
+
                 Some(vcx.alloc_slice(&visitor.encoded_blocks))
             };
 

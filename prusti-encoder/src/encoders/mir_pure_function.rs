@@ -188,7 +188,7 @@ impl TaskEncoder for MirFunctionEncoder {
                         ret,
                         pres: vcx.alloc_slice(&spec_pres),
                         posts: vcx.alloc_slice(&spec_posts),
-                        expr: expr,
+                        expr,
                     }),
                 },
                 (),

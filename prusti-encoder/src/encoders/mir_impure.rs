@@ -907,8 +907,8 @@ impl<'vir, 'enc> mir::visit::Visitor<'vir> for EncoderVisitor<'vir, 'enc> {
                         //TODO: can we get the method_reassign is a better way? Maybe from the MirFunctionEncoder?
                         let body = self.vcx.body.borrow_mut().load_local_mir(func_def_id.expect_local());
                         let return_type = self.deps
-                        .require_ref::<crate::encoders::TypeEncoder>(body.return_ty())
-                        .unwrap();
+                            .require_ref::<crate::encoders::TypeEncoder>(body.return_ty())
+                            .unwrap();
                         return_type.method_reassign
                     };
 

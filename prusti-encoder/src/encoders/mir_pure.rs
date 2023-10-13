@@ -485,32 +485,32 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
                             });
 
 
-                            let is_pure = normal_attrs.iter().any(|item| 
-                                item.path.segments.len() == 2
-                                && item.path.segments[0].ident.as_str() == "prusti"
-                                && item.path.segments[1].ident.as_str() == "pure"
-                            );
+                        let is_pure = normal_attrs.iter().any(|item| 
+                            item.path.segments.len() == 2
+                            && item.path.segments[0].ident.as_str() == "prusti"
+                            && item.path.segments[1].ident.as_str() == "pure"
+                        );
 
-                            if is_pure {
-                                assert!(builtin.is_none(), "Function is pure and builtin?");
-                                let pure_func = self.deps.require_ref::<crate::encoders::MirFunctionEncoder>(*def_id).unwrap().function_name;
+                        if is_pure {
+                            assert!(builtin.is_none(), "Function is pure and builtin?");
+                            let pure_func = self.deps.require_ref::<crate::encoders::MirFunctionEncoder>(*def_id).unwrap().function_name;
 
-                                let encoded_args = args.iter().map(|oper|  self.encode_operand(curr_ver, oper)).collect::<Vec<_>>();
-                               
-                                let func_args = self.vcx.alloc_slice(&encoded_args);
-                                let func_call = self.vcx.mk_func_app(pure_func, func_args);
+                            let encoded_args = args.iter()
+                                .map(|oper| self.encode_operand(curr_ver, oper))
+                                .collect::<Vec<_>>();
+                            
+                            let func_call = self.vcx.mk_func_app(pure_func, &encoded_args);
 
-                                let mut term_update = Update::new();
-                                assert!(destination.projection.is_empty());
-                                self.bump_version(&mut term_update, destination.local, func_call);
-                                term_update.add_to_map(&mut new_curr_ver);
-        
-                                // walk rest of CFG
-                                let end_update = self.encode_cfg(&new_curr_ver, target.unwrap(), end);
-        
-                                return stmt_update.merge(term_update).merge(end_update);
-                            }
-
+                            let mut term_update = Update::new();
+                            assert!(destination.projection.is_empty());
+                            self.bump_version(&mut term_update, destination.local, func_call);
+                            term_update.add_to_map(&mut new_curr_ver);
+    
+                            // walk rest of CFG
+                            let end_update = self.encode_cfg(&new_curr_ver, target.unwrap(), end);
+    
+                            return stmt_update.merge(term_update).merge(end_update);
+                        }
                     }
                     _ => todo!(),
                 }

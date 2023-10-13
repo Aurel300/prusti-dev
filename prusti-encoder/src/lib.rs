@@ -182,7 +182,7 @@ pub fn test_entrypoint<'tcx>(
 
     header(&mut viper_code, "functions");
     for output in crate::encoders::MirFunctionEncoder::all_outputs() {
-        viper_code.push_str(&format!("{:?}\n", output.method));
+        viper_code.push_str(&format!("{:?}\n", output.function));
     }
 
     header(&mut viper_code, "MIR builtins");

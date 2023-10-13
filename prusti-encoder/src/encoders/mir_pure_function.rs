@@ -22,7 +22,7 @@ impl<'vir> task_encoder::OutputRefAny<'vir> for MirFunctionEncoderOutputRef<'vir
 
 #[derive(Clone, Debug)]
 pub struct MirFunctionEncoderOutput<'vir> {
-    pub method: vir::Function<'vir>,
+    pub function: vir::Function<'vir>,
 }
 
 thread_local! {
@@ -166,7 +166,7 @@ impl TaskEncoder for MirFunctionEncoder {
 
             Ok((
                 MirFunctionEncoderOutput {
-                    method: vcx.alloc(vir::FunctionData {
+                    function: vcx.alloc(vir::FunctionData {
                         name: method_name,
                         args: vcx.alloc_slice(&func_args),
                         ret,

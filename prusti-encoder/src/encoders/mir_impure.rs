@@ -838,47 +838,130 @@ impl<'vir, 'enc> mir::visit::Visitor<'vir> for EncoderVisitor<'vir, 'enc> {
             } => {
                 // TODO: extracting FnDef given func could be extracted? (duplication in pure)
                 let func_ty = func.ty(self.local_decls, self.vcx.tcx);
-                let func_def_id = match func_ty.kind() {
-                    ty::TyKind::FnDef(def_id, _arg_tys) => {
+                let (func_def_id, func_arg_types) = match func_ty.kind() {
+                    ty::TyKind::FnDef(def_id, arg_tys) => {
                         // TODO: use arg_tys
-                        def_id
+                        (def_id, arg_tys)
                     }
                     _ => todo!(),
                 };
 
-                let func_out = self.deps.require_ref::<crate::encoders::MirImpureEncoder>(
-                    *func_def_id,
-                ).unwrap();
+               
 
-                let call_args = std::iter::once(self.encode_place(destination))
-                    .chain(args.iter().map(|op| if let mir::Operand::Constant(box constant) = op {
+                let is_pure = true; //TODO
+
+
+                let dest = self.encode_place(destination);
+                let call_args = args.iter().map(|op| if let mir::Operand::Constant(box constant) = op {
                         let ty_out = self.deps.require_ref::<crate::encoders::TypeEncoder>(
                             constant.ty(),
                         ).unwrap();
-                        let name = vir::vir_format!(self.vcx, "_tmp{}", self.tmp_ctr);
-                        self.tmp_ctr += 1;
-                        self.stmt(vir::StmtData::LocalDecl(
-                            vir::vir_local_decl! { self.vcx; [name] : Ref },
-                            None,
-                        ));
-                        let tmp_ex = self.vcx.mk_local_ex(name);
+
+                        let tmp_ex = {
+                            let name = vir::vir_format!(self.vcx, "_tmp{}", self.tmp_ctr);
+                            self.tmp_ctr += 1;
+                            self.stmt(vir::StmtData::LocalDecl(
+                                vir::vir_local_decl! { self.vcx; [name] : Ref },
+                                None,
+                            ));
+                            self.vcx.mk_local_ex(name)
+                        };
+
                         let rhs = self.encode_constant(constant);
+
+
+
                         self.stmt(vir::StmtData::MethodCall(self.vcx.alloc(vir::MethodCallData {
                             targets: &[],
                             method: ty_out.method_assign,
                             args: self.vcx.alloc_slice(&[tmp_ex, rhs]),
                         })));
-                        tmp_ex
+
+
+                        if is_pure {
+                            // let tmp_ex2 = {
+                            //     let name_p = vir::vir_format!(self.vcx, "_tmp{}", self.tmp_ctr);
+                            //     self.tmp_ctr += 1;
+                            //     let snap_of_tmp_ex = self.vcx.mk_func_app(ty_out.function_snap, &[tmp_ex]);
+                            //     self.stmt(vir::StmtData::LocalDecl(
+                            //         self.vcx.alloc(vir::LocalDeclData {
+                            //             name:name_p,
+                            //             ty:ty_out.snapshot,
+                            //           }),
+                            //         Some(snap_of_tmp_ex),
+                            //     ));
+                            //     self.vcx.mk_local_ex(name_p)
+                            // };
+                        
+                            // tmp_ex2
+
+                            // Create a snapshot of each constant argument
+                            self.vcx.mk_func_app(ty_out.function_snap, &[tmp_ex])
+                        }
+                        else {
+                            tmp_ex
+                        }
                     } else {
-                        self.encode_operand(op)
-                    }))
+
+                        if is_pure {
+                            self.encode_operand_snap(op)
+
+                        }
+                        else {
+                            self.encode_operand(op)
+                        }
+                    });
                     // self.encode_operand(op)
-                    .collect::<Vec<_>>();
-                self.stmt(vir::StmtData::MethodCall(self.vcx.alloc(vir::MethodCallData {
-                    targets: &[],
-                    method: func_out.method_name,
-                    args: self.vcx.alloc_slice(&call_args),
-                })));
+                  
+
+
+                if is_pure {
+                    log::debug!("pure call in method {func_def_id:?} func_arg_types: {:?}", func_arg_types.len());
+
+
+                    let func_args = call_args.map(|e| {
+                        e
+                    }).collect::<Vec<_>>();
+
+                    let pure_func = self.deps.require_local::<crate::encoders::MirFunctionEncoder>(
+                        *func_def_id,
+                    ).unwrap().function;
+
+
+    
+                    let pure_call = self.vcx.alloc(vir::ExprData::FuncApp(self.vcx.alloc(vir::FuncAppGenData {
+                        target: pure_func.name,
+                        args: self.vcx.alloc_slice(&func_args),
+                    })));
+
+
+                    let assign_call = "reassign_p_Int_i32"; //TODO: correct type
+
+                    self.stmt(vir::StmtData::MethodCall(self.vcx.alloc(vir::MethodCallData {
+                        targets: &[],
+                        method:assign_call,
+                        args: self.vcx.alloc_slice(&[dest, pure_call]),
+                    })));
+                }
+                else {
+
+                    let meth_args = std::iter::once(dest)
+                        .chain(call_args)
+                        .collect::<Vec<_>>();
+                    let func_out = self.deps.require_ref::<crate::encoders::MirImpureEncoder>(
+                        *func_def_id,
+                    ).unwrap();
+    
+                    self.stmt(vir::StmtData::MethodCall(self.vcx.alloc(vir::MethodCallData {
+                        targets: &[],
+                        method: func_out.method_name,
+                        args: self.vcx.alloc_slice(&meth_args),
+                    })));
+                }
+
+               
+
+
                 self.vcx.alloc(vir::TerminatorStmtData::Goto(
                     self.vcx.alloc(vir::CfgBlockLabelData::BasicBlock(target.unwrap().as_usize())),
                 ))

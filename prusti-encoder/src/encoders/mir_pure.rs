@@ -464,8 +464,8 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
                         let attrs = self.vcx.tcx.get_attrs_unchecked(*def_id);
 
                         let normal_attrs = attrs.iter()
-                        .filter(|attr| !attr.is_doc_comment())
-                        .map(|attr| attr.get_normal_item()).collect::<Vec<_>>();
+                            .filter(|attr| !attr.is_doc_comment())
+                            .map(|attr| attr.get_normal_item()).collect::<Vec<_>>();
 
                         normal_attrs.iter()
                             .filter(|item| item.path.segments.len() == 2
@@ -493,12 +493,13 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
                             );
 
                             if is_pure {
-                                let pure_fun = self.deps.require_ref::<crate::encoders::MirFunctionEncoder>(*def_id).unwrap().function_name;
+                                assert!(builtin.is_none(), "Function is pure and builtin?");
+                                let pure_func = self.deps.require_ref::<crate::encoders::MirFunctionEncoder>(*def_id).unwrap().function_name;
 
                                 let encoded_args = args.iter().map(|oper|  self.encode_operand(curr_ver, oper)).collect::<Vec<_>>();
                                
                                 let func_args = self.vcx.alloc_slice(&encoded_args);
-                                let func_call = self.vcx.mk_func_app(pure_fun, func_args);
+                                let func_call = self.vcx.mk_func_app(pure_func, func_args);
 
                                 let mut term_update = Update::new();
                                 assert!(destination.projection.is_empty());

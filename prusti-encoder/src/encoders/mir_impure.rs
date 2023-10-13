@@ -865,15 +865,15 @@ impl<'vir, 'enc> mir::visit::Visitor<'vir> for EncoderVisitor<'vir, 'enc> {
                             constant.ty(),
                         ).unwrap();
 
-                        let tmp_ex = {
-                            let name = vir::vir_format!(self.vcx, "_tmp{}", self.tmp_ctr);
-                            self.tmp_ctr += 1;
-                            self.stmt(vir::StmtData::LocalDecl(
-                                vir::vir_local_decl! { self.vcx; [name] : Ref },
-                                None,
-                            ));
-                            self.vcx.mk_local_ex(name)
-                        };
+                    
+                        let name = vir::vir_format!(self.vcx, "_tmp{}", self.tmp_ctr);
+                        self.tmp_ctr += 1;
+                        self.stmt(vir::StmtData::LocalDecl(
+                            vir::vir_local_decl! { self.vcx; [name] : Ref },
+                            None,
+                        ));
+                        let tmp_ex = self.vcx.mk_local_ex(name);
+                       
 
                         let rhs = self.encode_constant(constant);
                         self.stmt(vir::StmtData::MethodCall(self.vcx.alloc(vir::MethodCallData {
@@ -881,7 +881,6 @@ impl<'vir, 'enc> mir::visit::Visitor<'vir> for EncoderVisitor<'vir, 'enc> {
                             method: ty_out.method_assign,
                             args: self.vcx.alloc_slice(&[tmp_ex, rhs]),
                         })));
-
 
                         if is_pure {
                             // Create a snapshot of each constant argument

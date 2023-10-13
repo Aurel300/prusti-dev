@@ -846,8 +846,6 @@ impl<'vir, 'enc> mir::visit::Visitor<'vir> for EncoderVisitor<'vir, 'enc> {
                     _ => todo!(),
                 };
 
-               
-
                 // TODO: dedup with mir_pure
                 let attrs = self.vcx.tcx.get_attrs_unchecked(*func_def_id);
                 let is_pure = attrs.iter()
@@ -857,7 +855,6 @@ impl<'vir, 'enc> mir::visit::Visitor<'vir> for EncoderVisitor<'vir, 'enc> {
                     && item.path.segments[0].ident.as_str() == "prusti"
                     && item.path.segments[1].ident.as_str() == "pure"
                 );
-
 
                 let dest = self.encode_place(destination);
                 let call_args = args.iter().map(|op| if let mir::Operand::Constant(box constant) = op {

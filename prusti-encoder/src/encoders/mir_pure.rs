@@ -462,7 +462,6 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
                     TyKind::FnDef(def_id, arg_tys) => {
                         // TODO: this attribute extraction should be done elsewhere?
                         let attrs = self.vcx.tcx.get_attrs_unchecked(*def_id);
-
                         let normal_attrs = attrs.iter()
                             .filter(|attr| !attr.is_doc_comment())
                             .map(|attr| attr.get_normal_item()).collect::<Vec<_>>();

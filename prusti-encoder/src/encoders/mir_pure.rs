@@ -97,7 +97,6 @@ impl TaskEncoder for MirPureEncoder {
         let def_id = task_key.1; //.parent_def_id;
         let local_def_id = def_id.expect_local();
 
-        log::debug!("encoding {def_id:?}");
         let expr = vir::with_vcx(move |vcx| {
             //let body = vcx.tcx.mir_promoted(local_def_id).0.borrow();
             let body = vcx.body.borrow_mut().load_local_mir_with_facts(local_def_id).body;
@@ -134,7 +133,6 @@ impl TaskEncoder for MirPureEncoder {
                 }),
             ))
         });
-        log::debug!("finished {def_id:?}");
 
         Ok((MirPureEncoderOutput { expr }, ()))
     }
@@ -294,7 +292,6 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
     }
 
     fn encode_body(&mut self) -> ExprRet<'vir> {
-        //log::debug!("encode_bodt {:#?}", self.body.basic_blocks);
         let end_blocks = self.body.basic_blocks.reverse_postorder()
             .iter()
             .filter(|bb| matches!(
@@ -347,8 +344,6 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
         start: mir::BasicBlock,
         end: mir::BasicBlock,
     ) -> Update<'vir> {
-
-        log::warn!("cfg {start:?} {end:?}");
         let dominators = self.body.basic_blocks.dominators();
 
         // walk block statements first
@@ -405,7 +400,6 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
                     mod_locals.len(),
                 ).unwrap();
                 let otherwise_update = updates.pop().unwrap();
-                log::warn!("Starting phi for {start:?} mod locals: {mod_locals:?} from updates {updates:?}");
                 let phi_expr = targets.iter()
                     .zip(updates.into_iter())
                     .fold(
@@ -432,11 +426,7 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
                 //   access directly instead of the locals going forward?
                 for (elem_idx, local) in mod_locals.iter().enumerate() {
                     let expr = self.mk_phi_acc(tuple_ref.clone(), phi_idx, elem_idx);
-
-                    log::warn!("desturcting phi expr beforew {expr:?} {phi_update:?}");
-                    self.bump_version(&mut phi_update, *local, expr.clone());
-                    log::warn!("desturcting phi expr after {expr:?} {phi_update:?}");
-
+                    self.bump_version(&mut phi_update, *local, expr);
                     // TODO: add to curr_ver here ?
                     new_curr_ver.insert(*local, phi_update.versions[local]);
                 }
@@ -629,7 +619,6 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
         curr_ver: &HashMap<mir::Local, usize>,
         stmt: &mir::Statement<'vir>,
     ) -> Update<'vir> {
-        log::debug!("Encoding stmt: {:?} in {curr_ver:?}", stmt);
         let mut update = Update::new();
         match &stmt.kind {
             mir::StatementKind::StorageLive(local) => {
@@ -647,7 +636,6 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
             }
             k => todo!("statement kind {k:?}"),
         }
-        log::debug!("update {:?}", update);
         update
     }
 

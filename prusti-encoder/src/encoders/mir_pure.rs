@@ -281,7 +281,7 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
             update.versions.get(local).copied().unwrap_or_else(|| {
                 // TODO: remove (debug)
                 if !curr_ver.contains_key(&local) {
-                    println!("unknown version of local! {}", local.as_usize());
+                    log::error!("unknown version of local! {}", local.as_usize());
                     return 0xff
                 }
                 curr_ver[local]
@@ -294,6 +294,7 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
     }
 
     fn encode_body(&mut self) -> ExprRet<'vir> {
+        //log::debug!("encode_bodt {:#?}", self.body.basic_blocks);
         let end_blocks = self.body.basic_blocks.reverse_postorder()
             .iter()
             .filter(|bb| matches!(
@@ -346,6 +347,8 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
         start: mir::BasicBlock,
         end: mir::BasicBlock,
     ) -> Update<'vir> {
+
+        log::warn!("cfg {start:?} {end:?}");
         let dominators = self.body.basic_blocks.dominators();
 
         // walk block statements first
@@ -402,6 +405,7 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
                     mod_locals.len(),
                 ).unwrap();
                 let otherwise_update = updates.pop().unwrap();
+                log::warn!("Starting phi for {start:?} mod locals: {mod_locals:?} from updates {updates:?}");
                 let phi_expr = targets.iter()
                     .zip(updates.into_iter())
                     .fold(
@@ -428,9 +432,13 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
                 //   access directly instead of the locals going forward?
                 for (elem_idx, local) in mod_locals.iter().enumerate() {
                     let expr = self.mk_phi_acc(tuple_ref.clone(), phi_idx, elem_idx);
-                    self.bump_version(&mut phi_update, *local, expr);
+
+                    log::warn!("desturcting phi expr beforew {expr:?} {phi_update:?}");
+                    self.bump_version(&mut phi_update, *local, expr.clone());
+                    log::warn!("desturcting phi expr after {expr:?} {phi_update:?}");
+
                     // TODO: add to curr_ver here ?
-                    //new_curr_ver.insert(*local, );
+                    new_curr_ver.insert(*local, phi_update.versions[local]);
                 }
 
                 // walk `join` -> `end`
@@ -621,9 +629,14 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
         curr_ver: &HashMap<mir::Local, usize>,
         stmt: &mir::Statement<'vir>,
     ) -> Update<'vir> {
+        log::debug!("Encoding stmt: {:?} in {curr_ver:?}", stmt);
         let mut update = Update::new();
         match &stmt.kind {
-            mir::StatementKind::StorageLive(..)
+            mir::StatementKind::StorageLive(local) => {
+                let new_version = self.version_ctr.get(local).copied().unwrap_or(0usize);
+                self.version_ctr.insert(*local, new_version + 1);
+                update.versions.insert(*local, new_version);
+            }
             | mir::StatementKind::StorageDead(..)
             | mir::StatementKind::FakeRead(..)
             | mir::StatementKind::AscribeUserType(..) => {}, // nop
@@ -634,6 +647,7 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
             }
             k => todo!("statement kind {k:?}"),
         }
+        log::debug!("update {:?}", update);
         update
     }
 
@@ -782,7 +796,7 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
     ) -> ExprRet<'vir> {
         // TODO: remove (debug)
         if !curr_ver.contains_key(&place.local) {
-            println!("unknown version of local! {}", place.local.as_usize());
+            log::error!("unknown version of local! {}", place.local.as_usize());
             return self.vcx.alloc(ExprRetData::Todo(
                 vir::vir_format!(self.vcx, "unknown_version_{}", place.local.as_usize()),
             ));

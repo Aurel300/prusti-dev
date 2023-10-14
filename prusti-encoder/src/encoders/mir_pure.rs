@@ -429,7 +429,6 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
                 for (elem_idx, local) in mod_locals.iter().enumerate() {
                     let expr = self.mk_phi_acc(tuple_ref.clone(), phi_idx, elem_idx);
                     self.bump_version(&mut phi_update, *local, expr);
-                    // TODO: add to curr_ver here ?
                     new_curr_ver.insert(*local, phi_update.versions[local]);
                 }
 

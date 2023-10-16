@@ -105,7 +105,6 @@ impl TaskEncoder for MirPureEncoder {
 
             let expr_inner = Encoder::new(vcx, task_key.0, &body, deps).encode_body();
 
-
             let expr_inner = if is_spec_fn(vcx.tcx, def_id) {
                 // TODO: use type encoder
                 vcx.mk_func_app(
@@ -510,6 +509,7 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
     
                             return stmt_update.merge(term_update).merge(end_update);
                         }
+
                     }
                     _ => todo!(),
                 }
@@ -588,6 +588,14 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
                             ))
                             .lift();
 
+
+                        // TODO: use type encoder
+                        let body = 
+                            self.vcx.mk_func_app(
+                                "s_Bool_val",
+                                &[body],
+                                );
+
                         // TODO: use type encoder
                         let forall = self.vcx.mk_func_app(
                             "s_Bool_cons",
@@ -608,7 +616,10 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
 
                         stmt_update.merge(term_update).merge(end_update)
                     }
-                    None => todo!(),
+                    None => {
+                        log::error!("call not supported {func:?}");
+                        todo!();
+                    }
                 }
             }
 
@@ -707,11 +718,17 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
             // CheckedBinaryOp
             // NullaryOp
             mir::Rvalue::UnaryOp(mir::UnOp::Not, op) =>
-                // TODO: probably wrong, need to negate a bool snap
-                self.vcx.alloc(ExprRetData::UnOp(self.vcx.alloc(vir::UnOpGenData {
+            {
+                // TODO use mir_unop_not ?
+                let oper_enc = self.encode_operand(curr_ver, op);
+                let sn = self.vcx.mk_func_app("s_Bool_val", self.vcx.alloc_slice(&[oper_enc])) ;
+                let inner = self.vcx.alloc(ExprRetData::UnOp(self.vcx.alloc(vir::UnOpGenData {
                     kind: vir::UnOpKind::Not,
-                    expr: self.encode_operand(curr_ver, op),
-                }))),
+                    expr: sn
+                })));
+                //inner
+                self.vcx.mk_func_app("s_Bool_cons", self.vcx.alloc_slice(&[inner])) 
+            }
             // Discriminant
             mir::Rvalue::Aggregate(box kind, fields) => match kind {
                 mir::AggregateKind::Tuple if fields.len() == 0 =>
@@ -810,6 +827,9 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
             use mir::ProjectionElem::Deref;
             use mir::ProjectionElem::Field;
             return match proj_as_slice {
+                [Deref] => {
+                    local
+                }
                 [Deref, Field(idx, _), Deref] => {
                     // Closure arg
 

@@ -798,7 +798,7 @@ impl<'vir, 'enc> mir::visit::Visitor<'vir> for EncoderVisitor<'vir, 'enc> {
             // no-ops
             mir::StatementKind::FakeRead(_)
             | mir::StatementKind::Retag(..)
-            //| mir::StatementKind::PlaceMention(_)
+            | mir::StatementKind::PlaceMention(_)
             | mir::StatementKind::AscribeUserType(..)
             | mir::StatementKind::Coverage(_)
             //| mir::StatementKind::ConstEvalCounter

@@ -638,10 +638,11 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
                 let new_version = self.version_ctr.get(local).copied().unwrap_or(0usize);
                 self.version_ctr.insert(*local, new_version + 1);
                 update.versions.insert(*local, new_version);
-            }
-            | mir::StatementKind::StorageDead(..)
+            },
+            mir::StatementKind::StorageDead(..)
             | mir::StatementKind::FakeRead(..)
-            | mir::StatementKind::AscribeUserType(..) => {}, // nop
+            | mir::StatementKind::AscribeUserType(..) 
+            | mir::StatementKind::PlaceMention(..)=> {}, // nop
             mir::StatementKind::Assign(box (dest, rvalue)) => {
                 assert!(dest.projection.is_empty());
                 let expr = self.encode_rvalue(curr_ver, rvalue);

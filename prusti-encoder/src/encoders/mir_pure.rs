@@ -495,7 +495,7 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
                             let pure_func = self.deps.require_ref::<crate::encoders::MirFunctionEncoder>(*def_id).unwrap().function_name;
 
                             let encoded_args = args.iter()
-                                .map(|oper| self.encode_operand(curr_ver, oper))
+                                .map(|oper| self.encode_operand(&new_curr_ver, oper))
                                 .collect::<Vec<_>>();
                             
                             let func_call = self.vcx.mk_func_app(pure_func, &encoded_args);
@@ -587,6 +587,13 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
                                 self.vcx.alloc_slice(&reify_args),
                             ))
                             .lift();
+
+                        // TODO: use type encoder
+                        let body = 
+                            self.vcx.mk_func_app(
+                                "s_Bool_val",
+                                &[body],
+                            );
 
                         // TODO: use type encoder
                         let forall = self.vcx.mk_func_app(

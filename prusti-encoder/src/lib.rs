@@ -129,6 +129,7 @@ pub fn test_entrypoint<'tcx>(
     for def_id in tcx.hir_crate_items(()).definitions() {
         //println!("item: {def_id:?}");
         let kind = tcx.def_kind(def_id);
+
         //println!("  kind: {:?}", kind);
         /*if !format!("{def_id:?}").contains("foo") {
             continue;
@@ -139,15 +140,25 @@ pub fn test_entrypoint<'tcx>(
                     continue;
                 }
 
-                let res = crate::encoders::MirImpureEncoder::encode(def_id.to_def_id());
-                assert!(res.is_ok());
-
-                let kind = def_spec
-                .get_proc_spec(&def_id.to_def_id())
-                .map(|e| e.base_spec.kind);
-                if let Some(SpecificationItem::Inherent(
+                let spec = def_spec
+                    .get_proc_spec(&def_id.to_def_id())
+                    .map(|e| &e.base_spec);
+                let is_pure = matches!(spec.map(|s| s.kind), Some(SpecificationItem::Inherent(
                     prusti_interface::specs::typed::ProcedureSpecificationKind::Pure,
-                )) = kind
+                )));
+
+                let is_trusted = matches!(spec.map(|spec| spec.trusted), Some(SpecificationItem::Inherent(
+                    true,
+                )));
+
+                if ! (is_trusted && is_pure) {
+                    let res = crate::encoders::MirImpureEncoder::encode(def_id.to_def_id());
+                    assert!(res.is_ok());
+                }
+
+               
+
+                if is_pure 
                 {
                     log::debug!("Encoding {def_id:?} as a pure function because it is labeled as pure");
                     let res = crate::encoders::MirFunctionEncoder::encode(def_id.to_def_id());

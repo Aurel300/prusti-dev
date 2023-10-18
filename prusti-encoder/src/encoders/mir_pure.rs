@@ -589,10 +589,10 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
 
                         // TODO: use type encoder
                         let body = 
-                        self.vcx.mk_func_app(
-                            "s_Bool_val",
-                            &[body],
-                        );
+                            self.vcx.mk_func_app(
+                                "s_Bool_val",
+                                &[body],
+                            );
 
                         // TODO: use type encoder
                         let forall = self.vcx.mk_func_app(

@@ -32,7 +32,6 @@ pub struct MirPureEncoderOutput<'vir> {
 }
 
 use std::cell::RefCell;
-
 thread_local! {
     static CACHE: task_encoder::CacheStaticRef<MirPureEncoder> = RefCell::new(Default::default());
 }
@@ -105,6 +104,7 @@ impl TaskEncoder for MirPureEncoder {
             let body = vcx.body.borrow_mut().load_local_mir_with_facts(local_def_id).body;
 
             let expr_inner = Encoder::new(vcx, task_key.0, &body, deps).encode_body();
+
 
             let expr_inner = if is_spec_fn(vcx.tcx, def_id) {
                 // TODO: use type encoder
@@ -510,7 +510,6 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
     
                             return stmt_update.merge(term_update).merge(end_update);
                         }
-
                     }
                     _ => todo!(),
                 }
@@ -595,7 +594,7 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
                             self.vcx.mk_func_app(
                                 "s_Bool_val",
                                 &[body],
-                                );
+                            );
 
                         // TODO: use type encoder
                         let forall = self.vcx.mk_func_app(
@@ -618,8 +617,7 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
                         stmt_update.merge(term_update).merge(end_update)
                     }
                     None => {
-                        log::error!("call not supported {func:?}");
-                        todo!();
+                        todo!("call not supported {func:?}");
                     }
                 }
             }
@@ -862,6 +860,4 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
             _ => todo!("unsupported ProjectionElem {:?}", elem),
         }
     }
-
-
 }

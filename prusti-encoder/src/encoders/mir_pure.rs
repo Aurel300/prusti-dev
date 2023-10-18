@@ -5,12 +5,12 @@ use prusti_rustc_interface::{
     span::def_id::DefId,
     type_ir::sty::TyKind,
 };
-use rustc_middle::mir::Local;
 use task_encoder::{
     TaskEncoder,
     TaskEncoderDependencies,
 };
 use std::collections::HashMap;
+use crate::encoders::{ViperTupleEncoder, TypeEncoder};
 
 pub struct MirPureEncoder;
 
@@ -32,6 +32,7 @@ pub struct MirPureEncoderOutput<'vir> {
 }
 
 use std::cell::RefCell;
+
 thread_local! {
     static CACHE: task_encoder::CacheStaticRef<MirPureEncoder> = RefCell::new(Default::default());
 }
@@ -811,95 +812,56 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
         }
 
         let local = self.mk_local_ex(place.local, curr_ver[&place.local]);
-        if !place.projection.is_empty() {
+        let mut partent_ty =  self.body.local_decls[place.local].ty;
+        let mut expr = local;
 
-          
+        log::warn!("Projection! {:?} on {partent_ty:?}", place.projection);
 
-
-
-            let local_ty = self.body.local_decls[place.local].ty;
-            log::warn!("Projection! {:?} on {local_ty:?}", place.projection);
-
-
-
-      
-            let proj_as_slice : &[mir::ProjectionElem<mir::Local, ty::Ty<'_>>] = place.projection;
-
-            use mir::ProjectionElem::Deref;
-            use mir::ProjectionElem::Field;
-            return match proj_as_slice {
-                [Deref] => {
-                    local
-                }
-                [Deref, Field(idx, _), Deref] => {
-                    // Closure arg
-
-                    let upvars = match self.body.local_decls[place.local].ty.peel_refs().kind() {
-                        TyKind::Closure(_def_id, args) => args.as_closure().upvar_tys().collect::<Vec<_>>().len(),
-                        _ => unreachable!(),
-                    };
-                    let tuple_ref = self.deps.require_ref::<crate::encoders::ViperTupleEncoder>(
-                        upvars,
-                    ).unwrap();
-                    return tuple_ref.mk_elem(self.vcx, local, idx.as_usize())
-                    
-                }
-
-                [Field(field_idx, ..)] |
-                [Field(field_idx, ..), Deref] |
-                [Deref, Field(field_idx, ..)] =>
-                    self.encode_field_read(field_idx.as_usize(), place.local, curr_ver),
-                [Field(idx_1, ty_1), Field(idx_2, ..)] => {
-                    let inner = self.encode_field_read(idx_1.as_usize(), place.local, curr_ver);
-
-
-                    self.encode_field_read2(idx_2.as_usize(), inner, *ty_1)
-                }
-                _ => todo!(),
-            };
+        for elem in place.projection {
+            (partent_ty, expr) = self.encode_place_element(partent_ty, elem, expr);
         }
-        local
+
+        expr
     }
 
 
 
-    fn encode_field_read2(&mut self, field_idx: usize, target: ExprRet<'vir>, local_ty: ty::Ty<'vir>) -> ExprRet<'vir>  {
-        let local_ty = match local_ty.kind() {
-            TyKind::Ref(_, inner, _) => inner,
-            _ => &local_ty
-        };
+    fn encode_place_element(&mut self, parent_ty: ty::Ty<'vir>, elem: mir::PlaceElem<'vir>, expr: ExprRet<'vir> ) -> (ty::Ty<'vir>, ExprRet<'vir> ) {
 
-        let local_encoded_ty = self.deps.require_ref::<crate::encoders::TypeEncoder>(*local_ty).unwrap();
-        let struct_like = local_encoded_ty.expect_structlike();
-        let proj = struct_like.field_read[field_idx];
+        let parent_ty = parent_ty.peel_refs();
 
-        return self.vcx.mk_func_app(proj, self.vcx.alloc_slice(&[target]));
+
+         match elem {
+            mir::ProjectionElem::Deref => {
+                (parent_ty, expr)
+            }
+            mir::ProjectionElem::Field(field_idx, field_ty) => {
+                let field_idx= field_idx.as_usize();
+                match parent_ty.kind() {
+                    TyKind::Closure(_def_id, args) => {
+                        let upvars = args.as_closure().upvar_tys().collect::<Vec<_>>().len();
+                        let tuple_ref = self.deps.require_ref::<ViperTupleEncoder>(
+                            upvars,
+                        ).unwrap();
+                        let tup  = tuple_ref.mk_elem(self.vcx, expr, field_idx);
+
+                        (field_ty, tup)
+                    }
+
+                    _ => {
+                        let local_encoded_ty = self.deps.require_ref::<TypeEncoder>(parent_ty).unwrap();
+                        let struct_like = local_encoded_ty.expect_structlike();
+                        let proj = struct_like.field_read[field_idx];
+                
+                        let app = self.vcx.mk_func_app(proj, self.vcx.alloc_slice(&[expr]));
+
+                        (field_ty, app)
+                    }
+                }
+            }   
+            _ => todo!("unsupported ProjectionElem {:?}", elem),
+        }
     }
 
-
-
-    fn encode_field_read(&mut self, field_idx: usize, local: Local, curr_ver: &HashMap<mir::Local, usize>,
-    ) -> ExprRet<'vir>  {
-
-        let vir_local = self.mk_local_ex(local, curr_ver[&local]);
-        let local_ty = self.body.local_decls[local].ty;
-
-        if matches!(self.body.local_decls[local].ty.peel_refs().kind(), TyKind::Closure(..))
-{
-        let upvars = match self.body.local_decls[local].ty.peel_refs().kind() {
-            TyKind::Closure(_def_id, args) => args.as_closure().upvar_tys().collect::<Vec<_>>().len(),
-            _ => unreachable!(),
-        };
-        let tuple_ref = self.deps.require_ref::<crate::encoders::ViperTupleEncoder>(
-            upvars,
-        ).unwrap();
-        return tuple_ref.mk_elem(self.vcx, vir_local, field_idx);
-
-    }
-
-
-        self.encode_field_read2(field_idx, vir_local, local_ty)
-
-    }
 
 }

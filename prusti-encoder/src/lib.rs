@@ -129,7 +129,6 @@ pub fn test_entrypoint<'tcx>(
     for def_id in tcx.hir_crate_items(()).definitions() {
         //println!("item: {def_id:?}");
         let kind = tcx.def_kind(def_id);
-
         //println!("  kind: {:?}", kind);
         /*if !format!("{def_id:?}").contains("foo") {
             continue;

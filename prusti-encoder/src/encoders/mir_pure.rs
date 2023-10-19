@@ -620,7 +620,6 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
                             ))
                             .lift();
 
-
                         // TODO: use type encoder
                         let body = 
                             self.vcx.mk_func_app(
@@ -777,7 +776,7 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
                         .map(|field| self.encode_operand(curr_ver, field))
                         .collect::<Vec<_>>())
                 }
-                _ => todo!("AggregateKind {kind:?}"),
+                _ => todo!("Unsupported Rvalue::AggregateKind: {kind:?}"),
             }
             // ShallowInitBox
             // CopyForDeref

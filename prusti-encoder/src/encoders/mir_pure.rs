@@ -757,7 +757,7 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
                     kind: vir::UnOpKind::Not,
                     expr: sn
                 })));
-                //inner
+
                 self.vcx.mk_func_app("s_Bool_cons", self.vcx.alloc_slice(&[inner])) 
             }
             // Discriminant
@@ -844,8 +844,6 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
         let mut partent_ty =  self.body.local_decls[place.local].ty;
         let mut expr = local;
 
-        //log::warn!("Projection! {:?} on {partent_ty:?}", place.projection);
-
         for elem in place.projection {
             (partent_ty, expr) = self.encode_place_element(partent_ty, elem, expr);
         }
@@ -854,11 +852,8 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
     }
 
 
-
-    fn encode_place_element(&mut self, parent_ty: ty::Ty<'vir>, elem: mir::PlaceElem<'vir>, expr: ExprRet<'vir> ) -> (ty::Ty<'vir>, ExprRet<'vir> ) {
-
+    fn encode_place_element(&mut self, parent_ty: ty::Ty<'vir>, elem: mir::PlaceElem<'vir>, expr: ExprRet<'vir>) -> (ty::Ty<'vir>, ExprRet<'vir>) {
         let parent_ty = parent_ty.peel_refs();
-
 
          match elem {
             mir::ProjectionElem::Deref => {
@@ -876,7 +871,6 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
 
                         (field_ty, tup)
                     }
-
                     _ => {
                         let local_encoded_ty = self.deps.require_ref::<TypeEncoder>(parent_ty).unwrap();
                         let struct_like = local_encoded_ty.expect_structlike();
@@ -888,7 +882,7 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
                     }
                 }
             }   
-            _ => todo!("unsupported ProjectionElem {:?}", elem),
+            _ => todo!("Unsupported ProjectionElem {:?}", elem),
         }
     }
 }

@@ -368,7 +368,7 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
                     return stmt_update;
                 }
 
-                todo!()
+                todo!("Goto for target != end")
             }
 
             mir::TerminatorKind::SwitchInt { discr, targets } => {
@@ -490,7 +490,11 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
                             && item.path.segments[1].ident.as_str() == "pure"
                         );
 
-                        if is_pure {
+                         // TODO: detect snapshot_equality properly
+                         let is_snapshot_eq =  self.vcx.tcx.opt_item_name(*def_id).map(|e| e.as_str() == "snapshot_equality") == Some(true)
+                            && self.vcx.tcx.crate_name(def_id.krate).as_str() == "prusti_contracts";
+
+                        let func_call = if is_pure {
                             assert!(builtin.is_none(), "Function is pure and builtin?");
                             let pure_func = self.deps.require_ref::<crate::encoders::MirFunctionEncoder>(*def_id).unwrap().function_name;
 
@@ -500,6 +504,34 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
                             
                             let func_call = self.vcx.mk_func_app(pure_func, &encoded_args);
 
+                           Some(func_call)
+                        }
+
+                        else if is_snapshot_eq {
+                            assert!(builtin.is_none(), "Function is snapshot_equality and builtin?");
+                            let encoded_args = args.iter()
+                                .map(|oper| self.encode_operand(&new_curr_ver, oper))
+                                .collect::<Vec<_>>();
+
+                            assert_eq!(encoded_args.len(), 2);
+
+
+                            let eq_expr  = self.vcx.alloc(vir::ExprGenData::BinOp(self.vcx.alloc(vir::BinOpGenData {
+                                kind: vir::BinOpKind::CmpEq,
+                                lhs: encoded_args[0],
+                                rhs: encoded_args[1],
+                            })));
+
+
+                            // TODO: type encoder
+                            Some(self.vcx.mk_func_app("s_Bool_cons", &[eq_expr]))
+                        }
+                        else {
+                            None
+                        };
+
+
+                        if let Some(func_call) = func_call {
                             let mut term_update = Update::new();
                             assert!(destination.projection.is_empty());
                             self.bump_version(&mut term_update, destination.local, func_call);
@@ -745,7 +777,7 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
                         .map(|field| self.encode_operand(curr_ver, field))
                         .collect::<Vec<_>>())
                 }
-                _ => todo!(),
+                _ => todo!("AggregateKind {kind:?}"),
             }
             // ShallowInitBox
             // CopyForDeref
@@ -813,7 +845,7 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
         let mut partent_ty =  self.body.local_decls[place.local].ty;
         let mut expr = local;
 
-        log::warn!("Projection! {:?} on {partent_ty:?}", place.projection);
+        //log::warn!("Projection! {:?} on {partent_ty:?}", place.projection);
 
         for elem in place.projection {
             (partent_ty, expr) = self.encode_place_element(partent_ty, elem, expr);

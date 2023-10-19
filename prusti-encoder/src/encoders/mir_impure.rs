@@ -663,7 +663,17 @@ impl<'vir, 'enc> mir::visit::Visitor<'vir> for EncoderVisitor<'vir, 'enc> {
                                 rhs: self.encode_operand_snap(r),
                             })))],
                         )),
-                    mir::Rvalue::BinaryOp(mir::BinOp::Lt, box (l, r)) => {
+                    mir::Rvalue::BinaryOp(op @ (mir::BinOp::Lt | mir::BinOp::Gt | mir::BinOp::Ge | mir::BinOp::Le), box (l, r)) => {
+
+                        // todo: duplicated with pure
+                        let vir_op = match op {
+                            mir::BinOp::Gt => vir::BinOpKind::CmpGt,
+                            mir::BinOp::Ge => vir::BinOpKind::CmpGe,
+                            mir::BinOp::Lt => vir::BinOpKind::CmpLt,
+                            mir::BinOp::Le => vir::BinOpKind::CmpLe,
+                            _ => unreachable!()
+                        };
+
                         let ty_l = self.deps.require_ref::<crate::encoders::TypeEncoder>(
                             l.ty(self.local_decls, self.vcx.tcx),
                         ).unwrap();
@@ -676,7 +686,7 @@ impl<'vir, 'enc> mir::visit::Visitor<'vir> for EncoderVisitor<'vir, 'enc> {
                         Some(self.vcx.mk_func_app(
                             "s_Bool_cons", // TODO: go through type encoder
                             &[self.vcx.alloc(vir::ExprData::BinOp(self.vcx.alloc(vir::BinOpData {
-                                kind: vir::BinOpKind::CmpLt,
+                                kind: vir_op,
                                 lhs: self.vcx.mk_func_app(
                                     ty_l,
                                     &[self.encode_operand_snap(l)],

@@ -665,7 +665,7 @@ impl<'vir, 'enc> mir::visit::Visitor<'vir> for EncoderVisitor<'vir, 'enc> {
                         )),
                     mir::Rvalue::BinaryOp(op @ (mir::BinOp::Lt | mir::BinOp::Gt | mir::BinOp::Ge | mir::BinOp::Le), box (l, r)) => {
 
-                        // todo: duplicated with pure
+                        // TODO: duplicated with pure
                         let vir_op = match op {
                             mir::BinOp::Gt => vir::BinOpKind::CmpGt,
                             mir::BinOp::Ge => vir::BinOpKind::CmpGe,

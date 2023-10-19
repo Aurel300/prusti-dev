@@ -10,7 +10,6 @@ use task_encoder::{
     TaskEncoderDependencies,
 };
 use std::collections::HashMap;
-use crate::encoders::{ViperTupleEncoder, TypeEncoder};
 
 pub struct MirPureEncoder;
 
@@ -490,7 +489,7 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
                             && item.path.segments[1].ident.as_str() == "pure"
                         );
 
-                    if is_pure {
+                        if is_pure {
                             assert!(builtin.is_none(), "Function is pure and builtin?");
                             let pure_func = self.deps.require_ref::<crate::encoders::MirFunctionEncoder>(*def_id).unwrap().function_name;
 
@@ -725,7 +724,7 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
                     kind: vir::UnOpKind::Not,
                     expr: sn
                 })));
-                //inner
+
                 self.vcx.mk_func_app("s_Bool_cons", self.vcx.alloc_slice(&[inner])) 
             }
             // Discriminant

@@ -509,12 +509,7 @@ impl TaskEncoder for TypeEncoder {
                         name: vir::vir_format!(vcx, "ax_{name_s}_cons_read_{read_idx}"),
                         expr: vcx.alloc(vir::ExprData::Forall(vcx.alloc(vir::ForallData {
                             qvars: cons_qvars.clone(),
-                            triggers: vcx.alloc_slice(&[vcx.alloc_slice(&[
-                                vcx.mk_func_app(
-                                    vir::vir_format!(vcx, "{name_s}_read_{read_idx}"),
-                                    &[cons_call],
-                                ),
-                            ])]),
+                            triggers: vcx.alloc_slice(&[vcx.alloc_slice(&[cons_call])]),
                             body: vcx.alloc(vir::ExprData::BinOp(vcx.alloc(vir::BinOpData {
                                 kind: vir::BinOpKind::CmpEq,
                                 lhs: vcx.mk_func_app(

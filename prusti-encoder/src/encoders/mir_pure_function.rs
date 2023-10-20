@@ -70,13 +70,13 @@ impl TaskEncoder for MirFunctionEncoder {
         vir::with_vcx(|vcx| {
             let def_id = task_key;
 
-            log::debug!("encoding {def_id:?}");
+            tracing::debug!("encoding {def_id:?}");
 
             let method_name = vir::vir_format!(vcx, "f_{}", vcx.tcx.item_name(*def_id));
             deps.emit_output_ref::<Self>(*task_key, MirFunctionEncoderOutputRef { method_name });
 
             let local_def_id = def_id.expect_local();
-            let body = vcx.body.borrow_mut().load_local_mir(local_def_id);
+            let body = vcx.body.borrow_mut().get_impure_fn_body_identity(local_def_id);
 
             let specs = deps
                 .require_local::<SpecEncoder>(SpecEncoderTask { def_id: *def_id })
@@ -162,7 +162,7 @@ impl TaskEncoder for MirFunctionEncoder {
                 .unwrap()
                 .snapshot;
 
-            log::debug!("finished {def_id:?}");
+            tracing::debug!("finished {def_id:?}");
 
             Ok((
                 MirFunctionEncoderOutput {

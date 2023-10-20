@@ -211,7 +211,6 @@ pub fn test_entrypoint<'tcx>(
         viper_code.push_str(&format!("{:?}\n", output.predicate));
         //viper_code.push_str(&format!("{:?}\n", output.method_refold));
         viper_code.push_str(&format!("{:?}\n", output.method_assign));
-        viper_code.push_str(&format!("{:?}\n", output.method_reassign));
     }
 
     header(&mut viper_code, "utility types");

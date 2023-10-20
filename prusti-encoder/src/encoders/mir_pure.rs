@@ -1,4 +1,3 @@
-use prusti_interface::specs::is_spec_fn;
 use prusti_rustc_interface::{
     data_structures::graph::dominators::Dominators,
     middle::{mir, ty},
@@ -103,18 +102,6 @@ impl TaskEncoder for MirPureEncoder {
             let body = vcx.body.borrow_mut().get_impure_fn_body_identity(local_def_id);
 
             let expr_inner = Encoder::new(vcx, task_key.0, &body, deps).encode_body();
-
-
-            let expr_inner = if is_spec_fn(vcx.tcx, def_id) {
-                // TODO: use type encoder
-                vcx.mk_func_app(
-                    "s_Bool_val",
-                    &[expr_inner],
-                )
-            }
-            else {
-                expr_inner
-            };
 
             // We wrap the expression with an additional lazy that will perform
             // some sanity checks. These requirements cannot be expressed using
@@ -629,16 +616,13 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
             mir::Rvalue::BinaryOp(op, box (l, r)) => {
                 let ty_l = self.deps.require_ref::<crate::encoders::TypeEncoder>(
                     l.ty(self.body, self.vcx.tcx),
-                ).unwrap();
-                let ty_l = vir::vir_format!(self.vcx, "{}_val", ty_l.snapshot_name); // TODO: get the `_val` function differently
+                ).unwrap().to_primitive.unwrap();
                 let ty_r = self.deps.require_ref::<crate::encoders::TypeEncoder>(
                     r.ty(self.body, self.vcx.tcx),
-                ).unwrap();
-                let ty_r = vir::vir_format!(self.vcx, "{}_val", ty_r.snapshot_name); // TODO: get the `_val` function differently
+                ).unwrap().to_primitive.unwrap();
                 let ty_rvalue = self.deps.require_ref::<crate::encoders::TypeEncoder>(
                     rvalue.ty(self.body, self.vcx.tcx),
-                ).unwrap();
-                let ty_rvalue = vir::vir_format!(self.vcx, "{}_cons", ty_rvalue.snapshot_name); // TODO: get the `_cons` function differently
+                ).unwrap().from_primitive.unwrap();
 
                 self.vcx.mk_func_app(
                     ty_rvalue,
@@ -660,12 +644,10 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
             mir::Rvalue::UnaryOp(op, expr) => {
                 let ty_expr = self.deps.require_ref::<crate::encoders::TypeEncoder>(
                     expr.ty(self.body, self.vcx.tcx),
-                ).unwrap();
-                let ty_expr = vir::vir_format!(self.vcx, "{}_val", ty_expr.snapshot_name); // TODO: get the `_val` function differently
+                ).unwrap().to_primitive.unwrap();
                 let ty_rvalue = self.deps.require_ref::<crate::encoders::TypeEncoder>(
                     rvalue.ty(self.body, self.vcx.tcx),
-                ).unwrap();
-                let ty_rvalue = vir::vir_format!(self.vcx, "{}_cons", ty_rvalue.snapshot_name); // TODO: get the `_cons` function differently
+                ).unwrap().from_primitive.unwrap();
 
                 self.vcx.mk_func_app(
                     ty_rvalue,

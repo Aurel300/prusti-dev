@@ -6,6 +6,8 @@ mod spec;
 mod typ;
 mod viper_tuple;
 mod mir_pure_function;
+pub mod pure;
+pub mod local_def;
 
 pub use generic::{
     GenericEncoder,

@@ -31,6 +31,8 @@ pub enum TypeEncoderOutputRefSub<'vir> {
 pub struct TypeEncoderOutputRef<'vir> {
     pub snapshot_name: &'vir str,
     pub predicate_name: &'vir str,
+    pub from_primitive: Option<&'vir str>,
+    pub to_primitive: Option<&'vir str>,
     pub snapshot: vir::Type<'vir>,
     pub function_unreachable: &'vir str,
     pub function_snap: &'vir str,
@@ -52,28 +54,21 @@ impl<'vir> TypeEncoderOutputRef<'vir> {
     pub fn expr_from_u128(&self, val: u128) -> vir::Expr<'vir> {
         // TODO: not great: store the TyKind as well?
         //   or should this be a different task for TypeEncoder?
-        let cons_name = match self.snapshot_name {
-            "s_Bool" => {
-                return vir::with_vcx(|vcx| vcx.mk_func_app(
-                    "s_Bool_cons",
+        match self.snapshot_name {
+            "s_Bool" => vir::with_vcx(|vcx| vcx.mk_func_app(
+                    self.from_primitive.unwrap(),
                     &[vcx.alloc(vir::ExprData::Const(
                         vcx.alloc(vir::ConstData::Bool(val != 0)),
                     ))],
-                ));
-                //return vir::with_vcx(|vcx| vcx.alloc(vir::ExprData::Const(
-                //    vcx.alloc(vir::ConstData::Bool(val != 0)),
-                //)));
-            }
-            name if name.starts_with("s_Int_") || name.starts_with("s_Uint_") =>
-                vir::with_vcx(|vcx| vir::vir_format!(vcx, "{name}_cons")),
+                )),
+            name if name.starts_with("s_Int_") || name.starts_with("s_Uint_") => vir::with_vcx(|vcx| vcx.mk_func_app(
+                    self.from_primitive.unwrap(),
+                    &[vcx.alloc(vir::ExprData::Const(
+                        vcx.alloc(vir::ConstData::Int(val)),
+                    ))],
+                )),
             k => todo!("unsupported type in expr_from_u128 {k:?}"),
-        };
-        vir::with_vcx(|vcx| vcx.mk_func_app(
-            cons_name,
-            &[vcx.alloc(vir::ExprData::Const(
-                vcx.alloc(vir::ConstData::Int(val)),
-            ))],
-        ))
+        }
     }
 }
 
@@ -360,6 +355,8 @@ impl TaskEncoder for TypeEncoder {
             deps.emit_output_ref::<TypeEncoder>(*task_key, TypeEncoderOutputRef {
                 snapshot_name: name_s,
                 predicate_name: name_p,
+                from_primitive: None,
+                to_primitive: None,
                 snapshot: vcx.alloc(vir::TypeData::Domain(name_s)),
                 function_unreachable: vir::vir_format!(vcx, "{name_s}_unreachable"),
                 function_snap: vir::vir_format!(vcx, "{name_p}_snap"),
@@ -377,9 +374,10 @@ impl TaskEncoder for TypeEncoder {
             let mut funcs: Vec<vir::DomainFunction<'vir>> = vec![];
             let mut axioms: Vec<vir::DomainAxiom<'vir>> = vec![];
 
+            let cons_name = vir::vir_format!(vcx, "{name_s}_cons");
             funcs.push(vcx.alloc(vir::DomainFunctionData {
                 unique: false,
-                name: vir::vir_format!(vcx, "{name_s}_cons"),
+                name: cons_name,
                 args: vcx.alloc_slice(&field_ty_out.iter()
                     .map(|field_ty_out| field_ty_out.snapshot)
                     .collect::<Vec<_>>()),
@@ -486,7 +484,6 @@ impl TaskEncoder for TypeEncoder {
             }
 
             // constructor
-            let cons_name = vir::vir_format!(vcx, "{name_s}_cons");
             {
                 let cons_qvars = vcx.alloc_slice(
                      &field_ty_out.iter()
@@ -612,7 +609,7 @@ impl TaskEncoder for TypeEncoder {
                         expr: Some(vcx.alloc(vir::ExprData::Unfolding(vcx.alloc(vir::UnfoldingData {
                             target: pred_app,
                             expr: vcx.mk_func_app(
-                                vir::vir_format!(vcx, "{name_s}_cons"),
+                                cons_name,
                                 vcx.alloc_slice(&field_ty_out
                                     .iter()
                                     .enumerate()
@@ -644,6 +641,8 @@ impl TaskEncoder for TypeEncoder {
                 deps.emit_output_ref::<Self>(*task_key, TypeEncoderOutputRef {
                     snapshot_name: "s_Bool",
                     predicate_name: "p_Bool",
+                    to_primitive: Some("s_Bool_val"),
+                    from_primitive: Some("s_Bool_cons"),
                     snapshot: ty_s,
                     function_unreachable: "s_Bool_unreachable",
                     function_snap: "p_Bool_snap",
@@ -687,6 +686,8 @@ impl TaskEncoder for TypeEncoder {
                 deps.emit_output_ref::<Self>(*task_key, TypeEncoderOutputRef {
                     snapshot_name: name_s,
                     predicate_name: name_p,
+                    to_primitive: Some(name_val),
+                    from_primitive: Some(name_cons),
                     snapshot: ty_s,
                     function_unreachable: vir::vir_format!(vcx, "{name_s}_unreachable"),
                     function_snap: vir::vir_format!(vcx, "{name_p}_snap"),
@@ -720,6 +721,8 @@ impl TaskEncoder for TypeEncoder {
                 deps.emit_output_ref::<Self>(*task_key, TypeEncoderOutputRef {
                     snapshot_name: "s_Tuple0",
                     predicate_name: "p_Tuple0",
+                    to_primitive: None,
+                    from_primitive: None,
                     snapshot: ty_s,
                     function_unreachable: "s_Tuple0_unreachable",
                     function_snap: "p_Tuple0_snap",
@@ -804,6 +807,8 @@ impl TaskEncoder for TypeEncoder {
                 deps.emit_output_ref::<Self>(*task_key, TypeEncoderOutputRef {
                     snapshot_name: param_out.snapshot_param_name,
                     predicate_name: param_out.predicate_param_name,
+                    to_primitive: None,
+                    from_primitive: None,
                     snapshot: ty_s,
                     function_unreachable: "s_Param_unreachable",
                     function_snap: "p_Param_snap",
@@ -847,6 +852,8 @@ impl TaskEncoder for TypeEncoder {
                 deps.emit_output_ref::<Self>(*task_key, TypeEncoderOutputRef {
                     snapshot_name: "s_Never",
                     predicate_name: "p_Never",
+                    to_primitive: None,
+                    from_primitive: None,
                     snapshot: ty_s,
                     function_unreachable: "s_Never_unreachable",
                     function_snap: "p_Never_snap",

@@ -963,6 +963,26 @@ impl<'vir, 'enc> mir::visit::Visitor<'vir> for EncoderVisitor<'vir, 'enc> {
                     self.vcx.alloc(vir::CfgBlockLabelData::BasicBlock(target.unwrap().as_usize())),
                 ))
             }
+            mir::TerminatorKind::Assert { cond, expected, msg, target, unwind } => {
+
+                let otherwise = match unwind {
+                    mir::UnwindAction::Cleanup(bb) => bb,
+                    _ => todo!()
+                };
+
+
+                let enc = self.encode_operand_snap(cond);
+                let enc = self.vcx.mk_func_app("s_Bool_val", &[enc]);
+
+
+                let target_bb = self.vcx.alloc(vir::CfgBlockLabelData::BasicBlock(target.as_usize()));
+                
+                self.vcx.alloc(vir::TerminatorStmtData::GotoIf(self.vcx.alloc(vir::GotoIfData {
+                    value: enc, // self.vcx.mk_local_ex(discr_name),
+                    targets: self.vcx.alloc_slice(&[(self.vcx.mk_false(), &target_bb)]),
+                    otherwise: self.vcx.alloc(vir::CfgBlockLabelData::BasicBlock(otherwise.as_usize())),
+                })))
+            }
             unsupported_kind => self.vcx.alloc(vir::TerminatorStmtData::Dummy(
                 vir::vir_format!(self.vcx, "terminator {unsupported_kind:?}"),
             )),

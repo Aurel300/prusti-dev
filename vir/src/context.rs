@@ -90,6 +90,10 @@ impl<'tcx> VirCtxt<'tcx> {
         self.alloc(ExprData::Const(self.alloc(ConstData::Bool(true))))
     }
 
+    pub fn mk_false(&'tcx self) -> Expr<'tcx> {
+        self.alloc(ExprData::Const(self.alloc(ConstData::Bool(false))))
+    }
+
     pub fn mk_conj(&'tcx self, elems: &[Expr<'tcx>]) -> Expr<'tcx> {
         if elems.len() == 0 {
             return self.alloc(ExprData::Const(self.alloc(ConstData::Bool(true))));

@@ -4,9 +4,7 @@ use task_encoder::{TaskEncoder, TaskEncoderDependencies};
 use vir::Reify;
 use std::cell::RefCell;
 
-use crate::encoders::{
-    MirPureEncoder, MirPureEncoderTask, SpecEncoder, SpecEncoderTask, TypeEncoder, mir_pure::MirPureEncoderError, local_def::MirLocalDefEncoderOutput,
-};
+use crate::encoders::MirPureEncoder;
 pub struct MirSpecEncoder;
 
 #[derive(Clone)]

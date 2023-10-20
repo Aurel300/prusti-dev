@@ -9,7 +9,7 @@ extern crate rustc_type_ir;
 
 mod encoders;
 
-use prusti_interface::{environment::EnvBody, specs::typed::SpecificationItem};
+use prusti_interface::environment::EnvBody;
 use prusti_rustc_interface::{
     middle::ty,
     hir,
@@ -148,9 +148,7 @@ pub fn test_entrypoint<'tcx>(
                         .map(|e| e.base_spec.kind)
                 );
 
-                if let Some(SpecificationItem::Inherent(
-                    prusti_interface::specs::typed::ProcedureSpecificationKind::Pure,
-                )) = kind {
+                if kind.and_then(|kind| kind.is_pure().ok()).unwrap_or_default() {
                     tracing::debug!("Encoding {def_id:?} as a pure function because it is labeled as pure");
                     let res = crate::encoders::MirFunctionEncoder::encode(def_id.to_def_id());
                     assert!(res.is_ok());

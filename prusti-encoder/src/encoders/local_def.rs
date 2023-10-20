@@ -1,16 +1,12 @@
 use prusti_rustc_interface::{
     index::IndexVec,
-    middle::{mir, ty},
+    middle::mir,
     span::def_id::DefId
 };
 
 use task_encoder::{TaskEncoder, TaskEncoderDependencies};
-use vir::Reify;
 use std::cell::RefCell;
 
-use crate::encoders::{
-    MirPureEncoder, MirPureEncoderTask, SpecEncoder, SpecEncoderTask, TypeEncoder, mir_pure::MirPureEncoderError,
-};
 pub struct MirLocalDefEncoder;
 #[derive(Clone, Copy)]
 pub struct MirLocalDefEncoderOutput<'vir> {

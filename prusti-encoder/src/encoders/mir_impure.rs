@@ -748,7 +748,7 @@ impl<'vir, 'enc> mir::visit::Visitor<'vir> for EncoderVisitor<'vir, 'enc> {
                     }
 
                     mir::Rvalue::Aggregate(
-                        box mir::AggregateKind::Adt(..),
+                        box mir::AggregateKind::Adt(..) | box mir::AggregateKind::Tuple,
                         fields,
                     ) => {
                         let dest_ty_struct = dest_ty_out.expect_structlike();
@@ -785,7 +785,8 @@ impl<'vir, 'enc> mir::visit::Visitor<'vir> for EncoderVisitor<'vir, 'enc> {
                     //mir::Rvalue::Discriminant(Place<'tcx>) => {}
                     //mir::Rvalue::ShallowInitBox(Operand<'tcx>, Ty<'tcx>) => {}
                     //mir::Rvalue::CopyForDeref(Place<'tcx>) => {}
-                    _ => {
+                    other => {
+                        log::error!("unsupported rvalue {other:?}");
                         Some(self.vcx.alloc(vir::ExprData::Todo(
                             vir::vir_format!(self.vcx, "rvalue {rvalue:?}"),
                         )))
@@ -970,16 +971,15 @@ impl<'vir, 'enc> mir::visit::Visitor<'vir> for EncoderVisitor<'vir, 'enc> {
                     _ => todo!()
                 };
 
-
                 let enc = self.encode_operand_snap(cond);
                 let enc = self.vcx.mk_func_app("s_Bool_val", &[enc]);
-
 
                 let target_bb = self.vcx.alloc(vir::CfgBlockLabelData::BasicBlock(target.as_usize()));
                 
                 self.vcx.alloc(vir::TerminatorStmtData::GotoIf(self.vcx.alloc(vir::GotoIfData {
-                    value: enc, // self.vcx.mk_local_ex(discr_name),
-                    targets: self.vcx.alloc_slice(&[(self.vcx.mk_false(), &target_bb)]),
+                    value: enc,  
+                    targets: self.vcx.alloc_slice(&[(self.vcx.alloc(vir::ExprData::Const(self.vcx.alloc(vir::ConstData::Bool(*expected))))
+                    , &target_bb)]),
                     otherwise: self.vcx.alloc(vir::CfgBlockLabelData::BasicBlock(otherwise.as_usize())),
                 })))
             }

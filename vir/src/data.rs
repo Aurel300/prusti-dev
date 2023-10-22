@@ -26,6 +26,7 @@ pub enum BinOpKind {
     CmpLe,
     And,
     Add,
+    Sub,
     // ...
 }
 

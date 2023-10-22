@@ -31,6 +31,79 @@ pub struct MirPureEncoderOutput<'vir> {
     pub expr: ExprRet<'vir>,
 }
 
+
+fn opt<'vir> (expr: ExprRet<'vir>, ) -> ExprRet<'vir>{
+    match expr {
+        vir::ExprGenData::Let(vir::LetGenData{name, val, expr}) => {
+            let expr = opt(expr);
+            let val = opt(val);
+
+            match expr {
+                vir::ExprGenData::Local(inner_local) => {
+                    if &inner_local.name == name {
+                        return val
+                    }
+                }
+                _ => {}
+            }
+            vir::with_vcx(move |vcx| {
+                vcx.alloc(vir::ExprGenData::Let(vcx.alloc(vir::LetGenData{name, val, expr})))
+            })
+        },
+        vir::ExprGenData::FuncApp( vir::FuncAppGenData{target, args}) => {
+            let n_args = args.iter().map(|arg| opt(arg)).collect::<Vec<_>>();
+            vir::with_vcx(move |vcx| {
+                vcx.mk_func_app(target, &n_args)
+            })
+        }
+
+
+        vir::ExprGenData::PredicateApp( vir::PredicateAppGenData{target, args}) => {
+            let n_args = args.iter().map(|arg| opt(arg)).collect::<Vec<_>>();
+            vir::with_vcx(move |vcx| {
+                vcx.alloc(vir::ExprGenData::PredicateApp(vcx.alloc(vir::PredicateAppGenData {
+                    target,
+                    args: vcx.alloc_slice(&n_args),
+                })))
+            })
+        }
+       
+        vir::ExprGenData::Forall(vir::ForallGenData{qvars, triggers, body}) => {
+            let body = opt(body);
+
+            vir::with_vcx(move |vcx| {
+                vcx.alloc(vir::ExprGenData::Forall(vcx.alloc(vir::ForallGenData{qvars, triggers, body})))
+            })
+        }
+
+
+        vir::ExprGenData::Ternary(vir::TernaryGenData{cond, then, else_}) => {
+            let cond = opt(cond);
+            let then = opt(then);
+            let else_ = opt(else_);
+
+            vir::with_vcx(move |vcx| {
+                vcx.alloc(vir::ExprGenData::Ternary(vcx.alloc(vir::TernaryGenData{cond, then, else_})))
+            })
+        }
+
+        todo @(
+        vir::ExprGenData::Field(_, _) |
+        vir::ExprGenData::Old(_) |
+        vir::ExprGenData::AccField(_) |
+        vir::ExprGenData::UnOp(_) |
+        vir::ExprGenData::BinOp(_)) => todo,
+
+        other @ (vir::ExprGenData::Unfolding(_) |
+        vir::ExprGenData::Const(_) | 
+        vir::ExprGenData::Todo(_) |
+        vir::ExprGenData::Local(_) |
+        vir::ExprGenData::Lazy(_, _)) => other
+
+
+    }
+}
+
 use std::cell::RefCell;
 thread_local! {
     static CACHE: task_encoder::CacheStaticRef<MirPureEncoder> = RefCell::new(Default::default());
@@ -112,6 +185,16 @@ impl TaskEncoder for MirPureEncoder {
                     "s_Bool_val",
                     &[expr_inner],
                 )
+            }
+            else {
+                expr_inner
+            };
+
+            let expr_inner = if true {
+                log::warn!("before opt {expr_inner:?}");
+                let opted = opt(expr_inner);
+                log::warn!("after opt {opted:?}");
+            opted
             }
             else {
                 expr_inner
@@ -777,6 +860,21 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
                         .collect::<Vec<_>>())
                 }
                 _ => todo!("Unsupported Rvalue::AggregateKind: {kind:?}"),
+            }
+            mir::Rvalue::CheckedBinaryOp(binop, box (l, r)) => {
+                let binop_function = self.deps.require_ref::<crate::encoders::MirBuiltinEncoder>(
+                    crate::encoders::MirBuiltinEncoderTask::CheckedBinOp(
+                        *binop,
+                        l.ty(self.body, self.vcx.tcx), // TODO: ?
+                    ),
+                ).unwrap().name;
+                self.vcx.mk_func_app(
+                    binop_function,
+                    &[
+                        self.encode_operand(curr_ver, l),
+                        self.encode_operand(curr_ver, r),
+                    ],
+                )
             }
             // ShallowInitBox
             // CopyForDeref

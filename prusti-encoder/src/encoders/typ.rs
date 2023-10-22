@@ -656,6 +656,8 @@ impl TaskEncoder for TypeEncoder {
                         function s_Bool_cons(Bool): s_Bool;
                         function s_Bool_val(s_Bool): Bool;
                         axiom_inverse(s_Bool_val, s_Bool_cons, Bool);
+                        axiom_inverse(s_Bool_cons, s_Bool_val, s_Bool);
+
                     } },
                     predicate: mk_simple_predicate(vcx, "p_Bool", "f_Bool"),
                     function_unreachable: mk_unreachable(vcx, "s_Bool", ty_s),
@@ -699,6 +701,8 @@ impl TaskEncoder for TypeEncoder {
                         function [name_cons](Int): [ty_s];
                         function [name_val]([ty_s]): Int;
                         axiom_inverse([name_val], [name_cons], Int);
+                        axiom_inverse([name_cons], [name_val], [ty_s]);
+
                     } },
                     predicate: mk_simple_predicate(vcx, name_p, name_field),
                     function_unreachable: mk_unreachable(vcx, name_s, ty_s),

@@ -786,7 +786,7 @@ impl TaskEncoder for TypeEncoder {
                 }, ()))
             }
             TyKind::Adt(adt_def, substs) if adt_def.is_struct() => {
-                println!("encoding ADT {adt_def:?} with substs {substs:?}");
+                tracing::debug!("encoding ADT {adt_def:?} with substs {substs:?}");
                 let substs = ty::List::identity_for_item(vcx.tcx, adt_def.did());
                 let field_ty_out = adt_def.all_fields()
                     .map(|field| deps.require_ref::<crate::encoders::TypeEncoder>(field.ty(vcx.tcx, substs)).unwrap())

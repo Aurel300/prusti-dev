@@ -121,13 +121,16 @@ pub fn test_entrypoint<'tcx>(
 ) -> vir::Program<'tcx> {
     use task_encoder::TaskEncoder;
 
+    tracing::debug!("test_entrypoint start");
+
+
     crate::encoders::init_def_spec(def_spec);
     vir::init_vcx(vir::VirCtxt::new(tcx, body));
 
     // TODO: this should be a "crate" encoder, which will deps.require all the methods in the crate
 
     for def_id in tcx.hir_crate_items(()).definitions() {
-        //println!("item: {def_id:?}");
+        tracing::debug!("test_entrypoint item: {def_id:?}");
         let kind = tcx.def_kind(def_id);
         //println!("  kind: {:?}", kind);
         /*if !format!("{def_id:?}").contains("foo") {
@@ -182,7 +185,7 @@ pub fn test_entrypoint<'tcx>(
                 }*/
             }
             unsupported_item_kind => {
-                println!("another item: {unsupported_item_kind:?}");
+                tracing::debug!("unsupported item: {unsupported_item_kind:?}");
             }
         }
     }

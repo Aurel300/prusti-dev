@@ -178,23 +178,11 @@ impl TaskEncoder for MirPureEncoder {
 
             let expr_inner = Encoder::new(vcx, task_key.0, &body, deps).encode_body();
 
-
-            let expr_inner = if is_spec_fn(vcx.tcx, def_id) {
-                // TODO: use type encoder
-                vcx.mk_func_app(
-                    "s_Bool_val",
-                    &[expr_inner],
-                )
-            }
-            else {
-                expr_inner
-            };
-
             let expr_inner = if true {
                 tracing::warn!("before opt {expr_inner:?}");
                 let opted = opt(expr_inner);
                 tracing::warn!("after opt {opted:?}");
-            opted
+                opted
             }
             else {
                 expr_inner

@@ -13,7 +13,7 @@ use task_encoder::{
     TaskEncoder,
     TaskEncoderDependencies,
 };
-use vir::Reify;
+use vir::{Reify, BinOpKind};
 
 pub struct MirImpureEncoder;
 
@@ -65,6 +65,7 @@ impl TaskEncoder for MirImpureEncoder {
         *task
     }
 
+    #[tracing::instrument(level = "debug", skip(deps))]
     fn do_encode_full<'vir>(
         task_key: &Self::TaskKey<'vir>,
         deps: &mut TaskEncoderDependencies<'vir>,
@@ -163,29 +164,49 @@ impl TaskEncoder for MirImpureEncoder {
             posts.push(local_defs.locals[mir::RETURN_PLACE].impure_pred);
             posts.extend(spec_posts);
 
-            let mut visitor = EncoderVisitor {
-                vcx,
-                deps,
-                local_decls: &body.local_decls,
-                //ssa_analysis,
-                fpcs_analysis,
-                local_defs,
 
-                tmp_ctr: 0,
+             // TODO: dedup with mir_pure
+             let attrs = vcx.tcx.get_attrs_unchecked(def_id);
+             let is_trusted = attrs
+                 .iter()
+                 .filter(|attr| !attr.is_doc_comment())
+                 .map(|attr| attr.get_normal_item())
+                 .any(|item| {
+                     item.path.segments.len() == 2
+                         && item.path.segments[0].ident.as_str() == "prusti"
+                         && item.path.segments[1].ident.as_str() == "trusted"
+                 });
 
-                current_fpcs: None,
+            let blocks = if is_trusted {
+                None
+            }
+            else {
+                let mut visitor = EncoderVisitor {
+                    vcx,
+                    deps,
+                    local_decls: &body.local_decls,
+                    //ssa_analysis,
+                    fpcs_analysis,
+                    local_defs,
 
-                current_stmts: None,
-                current_terminator: None,
-                encoded_blocks,
+                    tmp_ctr: 0,
+
+                    current_fpcs: None,
+
+                    current_stmts: None,
+                    current_terminator: None,
+                    encoded_blocks,
+                };
+                visitor.visit_body(&body);
+
+                visitor.encoded_blocks.push(vcx.alloc(vir::CfgBlockData {
+                    label: vcx.alloc(vir::CfgBlockLabelData::End),
+                    stmts: &[],
+                    terminator: vcx.alloc(vir::TerminatorStmtData::Exit),
+                }));
+
+                Some(vcx.alloc_slice(&visitor.encoded_blocks))
             };
-            visitor.visit_body(&body);
-
-            visitor.encoded_blocks.push(vcx.alloc(vir::CfgBlockData {
-                label: vcx.alloc(vir::CfgBlockLabelData::End),
-                stmts: &[],
-                terminator: vcx.alloc(vir::TerminatorStmtData::Exit),
-            }));
 
             Ok((MirImpureEncoderOutput {
                 method: vcx.alloc(vir::MethodData {
@@ -194,7 +215,7 @@ impl TaskEncoder for MirImpureEncoder {
                     rets: &[],
                     pres: vcx.alloc_slice(&pres),
                     posts: vcx.alloc_slice(&posts),
-                    blocks: Some(vcx.alloc_slice(&visitor.encoded_blocks)),
+                    blocks,
                 }),
             }, ()))
         })
@@ -408,6 +429,9 @@ impl<'vir, 'enc> EncoderVisitor<'vir, 'enc> {
         &mut self,
         operand: &mir::Operand<'vir>,
     ) -> vir::Expr<'vir> {
+
+        tracing::warn!("encode_operand {operand:?}");
+
         let (snap_val, ty_out) = match operand {
             &mir::Operand::Move(source) => return self.encode_place(Place::from(source)),
             &mir::Operand::Copy(source) => {
@@ -619,17 +643,7 @@ impl<'vir, 'enc> mir::visit::Visitor<'vir> for EncoderVisitor<'vir, 'enc> {
                                 rhs: self.encode_operand_snap(r),
                             })))],
                         )),
-                    mir::Rvalue::BinaryOp(op @ (mir::BinOp::Lt | mir::BinOp::Gt | mir::BinOp::Ge | mir::BinOp::Le), box (l, r)) => {
-
-                        // TODO: duplicated with pure
-                        let vir_op = match op {
-                            mir::BinOp::Gt => vir::BinOpKind::CmpGt,
-                            mir::BinOp::Ge => vir::BinOpKind::CmpGe,
-                            mir::BinOp::Lt => vir::BinOpKind::CmpLt,
-                            mir::BinOp::Le => vir::BinOpKind::CmpLe,
-                            _ => unreachable!()
-                        };
-
+                    mir::Rvalue::BinaryOp(op, box (l, r)) => {
                         let ty_l = self.deps.require_ref::<crate::encoders::TypeEncoder>(
                             l.ty(self.local_decls, self.vcx.tcx),
                         ).unwrap().to_primitive.unwrap();
@@ -640,7 +654,7 @@ impl<'vir, 'enc> mir::visit::Visitor<'vir> for EncoderVisitor<'vir, 'enc> {
                         Some(self.vcx.mk_func_app(
                             "s_Bool_cons", // TODO: go through type encoder
                             &[self.vcx.alloc(vir::ExprData::BinOp(self.vcx.alloc(vir::BinOpData {
-                                kind: vir_op,
+                                kind: BinOpKind::from(op),
                                 lhs: self.vcx.mk_func_app(
                                     ty_l,
                                     &[self.encode_operand_snap(l)],

@@ -125,7 +125,7 @@ impl TaskEncoder for MirFunctionEncoder {
                     .unwrap()
                     .expr;
 
-                Some(expr.reify(vcx, (def_id, &spec.pre_args[1..])))
+                Some(expr.reify(vcx, (def_id, &spec.pre_args.split_last().unwrap().1)))
             };
 
             // Snapshot type of the return type

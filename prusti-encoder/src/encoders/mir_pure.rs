@@ -191,9 +191,9 @@ impl TaskEncoder for MirPureEncoder {
             };
 
             let expr_inner = if true {
-                log::warn!("before opt {expr_inner:?}");
+                tracing::warn!("before opt {expr_inner:?}");
                 let opted = opt(expr_inner);
-                log::warn!("after opt {opted:?}");
+                tracing::warn!("after opt {opted:?}");
             opted
             }
             else {
@@ -365,7 +365,7 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
             update.versions.get(local).copied().unwrap_or_else(|| {
                 // TODO: remove (debug)
                 if !curr_ver.contains_key(&local) {
-                    log::error!("unknown version of local! {}", local.as_usize());
+                    tracing::error!("unknown version of local! {}", local.as_usize());
                     return 0xff
                 }
                 curr_ver[local]
@@ -444,7 +444,7 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
         // then walk terminator
         let term = self.body[start].terminator.as_ref().unwrap();
 
-        log::warn!("encode_cfg({start:?}, {end:?}) | {start:?} is {term:?}");
+        tracing::warn!("encode_cfg({start:?}, {end:?}) | {start:?} is {term:?}");
         match &term.kind {
             mir::TerminatorKind::Goto { target } => {
                 if *target == end {
@@ -453,7 +453,7 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
                     return stmt_update;
                 }
 
-                log::warn!("GOTO from {start:?} to {target:?}");
+                tracing::warn!("GOTO from {start:?} to {target:?}");
                 let end_update = self.encode_cfg(&new_curr_ver, *target, end);
                 stmt_update.merge(end_update)
             }
@@ -468,7 +468,7 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
                 // find earliest join point `join`
                 let join = self.find_join_point(dominators, start, end);
 
-                log::warn!("Join of {start:?} and {end:?} is {join:?}");
+                tracing::warn!("Join of {start:?} and {end:?} is {join:?}");
 
                 // walk `start` -> `targets[i]` -> `join` for each target
                 // TODO: indexvec?
@@ -926,7 +926,7 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
     ) -> ExprRet<'vir> {
         // TODO: remove (debug)
         if !curr_ver.contains_key(&place.local) {
-            log::error!("unknown version of local! {}", place.local.as_usize());
+            tracing::error!("unknown version of local! {}", place.local.as_usize());
             return self.vcx.alloc(ExprRetData::Todo(
                 vir::vir_format!(self.vcx, "unknown_version_{}", place.local.as_usize()),
             ));

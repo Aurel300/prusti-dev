@@ -729,7 +729,7 @@ impl<'vir, 'enc> mir::visit::Visitor<'vir> for EncoderVisitor<'vir, 'enc> {
                     //mir::Rvalue::ShallowInitBox(Operand<'tcx>, Ty<'tcx>) => {}
                     //mir::Rvalue::CopyForDeref(Place<'tcx>) => {}
                     other => {
-                        log::error!("unsupported rvalue {other:?}");
+                        tracing::error!("unsupported rvalue {other:?}");
                         Some(self.vcx.alloc(vir::ExprData::Todo(
                             vir::vir_format!(self.vcx, "rvalue {rvalue:?}"),
                         )))
@@ -829,41 +829,16 @@ impl<'vir, 'enc> mir::visit::Visitor<'vir> for EncoderVisitor<'vir, 'enc> {
                     && item.path.segments[1].ident.as_str() == "pure"
                 );
 
-                let dest = self.encode_place(destination);
-                let call_args = args.iter().map(|op| if let mir::Operand::Constant(box constant) = op {
-                        let ty_out = self.deps.require_ref::<crate::encoders::TypeEncoder>(
-                            constant.ty(),
-                        ).unwrap();
-                        let name = vir::vir_format!(self.vcx, "_tmp{}", self.tmp_ctr);
-                        self.tmp_ctr += 1;
-                        self.stmt(vir::StmtData::LocalDecl(
-                            vir::vir_local_decl! { self.vcx; [name] : Ref },
-                            None,
-                        ));
-                        let tmp_ex = self.vcx.mk_local_ex(name);
-                        let rhs = self.encode_constant(constant);
-                        self.stmt(vir::StmtData::MethodCall(self.vcx.alloc(vir::MethodCallData {
-                            targets: &[],
-                            method: ty_out.method_assign,
-                            args: self.vcx.alloc_slice(&[tmp_ex, rhs]),
-                        })));
-
-                        if is_pure {
-                            // Create a snapshot of each constant argument
-                            self.vcx.mk_func_app(ty_out.function_snap, &[tmp_ex])
-                        }
-                        else {
-                            tmp_ex
-                        }
-                    } else {
-                        if is_pure {
-                            self.encode_operand_snap(op)
-                        }
-                        else {
-                            self.encode_operand(op)
-                        }
-                    });
-                    // self.encode_operand(op)
+                let dest = self.encode_place(Place::from(*destination));
+                let call_args = args.iter().map(|op| 
+                    if is_pure {
+                        self.encode_operand_snap(op)
+                    }
+                    else {
+                        self.encode_operand(op)
+                    }
+                );
+                // self.encode_operand(op)
 
                 if is_pure {
                     let func_args = call_args.collect::<Vec<_>>();
@@ -874,12 +849,12 @@ impl<'vir, 'enc> mir::visit::Visitor<'vir> for EncoderVisitor<'vir, 'enc> {
                     let pure_func_app = self.vcx.mk_func_app(pure_func_name, &func_args);
 
                     let method_reassign = {
-                        //TODO: can we get the method_reassign is a better way? Maybe from the MirFunctionEncoder?
-                        let body = self.vcx.body.borrow_mut().load_local_mir(func_def_id.expect_local());
+                        //TODO: can we get the method_assign is a better way? Maybe from the MirFunctionEncoder?
+                        let body = self.vcx.body.borrow_mut().get_impure_fn_body_identity(func_def_id.expect_local());
                         let return_type = self.deps
                             .require_ref::<crate::encoders::TypeEncoder>(body.return_ty())
                             .unwrap();
-                        return_type.method_reassign
+                        return_type.method_assign
                     };
 
                     self.stmt(vir::StmtData::MethodCall(self.vcx.alloc(vir::MethodCallData {

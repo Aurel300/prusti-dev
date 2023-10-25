@@ -76,7 +76,7 @@ impl TaskEncoder for MirFunctionEncoder {
             deps.emit_output_ref::<Self>(*task_key, MirFunctionEncoderOutputRef { function_name: method_name });
 
             let local_def_id = def_id.expect_local();
-            let body = vcx.body.borrow_mut().load_local_mir(local_def_id);
+            let body = vcx.body.borrow_mut().get_impure_fn_body_identity(local_def_id);
 
             let specs = deps
                 .require_local::<SpecEncoder>(SpecEncoderTask { def_id: *def_id })

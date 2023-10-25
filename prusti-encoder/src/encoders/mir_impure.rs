@@ -394,6 +394,10 @@ impl<'vir, 'enc> EncoderVisitor<'vir, 'enc> {
         location: mir::Location,
     ) {
         let repacks = self.current_fpcs.as_ref().unwrap().statements[location.statement_index].repacks.clone();
+
+        self.stmt(vir::StmtData::Comment(format!("repacks {:?}", repacks).leak()));
+
+
         for repack_op in repacks {
             match repack_op {
                 mir_state_analysis::free_pcs::RepackOp::Expand(place, _target, _capability_kind)

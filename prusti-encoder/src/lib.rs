@@ -121,7 +121,7 @@ pub fn test_entrypoint<'tcx>(
 ) -> vir::Program<'tcx> {
     use task_encoder::TaskEncoder;
 
-    crate::encoders::init_def_spec(def_spec.clone());
+    crate::encoders::init_def_spec(def_spec);
     vir::init_vcx(vir::VirCtxt::new(tcx, body));
 
     // TODO: this should be a "crate" encoder, which will deps.require all the methods in the crate
@@ -139,14 +139,19 @@ pub fn test_entrypoint<'tcx>(
                     continue;
                 }
 
-                let spec = def_spec
-                    .get_proc_spec(&def_id.to_def_id())
-                    .map(|e| &e.base_spec);
-                let is_pure = matches!(spec.map(|s| s.kind), Some(SpecificationItem::Inherent(
-                    prusti_interface::specs::typed::ProcedureSpecificationKind::Pure,
-                )));
+	      let res = crate::encoders::MirImpureEncoder::encode(def_id.to_def_id());
+	      assert!(res.is_ok());
 
-                let is_trusted = matches!(spec.map(|spec| spec.trusted), Some(SpecificationItem::Inherent(
+		let base_spec = crate::encoders::with_def_spec(|def_spec|
+                    def_spec
+                        .get_proc_spec(&def_id.to_def_id())
+                        .map(|e| e.base_spec)
+                );
+
+                let is_pure = base_spec.kind.and_then(|kind| kind.is_pure().ok()).unwrap_or_default() 
+
+
+                let is_trusted = matches!(base_spec.map(|spec| spec.trusted), Some(SpecificationItem::Inherent(
                     true,
                 )));
 
@@ -221,7 +226,6 @@ pub fn test_entrypoint<'tcx>(
         viper_code.push_str(&format!("{:?}\n", output.predicate));
         //viper_code.push_str(&format!("{:?}\n", output.method_refold));
         viper_code.push_str(&format!("{:?}\n", output.method_assign));
-        viper_code.push_str(&format!("{:?}\n", output.method_reassign));
     }
 
     header(&mut viper_code, "utility types");

@@ -2,7 +2,7 @@ use prusti_rustc_interface::{
     //middle::{mir, ty},
     span::def_id::DefId,
 };
-use prusti_interface::specs::typed::{DefSpecificationMap, SpecificationItem};
+use prusti_interface::specs::typed::DefSpecificationMap;
 use task_encoder::{
     TaskEncoder,
     TaskEncoderDependencies,
@@ -25,7 +25,7 @@ thread_local! {
     static CACHE: task_encoder::CacheStaticRef<SpecEncoder> = RefCell::new(Default::default());
 }
 
-fn with_def_spec<F, R>(f: F) -> R
+pub fn with_def_spec<F, R>(f: F) -> R
 where
     F: FnOnce(&DefSpecificationMap) -> R,
 {
@@ -78,45 +78,27 @@ impl TaskEncoder for SpecEncoder {
     fn do_encode_full<'vir>(
         task_key: &Self::TaskKey<'vir>,
         deps: &mut TaskEncoderDependencies<'vir>,
-    ) -> Result<
-        (
-            Self::OutputFullLocal<'vir>,
-            Self::OutputFullDependency<'vir>,
-        ),
-        (
-            Self::EncodingError,
-            Option<Self::OutputFullDependency<'vir>>,
-        ),
-    > {
+    ) -> Result<(
+        Self::OutputFullLocal<'vir>,
+        Self::OutputFullDependency<'vir>,
+    ), (
+        Self::EncodingError,
+        Option<Self::OutputFullDependency<'vir>>,
+    )> {
         deps.emit_output_ref::<Self>(task_key.clone(), ());
         vir::with_vcx(|vcx| {
             with_def_spec(|def_spec| {
                 let specs = def_spec.get_proc_spec(&task_key.0);
-                if let Some(specs) = specs {
-                    Ok((
-                        SpecEncoderOutput {
-                            pres: match &specs.base_spec.pres {
-                                SpecificationItem::Inherent(inh) => vcx.alloc_slice(inh),
-                                SpecificationItem::Empty => &[],
-                                _ => todo!(),
-                            },
-                            posts: match &specs.base_spec.posts {
-                                SpecificationItem::Inherent(inh) => vcx.alloc_slice(inh),
-                                SpecificationItem::Empty => &[],
-                                _ => todo!(),
-                            },
-                        },
-                        (),
-                    ))
-                } else {
-                    Ok((
-                        SpecEncoderOutput {
-                            pres: &[],
-                            posts: &[],
-                        },
-                        (),
-                    ))
-                }
+                // TODO: handle specs other than `empty_or_inherent`
+                let pres = specs
+                    .and_then(|specs| specs.base_spec.pres.expect_empty_or_inherent())
+                    .map(|specs| vcx.alloc_slice(specs))
+                    .unwrap_or_default();
+                let posts = specs
+                    .and_then(|specs| specs.base_spec.posts.expect_empty_or_inherent())
+                    .map(|specs| vcx.alloc_slice(specs))
+                    .unwrap_or_default();
+                Ok((SpecEncoderOutput { pres, posts, }, () ))
             })
         })
     }

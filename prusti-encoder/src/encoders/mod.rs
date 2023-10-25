@@ -6,6 +6,8 @@ mod spec;
 mod typ;
 mod viper_tuple;
 mod mir_pure_function;
+pub mod pure;
+pub mod local_def;
 
 pub use generic::{
     GenericEncoder,
@@ -24,7 +26,7 @@ pub use spec::{
     SpecEncoderOutput,
     SpecEncoderTask,
 };
-pub(super) use spec::init_def_spec;
+pub(super) use spec::{init_def_spec, with_def_spec};
 pub use typ::{
     TypeEncoder,
     TypeEncoderOutputRef,

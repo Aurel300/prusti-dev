@@ -14,7 +14,7 @@ mir-ssa-analysis = { path = "../mir-ssa-analysis" }
 mir-state-analysis = { path = "../mir-state-analysis" }
 task-encoder = { path = "../task-encoder" }
 vir = { path = "../vir" }
-log = "0.4.20"
+tracing = { path = "../tracing" }
 
 [package.metadata.rust-analyzer]
 # This crate uses #[feature(rustc_private)]

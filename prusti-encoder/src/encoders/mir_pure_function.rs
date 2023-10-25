@@ -1,4 +1,4 @@
-use prusti_rustc_interface::{middle::ty, span::def_id::DefId};
+use prusti_rustc_interface::{middle::{mir, ty}, span::def_id::DefId};
 
 use task_encoder::{TaskEncoder, TaskEncoderDependencies};
 use vir::Reify;
@@ -70,7 +70,7 @@ impl TaskEncoder for MirFunctionEncoder {
         vir::with_vcx(|vcx| {
             let def_id = task_key;
 
-            log::debug!("encoding {def_id:?}");
+            tracing::debug!("encoding {def_id:?}");
 
             let method_name = vir::vir_format!(vcx, "f_{}", vcx.tcx.item_name(*def_id));
             deps.emit_output_ref::<Self>(*task_key, MirFunctionEncoderOutputRef { function_name: method_name });
@@ -178,7 +178,7 @@ impl TaskEncoder for MirFunctionEncoder {
                 .unwrap()
                 .snapshot;
 
-            log::debug!("finished {def_id:?}");
+            tracing::debug!("finished {def_id:?}");
 
             Ok((
                 MirFunctionEncoderOutput {

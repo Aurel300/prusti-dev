@@ -38,7 +38,7 @@ pub struct MirPureEncoderOutput<'vir> {
 /// This was also intended to make debugging easier by making the resulting viper code a bit more readable
 /// 
 /// This should be replaced with a proper solution
-fn opt<'vir> (expr: ExprRet<'vir>, rename: &mut HashMap<String, String>) -> ExprRet<'vir>{
+fn opt<'vir, Cur, Next> (expr: vir::ExprGen<'vir, Cur, Next>, rename: &mut HashMap<String, String>) -> vir::ExprGen<'vir, Cur, Next>{
     match expr {
 
         vir::ExprGenData::Local(d) => {
@@ -53,6 +53,7 @@ fn opt<'vir> (expr: ExprRet<'vir>, rename: &mut HashMap<String, String>) -> Expr
             let val = opt(val, rename);
 
             match val {
+                // let name = loc.name
                 vir::ExprGenData::Local(loc) => {
                     let t = rename.get(loc.name).map(|e| e.to_owned()).unwrap_or(loc.name.to_string());
                     assert!(rename.insert(name.to_string(), t).is_none());
@@ -112,17 +113,34 @@ fn opt<'vir> (expr: ExprRet<'vir>, rename: &mut HashMap<String, String>) -> Expr
             })
         }
 
-        todo @(
-        vir::ExprGenData::Field(_, _) |
-        vir::ExprGenData::Old(_) |
-        vir::ExprGenData::AccField(_) |
-        vir::ExprGenData::UnOp(_) |
-        vir::ExprGenData::BinOp(_)) => todo,
+        vir::ExprGenData::BinOp(vir::BinOpGenData {kind, lhs, rhs}) => {
+            let lhs = opt(lhs, rename);
+            let rhs = opt(rhs, rename);
 
-        other @ (vir::ExprGenData::Unfolding(_) |
+            vir::with_vcx(move |vcx| {
+                vcx.alloc(vir::ExprGenData::BinOp(vcx.alloc(vir::BinOpGenData{kind: kind.clone(), lhs, rhs})))
+            })
+        }
+
+
+        vir::ExprGenData::UnOp(vir::UnOpGenData {kind, expr}) =>{
+            let expr = opt(expr, rename);
+            vir::with_vcx(move |vcx| {
+                vcx.alloc(vir::ExprGenData::UnOp(vcx.alloc(vir::UnOpGenData{kind: kind.clone(), expr})))
+            })
+        }
+
+        todo@(
+            vir::ExprGenData::Unfolding(_) |
+            vir::ExprGenData::Field(_, _) |
+            vir::ExprGenData::Old(_) |
+            vir::ExprGenData::AccField(_)|
+            vir::ExprGenData::Lazy(_, _)) 
+        => todo,
+
+        other @ (
         vir::ExprGenData::Const(_) | 
-        vir::ExprGenData::Todo(_) |
-        vir::ExprGenData::Lazy(_, _)) => other
+        vir::ExprGenData::Todo(_) ) => other
 
 
     }
@@ -202,16 +220,6 @@ impl TaskEncoder for MirPureEncoder {
 
             let expr_inner = Encoder::new(vcx, task_key.0, &body, deps).encode_body();
 
-            let expr_inner = if true {
-                tracing::warn!("before opt {expr_inner:?}");
-                let mut rename = HashMap::new();
-                let opted = opt(expr_inner, &mut rename);
-                tracing::warn!("after opt {opted:?}");
-                opted
-            }
-            else {
-                expr_inner
-            };
 
             // We wrap the expression with an additional lazy that will perform
             // some sanity checks. These requirements cannot be expressed using
@@ -227,7 +235,20 @@ impl TaskEncoder for MirPureEncoder {
                     assert_eq!(lctx.1.len(), body.arg_count);
 
                     use vir::Reify;
-                    expr_inner.reify(vcx, lctx)
+                    let expr_inner = expr_inner.reify(vcx, lctx);
+
+                    let expr_inner = if true {
+                        tracing::warn!("before opt {expr_inner:?}");
+                        let mut rename = HashMap::new();
+                        let opted = opt(expr_inner, &mut rename);
+                        tracing::warn!("after opt {opted:?}");
+                        opted
+                    }
+                    else {
+                        expr_inner
+                    };
+
+                    expr_inner
                 }),
             ))
         });

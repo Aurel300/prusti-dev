@@ -326,7 +326,6 @@ impl<'vir, 'enc> EncoderVisitor<'vir, 'enc> {
         location: mir::Location,
     ) {
         let repacks = self.current_fpcs.as_ref().unwrap().statements[location.statement_index].repacks.clone();
-
         for repack_op in repacks {
             match repack_op {
                 RepackOp::Expand(place, _target, capability_kind)

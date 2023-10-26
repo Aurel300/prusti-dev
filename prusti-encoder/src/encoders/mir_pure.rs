@@ -456,7 +456,6 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
 
         // then walk terminator
         let term = self.body[start].terminator.as_ref().unwrap();
-
         match &term.kind {
             mir::TerminatorKind::Goto { target } => {
                 if *target == end {
@@ -465,9 +464,7 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
                     return stmt_update;
                 }
 
-                tracing::warn!("GOTO from {start:?} to {target:?}");
-                let end_update = self.encode_cfg(&new_curr_ver, *target, end);
-                stmt_update.merge(end_update)
+               todo!()
             }
 
             mir::TerminatorKind::SwitchInt { discr, targets } => {
@@ -479,8 +476,6 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
 
                 // find earliest join point `join`
                 let join = self.find_join_point(dominators, start, end);
-
-                tracing::warn!("Join of {start:?} and {end:?} is {join:?}");
 
                 // walk `start` -> `targets[i]` -> `join` for each target
                 // TODO: indexvec?

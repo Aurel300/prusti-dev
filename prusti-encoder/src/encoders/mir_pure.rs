@@ -98,10 +98,10 @@ impl TaskEncoder for MirPureEncoder {
         let def_id = task_key.1; //.parent_def_id;
         let local_def_id = def_id.expect_local();
 
-        log::debug!("encoding {def_id:?}");
+        tracing::debug!("encoding {def_id:?}");
         let expr = vir::with_vcx(move |vcx| {
             //let body = vcx.tcx.mir_promoted(local_def_id).0.borrow();
-            let body = vcx.body.borrow_mut().load_local_mir_with_facts(local_def_id).body;
+            let body = vcx.body.borrow_mut().get_impure_fn_body_identity(local_def_id);
 
             let expr_inner = Encoder::new(vcx, task_key.0, &body, deps).encode_body();
 
@@ -135,7 +135,7 @@ impl TaskEncoder for MirPureEncoder {
                 }),
             ))
         });
-        log::debug!("finished {def_id:?}");
+        tracing::debug!("finished {def_id:?}");
 
         Ok((MirPureEncoderOutput { expr }, ()))
     }
@@ -282,7 +282,7 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
             update.versions.get(local).copied().unwrap_or_else(|| {
                 // TODO: remove (debug)
                 if !curr_ver.contains_key(&local) {
-                    log::error!("unknown version of local! {}", local.as_usize());
+                    tracing::error!("unknown version of local! {}", local.as_usize());
                     return 0xff
                 }
                 curr_ver[local]
@@ -702,63 +702,51 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
             // Len
             // Cast
             mir::Rvalue::BinaryOp(op, box (l, r)) => {
-                match op {
-                    mir::BinOp::Eq => self.vcx.mk_func_app(
-                        "s_Bool_cons", // TODO: go through type encoder
-                        &[self.vcx.alloc(ExprRetData::BinOp(self.vcx.alloc(vir::BinOpGenData {
-                            kind: vir::BinOpKind::CmpEq,
-                            lhs: self.encode_operand(curr_ver, l),
-                            rhs: self.encode_operand(curr_ver, r),
-                        })))],
-                    ),
-                    mir::BinOp::Gt | mir::BinOp::Ge | mir::BinOp::Lt | mir::BinOp::Le => {
-                        let vir_op = match op {
-                            mir::BinOp::Gt => vir::BinOpKind::CmpGt,
-                            mir::BinOp::Ge => vir::BinOpKind::CmpGe,
-                            mir::BinOp::Lt => vir::BinOpKind::CmpLt,
-                            mir::BinOp::Le => vir::BinOpKind::CmpLe,
-                            _ => unreachable!()
-                        };
-                        let ty_l = self.deps.require_ref::<crate::encoders::TypeEncoder>(
-                            l.ty(self.body, self.vcx.tcx),
-                        ).unwrap();
-                        let ty_l = vir::vir_format!(self.vcx, "{}_val", ty_l.snapshot_name); // TODO: get the `_val` function differently
-                        let ty_r = self.deps.require_ref::<crate::encoders::TypeEncoder>(
-                            r.ty(self.body, self.vcx.tcx),
-                        ).unwrap();
-                        let ty_r = vir::vir_format!(self.vcx, "{}_val", ty_r.snapshot_name); // TODO: get the `_val` function differently
+                let ty_l = self.deps.require_ref::<crate::encoders::TypeEncoder>(
+                    l.ty(self.body, self.vcx.tcx),
+                ).unwrap().to_primitive.unwrap();
+                let ty_r = self.deps.require_ref::<crate::encoders::TypeEncoder>(
+                    r.ty(self.body, self.vcx.tcx),
+                ).unwrap().to_primitive.unwrap();
+                let ty_rvalue = self.deps.require_ref::<crate::encoders::TypeEncoder>(
+                    rvalue.ty(self.body, self.vcx.tcx),
+                ).unwrap().from_primitive.unwrap();
 
-                        self.vcx.mk_func_app(
-                            "s_Bool_cons", // TODO: go through type encoder
-                            &[self.vcx.alloc(ExprRetData::BinOp(self.vcx.alloc(vir::BinOpGenData {
-                                kind: vir_op,
-                                lhs: self.vcx.mk_func_app(
-                                    ty_l,
-                                    &[self.encode_operand(curr_ver, l)],
-                                ),
-                                rhs: self.vcx.mk_func_app(
-                                    ty_r,
-                                    &[self.encode_operand(curr_ver, r)],
-                                ),
-                            })))],
-                        )
-                    }
-                    k => todo!("binop {k:?}"),
-                }
+                self.vcx.mk_func_app(
+                    ty_rvalue,
+                    &[self.vcx.alloc(ExprRetData::BinOp(self.vcx.alloc(vir::BinOpGenData {
+                        kind: op.into(),
+                        lhs: self.vcx.mk_func_app(
+                            ty_l,
+                            &[self.encode_operand(curr_ver, l)],
+                        ),
+                        rhs: self.vcx.mk_func_app(
+                            ty_r,
+                            &[self.encode_operand(curr_ver, r)],
+                        ),
+                    })))],
+                )
             }
             // CheckedBinaryOp
             // NullaryOp
-            mir::Rvalue::UnaryOp(mir::UnOp::Not, op) =>
-            {
-                // TODO use mir_unop_not ?
-                let oper_enc = self.encode_operand(curr_ver, op);
-                let sn = self.vcx.mk_func_app("s_Bool_val", self.vcx.alloc_slice(&[oper_enc])) ;
-                let inner = self.vcx.alloc(ExprRetData::UnOp(self.vcx.alloc(vir::UnOpGenData {
-                    kind: vir::UnOpKind::Not,
-                    expr: sn
-                })));
+            mir::Rvalue::UnaryOp(op, expr) => {
+                let ty_expr = self.deps.require_ref::<crate::encoders::TypeEncoder>(
+                    expr.ty(self.body, self.vcx.tcx),
+                ).unwrap().to_primitive.unwrap();
+                let ty_rvalue = self.deps.require_ref::<crate::encoders::TypeEncoder>(
+                    rvalue.ty(self.body, self.vcx.tcx),
+                ).unwrap().from_primitive.unwrap();
 
-                self.vcx.mk_func_app("s_Bool_cons", self.vcx.alloc_slice(&[inner])) 
+                self.vcx.mk_func_app(
+                    ty_rvalue,
+                    &[self.vcx.alloc(ExprRetData::UnOp(self.vcx.alloc(vir::UnOpGenData {
+                        kind: op.into(),
+                        expr: self.vcx.mk_func_app(
+                            ty_expr,
+                            &[self.encode_operand(curr_ver, expr)],
+                        ),
+                    })))],
+                )
             }
             // Discriminant
             mir::Rvalue::Aggregate(box kind, fields) => match kind {
@@ -834,7 +822,7 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
     ) -> ExprRet<'vir> {
         // TODO: remove (debug)
         if !curr_ver.contains_key(&place.local) {
-            log::error!("unknown version of local! {}", place.local.as_usize());
+            tracing::error!("unknown version of local! {}", place.local.as_usize());
             return self.vcx.alloc(ExprRetData::Todo(
                 vir::vir_format!(self.vcx, "unknown_version_{}", place.local.as_usize()),
             ));

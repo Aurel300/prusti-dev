@@ -121,7 +121,7 @@ pub fn test_entrypoint<'tcx>(
 ) -> vir::Program<'tcx> {
     use task_encoder::TaskEncoder;
 
-    crate::encoders::init_def_spec(def_spec.clone());
+    crate::encoders::init_def_spec(def_spec);
     vir::init_vcx(vir::VirCtxt::new(tcx, body));
 
     // TODO: this should be a "crate" encoder, which will deps.require all the methods in the crate
@@ -139,27 +139,34 @@ pub fn test_entrypoint<'tcx>(
                     continue;
                 }
 
-                let spec = def_spec
-                    .get_proc_spec(&def_id.to_def_id())
-                    .map(|e| &e.base_spec);
-                let is_pure = matches!(spec.map(|s| s.kind), Some(SpecificationItem::Inherent(
-                    prusti_interface::specs::typed::ProcedureSpecificationKind::Pure,
-                )));
+                let (is_pure, is_trusted) = crate::encoders::with_def_spec(|def_spec| {
+                    let base_spec = def_spec
+                        .get_proc_spec(&def_id.to_def_id())
+                        .map(|e| &e.base_spec);
 
-                let is_trusted = matches!(spec.map(|spec| spec.trusted), Some(SpecificationItem::Inherent(
-                    true,
-                )));
+
+                        let is_pure = base_spec.and_then(|kind| kind.kind.is_pure().ok()).unwrap_or_default();
+
+
+                        let is_trusted = matches!(base_spec.map(|spec| spec.trusted), Some(SpecificationItem::Inherent(
+                            true,
+                        )));
+                        (is_pure, is_trusted)
+                    }
+                );
+
+
 
                 if ! (is_trusted && is_pure) {
                     let res = crate::encoders::MirImpureEncoder::encode(def_id.to_def_id());
                     assert!(res.is_ok());
                 }
 
-               
+
 
                 if is_pure 
                 {
-                    log::debug!("Encoding {def_id:?} as a pure function because it is labeled as pure");
+  		            tracing::debug!("Encoding {def_id:?} as a pure function because it is labeled as pure");
                     let res = crate::encoders::MirFunctionEncoder::encode(def_id.to_def_id());
                     assert!(res.is_ok());
                 }
@@ -221,7 +228,6 @@ pub fn test_entrypoint<'tcx>(
         viper_code.push_str(&format!("{:?}\n", output.predicate));
         //viper_code.push_str(&format!("{:?}\n", output.method_refold));
         viper_code.push_str(&format!("{:?}\n", output.method_assign));
-        viper_code.push_str(&format!("{:?}\n", output.method_reassign));
     }
 
     header(&mut viper_code, "utility types");

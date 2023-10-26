@@ -273,15 +273,13 @@ pub trait TaskEncoder {
     {
         let task_key = Self::task_to_key(&task);
 
-        let task_key_clone = task_key.clone();
-        let in_cache = Self::with_cache(move |cache| {
+        let in_cache = Self::with_cache(|cache| {
             let mut cache = cache.borrow_mut();
 
-            match cache.get(&task_key_clone) {
+            match cache.get(&task_key) {
                 Some(e) => match e {
                     TaskEncoderCacheState::ErrorEnqueue { error }
                     | TaskEncoderCacheState::ErrorEncode { error, .. } => Some(Err(error.clone())),
-
                     TaskEncoderCacheState::Encoded {
                         output_ref,
                         output_local,
@@ -292,22 +290,18 @@ pub trait TaskEncoder {
                         output_local.clone(),
                         output_dep.clone(),
                     ))),
-
-                    TaskEncoderCacheState::Enqueued | TaskEncoderCacheState::Started { .. } => {
-                        panic!("Encoding already started or enqueued")
-                    }
+                    TaskEncoderCacheState::Enqueued | TaskEncoderCacheState::Started { .. } =>
+                        panic!("Encoding already started or enqueued"),
                 },
                 None => {
                     // enqueue
-                    cache.insert(task_key_clone, TaskEncoderCacheState::Enqueued);
+                    cache.insert(task_key.clone(), TaskEncoderCacheState::Enqueued);
                     None
                 }
             }
         });
-
-        match in_cache {
-            None => {}
-            Some(x) => return x,
+        if let Some(in_cache) = in_cache {
+            return in_cache;
         }
 
         let mut deps: TaskEncoderDependencies<'vir> = Default::default();

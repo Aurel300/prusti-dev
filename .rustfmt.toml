@@ -1,3 +1,2 @@
 imports_granularity = "Crate"
 reorder_modules = false
-disable_all_formatting = true

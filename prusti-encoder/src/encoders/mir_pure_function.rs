@@ -54,7 +54,6 @@ impl TaskEncoder for MirFunctionEncoder {
         *task
     }
 
-    #[tracing::instrument(level = "debug", skip(deps))]
     fn do_encode_full<'vir>(
         task_key: &Self::TaskKey<'vir>,
         deps: &mut TaskEncoderDependencies<'vir>,

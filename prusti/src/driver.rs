@@ -19,7 +19,7 @@ use lazy_static::lazy_static;
 use log::info;
 use prusti_common::{config, report::user, Stopwatch};
 use prusti_rustc_interface::interface::interface::try_print_query_stack;
-use std::{borrow::Cow, env, panic, collections::HashMap};
+use std::{borrow::Cow, env, panic};
 use tracing_chrome::{ChromeLayerBuilder, FlushGuard};
 use tracing_subscriber::{filter::EnvFilter, prelude::*};
 
@@ -106,9 +106,6 @@ fn report_prusti_ice(info: &panic::PanicInfo<'_>, bug_report_url: &str) {
 fn init_loggers() -> Option<FlushGuard> {
     // TODO: should we really be creating this? should we configure the output
     //   type somehow?
-
-    println!("init_loggers {:?}", std::env::vars().collect::<HashMap<String,String>>());
-
     let handler = prusti_rustc_interface::session::EarlyErrorHandler::new(
         prusti_rustc_interface::session::config::ErrorOutputType::default(),
     );

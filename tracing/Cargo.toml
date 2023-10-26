@@ -8,5 +8,5 @@ edition = "2021"
 doctest = false
 
 [dependencies]
-tracing = {version = "0.1", features = ["log"] }
+tracing = { version = "0.1", features = ["log"] }
 proc-macro-tracing = { path = "proc-macro-tracing" }

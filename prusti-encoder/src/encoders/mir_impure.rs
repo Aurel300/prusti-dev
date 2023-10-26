@@ -1,5 +1,4 @@
 use prusti_rustc_interface::{
-    index::IndexVec,
     middle::{mir, ty},
     span::def_id::DefId,
 };
@@ -13,7 +12,6 @@ use task_encoder::{
     TaskEncoder,
     TaskEncoderDependencies,
 };
-use vir::{Reify, BinOpKind};
 
 pub struct MirImpureEncoder;
 
@@ -65,7 +63,6 @@ impl TaskEncoder for MirImpureEncoder {
         *task
     }
 
-    #[tracing::instrument(level = "debug", skip(deps))]
     fn do_encode_full<'vir>(
         task_key: &Self::TaskKey<'vir>,
         deps: &mut TaskEncoderDependencies<'vir>,
@@ -330,9 +327,6 @@ impl<'vir, 'enc> EncoderVisitor<'vir, 'enc> {
     ) {
         let repacks = self.current_fpcs.as_ref().unwrap().statements[location.statement_index].repacks.clone();
 
-        self.stmt(vir::StmtData::Comment(format!("repacks {:?}", repacks).leak()));
-
-
         for repack_op in repacks {
             match repack_op {
                 RepackOp::Expand(place, _target, capability_kind)
@@ -429,9 +423,6 @@ impl<'vir, 'enc> EncoderVisitor<'vir, 'enc> {
         &mut self,
         operand: &mir::Operand<'vir>,
     ) -> vir::Expr<'vir> {
-
-        tracing::warn!("encode_operand {operand:?}");
-
         let (snap_val, ty_out) = match operand {
             &mir::Operand::Move(source) => return self.encode_place(Place::from(source)),
             &mir::Operand::Copy(source) => {
@@ -654,7 +645,7 @@ impl<'vir, 'enc> mir::visit::Visitor<'vir> for EncoderVisitor<'vir, 'enc> {
                         Some(self.vcx.mk_func_app(
                             "s_Bool_cons", // TODO: go through type encoder
                             &[self.vcx.alloc(vir::ExprData::BinOp(self.vcx.alloc(vir::BinOpData {
-                                kind: BinOpKind::from(op),
+                                kind: vir::BinOpKind::from(op),
                                 lhs: self.vcx.mk_func_app(
                                     ty_l,
                                     &[self.encode_operand_snap(l)],
@@ -862,7 +853,7 @@ impl<'vir, 'enc> mir::visit::Visitor<'vir> for EncoderVisitor<'vir, 'enc> {
 
                     let pure_func_app = self.vcx.mk_func_app(pure_func_name, &func_args);
 
-                    let method_reassign = {
+                    let method_assign = {
                         //TODO: can we get the method_assign is a better way? Maybe from the MirFunctionEncoder?
                         let body = self.vcx.body.borrow_mut().get_impure_fn_body_identity(func_def_id.expect_local());
                         let return_type = self.deps
@@ -873,7 +864,7 @@ impl<'vir, 'enc> mir::visit::Visitor<'vir> for EncoderVisitor<'vir, 'enc> {
 
                     self.stmt(vir::StmtData::MethodCall(self.vcx.alloc(vir::MethodCallData {
                         targets: &[],
-                        method: method_reassign,
+                        method: method_assign,
                         args: self.vcx.alloc_slice(&[dest, pure_func_app]),
                     })));
                 }

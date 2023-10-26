@@ -1,4 +1,3 @@
-use prusti_interface::specs::is_spec_fn;
 use prusti_rustc_interface::{
     data_structures::graph::dominators::Dominators,
     middle::{mir, ty},
@@ -458,7 +457,6 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
         // then walk terminator
         let term = self.body[start].terminator.as_ref().unwrap();
 
-        tracing::warn!("encode_cfg({start:?}, {end:?}) | {start:?} is {term:?}");
         match &term.kind {
             mir::TerminatorKind::Goto { target } => {
                 if *target == end {
@@ -594,7 +592,7 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
                         );
 
                          // TODO: detect snapshot_equality properly
-                         let is_snapshot_eq =  self.vcx.tcx.opt_item_name(*def_id).map(|e| e.as_str() == "snapshot_equality") == Some(true)
+                         let is_snapshot_eq = self.vcx.tcx.opt_item_name(*def_id).map(|e| e.as_str() == "snapshot_equality") == Some(true)
                             && self.vcx.tcx.crate_name(def_id.krate).as_str() == "prusti_contracts";
 
                         let func_call = if is_pure {

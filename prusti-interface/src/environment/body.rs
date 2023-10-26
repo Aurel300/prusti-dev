@@ -28,7 +28,6 @@ impl<'tcx> std::ops::Deref for MirBody<'tcx> {
 }
 
 /// Stores body of functions which we'll need to encode as impure
-#[derive(Clone)]
 pub struct BodyWithBorrowckFacts<'tcx> {
     pub body: MirBody<'tcx>,
     ///// Cached borrowck information.

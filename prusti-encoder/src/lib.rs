@@ -121,9 +121,6 @@ pub fn test_entrypoint<'tcx>(
 ) -> vir::Program<'tcx> {
     use task_encoder::TaskEncoder;
 
-    tracing::debug!("test_entrypoint start");
-
-
     crate::encoders::init_def_spec(def_spec);
     vir::init_vcx(vir::VirCtxt::new(tcx, body));
 
@@ -150,10 +147,7 @@ pub fn test_entrypoint<'tcx>(
                         .get_proc_spec(&def_id.to_def_id())
                         .map(|e| &e.base_spec);
 
-
                         let is_pure = base_spec.and_then(|kind| kind.kind.is_pure().ok()).unwrap_or_default();
-
-
                         let is_trusted = matches!(base_spec.map(|spec| spec.trusted), Some(SpecificationItem::Inherent(
                             true,
                         )));
@@ -161,17 +155,13 @@ pub fn test_entrypoint<'tcx>(
                     }
                 );
 
-               
-
                 if ! (is_trusted && is_pure) {
                     let res = crate::encoders::MirImpureEncoder::encode(def_id.to_def_id());
                     assert!(res.is_ok());
                 }
-
                
 
-                if is_pure 
-                {
+                if is_pure {
                     tracing::debug!("Encoding {def_id:?} as a pure function because it is labeled as pure");
                     let res = crate::encoders::MirFunctionEncoder::encode(def_id.to_def_id());
                     assert!(res.is_ok());

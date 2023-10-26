@@ -31,12 +31,38 @@ pub struct MirPureEncoderOutput<'vir> {
     pub expr: ExprRet<'vir>,
 }
 
-
-fn opt<'vir> (expr: ExprRet<'vir>, ) -> ExprRet<'vir>{
+/// Optimize a vir expresison
+/// 
+/// This is a temporary fix for the issue where variables that are quantified over and are then stored in a let binding
+/// cause issues with triggering somehow.
+/// 
+/// This was also intended to make debugging easier by making the resulting viper code a bit more readable
+/// 
+/// This should be replaced with a proper solution
+fn opt<'vir> (expr: ExprRet<'vir>, rename: &mut HashMap<String, String>) -> ExprRet<'vir>{
     match expr {
+
+        vir::ExprGenData::Local(d) => {
+            let nam = rename.get(d.name).map(|e| e.as_str()).unwrap_or(d.name).to_owned();
+            vir::with_vcx(move |vcx| {
+                vcx.mk_local_ex(vcx.alloc_str(&nam))
+            })
+        },
+
         vir::ExprGenData::Let(vir::LetGenData{name, val, expr}) => {
-            let expr = opt(expr);
-            let val = opt(val);
+
+            let val = opt(val, rename);
+
+            match val {
+                vir::ExprGenData::Local(loc) => {
+                    let t = rename.get(loc.name).map(|e| e.to_owned()).unwrap_or(loc.name.to_string());
+                    assert!(rename.insert(name.to_string(), t).is_none());
+                    return opt(expr, rename)
+                }
+                _ => {}
+            }
+
+            let expr = opt(expr, rename);
 
             match expr {
                 vir::ExprGenData::Local(inner_local) => {
@@ -51,7 +77,7 @@ fn opt<'vir> (expr: ExprRet<'vir>, ) -> ExprRet<'vir>{
             })
         },
         vir::ExprGenData::FuncApp( vir::FuncAppGenData{target, args}) => {
-            let n_args = args.iter().map(|arg| opt(arg)).collect::<Vec<_>>();
+            let n_args = args.iter().map(|arg| opt(arg, rename)).collect::<Vec<_>>();
             vir::with_vcx(move |vcx| {
                 vcx.mk_func_app(target, &n_args)
             })
@@ -59,7 +85,7 @@ fn opt<'vir> (expr: ExprRet<'vir>, ) -> ExprRet<'vir>{
 
 
         vir::ExprGenData::PredicateApp( vir::PredicateAppGenData{target, args}) => {
-            let n_args = args.iter().map(|arg| opt(arg)).collect::<Vec<_>>();
+            let n_args = args.iter().map(|arg| opt(arg, rename)).collect::<Vec<_>>();
             vir::with_vcx(move |vcx| {
                 vcx.alloc(vir::ExprGenData::PredicateApp(vcx.alloc(vir::PredicateAppGenData {
                     target,
@@ -69,7 +95,7 @@ fn opt<'vir> (expr: ExprRet<'vir>, ) -> ExprRet<'vir>{
         }
        
         vir::ExprGenData::Forall(vir::ForallGenData{qvars, triggers, body}) => {
-            let body = opt(body);
+            let body = opt(body, rename);
 
             vir::with_vcx(move |vcx| {
                 vcx.alloc(vir::ExprGenData::Forall(vcx.alloc(vir::ForallGenData{qvars, triggers, body})))
@@ -78,9 +104,9 @@ fn opt<'vir> (expr: ExprRet<'vir>, ) -> ExprRet<'vir>{
 
 
         vir::ExprGenData::Ternary(vir::TernaryGenData{cond, then, else_}) => {
-            let cond = opt(cond);
-            let then = opt(then);
-            let else_ = opt(else_);
+            let cond = opt(cond, rename);
+            let then = opt(then, rename);
+            let else_ = opt(else_, rename);
 
             vir::with_vcx(move |vcx| {
                 vcx.alloc(vir::ExprGenData::Ternary(vcx.alloc(vir::TernaryGenData{cond, then, else_})))
@@ -97,7 +123,6 @@ fn opt<'vir> (expr: ExprRet<'vir>, ) -> ExprRet<'vir>{
         other @ (vir::ExprGenData::Unfolding(_) |
         vir::ExprGenData::Const(_) | 
         vir::ExprGenData::Todo(_) |
-        vir::ExprGenData::Local(_) |
         vir::ExprGenData::Lazy(_, _)) => other
 
 
@@ -180,7 +205,8 @@ impl TaskEncoder for MirPureEncoder {
 
             let expr_inner = if true {
                 tracing::warn!("before opt {expr_inner:?}");
-                let opted = opt(expr_inner);
+                let mut rename = HashMap::new();
+                let opted = opt(expr_inner, &mut rename);
                 tracing::warn!("after opt {opted:?}");
                 opted
             }

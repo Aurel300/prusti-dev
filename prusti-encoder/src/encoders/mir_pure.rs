@@ -30,6 +30,122 @@ pub struct MirPureEncoderOutput<'vir> {
     pub expr: ExprRet<'vir>,
 }
 
+/// Optimize a vir expresison
+/// 
+/// This is a temporary fix for the issue where variables that are quantified over and are then stored in a let binding
+/// cause issues with triggering somehow.
+/// 
+/// This was also intended to make debugging easier by making the resulting viper code a bit more readable
+/// 
+/// This should be replaced with a proper solution
+fn opt<'vir, Cur, Next> (expr: vir::ExprGen<'vir, Cur, Next>, rename: &mut HashMap<String, String>) -> vir::ExprGen<'vir, Cur, Next>{
+    match expr {
+
+        vir::ExprGenData::Local(d) => {
+            let nam = rename.get(d.name).map(|e| e.as_str()).unwrap_or(d.name).to_owned();
+            vir::with_vcx(move |vcx| {
+                vcx.mk_local_ex(vcx.alloc_str(&nam))
+            })
+        },
+
+        vir::ExprGenData::Let(vir::LetGenData{name, val, expr}) => {
+
+            let val = opt(val, rename);
+
+            match val {
+                // let name = loc.name
+                vir::ExprGenData::Local(loc) => {
+                    let t = rename.get(loc.name).map(|e| e.to_owned()).unwrap_or(loc.name.to_string());
+                    assert!(rename.insert(name.to_string(), t).is_none());
+                    return opt(expr, rename)
+                }
+                _ => {}
+            }
+
+            let expr = opt(expr, rename);
+
+            match expr {
+                vir::ExprGenData::Local(inner_local) => {
+                    if &inner_local.name == name {
+                        return val
+                    }
+                }
+                _ => {}
+            }
+            vir::with_vcx(move |vcx| {
+                vcx.alloc(vir::ExprGenData::Let(vcx.alloc(vir::LetGenData{name, val, expr})))
+            })
+        },
+        vir::ExprGenData::FuncApp( vir::FuncAppGenData{target, args}) => {
+            let n_args = args.iter().map(|arg| opt(arg, rename)).collect::<Vec<_>>();
+            vir::with_vcx(move |vcx| {
+                vcx.mk_func_app(target, &n_args)
+            })
+        }
+
+
+        vir::ExprGenData::PredicateApp( vir::PredicateAppGenData{target, args}) => {
+            let n_args = args.iter().map(|arg| opt(arg, rename)).collect::<Vec<_>>();
+            vir::with_vcx(move |vcx| {
+                vcx.alloc(vir::ExprGenData::PredicateApp(vcx.alloc(vir::PredicateAppGenData {
+                    target,
+                    args: vcx.alloc_slice(&n_args),
+                })))
+            })
+        }
+       
+        vir::ExprGenData::Forall(vir::ForallGenData{qvars, triggers, body}) => {
+            let body = opt(body, rename);
+
+            vir::with_vcx(move |vcx| {
+                vcx.alloc(vir::ExprGenData::Forall(vcx.alloc(vir::ForallGenData{qvars, triggers, body})))
+            })
+        }
+
+
+        vir::ExprGenData::Ternary(vir::TernaryGenData{cond, then, else_}) => {
+            let cond = opt(cond, rename);
+            let then = opt(then, rename);
+            let else_ = opt(else_, rename);
+
+            vir::with_vcx(move |vcx| {
+                vcx.alloc(vir::ExprGenData::Ternary(vcx.alloc(vir::TernaryGenData{cond, then, else_})))
+            })
+        }
+
+        vir::ExprGenData::BinOp(vir::BinOpGenData {kind, lhs, rhs}) => {
+            let lhs = opt(lhs, rename);
+            let rhs = opt(rhs, rename);
+
+            vir::with_vcx(move |vcx| {
+                vcx.alloc(vir::ExprGenData::BinOp(vcx.alloc(vir::BinOpGenData{kind: kind.clone(), lhs, rhs})))
+            })
+        }
+
+
+        vir::ExprGenData::UnOp(vir::UnOpGenData {kind, expr}) =>{
+            let expr = opt(expr, rename);
+            vir::with_vcx(move |vcx| {
+                vcx.alloc(vir::ExprGenData::UnOp(vcx.alloc(vir::UnOpGenData{kind: kind.clone(), expr})))
+            })
+        }
+
+        todo@(
+            vir::ExprGenData::Unfolding(_) |
+            vir::ExprGenData::Field(_, _) |
+            vir::ExprGenData::Old(_) |
+            vir::ExprGenData::AccField(_)|
+            vir::ExprGenData::Lazy(_, _)) 
+        => todo,
+
+        other @ (
+        vir::ExprGenData::Const(_) | 
+        vir::ExprGenData::Todo(_) ) => other
+
+
+    }
+}
+
 use std::cell::RefCell;
 thread_local! {
     static CACHE: task_encoder::CacheStaticRef<MirPureEncoder> = RefCell::new(Default::default());
@@ -118,7 +234,20 @@ impl TaskEncoder for MirPureEncoder {
                     assert_eq!(lctx.1.len(), body.arg_count);
 
                     use vir::Reify;
-                    expr_inner.reify(vcx, lctx)
+                    let expr_inner = expr_inner.reify(vcx, lctx);
+
+                    let expr_inner = if true {
+                        tracing::warn!("before opt {expr_inner:?}");
+                        let mut rename = HashMap::new();
+                        let opted = opt(expr_inner, &mut rename);
+                        tracing::warn!("after opt {opted:?}");
+                        opted
+                    }
+                    else {
+                        expr_inner
+                    };
+
+                    expr_inner
                 }),
             ))
         });

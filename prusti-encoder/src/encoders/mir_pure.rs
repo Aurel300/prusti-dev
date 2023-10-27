@@ -9,6 +9,7 @@ use task_encoder::{
     TaskEncoderDependencies,
 };
 use std::collections::HashMap;
+use crate::encoders::{ViperTupleEncoder, TypeEncoder};
 
 pub struct MirPureEncoder;
 
@@ -448,9 +449,10 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
                     TyKind::FnDef(def_id, arg_tys) => {
                         // TODO: this attribute extraction should be done elsewhere?
                         let attrs = self.vcx.tcx.get_attrs_unchecked(*def_id);
-                        attrs.iter()
+                        let normal_attrs = attrs.iter()
                             .filter(|attr| !attr.is_doc_comment())
-                            .map(|attr| attr.get_normal_item())
+                            .map(|attr| attr.get_normal_item()).collect::<Vec<_>>();
+                        normal_attrs.iter()
                             .filter(|item| item.path.segments.len() == 2
                                 && item.path.segments[0].ident.as_str() == "prusti"
                                 && item.path.segments[1].ident.as_str() == "builtin")
@@ -467,6 +469,66 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
                                 }
                                 _ => panic!("illegal prusti::builtin"),
                             });
+
+
+                        let is_pure = normal_attrs.iter().any(|item| 
+                            item.path.segments.len() == 2
+                            && item.path.segments[0].ident.as_str() == "prusti"
+                            && item.path.segments[1].ident.as_str() == "pure"
+                        );
+
+                         // TODO: detect snapshot_equality properly
+                         let is_snapshot_eq = self.vcx.tcx.opt_item_name(*def_id).map(|e| e.as_str() == "snapshot_equality") == Some(true)
+                            && self.vcx.tcx.crate_name(def_id.krate).as_str() == "prusti_contracts";
+
+                        let func_call = if is_pure {
+                            assert!(builtin.is_none(), "Function is pure and builtin?");
+                            let pure_func = self.deps.require_ref::<crate::encoders::MirFunctionEncoder>(*def_id).unwrap().function_name;
+
+                            let encoded_args = args.iter()
+                                .map(|oper| self.encode_operand(&new_curr_ver, oper))
+                                .collect::<Vec<_>>();
+                            
+                            let func_call = self.vcx.mk_func_app(pure_func, &encoded_args);
+
+                           Some(func_call)
+                        }
+
+                        else if is_snapshot_eq {
+                            assert!(builtin.is_none(), "Function is snapshot_equality and builtin?");
+                            let encoded_args = args.iter()
+                                .map(|oper| self.encode_operand(&new_curr_ver, oper))
+                                .collect::<Vec<_>>();
+
+                            assert_eq!(encoded_args.len(), 2);
+
+
+                            let eq_expr  = self.vcx.alloc(vir::ExprGenData::BinOp(self.vcx.alloc(vir::BinOpGenData {
+                                kind: vir::BinOpKind::CmpEq,
+                                lhs: encoded_args[0],
+                                rhs: encoded_args[1],
+                            })));
+
+
+                            // TODO: type encoder
+                            Some(self.vcx.mk_func_app("s_Bool_cons", &[eq_expr]))
+                        }
+                        else {
+                            None
+                        };
+
+
+                        if let Some(func_call) = func_call {
+                            let mut term_update = Update::new();
+                            assert!(destination.projection.is_empty());
+                            self.bump_version(&mut term_update, destination.local, func_call);
+                            term_update.add_to_map(&mut new_curr_ver);
+    
+                            // walk rest of CFG
+                            let end_update = self.encode_cfg(&new_curr_ver, target.unwrap(), end);
+    
+                            return stmt_update.merge(term_update).merge(end_update);
+                        }
                     }
                     _ => todo!(),
                 }
@@ -769,24 +831,48 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
         }
 
         let local = self.mk_local_ex(place.local, curr_ver[&place.local]);
-        if !place.projection.is_empty() {
-            // TODO: for now, assume this is a closure argument
-            assert_eq!(place.projection[0], mir::ProjectionElem::Deref);
-            assert!(matches!(place.projection[1], mir::ProjectionElem::Field(..)));
-            assert_eq!(place.projection[2], mir::ProjectionElem::Deref);
-            assert_eq!(place.projection.len(), 3);
-            let upvars = match self.body.local_decls[place.local].ty.peel_refs().kind() {
-                TyKind::Closure(_def_id, args) => args.as_closure().upvar_tys().collect::<Vec<_>>().len(),
-                _ => unreachable!(),
-            };
-            let tuple_ref = self.deps.require_ref::<crate::encoders::ViperTupleEncoder>(
-                upvars,
-            ).unwrap();
-            return match place.projection[1] {
-                mir::ProjectionElem::Field(idx, _) => tuple_ref.mk_elem(self.vcx, local, idx.as_usize()),
-                _ => todo!(),
-            };
+        let mut partent_ty =  self.body.local_decls[place.local].ty;
+        let mut expr = local;
+
+        for elem in place.projection {
+            (partent_ty, expr) = self.encode_place_element(partent_ty, elem, expr);
         }
-        local
+
+        expr
+    }
+
+
+    fn encode_place_element(&mut self, parent_ty: ty::Ty<'vir>, elem: mir::PlaceElem<'vir>, expr: ExprRet<'vir>) -> (ty::Ty<'vir>, ExprRet<'vir>) {
+        let parent_ty = parent_ty.peel_refs();
+
+         match elem {
+            mir::ProjectionElem::Deref => {
+                (parent_ty, expr)
+            }
+            mir::ProjectionElem::Field(field_idx, field_ty) => {
+                let field_idx= field_idx.as_usize();
+                match parent_ty.kind() {
+                    TyKind::Closure(_def_id, args) => {
+                        let upvars = args.as_closure().upvar_tys().collect::<Vec<_>>().len();
+                        let tuple_ref = self.deps.require_ref::<ViperTupleEncoder>(
+                            upvars,
+                        ).unwrap();
+                        let tup  = tuple_ref.mk_elem(self.vcx, expr, field_idx);
+
+                        (field_ty, tup)
+                    }
+                    _ => {
+                        let local_encoded_ty = self.deps.require_ref::<TypeEncoder>(parent_ty).unwrap();
+                        let struct_like = local_encoded_ty.expect_structlike();
+                        let proj = struct_like.field_read[field_idx];
+                
+                        let app = self.vcx.mk_func_app(proj, self.vcx.alloc_slice(&[expr]));
+
+                        (field_ty, app)
+                    }
+                }
+            }   
+            _ => todo!("Unsupported ProjectionElem {:?}", elem),
+        }
     }
 }

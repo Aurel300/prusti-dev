@@ -142,13 +142,26 @@ pub fn test_entrypoint<'tcx>(
                 let res = crate::encoders::MirImpureEncoder::encode(def_id.to_def_id());
                 assert!(res.is_ok());
 
-                let kind = crate::encoders::with_def_spec(|def_spec|
-                    def_spec
+                let (is_pure, is_trusted) = crate::encoders::with_def_spec(|def_spec| {
+                    let base_spec = def_spec
                         .get_proc_spec(&def_id.to_def_id())
-                        .map(|e| e.base_spec.kind)
+                        .map(|e| &e.base_spec);
+
+                        let is_pure = base_spec.and_then(|kind| kind.kind.is_pure().ok()).unwrap_or_default();
+                        let is_trusted = matches!(base_spec.map(|spec| spec.trusted), Some(SpecificationItem::Inherent(
+                            true,
+                        )));
+                        (is_pure, is_trusted)
+                    }
                 );
 
-                if kind.and_then(|kind| kind.is_pure().ok()).unwrap_or_default() {
+                if ! (is_trusted && is_pure) {
+                    let res = crate::encoders::MirImpureEncoder::encode(def_id.to_def_id());
+                    assert!(res.is_ok());
+                }
+               
+
+                if is_pure {
                     tracing::debug!("Encoding {def_id:?} as a pure function because it is labeled as pure");
                     let res = crate::encoders::MirFunctionEncoder::encode(def_id.to_def_id());
                     assert!(res.is_ok());

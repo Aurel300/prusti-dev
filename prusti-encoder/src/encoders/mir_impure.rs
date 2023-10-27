@@ -161,29 +161,49 @@ impl TaskEncoder for MirImpureEncoder {
             posts.push(local_defs.locals[mir::RETURN_PLACE].impure_pred);
             posts.extend(spec_posts);
 
-            let mut visitor = EncoderVisitor {
-                vcx,
-                deps,
-                local_decls: &body.local_decls,
-                //ssa_analysis,
-                fpcs_analysis,
-                local_defs,
 
-                tmp_ctr: 0,
+             // TODO: dedup with mir_pure
+             let attrs = vcx.tcx.get_attrs_unchecked(def_id);
+             let is_trusted = attrs
+                 .iter()
+                 .filter(|attr| !attr.is_doc_comment())
+                 .map(|attr| attr.get_normal_item())
+                 .any(|item| {
+                     item.path.segments.len() == 2
+                         && item.path.segments[0].ident.as_str() == "prusti"
+                         && item.path.segments[1].ident.as_str() == "trusted"
+                 });
 
-                current_fpcs: None,
+            let blocks = if is_trusted {
+                None
+            }
+            else {
+                let mut visitor = EncoderVisitor {
+                    vcx,
+                    deps,
+                    local_decls: &body.local_decls,
+                    //ssa_analysis,
+                    fpcs_analysis,
+                    local_defs,
 
-                current_stmts: None,
-                current_terminator: None,
-                encoded_blocks,
+                    tmp_ctr: 0,
+
+                    current_fpcs: None,
+
+                    current_stmts: None,
+                    current_terminator: None,
+                    encoded_blocks,
+                };
+                visitor.visit_body(&body);
+
+                visitor.encoded_blocks.push(vcx.alloc(vir::CfgBlockData {
+                    label: vcx.alloc(vir::CfgBlockLabelData::End),
+                    stmts: &[],
+                    terminator: vcx.alloc(vir::TerminatorStmtData::Exit),
+                }));
+
+                Some(vcx.alloc_slice(&visitor.encoded_blocks))
             };
-            visitor.visit_body(&body);
-
-            visitor.encoded_blocks.push(vcx.alloc(vir::CfgBlockData {
-                label: vcx.alloc(vir::CfgBlockLabelData::End),
-                stmts: &[],
-                terminator: vcx.alloc(vir::TerminatorStmtData::Exit),
-            }));
 
             Ok((MirImpureEncoderOutput {
                 method: vcx.alloc(vir::MethodData {
@@ -192,7 +212,7 @@ impl TaskEncoder for MirImpureEncoder {
                     rets: &[],
                     pres: vcx.alloc_slice(&pres),
                     posts: vcx.alloc_slice(&posts),
-                    blocks: Some(vcx.alloc_slice(&visitor.encoded_blocks)),
+                    blocks,
                 }),
             }, ()))
         })
@@ -803,18 +823,65 @@ impl<'vir, 'enc> mir::visit::Visitor<'vir> for EncoderVisitor<'vir, 'enc> {
                     _ => todo!(),
                 };
 
-                let func_out = self.deps.require_ref::<crate::encoders::MirImpureEncoder>(
-                    *func_def_id,
-                ).unwrap();
+                // TODO: dedup with mir_pure
+                let attrs = self.vcx.tcx.get_attrs_unchecked(*func_def_id);
+                let is_pure = attrs.iter()
+                .filter(|attr| !attr.is_doc_comment())
+                .map(|attr| attr.get_normal_item()).any(|item| 
+                    item.path.segments.len() == 2
+                    && item.path.segments[0].ident.as_str() == "prusti"
+                    && item.path.segments[1].ident.as_str() == "pure"
+                );
 
-                let destination = self.encode_place(Place::from(*destination));
-                let args = args.iter().map(|op| self.encode_operand(op));
-                let args: Vec<_> = std::iter::once(destination).chain(args).collect();
-                self.stmt(vir::StmtData::MethodCall(self.vcx.alloc(vir::MethodCallData {
-                    targets: &[],
-                    method: func_out.method_name,
-                    args: self.vcx.alloc_slice(&args),
-                })));
+                let dest = self.encode_place(Place::from(*destination));
+                let call_args = args.iter().map(|op| 
+                    if is_pure {
+                        self.encode_operand_snap(op)
+                    }
+                    else {
+                        self.encode_operand(op)
+                    }
+                );
+                // self.encode_operand(op)
+
+                if is_pure {
+                    let func_args = call_args.collect::<Vec<_>>();
+                    let pure_func_name = self.deps.require_ref::<crate::encoders::MirFunctionEncoder>(
+                        *func_def_id,
+                    ).unwrap().function_name;
+
+                    let pure_func_app = self.vcx.mk_func_app(pure_func_name, &func_args);
+
+                    let method_assign = {
+                        //TODO: can we get the method_assign is a better way? Maybe from the MirFunctionEncoder?
+                        let body = self.vcx.body.borrow_mut().get_impure_fn_body_identity(func_def_id.expect_local());
+                        let return_type = self.deps
+                            .require_ref::<crate::encoders::TypeEncoder>(body.return_ty())
+                            .unwrap();
+                        return_type.method_assign
+                    };
+
+                    self.stmt(vir::StmtData::MethodCall(self.vcx.alloc(vir::MethodCallData {
+                        targets: &[],
+                        method: method_assign,
+                        args: self.vcx.alloc_slice(&[dest, pure_func_app]),
+                    })));
+                }
+                else {
+                    let meth_args = std::iter::once(dest)
+                        .chain(call_args)
+                        .collect::<Vec<_>>();
+                    let func_out = self.deps.require_ref::<crate::encoders::MirImpureEncoder>(
+                        *func_def_id,
+                    ).unwrap();
+    
+                    self.stmt(vir::StmtData::MethodCall(self.vcx.alloc(vir::MethodCallData {
+                        targets: &[],
+                        method: func_out.method_name,
+                        args: self.vcx.alloc_slice(&meth_args),
+                    })));
+                }
+
                 self.vcx.alloc(vir::TerminatorStmtData::Goto(
                     self.vcx.alloc(vir::CfgBlockLabelData::BasicBlock(target.unwrap().as_usize())),
                 ))

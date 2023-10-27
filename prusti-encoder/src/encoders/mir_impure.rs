@@ -613,7 +613,7 @@ impl<'vir, 'enc> mir::visit::Visitor<'vir> for EncoderVisitor<'vir, 'enc> {
                                 rhs: self.encode_operand_snap(r),
                             })))],
                         )),
-                    mir::Rvalue::BinaryOp(mir::BinOp::Lt, box (l, r)) => {
+                    mir::Rvalue::BinaryOp(op, box (l, r)) => {
                         let ty_l = self.deps.require_ref::<crate::encoders::TypeEncoder>(
                             l.ty(self.local_decls, self.vcx.tcx),
                         ).unwrap().to_primitive.unwrap();
@@ -624,7 +624,7 @@ impl<'vir, 'enc> mir::visit::Visitor<'vir> for EncoderVisitor<'vir, 'enc> {
                         Some(self.vcx.mk_func_app(
                             "s_Bool_cons", // TODO: go through type encoder
                             &[self.vcx.alloc(vir::ExprData::BinOp(self.vcx.alloc(vir::BinOpData {
-                                kind: vir::BinOpKind::CmpLt,
+                                kind: vir::BinOpKind::from(op),
                                 lhs: self.vcx.mk_func_app(
                                     ty_l,
                                     &[self.encode_operand_snap(l)],
@@ -686,7 +686,7 @@ impl<'vir, 'enc> mir::visit::Visitor<'vir> for EncoderVisitor<'vir, 'enc> {
                     }
 
                     mir::Rvalue::Aggregate(
-                        box mir::AggregateKind::Adt(..),
+                        box mir::AggregateKind::Adt(..) | box mir::AggregateKind::Tuple,
                         fields,
                     ) => {
                         let dest_ty_struct = dest_ty_out.expect_structlike();
@@ -712,7 +712,8 @@ impl<'vir, 'enc> mir::visit::Visitor<'vir> for EncoderVisitor<'vir, 'enc> {
                     //mir::Rvalue::Discriminant(Place<'tcx>) => {}
                     //mir::Rvalue::ShallowInitBox(Operand<'tcx>, Ty<'tcx>) => {}
                     //mir::Rvalue::CopyForDeref(Place<'tcx>) => {}
-                    _ => {
+                    other => {
+                        tracing::error!("unsupported rvalue {other:?}");
                         Some(self.vcx.alloc(vir::ExprData::Todo(
                             vir::vir_format!(self.vcx, "rvalue {rvalue:?}"),
                         )))
@@ -735,7 +736,7 @@ impl<'vir, 'enc> mir::visit::Visitor<'vir> for EncoderVisitor<'vir, 'enc> {
             // no-ops
             mir::StatementKind::FakeRead(_)
             | mir::StatementKind::Retag(..)
-            //| mir::StatementKind::PlaceMention(_)
+            | mir::StatementKind::PlaceMention(_)
             | mir::StatementKind::AscribeUserType(..)
             | mir::StatementKind::Coverage(_)
             //| mir::StatementKind::ConstEvalCounter
@@ -817,6 +818,25 @@ impl<'vir, 'enc> mir::visit::Visitor<'vir> for EncoderVisitor<'vir, 'enc> {
                 self.vcx.alloc(vir::TerminatorStmtData::Goto(
                     self.vcx.alloc(vir::CfgBlockLabelData::BasicBlock(target.unwrap().as_usize())),
                 ))
+            }
+            mir::TerminatorKind::Assert { cond, expected, msg, target, unwind } => {
+
+                let otherwise = match unwind {
+                    mir::UnwindAction::Cleanup(bb) => bb,
+                    _ => todo!()
+                };
+
+                let enc = self.encode_operand_snap(cond);
+                let enc = self.vcx.mk_func_app("s_Bool_val", &[enc]);
+
+                let target_bb = self.vcx.alloc(vir::CfgBlockLabelData::BasicBlock(target.as_usize()));
+                
+                self.vcx.alloc(vir::TerminatorStmtData::GotoIf(self.vcx.alloc(vir::GotoIfData {
+                    value: enc,  
+                    targets: self.vcx.alloc_slice(&[(self.vcx.alloc(vir::ExprData::Const(self.vcx.alloc(vir::ConstData::Bool(*expected))))
+                    , &target_bb)]),
+                    otherwise: self.vcx.alloc(vir::CfgBlockLabelData::BasicBlock(otherwise.as_usize())),
+                })))
             }
             unsupported_kind => self.vcx.alloc(vir::TerminatorStmtData::Dummy(
                 vir::vir_format!(self.vcx, "terminator {unsupported_kind:?}"),

@@ -268,7 +268,7 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
             update.versions.get(local).copied().unwrap_or_else(|| {
                 // TODO: remove (debug)
                 if !curr_ver.contains_key(&local) {
-                    println!("unknown version of local! {}", local.as_usize());
+                    tracing::error!("unknown version of local! {}", local.as_usize());
                     return 0xff
                 }
                 curr_ver[local]
@@ -416,8 +416,7 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
                 for (elem_idx, local) in mod_locals.iter().enumerate() {
                     let expr = self.mk_phi_acc(tuple_ref.clone(), phi_idx, elem_idx);
                     self.bump_version(&mut phi_update, *local, expr);
-                    // TODO: add to curr_ver here ?
-                    //new_curr_ver.insert(*local, );
+                    new_curr_ver.insert(*local, phi_update.versions[local]);
                 }
 
                 // walk `join` -> `end`
@@ -547,6 +546,13 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
                             .lift();
 
                         // TODO: use type encoder
+                        let body = 
+                            self.vcx.mk_func_app(
+                                "s_Bool_val",
+                                &[body],
+                            );
+
+                        // TODO: use type encoder
                         let forall = self.vcx.mk_func_app(
                             "s_Bool_cons",
                             &[self.vcx.alloc(ExprRetData::Forall(self.vcx.alloc(vir::ForallGenData {
@@ -566,7 +572,9 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
 
                         stmt_update.merge(term_update).merge(end_update)
                     }
-                    None => todo!(),
+                    None => {
+                        todo!("call not supported {func:?}");
+                    }
                 }
             }
 
@@ -581,10 +589,15 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
     ) -> Update<'vir> {
         let mut update = Update::new();
         match &stmt.kind {
-            mir::StatementKind::StorageLive(..)
-            | mir::StatementKind::StorageDead(..)
+            mir::StatementKind::StorageLive(local) => {
+                let new_version = self.version_ctr.get(local).copied().unwrap_or(0usize);
+                self.version_ctr.insert(*local, new_version + 1);
+                update.versions.insert(*local, new_version);
+            },
+            mir::StatementKind::StorageDead(..)
             | mir::StatementKind::FakeRead(..)
-            | mir::StatementKind::AscribeUserType(..) => {}, // nop
+            | mir::StatementKind::AscribeUserType(..) 
+            | mir::StatementKind::PlaceMention(..)=> {}, // nop
             mir::StatementKind::Assign(box (dest, rvalue)) => {
                 assert!(dest.projection.is_empty());
                 let expr = self.encode_rvalue(curr_ver, rvalue);
@@ -676,7 +689,22 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
                         .map(|field| self.encode_operand(curr_ver, field))
                         .collect::<Vec<_>>())
                 }
-                _ => todo!(),
+                _ => todo!("Unsupported Rvalue::AggregateKind: {kind:?}"),
+            }
+            mir::Rvalue::CheckedBinaryOp(binop, box (l, r)) => {
+                let binop_function = self.deps.require_ref::<crate::encoders::MirBuiltinEncoder>(
+                    crate::encoders::MirBuiltinEncoderTask::CheckedBinOp(
+                        *binop,
+                        l.ty(self.body, self.vcx.tcx), // TODO: ?
+                    ),
+                ).unwrap().name;
+                self.vcx.mk_func_app(
+                    binop_function,
+                    &[
+                        self.encode_operand(curr_ver, l),
+                        self.encode_operand(curr_ver, r),
+                    ],
+                )
             }
             // ShallowInitBox
             // CopyForDeref
@@ -734,7 +762,7 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
     ) -> ExprRet<'vir> {
         // TODO: remove (debug)
         if !curr_ver.contains_key(&place.local) {
-            println!("unknown version of local! {}", place.local.as_usize());
+            tracing::error!("unknown version of local! {}", place.local.as_usize());
             return self.vcx.alloc(ExprRetData::Todo(
                 vir::vir_format!(self.vcx, "unknown_version_{}", place.local.as_usize()),
             ));

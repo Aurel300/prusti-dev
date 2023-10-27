@@ -189,8 +189,16 @@ impl TaskEncoder for MirBuiltinEncoder {
                     }, ()))
                 }
 
-                MirBuiltinEncoderTask::CheckedBinOp(mir::BinOp::Add | mir::BinOp::AddUnchecked, ty) => {
-                    let name = vir::vir_format!(vcx, "mir_checkedbinop_add_{}", int_name(*ty));
+                MirBuiltinEncoderTask::CheckedBinOp(op @ (mir::BinOp::Add | mir::BinOp::AddUnchecked | mir::BinOp::Sub | mir::BinOp::SubUnchecked), ty) => {
+
+                    let (op_name, vir_op) = match op {
+                        mir::BinOp::Add | mir::BinOp::AddUnchecked  => ("add", vir::BinOpKind::Add),
+                        mir::BinOp::Sub | mir::BinOp::SubUnchecked  => ("sub", vir::BinOpKind::Sub),
+
+                        _ => unreachable!()
+                    };
+                    let name = vir::vir_format!(vcx, "mir_checkedbinop_{}_{}", op_name, int_name(*ty));
+
                     deps.emit_output_ref::<Self>(task_key.clone(), MirBuiltinEncoderOutputRef {
                         name,
                     });
@@ -220,7 +228,7 @@ impl TaskEncoder for MirBuiltinEncoder {
                                     vcx.mk_func_app(
                                         ty_in.from_primitive.unwrap(),
                                         &[vcx.alloc(vir::ExprData::BinOp(vcx.alloc(vir::BinOpData {
-                                            kind: vir::BinOpKind::Add,
+                                            kind: vir_op,
                                             lhs: vcx.mk_func_app(
                                                 ty_in.to_primitive.unwrap(),
                                                 &[vcx.mk_local_ex("arg1")],
@@ -242,7 +250,7 @@ impl TaskEncoder for MirBuiltinEncoder {
                     }, ()))
                 }
 
-                _ => todo!(),
+                other => todo!("{other:?}"),
             }
 
         })

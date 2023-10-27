@@ -16,13 +16,13 @@ pub enum MirFunctionEncoderError {
 
 #[derive(Clone, Debug)]
 pub struct MirFunctionEncoderOutputRef<'vir> {
-    pub method_name: &'vir str,
+    pub function_name: &'vir str,
 }
 impl<'vir> task_encoder::OutputRefAny<'vir> for MirFunctionEncoderOutputRef<'vir> {}
 
 #[derive(Clone, Debug)]
 pub struct MirFunctionEncoderOutput<'vir> {
-    pub method: vir::Function<'vir>,
+    pub function: vir::Function<'vir>,
 }
 
 thread_local! {
@@ -72,8 +72,8 @@ impl TaskEncoder for MirFunctionEncoder {
 
             tracing::debug!("encoding {def_id:?}");
 
-            let method_name = vir::vir_format!(vcx, "f_{}", vcx.tcx.item_name(def_id));
-            deps.emit_output_ref::<Self>(def_id, MirFunctionEncoderOutputRef { method_name });
+            let function_name = vir::vir_format!(vcx, "f_{}", vcx.tcx.item_name(def_id));
+            deps.emit_output_ref::<Self>(def_id, MirFunctionEncoderOutputRef { function_name });
 
             let local_defs = deps.require_local::<crate::encoders::local_def::MirLocalDefEncoder>(
                 def_id,
@@ -104,8 +104,8 @@ impl TaskEncoder for MirFunctionEncoder {
 
             Ok((
                 MirFunctionEncoderOutput {
-                    method: vcx.alloc(vir::FunctionData {
-                        name: method_name,
+                    function: vcx.alloc(vir::FunctionData {
+                        name: function_name,
                         args: vcx.alloc_slice(&func_args),
                         ret: local_defs.locals[mir::RETURN_PLACE].snapshot,
                         pres: vcx.alloc_slice(&spec.pres),

@@ -150,7 +150,7 @@ impl TaskEncoder for ViperTupleEncoder {
                 domain: Some(vcx.alloc(vir::DomainData {
                     name: domain_name,
                     typarams: vcx.alloc_slice(&typaram_names),
-                    axioms: vcx.alloc_slice(&[axiom]),
+                    axioms: if task_key == &0 {&[]} else {vcx.alloc_slice(&[axiom])},
                     functions: vcx.alloc_slice(&functions),
                 })),
             }, ()))

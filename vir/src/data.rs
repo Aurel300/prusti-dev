@@ -41,6 +41,7 @@ pub enum BinOpKind {
     CmpLe,
     And,
     Add,
+    Sub,
     // ...
 }
 impl From<mir::BinOp> for BinOpKind {

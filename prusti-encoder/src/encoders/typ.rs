@@ -709,14 +709,19 @@ impl TaskEncoder for TypeEncoder {
                     .iter()
                     .map(|ty| deps.require_ref::<crate::encoders::TypeEncoder>(ty).unwrap())
                     .collect::<Vec<_>>();
-                // TODO: name the tuple according to its types, or make generic?
+
+                // TODO: Properly name the tuple according to its types, or make generic?
+
+                // Temporary fix to make it possisble to have multiple tuples of the same size with different element types
+                let tmp_ty_name = field_ty_out.iter().map(|e| e.snapshot_name).collect::<Vec<&str>>().join("_");
+
 
                 Ok((mk_structlike(
                     vcx,
                     deps,
                     task_key,
-                    vir::vir_format!(vcx, "s_Tuple{}", tys.len()),
-                    vir::vir_format!(vcx, "p_Tuple{}", tys.len()),
+                    vir::vir_format!(vcx, "s_Tuple{}_{}", tys.len(), tmp_ty_name),
+                    vir::vir_format!(vcx, "p_Tuple{}_{}", tys.len(), tmp_ty_name),
                     field_ty_out,
                 )?, ()))
 
@@ -782,7 +787,7 @@ impl TaskEncoder for TypeEncoder {
                 }, ()))
             }
             TyKind::Adt(adt_def, substs) if adt_def.is_struct() => {
-                println!("encoding ADT {adt_def:?} with substs {substs:?}");
+                tracing::debug!("encoding ADT {adt_def:?} with substs {substs:?}");
                 let substs = ty::List::identity_for_item(vcx.tcx, adt_def.did());
                 let field_ty_out = adt_def.all_fields()
                     .map(|field| deps.require_ref::<crate::encoders::TypeEncoder>(field.ty(vcx.tcx, substs)).unwrap())

@@ -57,6 +57,7 @@ impl<'vir, Curr, Next> Debug for BinOpGenData<'vir, Curr, Next> {
             BinOpKind::CmpLe => "<=",
             BinOpKind::And => "&&",
             BinOpKind::Add => "+",
+            BinOpKind::Sub => "-",
         })?;
         self.rhs.fmt(f)?;
         write!(f, ")")

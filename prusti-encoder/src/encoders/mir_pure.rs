@@ -220,7 +220,6 @@ impl TaskEncoder for MirPureEncoder {
 
             let expr_inner = Encoder::new(vcx, task_key.0, &body, deps).encode_body();
 
-
             // We wrap the expression with an additional lazy that will perform
             // some sanity checks. These requirements cannot be expressed using
             // only the type system.
@@ -485,7 +484,7 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
                     return stmt_update;
                 }
 
-               todo!()
+                todo!()
             }
 
             mir::TerminatorKind::SwitchInt { discr, targets } => {

@@ -1,8 +1,11 @@
-use prusti_rustc_interface::{middle::{mir, ty}, span::def_id::DefId};
+use prusti_rustc_interface::{
+    middle::{mir, ty},
+    span::def_id::DefId,
+};
 
+use std::cell::RefCell;
 use task_encoder::{TaskEncoder, TaskEncoderDependencies};
 use vir::Reify;
-use std::cell::RefCell;
 
 use crate::encoders::MirPureEncoder;
 pub struct MirSpecEncoder;
@@ -20,8 +23,8 @@ thread_local! {
 
 impl TaskEncoder for MirSpecEncoder {
     type TaskDescription<'vir> = (
-        DefId,  // The function annotated with specs
-        bool,   // If to encode as pure or not
+        DefId, // The function annotated with specs
+        bool,  // If to encode as pure or not
     );
 
     type OutputFullLocal<'vir> = MirSpecEncoderOutput<'vir>;
@@ -61,21 +64,21 @@ impl TaskEncoder for MirSpecEncoder {
         let (def_id, pure) = *task_key;
         deps.emit_output_ref::<Self>(*task_key, ());
 
-        let local_defs = deps.require_local::<crate::encoders::local_def::MirLocalDefEncoder>(
-            def_id,
-        ).unwrap();
-        let specs = deps.require_local::<crate::encoders::SpecEncoder>(
-            crate::encoders::SpecEncoderTask {
+        let local_defs = deps
+            .require_local::<crate::encoders::local_def::MirLocalDefEncoder>(def_id)
+            .unwrap();
+        let specs = deps
+            .require_local::<crate::encoders::SpecEncoder>(crate::encoders::SpecEncoderTask {
                 def_id,
-            }
-        ).unwrap();
+            })
+            .unwrap();
 
         vir::with_vcx(|vcx| {
             let mut pre_args: Vec<_> = (1..=local_defs.arg_count)
                 .map(mir::Local::from)
                 .map(|local| {
                     if pure {
-                       local_defs.locals[local].local_ex
+                        local_defs.locals[local].local_ex
                     } else {
                         local_defs.locals[local].impure_snap
                     }
@@ -90,55 +93,69 @@ impl TaskEncoder for MirSpecEncoder {
 
             let pre_args = vcx.alloc_slice(&pre_args);
 
-            let to_bool = deps.require_ref::<crate::encoders::TypeEncoder>(
-                vcx.tcx.types.bool,
-            ).unwrap().to_primitive.unwrap();
+            let to_bool = deps
+                .require_ref::<crate::encoders::TypeEncoder>(vcx.tcx.types.bool)
+                .unwrap()
+                .to_primitive
+                .unwrap();
 
-            let pres = specs.pres.iter().map(|spec_def_id| {
-                let expr = deps.require_local::<crate::encoders::MirPureEncoder>(
-                    crate::encoders::MirPureEncoderTask {
-                        encoding_depth: 0,
-                        parent_def_id: *spec_def_id,
-                        promoted: None,
-                        param_env: vcx.tcx.param_env(spec_def_id),
-                        substs: ty::List::identity_for_item(vcx.tcx, *spec_def_id),
-                    }
-                ).unwrap().expr;
-                let expr = vcx.mk_func_app(
-                    to_bool,
-                    &[expr],
-                );
-                expr.reify(vcx, (*spec_def_id, &pre_args.split_last().unwrap().1))
-            }).collect::<Vec<vir::Expr<'_>>>();
+            let pres = specs
+                .pres
+                .iter()
+                .map(|spec_def_id| {
+                    let expr = deps
+                        .require_local::<crate::encoders::MirPureEncoder>(
+                            crate::encoders::MirPureEncoderTask {
+                                encoding_depth: 0,
+                                parent_def_id: *spec_def_id,
+                                promoted: None,
+                                param_env: vcx.tcx.param_env(spec_def_id),
+                                substs: ty::List::identity_for_item(vcx.tcx, *spec_def_id),
+                            },
+                        )
+                        .unwrap()
+                        .expr;
+                    let expr = vcx.mk_func_app(to_bool, &[expr]);
+                    expr.reify(vcx, (*spec_def_id, &pre_args.split_last().unwrap().1))
+                })
+                .collect::<Vec<vir::Expr<'_>>>();
 
             let post_args = if pure {
                 pre_args
             } else {
-                let post_args: Vec<_> = pre_args.iter().enumerate().map(|(idx, arg)| {
-                    if idx == pre_args.len() - 1 {
-                        arg
-                    } else {
-                        vcx.alloc(vir::ExprData::Old(arg))
-                    }
-                }).collect();
+                let post_args: Vec<_> = pre_args
+                    .iter()
+                    .enumerate()
+                    .map(|(idx, arg)| {
+                        if idx == pre_args.len() - 1 {
+                            arg
+                        } else {
+                            vcx.alloc(vir::ExprData::Old(arg))
+                        }
+                    })
+                    .collect();
                 vcx.alloc_slice(&post_args)
             };
-            let posts = specs.posts.iter().map(|spec_def_id| {
-                let expr = deps.require_local::<crate::encoders::MirPureEncoder>(
-                    crate::encoders::MirPureEncoderTask {
-                        encoding_depth: 0,
-                        parent_def_id: *spec_def_id,
-                        promoted: None,
-                        param_env: vcx.tcx.param_env(spec_def_id),
-                        substs: ty::List::identity_for_item(vcx.tcx, *spec_def_id),
-                    }
-                ).unwrap().expr;
-                let expr = vcx.mk_func_app(
-                    to_bool,
-                    &[expr],
-                );
-                expr.reify(vcx, (*spec_def_id, post_args))
-            }).collect::<Vec<vir::Expr<'_>>>();
+            let posts = specs
+                .posts
+                .iter()
+                .map(|spec_def_id| {
+                    let expr = deps
+                        .require_local::<crate::encoders::MirPureEncoder>(
+                            crate::encoders::MirPureEncoderTask {
+                                encoding_depth: 0,
+                                parent_def_id: *spec_def_id,
+                                promoted: None,
+                                param_env: vcx.tcx.param_env(spec_def_id),
+                                substs: ty::List::identity_for_item(vcx.tcx, *spec_def_id),
+                            },
+                        )
+                        .unwrap()
+                        .expr;
+                    let expr = vcx.mk_func_app(to_bool, &[expr]);
+                    expr.reify(vcx, (*spec_def_id, post_args))
+                })
+                .collect::<Vec<vir::Expr<'_>>>();
             let data = MirSpecEncoderOutput {
                 pres,
                 posts,

@@ -9,16 +9,12 @@ use prusti_rustc_interface::{
     borrowck::consumers,
     data_structures::steal::Steal,
     driver::Compilation,
+    hir::{def::DefKind, def_id::LocalDefId},
     index::IndexVec,
     interface::{interface::Compiler, Config, Queries},
-    hir::{def::DefKind, def_id::LocalDefId},
     middle::{
         mir,
-        query::{
-            queries::mir_borrowck::ProvidedValue as MirBorrowck,
-            ExternProviders,
-            Providers
-        },
+        query::{queries::mir_borrowck::ProvidedValue as MirBorrowck, ExternProviders, Providers},
         ty::TyCtxt,
     },
     session::{EarlyErrorHandler, Session},
@@ -174,7 +170,7 @@ impl prusti_rustc_interface::driver::Callbacks for PrustiCompilerCalls {
                         test_free_pcs(&mir, tcx);
                     }
                 } else {*/
-                    verify(env, def_spec);
+                verify(env, def_spec);
                 //}
             }
         });

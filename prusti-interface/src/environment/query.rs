@@ -7,7 +7,10 @@ use prusti_rustc_interface::{
     hir::hir_id::HirId,
     middle::{
         hir::map::Map,
-        ty::{self, Binder, BoundConstness, GenericArgsRef, ImplPolarity, ParamEnv, TraitPredicate, TyCtxt},
+        ty::{
+            self, Binder, BoundConstness, GenericArgsRef, ImplPolarity, ParamEnv, TraitPredicate,
+            TyCtxt,
+        },
     },
     span::{
         def_id::{DefId, LocalDefId},
@@ -206,66 +209,66 @@ impl<'tcx> EnvQuery<'tcx> {
         impl_method_substs: GenericArgsRef<'tcx>,           // what are the substs on the call?
     ) -> Option<(ProcedureDefId, GenericArgsRef<'tcx>)> {
         todo!() /*
-        let impl_method_def_id = impl_method_def_id.into_param();
-        let impl_def_id = self.tcx.impl_of_method(impl_method_def_id)?;
-        let trait_ref = self.tcx.impl_trait_ref(impl_def_id)?.skip_binder();
+                let impl_method_def_id = impl_method_def_id.into_param();
+                let impl_def_id = self.tcx.impl_of_method(impl_method_def_id)?;
+                let trait_ref = self.tcx.impl_trait_ref(impl_def_id)?.skip_binder();
 
-        // At this point, we know that the given method:
-        // - belongs to an impl block and
-        // - the impl block implements a trait.
-        // For the `get_assoc_item` call, we therefore `unwrap`, as not finding
-        // the associated item would be a (compiler) internal error.
-        let trait_def_id = trait_ref.def_id;
-        let trait_method_def_id = self
-            .get_assoc_item(trait_def_id, impl_method_def_id)
-            .unwrap()
-            .def_id;
+                // At this point, we know that the given method:
+                // - belongs to an impl block and
+                // - the impl block implements a trait.
+                // For the `get_assoc_item` call, we therefore `unwrap`, as not finding
+                // the associated item would be a (compiler) internal error.
+                let trait_def_id = trait_ref.def_id;
+                let trait_method_def_id = self
+                    .get_assoc_item(trait_def_id, impl_method_def_id)
+                    .unwrap()
+                    .def_id;
 
-        // sanity check: have we been given the correct number of substs?
-        let identity_impl_method = self.identity_substs(impl_method_def_id);
-        assert_eq!(identity_impl_method.len(), impl_method_substs.len());
+                // sanity check: have we been given the correct number of substs?
+                let identity_impl_method = self.identity_substs(impl_method_def_id);
+                assert_eq!(identity_impl_method.len(), impl_method_substs.len());
 
-        // Given:
-        // ```
-        // trait Trait<Tp> {
-        //     fn f<Tx, Ty, Tz>();
-        // }
-        // struct Struct<Ex, Ey> { ... }
-        // impl<A, B, C> Trait<A> for Struct<B, C> {
-        //     fn f<X, Y, Z>() { ... }
-        // }
-        // ```
-        //
-        // The various substs look like this:
-        // - identity for Trait:           `[Self, Tp]`
-        // - identity for Trait::f:        `[Self, Tp, Tx, Ty, Tz]`
-        // - substs of the impl trait ref: `[Struct<B, C>, A]`
-        // - identity for the impl:        `[A, B, C]`
-        // - identity for Struct::f:       `[A, B, C, X, Y, Z]`
-        //
-        // What we need is a substs suitable for a call to Trait::f, which is in
-        // this case `[Struct<B, C>, A, X, Y, Z]`. More generally, it is the
-        // concatenation of the trait ref substs with the identity of the impl
-        // method after skipping the identity of the impl.
-        //
-        // We also need to subst the prefix (`[Struct<B, C>, A]` in the example
-        // above) with call substs, so that we get the trait's type parameters
-        // more precisely. We can do this directly with `impl_method_substs`
-        // because they contain the substs for the `impl` block as a prefix.
-        let call_trait_substs =
-            ty::EarlyBinder(trait_ref.substs).subst(self.tcx, impl_method_substs);
-        let impl_substs = self.identity_substs(impl_def_id);
-        let trait_method_substs = self.tcx.mk_substs_from_iter(
-            call_trait_substs
-                .iter()
-                .chain(impl_method_substs.iter().skip(impl_substs.len())),
-        );
+                // Given:
+                // ```
+                // trait Trait<Tp> {
+                //     fn f<Tx, Ty, Tz>();
+                // }
+                // struct Struct<Ex, Ey> { ... }
+                // impl<A, B, C> Trait<A> for Struct<B, C> {
+                //     fn f<X, Y, Z>() { ... }
+                // }
+                // ```
+                //
+                // The various substs look like this:
+                // - identity for Trait:           `[Self, Tp]`
+                // - identity for Trait::f:        `[Self, Tp, Tx, Ty, Tz]`
+                // - substs of the impl trait ref: `[Struct<B, C>, A]`
+                // - identity for the impl:        `[A, B, C]`
+                // - identity for Struct::f:       `[A, B, C, X, Y, Z]`
+                //
+                // What we need is a substs suitable for a call to Trait::f, which is in
+                // this case `[Struct<B, C>, A, X, Y, Z]`. More generally, it is the
+                // concatenation of the trait ref substs with the identity of the impl
+                // method after skipping the identity of the impl.
+                //
+                // We also need to subst the prefix (`[Struct<B, C>, A]` in the example
+                // above) with call substs, so that we get the trait's type parameters
+                // more precisely. We can do this directly with `impl_method_substs`
+                // because they contain the substs for the `impl` block as a prefix.
+                let call_trait_substs =
+                    ty::EarlyBinder(trait_ref.substs).subst(self.tcx, impl_method_substs);
+                let impl_substs = self.identity_substs(impl_def_id);
+                let trait_method_substs = self.tcx.mk_substs_from_iter(
+                    call_trait_substs
+                        .iter()
+                        .chain(impl_method_substs.iter().skip(impl_substs.len())),
+                );
 
-        // sanity check: do we now have the correct number of substs?
-        let identity_trait_method = self.identity_substs(trait_method_def_id);
-        assert_eq!(trait_method_substs.len(), identity_trait_method.len());
+                // sanity check: do we now have the correct number of substs?
+                let identity_trait_method = self.identity_substs(trait_method_def_id);
+                assert_eq!(trait_method_substs.len(), identity_trait_method.len());
 
-        Some((trait_method_def_id, trait_method_substs))*/
+                Some((trait_method_def_id, trait_method_substs))*/
     }
 
     /// Given some procedure `proc_def_id` which is called, this method returns the actual method which will be executed when `proc_def_id` is defined on a trait.

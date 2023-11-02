@@ -1,7 +1,7 @@
 use std::fmt::Debug;
 
-use prusti_rustc_interface::middle::mir;
 use crate::refs::*;
+use prusti_rustc_interface::middle::mir;
 
 pub struct LocalData<'vir> {
     pub name: &'vir str, // TODO: identifiers

@@ -14,40 +14,36 @@ pub fn verify(env: Environment<'_>, def_spec: typed::DefSpecificationMap) {
     if env.diagnostic.has_errors() {
         warn!("The compiler reported an error, so the program will not be verified.");
     } else {
-        debug!("Prepare verification task...");/*
-        // TODO: can we replace `get_annotated_procedures` with information
-        // that is already in `def_spec`?
-        let (annotated_procedures, types) = env.get_annotated_procedures_and_types();
-        let verification_task = VerificationTask {
-            procedures: annotated_procedures,
-            types,
-        };
-        debug!("Verification task: {:?}", &verification_task);
+        debug!("Prepare verification task..."); /*
+                                                // TODO: can we replace `get_annotated_procedures` with information
+                                                // that is already in `def_spec`?
+                                                let (annotated_procedures, types) = env.get_annotated_procedures_and_types();
+                                                let verification_task = VerificationTask {
+                                                    procedures: annotated_procedures,
+                                                    types,
+                                                };
+                                                debug!("Verification task: {:?}", &verification_task);
 
-        user::message(format!(
-            "Verification of {} items...",
-            verification_task.procedures.len()
-        ));
+                                                user::message(format!(
+                                                    "Verification of {} items...",
+                                                    verification_task.procedures.len()
+                                                ));
 
-        if config::print_collected_verification_items() {
-            println!(
-                "Collected verification items {}:",
-                verification_task.procedures.len()
-            );
-            for procedure in &verification_task.procedures {
-                println!(
-                    "procedure: {} at {:?}",
-                    env.name.get_item_def_path(*procedure),
-                    env.query.get_def_span(procedure)
-                );
-            }
-        }*/
+                                                if config::print_collected_verification_items() {
+                                                    println!(
+                                                        "Collected verification items {}:",
+                                                        verification_task.procedures.len()
+                                                    );
+                                                    for procedure in &verification_task.procedures {
+                                                        println!(
+                                                            "procedure: {} at {:?}",
+                                                            env.name.get_item_def_path(*procedure),
+                                                            env.query.get_def_span(procedure)
+                                                        );
+                                                    }
+                                                }*/
 
-        let program = prusti_encoder::test_entrypoint(
-            env.tcx(),
-            env.body,
-            def_spec,
-        );
+        let program = prusti_encoder::test_entrypoint(env.tcx(), env.body, def_spec);
         //viper::verify(program);
 
         //let verification_result =

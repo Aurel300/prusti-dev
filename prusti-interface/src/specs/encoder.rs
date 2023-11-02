@@ -18,10 +18,7 @@ pub struct DefSpecsEncoder<'tcx> {
 }
 
 impl<'tcx> DefSpecsEncoder<'tcx> {
-    pub fn new(
-        tcx: TyCtxt<'tcx>,
-        path: &std::path::PathBuf,
-    ) -> std::io::Result<Self> {
+    pub fn new(tcx: TyCtxt<'tcx>, path: &std::path::PathBuf) -> std::io::Result<Self> {
         Ok(DefSpecsEncoder {
             tcx,
             opaque: opaque::FileEncoder::new(path)?,

@@ -1,11 +1,8 @@
-use std::cell::RefCell;
 use prusti_interface::environment::EnvBody;
 use prusti_rustc_interface::middle::ty;
+use std::cell::RefCell;
 
-use crate::data::*;
-use crate::gendata::*;
-use crate::genrefs::*;
-use crate::refs::*;
+use crate::{data::*, gendata::*, genrefs::*, refs::*};
 
 /// The VIR context is a data structure used throughout the encoding process.
 pub struct VirCtxt<'tcx> {
@@ -20,13 +17,11 @@ pub struct VirCtxt<'tcx> {
     pub span_stack: Vec<i32>,
     // TODO: span stack
     // TODO: error positions?
-
     /// The compiler's typing context. This allows convenient access to most
     /// of the compiler's APIs.
     pub tcx: ty::TyCtxt<'tcx>,
 
     pub body: RefCell<EnvBody<'tcx>>,
-    
 }
 
 impl<'tcx> VirCtxt<'tcx> {
@@ -48,25 +43,23 @@ impl<'tcx> VirCtxt<'tcx> {
         &*self.arena.alloc_str(val)
     }
 
-/*    pub fn alloc_slice<'a, T: Copy>(&'tcx self, val: &'a [T]) -> &'tcx [T] {
-        &*self.arena.alloc_slice_copy(val)
-        }*/
+    /*    pub fn alloc_slice<'a, T: Copy>(&'tcx self, val: &'a [T]) -> &'tcx [T] {
+    &*self.arena.alloc_slice_copy(val)
+    }*/
     pub fn alloc_slice<T: Copy>(&self, val: &[T]) -> &[T] {
         &*self.arena.alloc_slice_copy(val)
     }
 
     pub fn mk_local<'vir>(&'vir self, name: &'vir str) -> Local<'vir> {
-        self.arena.alloc(LocalData {
-            name,
-        })
+        self.arena.alloc(LocalData { name })
     }
     pub fn mk_local_decl(&'tcx self, name: &'tcx str, ty: Type<'tcx>) -> LocalDecl<'tcx> {
-        self.arena.alloc(LocalDeclData {
-            name,
-            ty,
-        })
+        self.arena.alloc(LocalDeclData { name, ty })
     }
-    pub fn mk_local_ex_local<Curr, Next>(&'tcx self, local: Local<'tcx>) -> ExprGen<'tcx, Curr, Next> {
+    pub fn mk_local_ex_local<Curr, Next>(
+        &'tcx self,
+        local: Local<'tcx>,
+    ) -> ExprGen<'tcx, Curr, Next> {
         self.arena.alloc(ExprGenData::Local(local))
     }
     pub fn mk_local_ex<Curr, Next>(&'tcx self, name: &'tcx str) -> ExprGen<'tcx, Curr, Next> {
@@ -77,16 +70,18 @@ impl<'tcx> VirCtxt<'tcx> {
         target: &'tcx str,
         src_args: &[ExprGen<'tcx, Curr, Next>],
     ) -> ExprGen<'tcx, Curr, Next> {
-        self.arena.alloc(ExprGenData::FuncApp(self.arena.alloc(FuncAppGenData {
-            target,
-            args: self.alloc_slice(src_args),
-        })))
+        self.arena
+            .alloc(ExprGenData::FuncApp(self.arena.alloc(FuncAppGenData {
+                target,
+                args: self.alloc_slice(src_args),
+            })))
     }
     pub fn mk_pred_app(&'tcx self, target: &'tcx str, src_args: &[Expr<'tcx>]) -> Expr<'tcx> {
-        self.arena.alloc(ExprData::PredicateApp(self.arena.alloc(PredicateAppData {
-            target,
-            args: self.alloc_slice(src_args),
-        })))
+        self.arena
+            .alloc(ExprData::PredicateApp(self.arena.alloc(PredicateAppData {
+                target,
+                args: self.alloc_slice(src_args),
+            })))
     }
 
     pub fn mk_true(&'tcx self) -> Expr<'tcx> {

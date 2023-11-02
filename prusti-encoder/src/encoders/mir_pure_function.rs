@@ -1,8 +1,11 @@
-use prusti_rustc_interface::{middle::{mir, ty}, span::def_id::DefId};
+use prusti_rustc_interface::{
+    middle::{mir, ty},
+    span::def_id::DefId,
+};
 
+use std::cell::RefCell;
 use task_encoder::{TaskEncoder, TaskEncoderDependencies};
 use vir::Reify;
-use std::cell::RefCell;
 
 use crate::encoders::{
     MirPureEncoder, MirPureEncoderTask, SpecEncoder, SpecEncoderTask, TypeEncoder,
@@ -76,11 +79,14 @@ impl TaskEncoder for MirFunctionEncoder {
             deps.emit_output_ref::<Self>(*task_key, MirFunctionEncoderOutputRef { function_name });
 
             let local_def_id = def_id.expect_local();
-            let body = vcx.body.borrow_mut().get_impure_fn_body_identity(local_def_id);
+            let body = vcx
+                .body
+                .borrow_mut()
+                .get_impure_fn_body_identity(local_def_id);
 
-            let spec = deps.require_local::<crate::encoders::pure::spec::MirSpecEncoder>(
-                (def_id, true)
-            ).unwrap();
+            let spec = deps
+                .require_local::<crate::encoders::pure::spec::MirSpecEncoder>((def_id, true))
+                .unwrap();
 
             let mut func_args = Vec::with_capacity(body.arg_count);
 

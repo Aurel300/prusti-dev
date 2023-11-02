@@ -1,11 +1,7 @@
-use prusti_rustc_interface::{
-    index::IndexVec,
-    middle::mir,
-    span::def_id::DefId
-};
+use prusti_rustc_interface::{index::IndexVec, middle::mir, span::def_id::DefId};
 
-use task_encoder::{TaskEncoder, TaskEncoderDependencies};
 use std::cell::RefCell;
+use task_encoder::{TaskEncoder, TaskEncoderDependencies};
 
 pub struct MirLocalDefEncoder;
 #[derive(Clone, Copy)]
@@ -70,32 +66,37 @@ impl TaskEncoder for MirLocalDefEncoder {
         deps.emit_output_ref::<Self>(def_id, ());
 
         vir::with_vcx(|vcx| {
-            let local_def_id = def_id.expect_local();           
-            let body = vcx.body.borrow_mut().get_impure_fn_body_identity(local_def_id);
-            let locals = IndexVec::from_fn_n(|arg: mir::Local| {
-                let local = vcx.mk_local(vir::vir_format!(vcx, "_{}p", arg.index()));
-                let ty = deps.require_ref::<crate::encoders::TypeEncoder>(
-                    body.local_decls[arg].ty,
-                ).unwrap();
-                let snapshot = ty.snapshot;
-                let local_ex = vcx.mk_local_ex_local(local);
-                let impure_snap = vcx.mk_func_app(
-                    ty.function_snap,
-                    &[local_ex],
-                );
-                let impure_pred = vcx.alloc(vir::ExprData::PredicateApp(vcx.alloc(vir::PredicateAppData {
-                    target: ty.predicate_name,
-                    args: vcx.alloc_slice(&[local_ex]),
-                })));
-                LocalDef {
-                    local,
-                    snapshot,
-                    local_ex,
-                    impure_snap,
-                    impure_pred,
-                    ty: vcx.alloc(ty),
-                }
-            }, body.local_decls.len());
+            let local_def_id = def_id.expect_local();
+            let body = vcx
+                .body
+                .borrow_mut()
+                .get_impure_fn_body_identity(local_def_id);
+            let locals = IndexVec::from_fn_n(
+                |arg: mir::Local| {
+                    let local = vcx.mk_local(vir::vir_format!(vcx, "_{}p", arg.index()));
+                    let ty = deps
+                        .require_ref::<crate::encoders::TypeEncoder>(body.local_decls[arg].ty)
+                        .unwrap();
+                    let snapshot = ty.snapshot;
+                    let local_ex = vcx.mk_local_ex_local(local);
+                    let impure_snap = vcx.mk_func_app(ty.function_snap, &[local_ex]);
+                    let impure_pred = vcx.alloc(vir::ExprData::PredicateApp(vcx.alloc(
+                        vir::PredicateAppData {
+                            target: ty.predicate_name,
+                            args: vcx.alloc_slice(&[local_ex]),
+                        },
+                    )));
+                    LocalDef {
+                        local,
+                        snapshot,
+                        local_ex,
+                        impure_snap,
+                        impure_pred,
+                        ty: vcx.alloc(ty),
+                    }
+                },
+                body.local_decls.len(),
+            );
             let data = MirLocalDefEncoderOutput {
                 locals: vcx.alloc(locals),
                 arg_count: body.arg_count,

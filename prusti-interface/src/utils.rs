@@ -10,7 +10,10 @@ use prusti_rustc_interface::{
     abi::FieldIdx,
     ast::ast,
     data_structures::fx::FxHashSet,
-    middle::{mir, ty::{self, TyCtxt}},
+    middle::{
+        mir,
+        ty::{self, TyCtxt},
+    },
 };
 use std::borrow::Borrow;
 
@@ -95,8 +98,7 @@ pub fn expand_struct_place<'tcx>(
             for (index, field_def) in variant.fields.iter().enumerate() {
                 if Some(index) != without_field {
                     let field = FieldIdx::from_usize(index);
-                    let field_place =
-                        tcx.mk_place_field(place, field, field_def.ty(tcx, substs));
+                    let field_place = tcx.mk_place_field(place, field, field_def.ty(tcx, substs));
                     places.push(field_place);
                 }
             }
@@ -132,7 +134,6 @@ pub fn expand_struct_place<'tcx>(
     }
     places
 }
-
 
 /// Pop the last projection from the place and return the new place with the popped element.
 pub fn try_pop_one_level<'tcx>(

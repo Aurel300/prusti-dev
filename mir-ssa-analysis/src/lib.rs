@@ -1,9 +1,6 @@
 #![feature(rustc_private)]
 
-use prusti_rustc_interface::{
-    index::IndexVec,
-    middle::mir,
-};
+use prusti_rustc_interface::{index::IndexVec, middle::mir};
 use std::collections::HashMap;
 
 pub type SsaVersion = usize;
@@ -34,9 +31,15 @@ impl SsaAnalysis {
         let local_count = body.local_decls.len();
         let block_count = body.basic_blocks.reverse_postorder().len();
 
-        let block_started = std::iter::repeat(false).take(block_count).collect::<Vec<_>>();
-        let initial_version_in_block = std::iter::repeat(None).take(block_count).collect::<Vec<_>>();
-        let final_version_in_block = std::iter::repeat(None).take(block_count).collect::<Vec<_>>();
+        let block_started = std::iter::repeat(false)
+            .take(block_count)
+            .collect::<Vec<_>>();
+        let initial_version_in_block = std::iter::repeat(None)
+            .take(block_count)
+            .collect::<Vec<_>>();
+        let final_version_in_block = std::iter::repeat(None)
+            .take(block_count)
+            .collect::<Vec<_>>();
 
         let mut ssa_visitor = SsaVisitor {
             version_counter: IndexVec::from_raw(vec![0; local_count]),
@@ -69,11 +72,7 @@ struct SsaVisitor {
 }
 
 impl<'tcx> SsaVisitor {
-    fn walk_block<'a>(
-        &mut self,
-        body: &'a mir::Body<'tcx>,
-        block: mir::BasicBlock,
-    ) {
+    fn walk_block<'a>(&mut self, body: &'a mir::Body<'tcx>, block: mir::BasicBlock) {
         if self.final_version_in_block[block.as_usize()].is_some() {
             return;
         }
@@ -95,7 +94,9 @@ impl<'tcx> SsaVisitor {
                 // TODO: cfg cycles
                 prev_versions.push((
                     *pred,
-                    self.final_version_in_block[pred.as_usize()].as_ref().unwrap()[local.into()],
+                    self.final_version_in_block[pred.as_usize()]
+                        .as_ref()
+                        .unwrap()[local.into()],
                 ));
             }
             if prev_versions.is_empty() {
@@ -117,7 +118,9 @@ impl<'tcx> SsaVisitor {
             assert!(self.analysis.phi.insert(block, phis).is_none());
         }
 
-        assert!(self.initial_version_in_block[block.as_usize()].replace(initial_versions.clone()).is_none());
+        assert!(self.initial_version_in_block[block.as_usize()]
+            .replace(initial_versions.clone())
+            .is_none());
 
         use mir::visit::Visitor;
         self.last_version = initial_versions;
@@ -127,12 +130,14 @@ impl<'tcx> SsaVisitor {
             .map(|local| self.last_version[local.into()])
             .collect::<IndexVec<_, _>>();
         for local in 0..self.local_count {
-            self.analysis.version.insert((
-                body.terminator_loc(block),
-                local.into(),
-            ), final_versions[local.into()]);
+            self.analysis.version.insert(
+                (body.terminator_loc(block), local.into()),
+                final_versions[local.into()],
+            );
         }
-        assert!(self.final_version_in_block[block.as_usize()].replace(final_versions).is_none());
+        assert!(self.final_version_in_block[block.as_usize()]
+            .replace(final_versions)
+            .is_none());
 
         use prusti_rustc_interface::data_structures::graph::WithSuccessors;
         for succ in body.basic_blocks.successors(block) {
@@ -152,7 +157,9 @@ impl<'tcx> mir::visit::Visitor<'tcx> for SsaVisitor {
     ) {
         let local = place.local;
 
-        assert!(self.analysis.version
+        assert!(self
+            .analysis
+            .version
             .insert((location, local), self.last_version[local])
             .is_none());
 
@@ -161,12 +168,17 @@ impl<'tcx> mir::visit::Visitor<'tcx> for SsaVisitor {
             let new_version = self.version_counter[local] + 1;
             self.version_counter[local] = new_version;
             self.last_version[local] = new_version;
-            assert!(self.analysis.updates
-                .insert(location, SsaUpdate {
-                    local,
-                    old_version,
-                    new_version,
-                })
+            assert!(self
+                .analysis
+                .updates
+                .insert(
+                    location,
+                    SsaUpdate {
+                        local,
+                        old_version,
+                        new_version,
+                    }
+                )
                 .is_none());
         }
     }

@@ -1,7 +1,4 @@
-use task_encoder::{
-    TaskEncoder,
-    TaskEncoderDependencies,
-};
+use task_encoder::{TaskEncoder, TaskEncoderDependencies};
 
 pub struct GenericEncoder;
 
@@ -39,7 +36,8 @@ impl TaskEncoder for GenericEncoder {
     type EncodingError = GenericEncoderError;
 
     fn with_cache<'vir, F, R>(f: F) -> R
-        where F: FnOnce(&'vir task_encoder::CacheRef<'vir, GenericEncoder>) -> R,
+    where
+        F: FnOnce(&'vir task_encoder::CacheRef<'vir, GenericEncoder>) -> R,
     {
         CACHE.with(|cache| {
             // SAFETY: the 'vir and 'tcx given to this function will always be
@@ -57,38 +55,49 @@ impl TaskEncoder for GenericEncoder {
     fn do_encode_full<'vir>(
         task_key: &Self::TaskKey<'vir>,
         deps: &mut TaskEncoderDependencies<'vir>,
-    ) -> Result<(
-        Self::OutputFullLocal<'vir>,
-        Self::OutputFullDependency<'vir>,
-    ), (
-        Self::EncodingError,
-        Option<Self::OutputFullDependency<'vir>>,
-    )> {
-        deps.emit_output_ref::<Self>(*task_key, GenericEncoderOutputRef {
-            snapshot_param_name: "s_Param",
-            predicate_param_name: "p_Param",
-            domain_type_name: "s_Type",
-        });
-        vir::with_vcx(|vcx| Ok((GenericEncoderOutput {
-            snapshot_param: vir::vir_domain! { vcx; domain s_Param {} },
-            predicate_param: vir::vir_predicate! { vcx; predicate p_Param(self_p: Ref/*, self_s: s_Param*/) },
-            domain_type: vir::vir_domain! { vcx; domain s_Type {
-                // TODO: only emit these when the types are actually used?
-                //       emit instead from type encoder, to be consistent with the ADT case?
-                unique function s_Type_Bool(): s_Type;
-                unique function s_Type_Int_isize(): s_Type;
-                unique function s_Type_Int_i8(): s_Type;
-                unique function s_Type_Int_i16(): s_Type;
-                unique function s_Type_Int_i32(): s_Type;
-                unique function s_Type_Int_i64(): s_Type;
-                unique function s_Type_Int_i128(): s_Type;
-                unique function s_Type_Uint_usize(): s_Type;
-                unique function s_Type_Uint_u8(): s_Type;
-                unique function s_Type_Uint_u16(): s_Type;
-                unique function s_Type_Uint_u32(): s_Type;
-                unique function s_Type_Uint_u64(): s_Type;
-                unique function s_Type_Uint_u128(): s_Type;
-            } },
-        }, ())))
+    ) -> Result<
+        (
+            Self::OutputFullLocal<'vir>,
+            Self::OutputFullDependency<'vir>,
+        ),
+        (
+            Self::EncodingError,
+            Option<Self::OutputFullDependency<'vir>>,
+        ),
+    > {
+        deps.emit_output_ref::<Self>(
+            *task_key,
+            GenericEncoderOutputRef {
+                snapshot_param_name: "s_Param",
+                predicate_param_name: "p_Param",
+                domain_type_name: "s_Type",
+            },
+        );
+        vir::with_vcx(|vcx| {
+            Ok((
+                GenericEncoderOutput {
+                    snapshot_param: vir::vir_domain! { vcx; domain s_Param {} },
+                    predicate_param: vir::vir_predicate! { vcx; predicate p_Param(self_p: Ref/*, self_s: s_Param*/) },
+                    domain_type: vir::vir_domain! { vcx; domain s_Type {
+                        // TODO: only emit these when the types are actually used?
+                        //       emit instead from type encoder, to be consistent with the ADT case?
+                        unique function s_Type_Bool(): s_Type;
+                        unique function s_Type_Int_isize(): s_Type;
+                        unique function s_Type_Int_i8(): s_Type;
+                        unique function s_Type_Int_i16(): s_Type;
+                        unique function s_Type_Int_i32(): s_Type;
+                        unique function s_Type_Int_i64(): s_Type;
+                        unique function s_Type_Int_i128(): s_Type;
+                        unique function s_Type_Uint_usize(): s_Type;
+                        unique function s_Type_Uint_u8(): s_Type;
+                        unique function s_Type_Uint_u16(): s_Type;
+                        unique function s_Type_Uint_u32(): s_Type;
+                        unique function s_Type_Uint_u64(): s_Type;
+                        unique function s_Type_Uint_u128(): s_Type;
+                    } },
+                },
+                (),
+            ))
+        })
     }
 }

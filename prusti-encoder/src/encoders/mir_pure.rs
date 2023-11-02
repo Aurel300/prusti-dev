@@ -1,15 +1,12 @@
+use crate::encoders::{TypeEncoder, ViperTupleEncoder};
 use prusti_rustc_interface::{
     data_structures::graph::dominators::Dominators,
     middle::{mir, ty},
     span::def_id::DefId,
     type_ir::sty::TyKind,
 };
-use task_encoder::{
-    TaskEncoder,
-    TaskEncoderDependencies,
-};
 use std::collections::HashMap;
-use crate::encoders::{ViperTupleEncoder, TypeEncoder};
+use task_encoder::{TaskEncoder, TaskEncoderDependencies};
 
 pub struct MirPureEncoder;
 
@@ -31,33 +28,39 @@ pub struct MirPureEncoderOutput<'vir> {
 }
 
 /// Optimize a vir expresison
-/// 
+///
 /// This is a temporary fix for the issue where variables that are quantified over and are then stored in a let binding
 /// cause issues with triggering somehow.
-/// 
+///
 /// This was also intended to make debugging easier by making the resulting viper code a bit more readable
-/// 
+///
 /// This should be replaced with a proper solution
-fn opt<'vir, Cur, Next> (expr: vir::ExprGen<'vir, Cur, Next>, rename: &mut HashMap<String, String>) -> vir::ExprGen<'vir, Cur, Next>{
+fn opt<'vir, Cur, Next>(
+    expr: vir::ExprGen<'vir, Cur, Next>,
+    rename: &mut HashMap<String, String>,
+) -> vir::ExprGen<'vir, Cur, Next> {
     match expr {
-
         vir::ExprGenData::Local(d) => {
-            let nam = rename.get(d.name).map(|e| e.as_str()).unwrap_or(d.name).to_owned();
-            vir::with_vcx(move |vcx| {
-                vcx.mk_local_ex(vcx.alloc_str(&nam))
-            })
-        },
+            let nam = rename
+                .get(d.name)
+                .map(|e| e.as_str())
+                .unwrap_or(d.name)
+                .to_owned();
+            vir::with_vcx(move |vcx| vcx.mk_local_ex(vcx.alloc_str(&nam)))
+        }
 
-        vir::ExprGenData::Let(vir::LetGenData{name, val, expr}) => {
-
+        vir::ExprGenData::Let(vir::LetGenData { name, val, expr }) => {
             let val = opt(val, rename);
 
             match val {
                 // let name = loc.name
                 vir::ExprGenData::Local(loc) => {
-                    let t = rename.get(loc.name).map(|e| e.to_owned()).unwrap_or(loc.name.to_string());
+                    let t = rename
+                        .get(loc.name)
+                        .map(|e| e.to_owned())
+                        .unwrap_or(loc.name.to_string());
                     assert!(rename.insert(name.to_string(), t).is_none());
-                    return opt(expr, rename)
+                    return opt(expr, rename);
                 }
                 _ => {}
             }
@@ -67,82 +70,96 @@ fn opt<'vir, Cur, Next> (expr: vir::ExprGen<'vir, Cur, Next>, rename: &mut HashM
             match expr {
                 vir::ExprGenData::Local(inner_local) => {
                     if &inner_local.name == name {
-                        return val
+                        return val;
                     }
                 }
                 _ => {}
             }
             vir::with_vcx(move |vcx| {
-                vcx.alloc(vir::ExprGenData::Let(vcx.alloc(vir::LetGenData{name, val, expr})))
-            })
-        },
-        vir::ExprGenData::FuncApp( vir::FuncAppGenData{target, args}) => {
-            let n_args = args.iter().map(|arg| opt(arg, rename)).collect::<Vec<_>>();
-            vir::with_vcx(move |vcx| {
-                vcx.mk_func_app(target, &n_args)
-            })
-        }
-
-
-        vir::ExprGenData::PredicateApp( vir::PredicateAppGenData{target, args}) => {
-            let n_args = args.iter().map(|arg| opt(arg, rename)).collect::<Vec<_>>();
-            vir::with_vcx(move |vcx| {
-                vcx.alloc(vir::ExprGenData::PredicateApp(vcx.alloc(vir::PredicateAppGenData {
-                    target,
-                    args: vcx.alloc_slice(&n_args),
+                vcx.alloc(vir::ExprGenData::Let(vcx.alloc(vir::LetGenData {
+                    name,
+                    val,
+                    expr,
                 })))
             })
         }
-       
-        vir::ExprGenData::Forall(vir::ForallGenData{qvars, triggers, body}) => {
-            let body = opt(body, rename);
+        vir::ExprGenData::FuncApp(vir::FuncAppGenData { target, args }) => {
+            let n_args = args.iter().map(|arg| opt(arg, rename)).collect::<Vec<_>>();
+            vir::with_vcx(move |vcx| vcx.mk_func_app(target, &n_args))
+        }
 
+        vir::ExprGenData::PredicateApp(vir::PredicateAppGenData { target, args }) => {
+            let n_args = args.iter().map(|arg| opt(arg, rename)).collect::<Vec<_>>();
             vir::with_vcx(move |vcx| {
-                vcx.alloc(vir::ExprGenData::Forall(vcx.alloc(vir::ForallGenData{qvars, triggers, body})))
+                vcx.alloc(vir::ExprGenData::PredicateApp(vcx.alloc(
+                    vir::PredicateAppGenData {
+                        target,
+                        args: vcx.alloc_slice(&n_args),
+                    },
+                )))
             })
         }
 
+        vir::ExprGenData::Forall(vir::ForallGenData {
+            qvars,
+            triggers,
+            body,
+        }) => {
+            let body = opt(body, rename);
 
-        vir::ExprGenData::Ternary(vir::TernaryGenData{cond, then, else_}) => {
+            vir::with_vcx(move |vcx| {
+                vcx.alloc(vir::ExprGenData::Forall(vcx.alloc(vir::ForallGenData {
+                    qvars,
+                    triggers,
+                    body,
+                })))
+            })
+        }
+
+        vir::ExprGenData::Ternary(vir::TernaryGenData { cond, then, else_ }) => {
             let cond = opt(cond, rename);
             let then = opt(then, rename);
             let else_ = opt(else_, rename);
 
             vir::with_vcx(move |vcx| {
-                vcx.alloc(vir::ExprGenData::Ternary(vcx.alloc(vir::TernaryGenData{cond, then, else_})))
+                vcx.alloc(vir::ExprGenData::Ternary(vcx.alloc(vir::TernaryGenData {
+                    cond,
+                    then,
+                    else_,
+                })))
             })
         }
 
-        vir::ExprGenData::BinOp(vir::BinOpGenData {kind, lhs, rhs}) => {
+        vir::ExprGenData::BinOp(vir::BinOpGenData { kind, lhs, rhs }) => {
             let lhs = opt(lhs, rename);
             let rhs = opt(rhs, rename);
 
             vir::with_vcx(move |vcx| {
-                vcx.alloc(vir::ExprGenData::BinOp(vcx.alloc(vir::BinOpGenData{kind: kind.clone(), lhs, rhs})))
+                vcx.alloc(vir::ExprGenData::BinOp(vcx.alloc(vir::BinOpGenData {
+                    kind: kind.clone(),
+                    lhs,
+                    rhs,
+                })))
             })
         }
 
-
-        vir::ExprGenData::UnOp(vir::UnOpGenData {kind, expr}) =>{
+        vir::ExprGenData::UnOp(vir::UnOpGenData { kind, expr }) => {
             let expr = opt(expr, rename);
             vir::with_vcx(move |vcx| {
-                vcx.alloc(vir::ExprGenData::UnOp(vcx.alloc(vir::UnOpGenData{kind: kind.clone(), expr})))
+                vcx.alloc(vir::ExprGenData::UnOp(vcx.alloc(vir::UnOpGenData {
+                    kind: kind.clone(),
+                    expr,
+                })))
             })
         }
 
-        todo@(
-            vir::ExprGenData::Unfolding(_) |
-            vir::ExprGenData::Field(_, _) |
-            vir::ExprGenData::Old(_) |
-            vir::ExprGenData::AccField(_)|
-            vir::ExprGenData::Lazy(_, _)) 
-        => todo,
+        todo @ (vir::ExprGenData::Unfolding(_)
+        | vir::ExprGenData::Field(_, _)
+        | vir::ExprGenData::Old(_)
+        | vir::ExprGenData::AccField(_)
+        | vir::ExprGenData::Lazy(_, _)) => todo,
 
-        other @ (
-        vir::ExprGenData::Const(_) | 
-        vir::ExprGenData::Todo(_) ) => other
-
-
+        other @ (vir::ExprGenData::Const(_) | vir::ExprGenData::Todo(_)) => other,
     }
 }
 
@@ -156,9 +173,9 @@ pub struct MirPureEncoderTask<'tcx> {
     // TODO: depth of encoding should be in the lazy context rather than here;
     //   can we integrate the lazy context into the identifier system?
     pub encoding_depth: usize,
-    pub parent_def_id: DefId, // ID of the function
-    pub promoted: Option<mir::Promoted>, // ID of a constant within the function
-    pub param_env: ty::ParamEnv<'tcx>, // param environment at the usage site
+    pub parent_def_id: DefId,             // ID of the function
+    pub promoted: Option<mir::Promoted>,  // ID of a constant within the function
+    pub param_env: ty::ParamEnv<'tcx>,    // param environment at the usage site
     pub substs: ty::GenericArgsRef<'tcx>, // type substitutions at the usage site
 }
 
@@ -166,8 +183,8 @@ impl TaskEncoder for MirPureEncoder {
     type TaskDescription<'vir> = MirPureEncoderTask<'vir>;
 
     type TaskKey<'vir> = (
-        usize, // encoding depth
-        DefId, // ID of the function
+        usize,                    // encoding depth
+        DefId,                    // ID of the function
         Option<mir::Promoted>, // ID of a constant within the function, or `None` if encoding the function itself
         ty::GenericArgsRef<'vir>, // ? this should be the "signature", after applying the env/substs
     );
@@ -177,7 +194,8 @@ impl TaskEncoder for MirPureEncoder {
     type EncodingError = MirPureEncoderError;
 
     fn with_cache<'vir, F, R>(f: F) -> R
-       where F: FnOnce(&'vir task_encoder::CacheRef<'vir, MirPureEncoder>) -> R,
+    where
+        F: FnOnce(&'vir task_encoder::CacheRef<'vir, MirPureEncoder>) -> R,
     {
         CACHE.with(|cache| {
             // SAFETY: the 'vir and 'tcx given to this function will always be
@@ -201,13 +219,16 @@ impl TaskEncoder for MirPureEncoder {
     fn do_encode_full<'vir>(
         task_key: &Self::TaskKey<'vir>,
         deps: &mut TaskEncoderDependencies<'vir>,
-    ) -> Result<(
-        Self::OutputFullLocal<'vir>,
-        Self::OutputFullDependency<'vir>,
-    ), (
-        Self::EncodingError,
-        Option<Self::OutputFullDependency<'vir>>,
-    )> {
+    ) -> Result<
+        (
+            Self::OutputFullLocal<'vir>,
+            Self::OutputFullDependency<'vir>,
+        ),
+        (
+            Self::EncodingError,
+            Option<Self::OutputFullDependency<'vir>>,
+        ),
+    > {
         deps.emit_output_ref::<Self>(*task_key, ());
 
         let def_id = task_key.1; //.parent_def_id;
@@ -216,7 +237,10 @@ impl TaskEncoder for MirPureEncoder {
         tracing::debug!("encoding {def_id:?}");
         let expr = vir::with_vcx(move |vcx| {
             //let body = vcx.tcx.mir_promoted(local_def_id).0.borrow();
-            let body = vcx.body.borrow_mut().get_impure_fn_body_identity(local_def_id);
+            let body = vcx
+                .body
+                .borrow_mut()
+                .get_impure_fn_body_identity(local_def_id);
 
             let expr_inner = Encoder::new(vcx, task_key.0, &body, deps).encode_body();
 
@@ -242,8 +266,7 @@ impl TaskEncoder for MirPureEncoder {
                         let opted = opt(expr_inner, &mut rename);
                         tracing::warn!("after opt {opted:?}");
                         opted
-                    }
-                    else {
+                    } else {
                         expr_inner
                     };
 
@@ -276,8 +299,16 @@ impl<'vir> Update<'vir> {
 
     fn merge(self, newer: Self) -> Self {
         Self {
-            binds: self.binds.into_iter().chain(newer.binds.into_iter()).collect(),
-            versions: self.versions.into_iter().chain(newer.versions.into_iter()).collect(),
+            binds: self
+                .binds
+                .into_iter()
+                .chain(newer.binds.into_iter())
+                .collect(),
+            versions: self
+                .versions
+                .into_iter()
+                .chain(newer.versions.into_iter())
+                .collect(),
         }
     }
 
@@ -289,7 +320,8 @@ impl<'vir> Update<'vir> {
 }
 
 struct Encoder<'vir, 'enc>
-    where 'vir: 'enc
+where
+    'vir: 'enc,
 {
     vcx: &'vir vir::VirCtxt<'vir>,
     encoding_depth: usize,
@@ -301,7 +333,8 @@ struct Encoder<'vir, 'enc>
 }
 
 impl<'vir, 'enc> Encoder<'vir, 'enc>
-    where 'vir: 'enc
+where
+    'vir: 'enc,
 {
     fn new(
         vcx: &'vir vir::VirCtxt<'vir>,
@@ -309,7 +342,10 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
         body: &'enc mir::Body<'vir>,
         deps: &'enc mut TaskEncoderDependencies<'vir>,
     ) -> Self {
-        assert!(!body.basic_blocks.is_cfg_cyclic(), "MIR pure encoding does not support loops");
+        assert!(
+            !body.basic_blocks.is_cfg_cyclic(),
+            "MIR pure encoding does not support loops"
+        );
 
         Self {
             vcx,
@@ -317,31 +353,28 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
             body,
             deps,
             visited: Default::default(),
-            version_ctr: (0..body.local_decls.len()).map(|local| (local.into(), 0)).collect(),
+            version_ctr: (0..body.local_decls.len())
+                .map(|local| (local.into(), 0))
+                .collect(),
             phi_ctr: 0,
         }
     }
 
-    fn mk_local(
-        &self,
-        local: mir::Local,
-        version: usize,
-    ) -> &'vir str {
-        vir::vir_format!(self.vcx, "_{}_{}s_{}", self.encoding_depth, local.as_usize(), version)
+    fn mk_local(&self, local: mir::Local, version: usize) -> &'vir str {
+        vir::vir_format!(
+            self.vcx,
+            "_{}_{}s_{}",
+            self.encoding_depth,
+            local.as_usize(),
+            version
+        )
     }
 
-    fn mk_local_ex(
-        &self,
-        local: mir::Local,
-        version: usize,
-    ) -> ExprRet<'vir> {
+    fn mk_local_ex(&self, local: mir::Local, version: usize) -> ExprRet<'vir> {
         self.vcx.mk_local_ex(self.mk_local(local, version))
     }
 
-    fn mk_phi(
-        &self,
-        idx: usize,
-    ) -> &'vir str {
+    fn mk_phi(&self, idx: usize) -> &'vir str {
         vir::vir_format!(self.vcx, "_{}_phi_{}", self.encoding_depth, idx)
     }
 
@@ -354,36 +387,34 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
         tuple_ref.mk_elem(self.vcx, self.vcx.mk_local_ex(self.mk_phi(idx)), elem_idx)
     }
 
-    fn bump_version(
-        &mut self,
-        update: &mut Update<'vir>,
-        local: mir::Local,
-        expr: ExprRet<'vir>,
-    ) {
+    fn bump_version(&mut self, update: &mut Update<'vir>, local: mir::Local, expr: ExprRet<'vir>) {
         let new_version = self.version_ctr.get(&local).copied().unwrap_or(0usize);
         self.version_ctr.insert(local, new_version + 1);
-        update.binds.push(UpdateBind::Local(local, new_version, expr));
+        update
+            .binds
+            .push(UpdateBind::Local(local, new_version, expr));
         update.versions.insert(local, new_version);
     }
 
-    fn reify_binds(
-        &self,
-        update: Update<'vir>,
-        expr: ExprRet<'vir>,
-    ) -> ExprRet<'vir> {
-        update.binds.iter()
-            .rfold(expr, |expr, bind| match bind {
-                UpdateBind::Local(local, ver, val) => self.vcx.alloc(ExprRetData::Let(self.vcx.alloc(vir::LetGenData {
-                    name: self.mk_local(*local, *ver),
-                    val,
-                    expr,
-                }))),
-                UpdateBind::Phi(idx, val) => self.vcx.alloc(ExprRetData::Let(self.vcx.alloc(vir::LetGenData {
-                    name: self.mk_phi(*idx),
-                    val,
-                    expr,
-                }))),
-            })
+    fn reify_binds(&self, update: Update<'vir>, expr: ExprRet<'vir>) -> ExprRet<'vir> {
+        update.binds.iter().rfold(expr, |expr, bind| match bind {
+            UpdateBind::Local(local, ver, val) => {
+                self.vcx
+                    .alloc(ExprRetData::Let(self.vcx.alloc(vir::LetGenData {
+                        name: self.mk_local(*local, *ver),
+                        val,
+                        expr,
+                    })))
+            }
+            UpdateBind::Phi(idx, val) => {
+                self.vcx
+                    .alloc(ExprRetData::Let(self.vcx.alloc(vir::LetGenData {
+                        name: self.mk_phi(*idx),
+                        val,
+                        expr,
+                    })))
+            }
+        })
     }
 
     fn reify_branch(
@@ -393,30 +424,40 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
         curr_ver: &HashMap<mir::Local, usize>,
         update: Update<'vir>,
     ) -> ExprRet<'vir> {
-        let tuple_args = mod_locals.iter().map(|local| self.mk_local_ex(
-            *local,
-            update.versions.get(local).copied().unwrap_or_else(|| {
-                // TODO: remove (debug)
-                if !curr_ver.contains_key(&local) {
-                    tracing::error!("unknown version of local! {}", local.as_usize());
-                    return 0xff
-                }
-                curr_ver[local]
-            }),
-        )).collect::<Vec<_>>();
-        self.reify_binds(
-            update,
-            tuple_ref.mk_cons(self.vcx, &tuple_args),
-        )
+        let tuple_args = mod_locals
+            .iter()
+            .map(|local| {
+                self.mk_local_ex(
+                    *local,
+                    update.versions.get(local).copied().unwrap_or_else(|| {
+                        // TODO: remove (debug)
+                        if !curr_ver.contains_key(&local) {
+                            tracing::error!("unknown version of local! {}", local.as_usize());
+                            return 0xff;
+                        }
+                        curr_ver[local]
+                    }),
+                )
+            })
+            .collect::<Vec<_>>();
+        self.reify_binds(update, tuple_ref.mk_cons(self.vcx, &tuple_args))
     }
 
     fn encode_body(&mut self) -> ExprRet<'vir> {
-        let end_blocks = self.body.basic_blocks.reverse_postorder()
+        let end_blocks = self
+            .body
+            .basic_blocks
+            .reverse_postorder()
             .iter()
-            .filter(|bb| matches!(
-                self.body[**bb].terminator,
-                Some(mir::Terminator { kind: mir::TerminatorKind::Return, .. }),
-            ))
+            .filter(|bb| {
+                matches!(
+                    self.body[**bb].terminator,
+                    Some(mir::Terminator {
+                        kind: mir::TerminatorKind::Return,
+                        ..
+                    }),
+                )
+            })
             .collect::<Vec<_>>();
         assert!(end_blocks.len() > 0, "no Return block found");
         assert!(end_blocks.len() < 2, "multiple Return blocks found");
@@ -429,19 +470,16 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
                 vir::vir_format!(self.vcx, "pure in _{local}"),
                 Box::new(move |_vcx, lctx: ExprInput<'vir>| lctx.1[local - 1]),
             ));
-            init.binds.push(UpdateBind::Local(local.into(), 0, local_ex));
+            init.binds
+                .push(UpdateBind::Local(local.into(), 0, local_ex));
             init.versions.insert(local.into(), 0);
         }
 
-        let update = self.encode_cfg(
-            &init.versions,
-            mir::START_BLOCK,
-            *end_block,
-        );
+        let update = self.encode_cfg(&init.versions, mir::START_BLOCK, *end_block);
 
         let res = init.merge(update);
         let ret_version = res.versions.get(&mir::RETURN_PLACE).copied().unwrap_or(0);
-      
+
         self.reify_binds(res, self.mk_local_ex(mir::RETURN_PLACE, ret_version))
     }
 
@@ -451,7 +489,8 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
         start: mir::BasicBlock,
         end: mir::BasicBlock,
     ) -> mir::BasicBlock {
-        dominators.dominators(end)
+        dominators
+            .dominators(end)
             .take_while(|bb| *bb != start)
             .last()
             .unwrap()
@@ -467,7 +506,9 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
 
         // walk block statements first
         let mut new_curr_ver = curr_ver.clone();
-        let stmt_update = self.body[start].statements.iter()
+        let stmt_update = self.body[start]
+            .statements
+            .iter()
             .fold(Update::new(), |update, stmt| {
                 let newer = self.encode_stmt(&new_curr_ver, stmt);
                 newer.add_to_map(&mut new_curr_ver);
@@ -490,22 +531,26 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
             mir::TerminatorKind::SwitchInt { discr, targets } => {
                 // encode the discriminant operand
                 let discr_expr = self.encode_operand(&new_curr_ver, discr);
-                let discr_ty_out = self.deps.require_ref::<crate::encoders::TypeEncoder>(
-                    discr.ty(self.body, self.vcx.tcx),
-                ).unwrap();
+                let discr_ty_out = self
+                    .deps
+                    .require_ref::<crate::encoders::TypeEncoder>(discr.ty(self.body, self.vcx.tcx))
+                    .unwrap();
 
                 // find earliest join point `join`
                 let join = self.find_join_point(dominators, start, end);
 
                 // walk `start` -> `targets[i]` -> `join` for each target
                 // TODO: indexvec?
-                let mut updates = targets.all_targets().iter()
+                let mut updates = targets
+                    .all_targets()
+                    .iter()
                     .map(|target| self.encode_cfg(&new_curr_ver, *target, join))
                     .collect::<Vec<_>>();
 
                 // find locals updated in any of the results, which were also
                 // defined before the branch
-                let mut mod_locals = updates.iter()
+                let mut mod_locals = updates
+                    .iter()
                     .map(|update| update.versions.keys())
                     .flatten()
                     .filter(|local| new_curr_ver.contains_key(&local))
@@ -515,24 +560,33 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
                 mod_locals.dedup();
 
                 // for each branch, create a Viper tuple of the updated locals
-                let tuple_ref = self.deps.require_ref::<crate::encoders::ViperTupleEncoder>(
-                    mod_locals.len(),
-                ).unwrap();
+                let tuple_ref = self
+                    .deps
+                    .require_ref::<crate::encoders::ViperTupleEncoder>(mod_locals.len())
+                    .unwrap();
                 let otherwise_update = updates.pop().unwrap();
-                let phi_expr = targets.iter()
-                    .zip(updates.into_iter())
-                    .fold(
-                        self.reify_branch(&tuple_ref, &mod_locals, &new_curr_ver, otherwise_update),
-                        |expr, ((cond_val, target), branch_update)| self.vcx.alloc(ExprRetData::Ternary(self.vcx.alloc(vir::TernaryGenData {
-                            cond: self.vcx.alloc(ExprRetData::BinOp(self.vcx.alloc(vir::BinOpGenData {
-                                kind: vir::BinOpKind::CmpEq,
-                                lhs: discr_expr,
-                                rhs: discr_ty_out.expr_from_u128(cond_val).lift(),
-                            }))),
-                            then: self.reify_branch(&tuple_ref, &mod_locals, &new_curr_ver, branch_update),
-                            else_: expr,
-                        }))),
-                    );
+                let phi_expr = targets.iter().zip(updates.into_iter()).fold(
+                    self.reify_branch(&tuple_ref, &mod_locals, &new_curr_ver, otherwise_update),
+                    |expr, ((cond_val, target), branch_update)| {
+                        self.vcx
+                            .alloc(ExprRetData::Ternary(self.vcx.alloc(vir::TernaryGenData {
+                                cond: self.vcx.alloc(ExprRetData::BinOp(self.vcx.alloc(
+                                    vir::BinOpGenData {
+                                        kind: vir::BinOpKind::CmpEq,
+                                        lhs: discr_expr,
+                                        rhs: discr_ty_out.expr_from_u128(cond_val).lift(),
+                                    },
+                                ))),
+                                then: self.reify_branch(
+                                    &tuple_ref,
+                                    &mod_locals,
+                                    &new_curr_ver,
+                                    branch_update,
+                                ),
+                                else_: expr,
+                            })))
+                    },
+                );
 
                 // assign tuple into a `phi` variable
                 let phi_idx = self.phi_ctr;
@@ -578,84 +632,101 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
                     TyKind::FnDef(def_id, arg_tys) => {
                         // TODO: this attribute extraction should be done elsewhere?
                         let attrs = self.vcx.tcx.get_attrs_unchecked(*def_id);
-                        let normal_attrs = attrs.iter()
+                        let normal_attrs = attrs
+                            .iter()
                             .filter(|attr| !attr.is_doc_comment())
-                            .map(|attr| attr.get_normal_item()).collect::<Vec<_>>();
-                        normal_attrs.iter()
-                            .filter(|item| item.path.segments.len() == 2
-                                && item.path.segments[0].ident.as_str() == "prusti"
-                                && item.path.segments[1].ident.as_str() == "builtin")
+                            .map(|attr| attr.get_normal_item())
+                            .collect::<Vec<_>>();
+                        normal_attrs
+                            .iter()
+                            .filter(|item| {
+                                item.path.segments.len() == 2
+                                    && item.path.segments[0].ident.as_str() == "prusti"
+                                    && item.path.segments[1].ident.as_str() == "builtin"
+                            })
                             .for_each(|attr| match &attr.args {
                                 prusti_rustc_interface::ast::AttrArgs::Eq(
                                     _,
                                     prusti_rustc_interface::ast::AttrArgsEq::Hir(lit),
                                 ) => {
                                     assert!(builtin.is_none(), "multiple prusti::builtin");
-                                    builtin = Some((match lit.symbol.as_str() {
-                                        "forall" => PrustiBuiltin::Forall,
-                                        _ => panic!("illegal prusti::builtin"),
-                                    }, arg_tys));
+                                    builtin = Some((
+                                        match lit.symbol.as_str() {
+                                            "forall" => PrustiBuiltin::Forall,
+                                            _ => panic!("illegal prusti::builtin"),
+                                        },
+                                        arg_tys,
+                                    ));
                                 }
                                 _ => panic!("illegal prusti::builtin"),
                             });
 
-
-                        let is_pure = normal_attrs.iter().any(|item| 
+                        let is_pure = normal_attrs.iter().any(|item| {
                             item.path.segments.len() == 2
-                            && item.path.segments[0].ident.as_str() == "prusti"
-                            && item.path.segments[1].ident.as_str() == "pure"
-                        );
+                                && item.path.segments[0].ident.as_str() == "prusti"
+                                && item.path.segments[1].ident.as_str() == "pure"
+                        });
 
-                         // TODO: detect snapshot_equality properly
-                         let is_snapshot_eq = self.vcx.tcx.opt_item_name(*def_id).map(|e| e.as_str() == "snapshot_equality") == Some(true)
+                        // TODO: detect snapshot_equality properly
+                        let is_snapshot_eq = self
+                            .vcx
+                            .tcx
+                            .opt_item_name(*def_id)
+                            .map(|e| e.as_str() == "snapshot_equality")
+                            == Some(true)
                             && self.vcx.tcx.crate_name(def_id.krate).as_str() == "prusti_contracts";
 
                         let func_call = if is_pure {
                             assert!(builtin.is_none(), "Function is pure and builtin?");
-                            let pure_func = self.deps.require_ref::<crate::encoders::MirFunctionEncoder>(*def_id).unwrap().function_name;
+                            let pure_func = self
+                                .deps
+                                .require_ref::<crate::encoders::MirFunctionEncoder>(*def_id)
+                                .unwrap()
+                                .function_name;
 
-                            let encoded_args = args.iter()
+                            let encoded_args = args
+                                .iter()
                                 .map(|oper| self.encode_operand(&new_curr_ver, oper))
                                 .collect::<Vec<_>>();
-                            
+
                             let func_call = self.vcx.mk_func_app(pure_func, &encoded_args);
 
-                           Some(func_call)
-                        }
-
-                        else if is_snapshot_eq {
-                            assert!(builtin.is_none(), "Function is snapshot_equality and builtin?");
-                            let encoded_args = args.iter()
+                            Some(func_call)
+                        } else if is_snapshot_eq {
+                            assert!(
+                                builtin.is_none(),
+                                "Function is snapshot_equality and builtin?"
+                            );
+                            let encoded_args = args
+                                .iter()
                                 .map(|oper| self.encode_operand(&new_curr_ver, oper))
                                 .collect::<Vec<_>>();
 
                             assert_eq!(encoded_args.len(), 2);
 
-
-                            let eq_expr  = self.vcx.alloc(vir::ExprGenData::BinOp(self.vcx.alloc(vir::BinOpGenData {
-                                kind: vir::BinOpKind::CmpEq,
-                                lhs: encoded_args[0],
-                                rhs: encoded_args[1],
-                            })));
-
+                            let eq_expr = self.vcx.alloc(vir::ExprGenData::BinOp(self.vcx.alloc(
+                                vir::BinOpGenData {
+                                    kind: vir::BinOpKind::CmpEq,
+                                    lhs: encoded_args[0],
+                                    rhs: encoded_args[1],
+                                },
+                            )));
 
                             // TODO: type encoder
                             Some(self.vcx.mk_func_app("s_Bool_cons", &[eq_expr]))
-                        }
-                        else {
+                        } else {
                             None
                         };
-
 
                         if let Some(func_call) = func_call {
                             let mut term_update = Update::new();
                             assert!(destination.projection.is_empty());
                             self.bump_version(&mut term_update, destination.local, func_call);
                             term_update.add_to_map(&mut new_curr_ver);
-    
+
                             // walk rest of CFG
                             let end_update = self.encode_cfg(&new_curr_ver, target.unwrap(), end);
-    
+
                             return stmt_update.merge(term_update).merge(end_update);
                         }
                     }
@@ -677,18 +748,26 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
                             _ => panic!("illegal prusti::forall"),
                         };
 
-                        let qvars = self.vcx.alloc_slice(&qvar_tys.iter()
-                            .enumerate()
-                            .map(|(idx, qvar_ty)| {
-                                let ty_out = self.deps.require_ref::<crate::encoders::TypeEncoder>(
-                                    qvar_ty,
-                                ).unwrap();
-                                self.vcx.mk_local_decl(
-                                    vir::vir_format!(self.vcx, "qvar_{}_{idx}", self.encoding_depth),
-                                    ty_out.snapshot,
-                                )
-                            })
-                            .collect::<Vec<_>>());
+                        let qvars = self.vcx.alloc_slice(
+                            &qvar_tys
+                                .iter()
+                                .enumerate()
+                                .map(|(idx, qvar_ty)| {
+                                    let ty_out = self
+                                        .deps
+                                        .require_ref::<crate::encoders::TypeEncoder>(qvar_ty)
+                                        .unwrap();
+                                    self.vcx.mk_local_decl(
+                                        vir::vir_format!(
+                                            self.vcx,
+                                            "qvar_{}_{idx}",
+                                            self.encoding_depth
+                                        ),
+                                        ty_out.snapshot,
+                                    )
+                                })
+                                .collect::<Vec<_>>(),
+                        );
                         //let qvar_tuple_ref = self.deps.require_ref::<crate::encoders::ViperTupleEncoder>(
                         //    qvars.len(),
                         //).unwrap();
@@ -708,49 +787,49 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
                         reify_args.push(unsafe {
                             std::mem::transmute(self.encode_operand(&new_curr_ver, &args[1]))
                         });
-                        reify_args.extend((0..qvars.len())
-                            .map(|idx| self.vcx.mk_local_ex(
-                                vir::vir_format!(self.vcx, "qvar_{}_{idx}", self.encoding_depth),
-                            )));
+                        reify_args.extend((0..qvars.len()).map(|idx| {
+                            self.vcx.mk_local_ex(vir::vir_format!(
+                                self.vcx,
+                                "qvar_{}_{idx}",
+                                self.encoding_depth
+                            ))
+                        }));
 
                         // TODO: recursively invoke MirPure encoder to encode
                         // the body of the closure; pass the closure as the
                         // variable to use, then closure access = tuple access
                         // (then hope to optimise this away later ...?)
                         use vir::Reify;
-                        let body = self.deps.require_local::<MirPureEncoder>(
-                            MirPureEncoderTask {
+                        let body = self
+                            .deps
+                            .require_local::<MirPureEncoder>(MirPureEncoderTask {
                                 encoding_depth: self.encoding_depth + 1,
                                 parent_def_id: cl_def_id,
                                 promoted: None,
                                 param_env: self.vcx.tcx.param_env(cl_def_id),
                                 substs: ty::List::identity_for_item(self.vcx.tcx, cl_def_id),
-                            }
-                        ).unwrap().expr
-                        // arguments to the closure are
-                        // - the closure itself
-                        // - the qvars
-                            .reify(self.vcx, (
-                                cl_def_id,
-                                self.vcx.alloc_slice(&reify_args),
-                            ))
+                            })
+                            .unwrap()
+                            .expr
+                            // arguments to the closure are
+                            // - the closure itself
+                            // - the qvars
+                            .reify(self.vcx, (cl_def_id, self.vcx.alloc_slice(&reify_args)))
                             .lift();
 
                         // TODO: use type encoder
-                        let body = 
-                            self.vcx.mk_func_app(
-                                "s_Bool_val",
-                                &[body],
-                            );
+                        let body = self.vcx.mk_func_app("s_Bool_val", &[body]);
 
                         // TODO: use type encoder
                         let forall = self.vcx.mk_func_app(
                             "s_Bool_cons",
-                            &[self.vcx.alloc(ExprRetData::Forall(self.vcx.alloc(vir::ForallGenData {
-                                qvars,
-                                triggers: &[], // TODO
-                                body,
-                            })))],
+                            &[self.vcx.alloc(ExprRetData::Forall(self.vcx.alloc(
+                                vir::ForallGenData {
+                                    qvars,
+                                    triggers: &[], // TODO
+                                    body,
+                                },
+                            )))],
                         );
 
                         let mut term_update = Update::new();
@@ -784,11 +863,11 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
                 let new_version = self.version_ctr.get(local).copied().unwrap_or(0usize);
                 self.version_ctr.insert(*local, new_version + 1);
                 update.versions.insert(*local, new_version);
-            },
+            }
             mir::StatementKind::StorageDead(..)
             | mir::StatementKind::FakeRead(..)
-            | mir::StatementKind::AscribeUserType(..) 
-            | mir::StatementKind::PlaceMention(..)=> {}, // nop
+            | mir::StatementKind::AscribeUserType(..)
+            | mir::StatementKind::PlaceMention(..) => {} // nop
             mir::StatementKind::Assign(box (dest, rvalue)) => {
                 assert!(dest.projection.is_empty());
                 let expr = self.encode_rvalue(curr_ver, rvalue);
@@ -818,77 +897,105 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
             // Len
             // Cast
             mir::Rvalue::BinaryOp(op, box (l, r)) => {
-                let ty_l = self.deps.require_ref::<crate::encoders::TypeEncoder>(
-                    l.ty(self.body, self.vcx.tcx),
-                ).unwrap().to_primitive.unwrap();
-                let ty_r = self.deps.require_ref::<crate::encoders::TypeEncoder>(
-                    r.ty(self.body, self.vcx.tcx),
-                ).unwrap().to_primitive.unwrap();
-                let ty_rvalue = self.deps.require_ref::<crate::encoders::TypeEncoder>(
-                    rvalue.ty(self.body, self.vcx.tcx),
-                ).unwrap().from_primitive.unwrap();
+                let ty_l = self
+                    .deps
+                    .require_ref::<crate::encoders::TypeEncoder>(l.ty(self.body, self.vcx.tcx))
+                    .unwrap()
+                    .to_primitive
+                    .unwrap();
+                let ty_r = self
+                    .deps
+                    .require_ref::<crate::encoders::TypeEncoder>(r.ty(self.body, self.vcx.tcx))
+                    .unwrap()
+                    .to_primitive
+                    .unwrap();
+                let ty_rvalue = self
+                    .deps
+                    .require_ref::<crate::encoders::TypeEncoder>(rvalue.ty(self.body, self.vcx.tcx))
+                    .unwrap()
+                    .from_primitive
+                    .unwrap();
 
                 self.vcx.mk_func_app(
                     ty_rvalue,
-                    &[self.vcx.alloc(ExprRetData::BinOp(self.vcx.alloc(vir::BinOpGenData {
-                        kind: op.into(),
-                        lhs: self.vcx.mk_func_app(
-                            ty_l,
-                            &[self.encode_operand(curr_ver, l)],
-                        ),
-                        rhs: self.vcx.mk_func_app(
-                            ty_r,
-                            &[self.encode_operand(curr_ver, r)],
-                        ),
-                    })))],
+                    &[self.vcx.alloc(ExprRetData::BinOp(
+                        self.vcx.alloc(vir::BinOpGenData {
+                            kind: op.into(),
+                            lhs: self
+                                .vcx
+                                .mk_func_app(ty_l, &[self.encode_operand(curr_ver, l)]),
+                            rhs: self
+                                .vcx
+                                .mk_func_app(ty_r, &[self.encode_operand(curr_ver, r)]),
+                        }),
+                    ))],
                 )
             }
             // CheckedBinaryOp
             // NullaryOp
             mir::Rvalue::UnaryOp(op, expr) => {
-                let ty_expr = self.deps.require_ref::<crate::encoders::TypeEncoder>(
-                    expr.ty(self.body, self.vcx.tcx),
-                ).unwrap().to_primitive.unwrap();
-                let ty_rvalue = self.deps.require_ref::<crate::encoders::TypeEncoder>(
-                    rvalue.ty(self.body, self.vcx.tcx),
-                ).unwrap().from_primitive.unwrap();
+                let ty_expr = self
+                    .deps
+                    .require_ref::<crate::encoders::TypeEncoder>(expr.ty(self.body, self.vcx.tcx))
+                    .unwrap()
+                    .to_primitive
+                    .unwrap();
+                let ty_rvalue = self
+                    .deps
+                    .require_ref::<crate::encoders::TypeEncoder>(rvalue.ty(self.body, self.vcx.tcx))
+                    .unwrap()
+                    .from_primitive
+                    .unwrap();
 
                 self.vcx.mk_func_app(
                     ty_rvalue,
-                    &[self.vcx.alloc(ExprRetData::UnOp(self.vcx.alloc(vir::UnOpGenData {
-                        kind: op.into(),
-                        expr: self.vcx.mk_func_app(
-                            ty_expr,
-                            &[self.encode_operand(curr_ver, expr)],
-                        ),
-                    })))],
+                    &[self.vcx.alloc(ExprRetData::UnOp(
+                        self.vcx.alloc(vir::UnOpGenData {
+                            kind: op.into(),
+                            expr: self
+                                .vcx
+                                .mk_func_app(ty_expr, &[self.encode_operand(curr_ver, expr)]),
+                        }),
+                    ))],
                 )
             }
             // Discriminant
             mir::Rvalue::Aggregate(box kind, fields) => match kind {
                 mir::AggregateKind::Tuple if fields.len() == 0 =>
-                    // TODO: why is this not a constant?
-                    self.vcx.alloc(ExprRetData::Todo(
-                        vir::vir_format!(self.vcx, "s_Tuple0_cons()"),
-                    )),
+                // TODO: why is this not a constant?
+                {
+                    self.vcx.alloc(ExprRetData::Todo(vir::vir_format!(
+                        self.vcx,
+                        "s_Tuple0_cons()"
+                    )))
+                }
                 mir::AggregateKind::Closure(..) => {
                     // TODO: only when this is a spec closure?
-                    let tuple_ref = self.deps.require_ref::<crate::encoders::ViperTupleEncoder>(
-                        fields.len(),
-                    ).unwrap();
-                    tuple_ref.mk_cons(self.vcx, &fields.iter()
-                        .map(|field| self.encode_operand(curr_ver, field))
-                        .collect::<Vec<_>>())
+                    let tuple_ref = self
+                        .deps
+                        .require_ref::<crate::encoders::ViperTupleEncoder>(fields.len())
+                        .unwrap();
+                    tuple_ref.mk_cons(
+                        self.vcx,
+                        &fields
+                            .iter()
+                            .map(|field| self.encode_operand(curr_ver, field))
+                            .collect::<Vec<_>>(),
+                    )
                 }
                 _ => todo!("Unsupported Rvalue::AggregateKind: {kind:?}"),
-            }
+            },
             mir::Rvalue::CheckedBinaryOp(binop, box (l, r)) => {
-                let binop_function = self.deps.require_ref::<crate::encoders::MirBuiltinEncoder>(
-                    crate::encoders::MirBuiltinEncoderTask::CheckedBinOp(
-                        *binop,
-                        l.ty(self.body, self.vcx.tcx), // TODO: ?
-                    ),
-                ).unwrap().name;
+                let binop_function = self
+                    .deps
+                    .require_ref::<crate::encoders::MirBuiltinEncoder>(
+                        crate::encoders::MirBuiltinEncoderTask::CheckedBinOp(
+                            *binop,
+                            l.ty(self.body, self.vcx.tcx), // TODO: ?
+                        ),
+                    )
+                    .unwrap()
+                    .name;
                 self.vcx.mk_func_app(
                     binop_function,
                     &[
@@ -912,35 +1019,46 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
         operand: &mir::Operand<'vir>,
     ) -> ExprRet<'vir> {
         match operand {
-            mir::Operand::Copy(place)
-            | mir::Operand::Move(place) => self.encode_place(curr_ver, place),
+            mir::Operand::Copy(place) | mir::Operand::Move(place) => {
+                self.encode_place(curr_ver, place)
+            }
             mir::Operand::Constant(box constant) => {
                 // TODO: duplicated from mir_impure!
                 match constant.literal {
-                    mir::ConstantKind::Val(const_val, const_ty) => {
-                        match const_ty.kind() {
-                            ty::TyKind::Tuple(tys) if tys.len() == 0 => self.vcx.alloc(ExprRetData::Todo(
-                                vir::vir_format!(self.vcx, "s_Tuple0_cons()"),
-                            )),
-                            ty::TyKind::Int(int_ty) => {
-                                let scalar_val = const_val.try_to_scalar_int().unwrap();
-                                self.vcx.alloc(ExprRetData::Todo(
-                                    vir::vir_format!(self.vcx, "s_Int_{}_cons({})", int_ty.name_str(), scalar_val.try_to_int(scalar_val.size()).unwrap()),
-                                ))
-                            }
-                            ty::TyKind::Uint(uint_ty) => {
-                                let scalar_val = const_val.try_to_scalar_int().unwrap();
-                                self.vcx.alloc(ExprRetData::Todo(
-                                    vir::vir_format!(self.vcx, "s_Uint_{}_cons({})", uint_ty.name_str(), scalar_val.try_to_uint(scalar_val.size()).unwrap()),
-                                ))
-                            }
-                            ty::TyKind::Bool => self.vcx.alloc(ExprRetData::Todo(
-                                vir::vir_format!(self.vcx, "s_Bool_cons({})", const_val.try_to_bool().unwrap()),
-                            )),
-                            unsupported_ty => todo!("unsupported constant literal type: {unsupported_ty:?}"),
+                    mir::ConstantKind::Val(const_val, const_ty) => match const_ty.kind() {
+                        ty::TyKind::Tuple(tys) if tys.len() == 0 => self.vcx.alloc(
+                            ExprRetData::Todo(vir::vir_format!(self.vcx, "s_Tuple0_cons()")),
+                        ),
+                        ty::TyKind::Int(int_ty) => {
+                            let scalar_val = const_val.try_to_scalar_int().unwrap();
+                            self.vcx.alloc(ExprRetData::Todo(vir::vir_format!(
+                                self.vcx,
+                                "s_Int_{}_cons({})",
+                                int_ty.name_str(),
+                                scalar_val.try_to_int(scalar_val.size()).unwrap()
+                            )))
                         }
+                        ty::TyKind::Uint(uint_ty) => {
+                            let scalar_val = const_val.try_to_scalar_int().unwrap();
+                            self.vcx.alloc(ExprRetData::Todo(vir::vir_format!(
+                                self.vcx,
+                                "s_Uint_{}_cons({})",
+                                uint_ty.name_str(),
+                                scalar_val.try_to_uint(scalar_val.size()).unwrap()
+                            )))
+                        }
+                        ty::TyKind::Bool => self.vcx.alloc(ExprRetData::Todo(vir::vir_format!(
+                            self.vcx,
+                            "s_Bool_cons({})",
+                            const_val.try_to_bool().unwrap()
+                        ))),
+                        unsupported_ty => {
+                            todo!("unsupported constant literal type: {unsupported_ty:?}")
+                        }
+                    },
+                    unsupported_literal => {
+                        todo!("unsupported constant literal: {unsupported_literal:?}")
                     }
-                    unsupported_literal => todo!("unsupported constant literal: {unsupported_literal:?}"),
                 }
             }
         }
@@ -954,13 +1072,15 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
         // TODO: remove (debug)
         if !curr_ver.contains_key(&place.local) {
             tracing::error!("unknown version of local! {}", place.local.as_usize());
-            return self.vcx.alloc(ExprRetData::Todo(
-                vir::vir_format!(self.vcx, "unknown_version_{}", place.local.as_usize()),
-            ));
+            return self.vcx.alloc(ExprRetData::Todo(vir::vir_format!(
+                self.vcx,
+                "unknown_version_{}",
+                place.local.as_usize()
+            )));
         }
 
         let local = self.mk_local_ex(place.local, curr_ver[&place.local]);
-        let mut partent_ty =  self.body.local_decls[place.local].ty;
+        let mut partent_ty = self.body.local_decls[place.local].ty;
         let mut expr = local;
 
         for elem in place.projection {
@@ -970,37 +1090,38 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
         expr
     }
 
-
-    fn encode_place_element(&mut self, parent_ty: ty::Ty<'vir>, elem: mir::PlaceElem<'vir>, expr: ExprRet<'vir>) -> (ty::Ty<'vir>, ExprRet<'vir>) {
+    fn encode_place_element(
+        &mut self,
+        parent_ty: ty::Ty<'vir>,
+        elem: mir::PlaceElem<'vir>,
+        expr: ExprRet<'vir>,
+    ) -> (ty::Ty<'vir>, ExprRet<'vir>) {
         let parent_ty = parent_ty.peel_refs();
 
-         match elem {
-            mir::ProjectionElem::Deref => {
-                (parent_ty, expr)
-            }
+        match elem {
+            mir::ProjectionElem::Deref => (parent_ty, expr),
             mir::ProjectionElem::Field(field_idx, field_ty) => {
-                let field_idx= field_idx.as_usize();
+                let field_idx = field_idx.as_usize();
                 match parent_ty.kind() {
                     TyKind::Closure(_def_id, args) => {
                         let upvars = args.as_closure().upvar_tys().collect::<Vec<_>>().len();
-                        let tuple_ref = self.deps.require_ref::<ViperTupleEncoder>(
-                            upvars,
-                        ).unwrap();
-                        let tup  = tuple_ref.mk_elem(self.vcx, expr, field_idx);
+                        let tuple_ref = self.deps.require_ref::<ViperTupleEncoder>(upvars).unwrap();
+                        let tup = tuple_ref.mk_elem(self.vcx, expr, field_idx);
 
                         (field_ty, tup)
                     }
                     _ => {
-                        let local_encoded_ty = self.deps.require_ref::<TypeEncoder>(parent_ty).unwrap();
+                        let local_encoded_ty =
+                            self.deps.require_ref::<TypeEncoder>(parent_ty).unwrap();
                         let struct_like = local_encoded_ty.expect_structlike();
                         let proj = struct_like.field_read[field_idx];
-                
+
                         let app = self.vcx.mk_func_app(proj, self.vcx.alloc_slice(&[expr]));
 
                         (field_ty, app)
                     }
                 }
-            }   
+            }
             _ => todo!("Unsupported ProjectionElem {:?}", elem),
         }
     }

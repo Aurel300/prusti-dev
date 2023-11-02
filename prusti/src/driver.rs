@@ -56,18 +56,20 @@ fn report_prusti_ice(info: &panic::PanicInfo<'_>, bug_report_url: &str) {
         prusti_rustc_interface::driver::DEFAULT_LOCALE_RESOURCES.to_vec(),
         false,
     );
-    let emitter = Box::new(prusti_rustc_interface::errors::emitter::EmitterWriter::stderr(
-        prusti_rustc_interface::errors::ColorConfig::Auto,
-        None,
-        None,
-        fallback_bundle,
-        false,
-        false,
-        None,
-        false,
-        false,
-        prusti_rustc_interface::errors::TerminalUrl::Auto,
-    ));
+    let emitter = Box::new(
+        prusti_rustc_interface::errors::emitter::EmitterWriter::stderr(
+            prusti_rustc_interface::errors::ColorConfig::Auto,
+            None,
+            None,
+            fallback_bundle,
+            false,
+            false,
+            None,
+            false,
+            false,
+            prusti_rustc_interface::errors::TerminalUrl::Auto,
+        ),
+    );
     let handler = prusti_rustc_interface::errors::Handler::with_emitter(true, None, emitter);
 
     // a .span_bug or .bug call has already printed what it wants to print.

@@ -4,10 +4,7 @@ use prusti_rustc_interface::{
         def_id::{DefId, LocalDefId},
         intravisit::{self, Visitor},
     },
-    middle::{
-        hir::map::Map,
-        ty::GenericArgsRef,
-    },
+    middle::{hir::map::Map, ty::GenericArgsRef},
     span::Span,
 };
 

@@ -42,7 +42,9 @@ impl Default for CapabilityLocal<'_> {
 
 impl<'tcx> CapabilityLocal<'tcx> {
     pub fn get_allocated_mut(&mut self) -> &mut CapabilityProjections<'tcx> {
-        let Self::Allocated(cps) = self else { panic!("Expected allocated local") };
+        let Self::Allocated(cps) = self else {
+            panic!("Expected allocated local")
+        };
         cps
     }
     pub fn new(local: Local, perm: CapabilityKind) -> Self {
@@ -198,8 +200,7 @@ impl<'tcx> CapabilityProjections<'tcx> {
         }
         let mut ops = Vec::new();
         for (to, from, _) in collapsed {
-            let removed_perms: Vec<_> =
-                old_caps.extract_if(|old, _| to.is_prefix(*old)).collect();
+            let removed_perms: Vec<_> = old_caps.extract_if(|old, _| to.is_prefix(*old)).collect();
             let perm = removed_perms
                 .iter()
                 .fold(CapabilityKind::Exclusive, |acc, (_, p)| {

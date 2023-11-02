@@ -10,10 +10,7 @@ extern crate rustc_type_ir;
 mod encoders;
 
 use prusti_interface::{environment::EnvBody, specs::typed::SpecificationItem};
-use prusti_rustc_interface::{
-    middle::ty,
-    hir,
-};
+use prusti_rustc_interface::{hir, middle::ty};
 
 /*
 struct MirBodyPureEncoder;
@@ -100,7 +97,7 @@ impl<'vir, 'tcx> TaskEncoder<'vir, 'tcx> for MirBodyImpureEncoder<'vir, 'tcx> {
     );
     // TaskKey, OutputRef same as above
     type OutputFull = vir::Method<'vir>;
-} 
+}
 
 struct MirTyEncoder<'vir, 'tcx>(PhantomData<&'vir ()>, PhantomData<&'tcx ()>);
 impl<'vir, 'tcx> TaskEncoder<'vir, 'tcx> for MirTyEncoder<'vir, 'tcx> {
@@ -147,27 +144,29 @@ pub fn test_entrypoint<'tcx>(
                         .get_proc_spec(&def_id.to_def_id())
                         .map(|e| &e.base_spec);
 
-                        let is_pure = base_spec.and_then(|kind| kind.kind.is_pure().ok()).unwrap_or_default();
-                        let is_trusted = matches!(base_spec.map(|spec| spec.trusted), Some(SpecificationItem::Inherent(
-                            true,
-                        )));
-                        (is_pure, is_trusted)
-                    }
-                );
+                    let is_pure = base_spec
+                        .and_then(|kind| kind.kind.is_pure().ok())
+                        .unwrap_or_default();
+                    let is_trusted = matches!(
+                        base_spec.map(|spec| spec.trusted),
+                        Some(SpecificationItem::Inherent(true,))
+                    );
+                    (is_pure, is_trusted)
+                });
 
-                if ! (is_trusted && is_pure) {
+                if !(is_trusted && is_pure) {
                     let res = crate::encoders::MirImpureEncoder::encode(def_id.to_def_id());
                     assert!(res.is_ok());
                 }
-               
 
                 if is_pure {
-                    tracing::debug!("Encoding {def_id:?} as a pure function because it is labeled as pure");
+                    tracing::debug!(
+                        "Encoding {def_id:?} as a pure function because it is labeled as pure"
+                    );
                     let res = crate::encoders::MirFunctionEncoder::encode(def_id.to_def_id());
                     assert!(res.is_ok());
                 }
 
-            
                 /*
                 match res {
                     Ok(res) => println!("ok: {:?}", res),
@@ -235,20 +234,20 @@ pub fn test_entrypoint<'tcx>(
 
     std::fs::write("local-testing/simple.vpr", viper_code).unwrap();
 
-    vir::with_vcx(|vcx| vcx.alloc(vir::ProgramData {
-        fields: &[],
-        domains: &[],
-        predicates: &[],
-        functions: vcx.alloc_slice(&[
-            vcx.alloc(vir::FunctionData {
+    vir::with_vcx(|vcx| {
+        vcx.alloc(vir::ProgramData {
+            fields: &[],
+            domains: &[],
+            predicates: &[],
+            functions: vcx.alloc_slice(&[vcx.alloc(vir::FunctionData {
                 name: "test_function",
                 args: &[],
                 ret: &vir::TypeData::Bool,
                 pres: &[],
                 posts: &[],
                 expr: None,
-            }),
-        ]),
-        methods: &[],
-    }))
+            })]),
+            methods: &[],
+        })
+    })
 }

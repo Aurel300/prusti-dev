@@ -58,7 +58,8 @@ impl<'tcx> Visitor<'tcx> for Fpcs<'_, 'tcx> {
                 self.ensures_unalloc(local);
             }
             &Retag(_, box place) => self.requires_exclusive(place),
-            AscribeUserType(..) | PlaceMention(..) | Coverage(..) | Intrinsic(..) | ConstEvalCounter | Nop => (),
+            AscribeUserType(..) | PlaceMention(..) | Coverage(..) | Intrinsic(..)
+            | ConstEvalCounter | Nop => (),
         };
     }
 
@@ -88,11 +89,19 @@ impl<'tcx> Visitor<'tcx> for Fpcs<'_, 'tcx> {
                     }
                 }
             }
-            &Drop { place, replace: false, .. } => {
+            &Drop {
+                place,
+                replace: false,
+                ..
+            } => {
                 self.requires_write(place);
                 self.ensures_write(place);
             }
-            &Drop { place, replace: true, .. } => {
+            &Drop {
+                place,
+                replace: true,
+                ..
+            } => {
                 self.requires_write(place);
                 self.ensures_exclusive(place);
             }

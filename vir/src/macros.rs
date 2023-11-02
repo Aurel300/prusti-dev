@@ -1,6 +1,6 @@
 //#[macro_export]
 //macro_rules! vir_expr_nopos {
-//    
+//
 //}
 
 //#[macro_export]
@@ -112,8 +112,12 @@ macro_rules! vir_expr {
 
 #[macro_export]
 macro_rules! vir_ident {
-    ($vcx:expr; [ $name:expr ]) => { $name };
-    ($vcx:expr; $name:ident ) => { $vcx.alloc_str(stringify!($name)) };
+    ($vcx:expr; [ $name:expr ]) => {
+        $name
+    };
+    ($vcx:expr; $name:ident ) => {
+        $vcx.alloc_str(stringify!($name))
+    };
 }
 
 #[macro_export]
@@ -123,10 +127,18 @@ macro_rules! vir_format {
 
 #[macro_export]
 macro_rules! vir_type {
-    ($vcx:expr; Int) => { $vcx.alloc($crate::TypeData::Int) };
-    ($vcx:expr; Bool) => { $vcx.alloc($crate::TypeData::Bool) };
-    ($vcx:expr; Ref) => { $vcx.alloc($crate::TypeData::Ref) };
-    ($vcx:expr; [ $ty:expr ]) => { $ty };
+    ($vcx:expr; Int) => {
+        $vcx.alloc($crate::TypeData::Int)
+    };
+    ($vcx:expr; Bool) => {
+        $vcx.alloc($crate::TypeData::Bool)
+    };
+    ($vcx:expr; Ref) => {
+        $vcx.alloc($crate::TypeData::Ref)
+    };
+    ($vcx:expr; [ $ty:expr ]) => {
+        $ty
+    };
     ($vcx:expr; $name:ident) => {
         $vcx.alloc($crate::TypeData::Domain($vcx.alloc_str(stringify!($name))))
     };

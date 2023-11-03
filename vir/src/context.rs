@@ -88,6 +88,15 @@ impl<'tcx> VirCtxt<'tcx> {
         self.alloc(ExprData::Const(self.alloc(ConstData::Bool(true))))
     }
 
+
+    pub fn mk_and<Curr, Next>(&'tcx self, lhs: ExprGen<'tcx, Curr, Next>, rhs: ExprGen<'tcx, Curr, Next>) -> ExprGen<'tcx, Curr, Next> {
+        self.alloc(ExprGenData::BinOp(self.alloc(BinOpGenData {
+            kind: BinOpKind::And,
+            lhs,
+            rhs,
+        })))
+    }
+
     pub fn mk_conj(&'tcx self, elems: &[Expr<'tcx>]) -> Expr<'tcx> {
         if elems.len() == 0 {
             return self.alloc(ExprData::Const(self.alloc(ConstData::Bool(true))));

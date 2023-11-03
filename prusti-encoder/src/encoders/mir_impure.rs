@@ -732,12 +732,18 @@ impl<'vir, 'enc> mir::visit::Visitor<'vir> for EncoderVisitor<'vir, 'enc> {
                     }
 
                     mir::Rvalue::Aggregate(
-                        box mir::AggregateKind::Adt(..) | box mir::AggregateKind::Tuple,
+                    kind @(box mir::AggregateKind::Adt(..) | box mir::AggregateKind::Tuple),
                         fields,
                     ) => {
-                        let dest_ty_struct = dest_ty_out.expect_structlike();
+                        //let dest_ty_struct = dest_ty_out.expect_structlike();
 
-                        let cons_name = vir::vir_format!(self.vcx, "{}_cons", dest_ty_out.snapshot_name);
+                        let cons_name = match kind {
+                            box mir::AggregateKind::Adt(_,vidx,_, _, _) if dest_ty_out.is_enum() => {
+                                vir::vir_format!(self.vcx, "{}_{vidx:?}_cons", dest_ty_out.snapshot_name)
+                            }
+                            _ => vir::vir_format!(self.vcx, "{}_cons", dest_ty_out.snapshot_name)
+                        };
+
                         let cons_args: Vec<_> = fields.iter().map(|field| self.encode_operand_snap(field)).collect();
                         let cons = self.vcx.mk_func_app(cons_name, self.vcx.alloc_slice(&cons_args));
 
@@ -755,6 +761,22 @@ impl<'vir, 'enc> mir::visit::Visitor<'vir> for EncoderVisitor<'vir, 'enc> {
                         None
                     }
 
+                    mir::Rvalue::Discriminant(place) => {
+                        tracing::warn!("Discrimiant of {dest_ty_out:?}");
+
+                        let place_ty = self.local_defs.locals[place.local].ty.clone();
+                        let is_enum = matches!(place_ty.specifics, crate::encoders::typ::TypeEncoderOutputRefSub::Enum);
+
+                        Some(if is_enum {
+                            self.vcx.mk_func_app(
+                                "discriminant", // TODO: go through type encoder
+                                &[self.encode_place(Place::from(*place))],
+                            )
+                        }
+                        else {
+                            self.vcx.alloc(vir::ExprData::Const(self.vcx.alloc(vir::ConstData::Int(0))))
+                        })
+                    }
                     //mir::Rvalue::Discriminant(Place<'tcx>) => {}
                     //mir::Rvalue::ShallowInitBox(Operand<'tcx>, Ty<'tcx>) => {}
                     //mir::Rvalue::CopyForDeref(Place<'tcx>) => {}
@@ -797,6 +819,10 @@ impl<'vir, 'enc> mir::visit::Visitor<'vir> for EncoderVisitor<'vir, 'enc> {
         let terminator = match &terminator.kind {
             mir::TerminatorKind::Goto { target }
             | mir::TerminatorKind::FalseUnwind {
+                real_target: target,
+                ..
+            }
+            | mir::TerminatorKind::FalseEdge {
                 real_target: target,
                 ..
             } => self.vcx.alloc(vir::TerminatorStmtData::Goto(

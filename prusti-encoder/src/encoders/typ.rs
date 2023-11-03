@@ -51,6 +51,10 @@ impl<'vir> TypeEncoderOutputRef<'vir> {
         }
     }
 
+    pub fn is_enum(&self) -> bool {
+        matches!(self.specifics, TypeEncoderOutputRefSub::Enum)
+    }
+
     pub fn expr_from_u128(&self, val: u128) -> vir::Expr<'vir> {
         // TODO: not great: store the TyKind as well?
         //   or should this be a different task for TypeEncoder?
@@ -474,7 +478,10 @@ fn mk_enum<'vir>(
     let mut axioms: Vec<vir::DomainAxiom<'vir>> = vec![];
     let mut field_projection_p = Vec::new();
 
-    for variant in adt.variants() {
+    for (idx, variant) in adt.variants().iter().enumerate() {
+        let name_s = vir::vir_format!(vcx, "s_Adt_{did_name}_{idx}");
+        let name_p = vir::vir_format!(vcx, "p_Adt_{did_name}_{idx}");
+
         mk_emum_variant(
             vcx,
             deps,
@@ -490,20 +497,18 @@ fn mk_enum<'vir>(
 
     let field_projection_p = vcx.alloc_slice(&field_projection_p);
 
-
-    let predicate =  vcx.alloc(vir::PredicateData {
+    let predicate = vcx.alloc(vir::PredicateData {
         name: name_p,
         args: vcx.alloc_slice(&[vcx.mk_local_decl("self_p", &vir::TypeData::Ref)]),
         expr: None,
     }); //TODO
-
 
     let pred_app = vcx.alloc(vir::PredicateAppData {
         target: name_p,
         args: vcx.alloc_slice(&[vcx.mk_local_ex("self_p")]),
     });
 
-    let function_snap =vcx.alloc(vir::FunctionData {
+    let function_snap = vcx.alloc(vir::FunctionData {
         name: vir::vir_format!(vcx, "{name_p}_snap"),
         args: vcx.alloc_slice(&[vcx.mk_local_decl("self_p", &vir::TypeData::Ref)]),
         ret: ty_s,
@@ -532,8 +537,8 @@ fn mk_emum_variant<'vir>(
     deps: &mut TaskEncoderDependencies<'vir>,
     variant: &VariantDef,
     ty_s: &'vir TypeData<'vir>,
-    parent_name_s: &'vir str,
-    parent_name_p: &'vir str,
+    name_s: &'vir str,
+    name_p: &'vir str,
     funcs: &mut Vec<&'vir vir::DomainFunctionData<'vir>>,
     field_projection_p: &mut Vec<&'vir FunctionGenData<'vir, !, !>>,
     axioms: &mut Vec<vir::DomainAxiom<'vir>>,
@@ -548,10 +553,9 @@ fn mk_emum_variant<'vir>(
         })
         .collect::<Vec<_>>();
 
-    let did_name = vcx.tcx.item_name(variant.def_id).to_ident_string();
-    let name_s = vir::vir_format!(vcx, "{parent_name_s}_variant_{did_name}");
-    let name_p = vir::vir_format!(vcx, "{parent_name_p}_variant_{did_name}");
-
+    // let did_name = vcx.tcx.item_name(variant.def_id).to_ident_string();
+    // let name_s = vir::vir_format!(vcx, "{parent_name_s}_variant_{did_name}");
+    // let name_p = vir::vir_format!(vcx, "{parent_name_p}_variant_{did_name}");
 
     mk_field_projection_p(
         &fields,
@@ -564,6 +568,21 @@ fn mk_emum_variant<'vir>(
     );
 
     read_write_axioms(vcx, ty_s, name_s, &fields, axioms);
+
+    let cons_name = vir::vir_format!(vcx, "{name_s}_cons");
+    funcs.push(
+        vcx.alloc(vir::DomainFunctionData {
+            unique: false,
+            name: cons_name,
+            args: vcx.alloc_slice(
+                &fields
+                    .iter()
+                    .map(|field| field.snapshot)
+                    .collect::<Vec<_>>(),
+            ),
+            ret: ty_s,
+        }),
+    );
 }
 
 fn mk_unreachable<'vir>(
@@ -1015,7 +1034,6 @@ fn mk_field_projection_p<'vir>(
     funcs: &mut Vec<&vir::DomainFunctionData<'vir>>,
     field_projection_p: &mut Vec<&FunctionGenData<'vir, !, !>>,
 ) {
-    let mut field_projection_p = Vec::new();
     for (idx, ty_out) in fields.iter().enumerate() {
         let name_r = vir::vir_format!(vcx, "{name_s}_read_{idx}");
         funcs.push(vir::vir_domain_func! { vcx; function [name_r]([ty_s]): [ty_out.snapshot] });

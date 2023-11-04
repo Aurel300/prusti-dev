@@ -19,11 +19,16 @@ pub struct TypeEncoderOutputRefSubStruct<'vir> {
 }
 
 #[derive(Clone, Debug)]
+pub struct TypeEncoderOutputRefSubEnum<'vir> {
+    pub field_discriminant: &'vir str,
+}
+
+#[derive(Clone, Debug)]
 pub enum TypeEncoderOutputRefSub<'vir> {
     Primitive,
     // structs, tuples
     StructLike(TypeEncoderOutputRefSubStruct<'vir>),
-    Enum,
+    Enum(TypeEncoderOutputRefSubEnum<'vir>),
 }
 
 // TODO: should output refs actually be references to structs...?
@@ -52,7 +57,7 @@ impl<'vir> TypeEncoderOutputRef<'vir> {
     }
 
     pub fn is_enum(&self) -> bool {
-        matches!(self.specifics, TypeEncoderOutputRefSub::Enum)
+        matches!(self.specifics, TypeEncoderOutputRefSub::Enum { .. })
     }
 
     pub fn expr_from_u128(&self, val: u128) -> vir::Expr<'vir> {
@@ -453,6 +458,8 @@ fn mk_enum<'vir>(
     let name_s = vir::vir_format!(vcx, "s_Adt_{did_name}");
     let name_p = vir::vir_format!(vcx, "p_Adt_{did_name}");
 
+    let field_discriminant = vir::vir_format!(vcx, "p_Adt_{did_name}_discriminant");
+
     deps.emit_output_ref::<TypeEncoder>(
         *task_key,
         TypeEncoderOutputRef {
@@ -464,7 +471,9 @@ fn mk_enum<'vir>(
             function_unreachable: vir::vir_format!(vcx, "{name_s}_unreachable"),
             function_snap: vir::vir_format!(vcx, "{name_p}_snap"),
             //method_refold: vir::vir_format!(vcx, "refold_{name_p}"),
-            specifics: TypeEncoderOutputRefSub::Enum,
+            specifics: TypeEncoderOutputRefSub::Enum(TypeEncoderOutputRefSubEnum {
+                field_discriminant,
+            }),
             method_assign: vir::vir_format!(vcx, "assign_{name_p}"),
         },
     );
@@ -518,7 +527,10 @@ fn mk_enum<'vir>(
     });
 
     Ok(TypeEncoderOutput {
-        fields: &[],
+        fields: vcx.alloc_slice(&[vcx.alloc(vir::FieldData {
+            ty: &TypeData::Int,
+            name: field_discriminant,
+        })]),
         snapshot: vir::vir_domain! { vcx; domain [name_s] {
             with_funcs [funcs];
             with_axioms [axioms];

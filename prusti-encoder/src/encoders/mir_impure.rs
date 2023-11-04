@@ -10,6 +10,7 @@ use prusti_rustc_interface::{
 //    SsaAnalysis,
 //};
 use task_encoder::{TaskEncoder, TaskEncoderDependencies};
+use vir::PredicateAppGenData;
 
 pub struct MirImpureEncoder;
 
@@ -765,17 +766,35 @@ impl<'vir, 'enc> mir::visit::Visitor<'vir> for EncoderVisitor<'vir, 'enc> {
                         tracing::warn!("Discrimiant of {dest_ty_out:?}");
 
                         let place_ty = self.local_defs.locals[place.local].ty.clone();
-                        let is_enum = matches!(place_ty.specifics, crate::encoders::typ::TypeEncoderOutputRefSub::Enum);
 
-                        Some(if is_enum {
-                            self.vcx.mk_func_app(
-                                "discriminant", // TODO: go through type encoder
-                                &[self.encode_place(Place::from(*place))],
-                            )
-                        }
-                        else {
-                            self.vcx.alloc(vir::ExprData::Const(self.vcx.alloc(vir::ConstData::Int(0))))
-                        })
+
+
+                        let p = self.encode_place(Place::from(*place));
+
+                        let discr_as_int = match place_ty.specifics {
+                            crate::encoders::typ::TypeEncoderOutputRefSub::Enum(x) => {
+                                 self.vcx.alloc(vir::ExprGenData::Field(p, x.field_discriminant))
+                            }
+
+                            _ => {
+                                //  mir::Rvalue::Discriminant documents "Returns zero for types without discriminant"
+                                self.vcx.alloc(vir::ExprData::Const(self.vcx.alloc(vir::ConstData::Int(0))))
+
+                            }
+                        };
+
+                        let discr_as_int = self.vcx.alloc(vir::ExprGenData::Unfolding(
+                            self.vcx.alloc(vir::UnfoldingGenData{
+                                target: self.vcx.alloc(PredicateAppGenData{ target: place_ty.predicate_name, args: self.vcx.alloc_slice(&[p]) }),
+                                expr: discr_as_int})));
+
+
+                        let to_prim = dest_ty_out.from_primitive.unwrap();
+
+
+
+
+                        Some(self.vcx.mk_func_app(to_prim, &[discr_as_int]))
                     }
                     //mir::Rvalue::Discriminant(Place<'tcx>) => {}
                     //mir::Rvalue::ShallowInitBox(Operand<'tcx>, Ty<'tcx>) => {}

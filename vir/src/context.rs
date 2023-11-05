@@ -51,10 +51,10 @@ impl<'tcx> VirCtxt<'tcx> {
     }
 
     pub fn mk_local<'vir>(&'vir self, name: &'vir str) -> Local<'vir> {
-        self.arena.alloc(LocalData { name })
+        self.alloc(LocalData { name })
     }
     pub fn mk_local_decl(&'tcx self, name: &'tcx str, ty: Type<'tcx>) -> LocalDecl<'tcx> {
-        self.arena.alloc(LocalDeclData { name, ty })
+        self.alloc(LocalDeclData { name, ty })
     }
     pub fn mk_local_ex_local<Curr, Next>(
         &'tcx self,
@@ -70,22 +70,64 @@ impl<'tcx> VirCtxt<'tcx> {
         target: &'tcx str,
         src_args: &[ExprGen<'tcx, Curr, Next>],
     ) -> ExprGen<'tcx, Curr, Next> {
-        self.arena
-            .alloc(ExprGenData::FuncApp(self.arena.alloc(FuncAppGenData {
-                target,
-                args: self.alloc_slice(src_args),
-            })))
+        self.alloc(ExprGenData::FuncApp(self.alloc(FuncAppGenData {
+            target,
+            args: self.alloc_slice(src_args),
+        })))
     }
     pub fn mk_pred_app(&'tcx self, target: &'tcx str, src_args: &[Expr<'tcx>]) -> Expr<'tcx> {
-        self.arena
-            .alloc(ExprData::PredicateApp(self.arena.alloc(PredicateAppData {
-                target,
-                args: self.alloc_slice(src_args),
-            })))
+        self.alloc(ExprData::PredicateApp(self.alloc(PredicateAppData {
+            target,
+            args: self.alloc_slice(src_args),
+        })))
     }
 
     pub fn mk_true(&'tcx self) -> Expr<'tcx> {
-        self.alloc(ExprData::Const(self.alloc(ConstData::Bool(true))))
+        self.mk_const(true.into())
+    }
+
+    pub fn mk_tern<Curr, Next>(
+        &'tcx self,
+        cond: ExprGen<'tcx, Curr, Next>,
+        then: ExprGen<'tcx, Curr, Next>,
+        else_: ExprGen<'tcx, Curr, Next>,
+    ) -> ExprGen<'tcx, Curr, Next> {
+        self.alloc(ExprGenData::Ternary(self.alloc(TernaryGenData {
+            cond,
+            then,
+            else_,
+        })))
+    }
+
+    pub fn mk_bin_op<Curr, Next>(
+        &'tcx self,
+        kind: BinOpKind,
+        lhs: ExprGen<'tcx, Curr, Next>,
+        rhs: ExprGen<'tcx, Curr, Next>,
+    ) -> ExprGen<'tcx, Curr, Next> {
+        self.alloc(ExprGenData::BinOp(self.alloc(BinOpGenData {
+            kind,
+            lhs,
+            rhs,
+        })))
+    }
+
+    pub fn mk_not<Curr, Next>(
+        &'tcx self,
+        expr: ExprGen<'tcx, Curr, Next>,
+    ) -> ExprGen<'tcx, Curr, Next> {
+        self.alloc(ExprGenData::UnOp(self.alloc(UnOpGenData {
+            kind: UnOpKind::Not,
+            expr,
+        })))
+    }
+
+    pub fn mk_impl<Curr, Next>(
+        &'tcx self,
+        cond: ExprGen<'tcx, Curr, Next>,
+        rhs: ExprGen<'tcx, Curr, Next>,
+    ) -> ExprGen<'tcx, Curr, Next> {
+        self.mk_or(self.mk_not(cond), rhs)
     }
 
     pub fn mk_and<Curr, Next>(
@@ -93,24 +135,36 @@ impl<'tcx> VirCtxt<'tcx> {
         lhs: ExprGen<'tcx, Curr, Next>,
         rhs: ExprGen<'tcx, Curr, Next>,
     ) -> ExprGen<'tcx, Curr, Next> {
-        self.alloc(ExprGenData::BinOp(self.alloc(BinOpGenData {
-            kind: BinOpKind::And,
-            lhs,
-            rhs,
-        })))
+        self.mk_bin_op(BinOpKind::And, lhs, rhs)
+    }
+
+    pub fn mk_or<Curr, Next>(
+        &'tcx self,
+        lhs: ExprGen<'tcx, Curr, Next>,
+        rhs: ExprGen<'tcx, Curr, Next>,
+    ) -> ExprGen<'tcx, Curr, Next> {
+        self.mk_bin_op(BinOpKind::Or, lhs, rhs)
+    }
+
+    pub fn mk_eq<Curr, Next>(
+        &'tcx self,
+        lhs: ExprGen<'tcx, Curr, Next>,
+        rhs: ExprGen<'tcx, Curr, Next>,
+    ) -> ExprGen<'tcx, Curr, Next> {
+        self.mk_bin_op(BinOpKind::CmpEq, lhs, rhs)
+    }
+
+    pub fn mk_const<Curr, Next>(&'tcx self, cnst: ConstData) -> ExprGen<'tcx, Curr, Next> {
+        self.alloc(ExprGenData::Const(self.alloc(cnst)))
     }
 
     pub fn mk_conj(&'tcx self, elems: &[Expr<'tcx>]) -> Expr<'tcx> {
         if elems.len() == 0 {
-            return self.alloc(ExprData::Const(self.alloc(ConstData::Bool(true))));
+            return self.mk_true();
         }
         let mut e = elems[0];
         for i in 1..elems.len() {
-            e = self.alloc(ExprData::BinOp(self.alloc(BinOpData {
-                kind: BinOpKind::And,
-                lhs: e,
-                rhs: elems[i],
-            })));
+            e = self.mk_and(e, elems[i])
         }
         e
     }

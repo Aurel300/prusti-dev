@@ -777,9 +777,8 @@ impl<'vir, 'enc> mir::visit::Visitor<'vir> for EncoderVisitor<'vir, 'enc> {
                             }
 
                             _ => {
-                                //  mir::Rvalue::Discriminant documents "Returns zero for types without discriminant"
-                                self.vcx.alloc(vir::ExprData::Const(self.vcx.alloc(vir::ConstData::Int(0))))
-
+                                // mir::Rvalue::Discriminant documents "Returns zero for types without discriminant"
+                                self.vcx.mk_const(0u128.into())
                             }
                         };
 
@@ -1000,9 +999,7 @@ impl<'vir, 'enc> mir::visit::Visitor<'vir> for EncoderVisitor<'vir, 'enc> {
                     self.vcx.alloc(vir::GotoIfData {
                         value: enc,
                         targets: self.vcx.alloc_slice(&[(
-                            self.vcx.alloc(vir::ExprData::Const(
-                                self.vcx.alloc(vir::ConstData::Bool(*expected)),
-                            )),
+                            self.vcx.mk_const(vir::ConstData::Bool(*expected)),
                             &target_bb,
                         )]),
                         otherwise: self

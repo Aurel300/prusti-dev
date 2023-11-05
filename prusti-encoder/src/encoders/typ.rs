@@ -2,7 +2,7 @@ use prusti_rustc_interface::middle::ty;
 use rustc_middle::ty::VariantDef;
 use rustc_type_ir::sty::TyKind;
 use task_encoder::{TaskEncoder, TaskEncoderDependencies};
-use vir::{FunctionGenData, TypeData};
+use vir::{ExprData, FunctionGenData, TypeData};
 
 pub struct TypeEncoder;
 
@@ -460,6 +460,8 @@ fn mk_enum<'vir>(
 
     let field_discriminant = vir::vir_format!(vcx, "p_Adt_{did_name}_discriminant");
 
+    let ty_s = vcx.alloc(vir::TypeData::Domain(name_s));
+
     deps.emit_output_ref::<TypeEncoder>(
         *task_key,
         TypeEncoderOutputRef {
@@ -467,7 +469,7 @@ fn mk_enum<'vir>(
             predicate_name: name_p,
             from_primitive: None,
             to_primitive: None,
-            snapshot: vcx.alloc(vir::TypeData::Domain(name_s)),
+            snapshot: ty_s,
             function_unreachable: vir::vir_format!(vcx, "{name_s}_unreachable"),
             function_snap: vir::vir_format!(vcx, "{name_p}_snap"),
             //method_refold: vir::vir_format!(vcx, "refold_{name_p}"),
@@ -477,27 +479,34 @@ fn mk_enum<'vir>(
             method_assign: vir::vir_format!(vcx, "assign_{name_p}"),
         },
     );
-    let ty_s = vcx.alloc(vir::TypeData::Domain(name_s));
 
-    // TODO: discriminant function
-
-    // TODO: discriminant bounds axioms
+    // TODO: discriminant function bounds axioms
 
     let mut funcs: Vec<vir::DomainFunction<'vir>> = vec![];
     let mut axioms: Vec<vir::DomainAxiom<'vir>> = vec![];
     let mut field_projection_p = Vec::new();
 
+    let s_discr_func_name = vir::vir_format!(vcx, "{name_s}_discriminant");
+
+    funcs.push(vcx.alloc(vir::DomainFunctionData {
+        unique: false,
+        name: s_discr_func_name,
+        args: vcx.alloc_slice(&[ty_s]),
+        ret: &vir::TypeData::Int,
+    }));
     for (idx, variant) in adt.variants().iter().enumerate() {
         let name_s = vir::vir_format!(vcx, "s_Adt_{did_name}_{idx}");
         let name_p = vir::vir_format!(vcx, "p_Adt_{did_name}_{idx}");
 
-        mk_emum_variant(
+        mk_enum_variant(
             vcx,
             deps,
             variant,
+            idx,
             ty_s,
             name_s,
             name_p,
+            s_discr_func_name,
             &mut funcs,
             &mut field_projection_p,
             &mut axioms,
@@ -506,16 +515,55 @@ fn mk_enum<'vir>(
 
     let field_projection_p = vcx.alloc_slice(&field_projection_p);
 
+    let self_local = vcx.mk_local_ex("self_p");
+
+    let acc = vcx.alloc(vir::ExprData::AccField(vcx.alloc(vir::AccFieldGenData {
+        field: field_discriminant,
+        recv: self_local,
+    })));
+
+    let discr_field_access = vcx.alloc(vir::ExprGenData::Field(self_local, field_discriminant));
+
+    // TODO: handle the empty enum? i guess the lower and upper bound together for an empty enum are false which is correct?
+    let disc_lower_bound = vcx.mk_bin_op(
+        vir::BinOpKind::CmpGe,
+        discr_field_access,
+        vcx.mk_const(0usize.into()),
+    );
+
+    let disc_upper_bound = vcx.mk_bin_op(
+        vir::BinOpKind::CmpLt,
+        discr_field_access,
+        vcx.mk_const(adt.variants().len().into()),
+    );
+
     let predicate = vcx.alloc(vir::PredicateData {
         name: name_p,
         args: vcx.alloc_slice(&[vcx.mk_local_decl("self_p", &vir::TypeData::Ref)]),
-        expr: None,
-    }); //TODO
+        expr: Some(vcx.mk_conj(&[acc, disc_lower_bound, disc_upper_bound])),
+    });
 
     let pred_app = vcx.alloc(vir::PredicateAppData {
         target: name_p,
-        args: vcx.alloc_slice(&[vcx.mk_local_ex("self_p")]),
+        args: vcx.alloc_slice(&[self_local]),
     });
+
+    let snap_body = {
+        let mut cur = vcx.mk_func_app(vir::vir_format!(vcx, "{name_s}_unreachable"), &[]);
+
+        for (idx, variant) in adt.variants().iter().enumerate() {
+            let cond = vcx.mk_eq(discr_field_access, vcx.mk_const(idx.into()));
+            let cons_name = vir::vir_format!(vcx, "s_Adt_{did_name}_{idx}_cons"); //TODO get better
+
+            let const_call = vcx.mk_func_app(cons_name, &[]); //TODO: args
+            cur = vcx.mk_tern(cond, const_call, cur)
+        }
+
+        vcx.alloc(vir::ExprData::Unfolding(vcx.alloc(vir::UnfoldingData {
+            target: pred_app,
+            expr: cur,
+        })))
+    };
 
     let function_snap = vcx.alloc(vir::FunctionData {
         name: vir::vir_format!(vcx, "{name_p}_snap"),
@@ -523,7 +571,7 @@ fn mk_enum<'vir>(
         ret: ty_s,
         pres: vcx.alloc_slice(&[vcx.alloc(vir::ExprData::PredicateApp(pred_app))]),
         posts: &[],
-        expr: None, //TODO
+        expr: Some(snap_body),
     });
 
     Ok(TypeEncoderOutput {
@@ -544,13 +592,15 @@ fn mk_enum<'vir>(
     })
 }
 
-fn mk_emum_variant<'vir>(
+fn mk_enum_variant<'vir>(
     vcx: &'vir vir::VirCtxt<'vir>,
     deps: &mut TaskEncoderDependencies<'vir>,
     variant: &VariantDef,
+    variant_idx: usize,
     ty_s: &'vir TypeData<'vir>,
     name_s: &'vir str,
     name_p: &'vir str,
+    s_discr_func_name: &'vir str,
     funcs: &mut Vec<&'vir vir::DomainFunctionData<'vir>>,
     field_projection_p: &mut Vec<&'vir FunctionGenData<'vir, !, !>>,
     axioms: &mut Vec<vir::DomainAxiom<'vir>>,
@@ -594,6 +644,24 @@ fn mk_emum_variant<'vir>(
             ),
             ret: ty_s,
         }),
+    );
+
+    let const_cond = vcx.mk_eq(
+        vcx.mk_func_app(
+            s_discr_func_name,
+            vcx.alloc_slice(&[vcx.mk_local_ex("self")]),
+        ),
+        vcx.mk_const(variant_idx.into()),
+    );
+    constructor_axioms(
+        vcx,
+        ty_s,
+        name_s,
+        &fields,
+        cons_name,
+        axioms,
+        Some(const_cond),
+        None,
     );
 }
 
@@ -853,6 +921,8 @@ fn constructor_axioms<'vir>(
     fields: &[TypeEncoderOutputRef<'vir>],
     cons_name: &'vir str,
     axioms: &mut Vec<vir::DomainAxiom<'vir>>,
+    cond: Option<&'vir ExprData<'vir>>,
+    extra: Option<&'vir ExprData<'vir>>,
 ) {
     let cons_qvars = vcx.alloc_slice(
         &fields
@@ -876,14 +946,13 @@ fn constructor_axioms<'vir>(
             expr: vcx.alloc(vir::ExprData::Forall(vcx.alloc(vir::ForallData {
                 qvars: cons_qvars.clone(),
                 triggers: vcx.alloc_slice(&[vcx.alloc_slice(&[cons_call])]),
-                body: vcx.alloc(vir::ExprData::BinOp(vcx.alloc(vir::BinOpData {
-                    kind: vir::BinOpKind::CmpEq,
-                    lhs: vcx.mk_func_app(
+                body: vcx.mk_eq(
+                    vcx.mk_func_app(
                         vir::vir_format!(vcx, "{name_s}_read_{read_idx}"),
                         &[cons_call],
                     ),
-                    rhs: cons_args[read_idx],
-                }))),
+                    cons_args[read_idx],
+                ),
             }))),
         }));
     }
@@ -901,16 +970,30 @@ fn constructor_axioms<'vir>(
             })
             .collect::<Vec<_>>(),
     );
+
+    let body = {
+        let body = vcx.mk_eq(cons_call_with_reads, vcx.mk_local_ex("self"));
+        if let Some(cond) = cond {
+            vcx.mk_impl(cond, body)
+        } else {
+            body
+        }
+    };
+
+    let triggers = {
+        if fields.is_empty() {
+            vcx.alloc_slice(&[])
+        } else {
+            vcx.alloc_slice(&[vcx.alloc_slice(&[cons_call_with_reads])])
+        }
+    };
+
     axioms.push(vcx.alloc(vir::DomainAxiomData {
         name: vir::vir_format!(vcx, "ax_{name_s}_cons"),
         expr: vcx.alloc(vir::ExprData::Forall(vcx.alloc(vir::ForallData {
             qvars: vcx.alloc_slice(&[vcx.mk_local_decl("self", ty_s)]),
-            triggers: vcx.alloc_slice(&[vcx.alloc_slice(&[cons_call_with_reads])]),
-            body: vcx.alloc(vir::ExprData::BinOp(vcx.alloc(vir::BinOpData {
-                kind: vir::BinOpKind::CmpEq,
-                lhs: cons_call_with_reads,
-                rhs: vcx.mk_local_ex("self"),
-            }))),
+            triggers,
+            body,
         }))),
     }));
 }
@@ -995,7 +1078,16 @@ fn mk_structlike<'vir>(
 
     read_write_axioms(vcx, ty_s, name_s, &field_ty_out, &mut axioms);
 
-    constructor_axioms(vcx, ty_s, name_s, &field_ty_out, cons_name, &mut axioms);
+    constructor_axioms(
+        vcx,
+        ty_s,
+        name_s,
+        &field_ty_out,
+        cons_name,
+        &mut axioms,
+        None,
+        None,
+    );
 
     // predicate
     let predicate = {

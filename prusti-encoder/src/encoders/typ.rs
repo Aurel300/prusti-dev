@@ -533,8 +533,6 @@ fn mk_enum<'vir>(
         },
     );
 
-    // TODO: discriminant function bounds axioms
-
     let mut funcs: Vec<vir::DomainFunction<'vir>> = vec![];
     let mut axioms: Vec<vir::DomainAxiom<'vir>> = vec![];
     let mut field_projection_p = Vec::new();
@@ -549,23 +547,18 @@ fn mk_enum<'vir>(
         ret: &vir::TypeData::Int,
     }));
 
-    let mut field_t = vcx.mk_false();
+    let mut predicate_per_variant_predicates = vcx.mk_false();
 
     let self_local = vcx.mk_local_ex("self_p");
 
     let discr_field_access = vcx.alloc(vir::ExprGenData::Field(self_local, field_discriminant));
     let mut snap_cur = vcx.mk_func_app(vir::vir_format!(vcx, "{name_s}_unreachable"), &[]);
 
-    let pred_app = vcx.alloc(vir::PredicateAppData {
-        target: name_p,
-        args: vcx.alloc_slice(&[self_local]),
-    });
-
     for (idx, variant) in adt.variants().iter().enumerate() {
         let name_s = vir::vir_format!(vcx, "s_Adt_{did_name}_{idx}");
         let name_p = vir::vir_format!(vcx, "p_Adt_{did_name}_{idx}");
 
-        let (a, cons_call) = mk_enum_variant(
+        let (_, cons_call) = mk_enum_variant(
             vcx,
             deps,
             variant,
@@ -581,41 +574,48 @@ fn mk_enum<'vir>(
         );
 
         let cond = vcx.mk_eq(discr_field_access, vcx.mk_const(idx.into()));
+
         let pred_call = vcx.mk_pred_app(name_p, vcx.alloc_slice(&[self_local]));
-        field_t = vcx.mk_tern(cond, pred_call, field_t);
+        predicate_per_variant_predicates =
+            vcx.mk_tern(cond, pred_call, predicate_per_variant_predicates);
 
-        let snap_cond = vcx.mk_eq(discr_field_access, vcx.mk_const(idx.into()));
-
-        snap_cur = vcx.mk_tern(snap_cond, cons_call, snap_cur)
+        snap_cur = vcx.mk_tern(cond, cons_call, snap_cur)
     }
 
-    let snap_body = vcx.alloc(vir::ExprData::Unfolding(vcx.alloc(vir::UnfoldingData {
-        target: pred_app,
-        expr: snap_cur,
-    })));
+    let predicate = {
+        let acc = vcx.alloc(vir::ExprData::AccField(vcx.alloc(vir::AccFieldGenData {
+            field: field_discriminant,
+            recv: self_local,
+        })));
 
-    let acc = vcx.alloc(vir::ExprData::AccField(vcx.alloc(vir::AccFieldGenData {
-        field: field_discriminant,
-        recv: self_local,
-    })));
+        // TODO: handle the empty enum? i guess the lower and upper bound together for an empty enum are false which is correct?
+        let disc_lower_bound = vcx.mk_bin_op(
+            vir::BinOpKind::CmpGe,
+            discr_field_access,
+            vcx.mk_const(0usize.into()),
+        );
 
-    // TODO: handle the empty enum? i guess the lower and upper bound together for an empty enum are false which is correct?
-    let disc_lower_bound = vcx.mk_bin_op(
-        vir::BinOpKind::CmpGe,
-        discr_field_access,
-        vcx.mk_const(0usize.into()),
-    );
+        let disc_upper_bound = vcx.mk_bin_op(
+            vir::BinOpKind::CmpLt,
+            discr_field_access,
+            vcx.mk_const(adt.variants().len().into()),
+        );
 
-    let disc_upper_bound = vcx.mk_bin_op(
-        vir::BinOpKind::CmpLt,
-        discr_field_access,
-        vcx.mk_const(adt.variants().len().into()),
-    );
+        vcx.alloc(vir::PredicateData {
+            name: name_p,
+            args: vcx.alloc_slice(&[vcx.mk_local_decl("self_p", &vir::TypeData::Ref)]),
+            expr: Some(vcx.mk_conj(&[
+                acc,
+                disc_lower_bound,
+                disc_upper_bound,
+                predicate_per_variant_predicates,
+            ])),
+        })
+    };
 
-    let predicate = vcx.alloc(vir::PredicateData {
-        name: name_p,
-        args: vcx.alloc_slice(&[vcx.mk_local_decl("self_p", &vir::TypeData::Ref)]),
-        expr: Some(vcx.mk_conj(&[acc, disc_lower_bound, disc_upper_bound, field_t])),
+    let pred_app = vcx.alloc(vir::PredicateAppData {
+        target: name_p,
+        args: vcx.alloc_slice(&[self_local]),
     });
 
     let function_snap = vcx.alloc(vir::FunctionData {
@@ -624,8 +624,41 @@ fn mk_enum<'vir>(
         ret: ty_s,
         pres: vcx.alloc_slice(&[vcx.alloc(vir::ExprData::PredicateApp(pred_app))]),
         posts: &[],
-        expr: Some(snap_body),
+        expr: Some(
+            vcx.alloc(vir::ExprData::Unfolding(vcx.alloc(vir::UnfoldingData {
+                target: pred_app,
+                expr: snap_cur,
+            }))),
+        ),
     });
+
+    // discriminant bounds axiom
+    {
+        let self_local = vcx.mk_local_ex("self");
+        let discr_func_call = vcx.mk_func_app(s_discr_func_name, vcx.alloc_slice(&[self_local]));
+        let body1 = vcx.mk_bin_op(
+            vir::BinOpKind::CmpGe,
+            discr_func_call,
+            vcx.mk_const(0usize.into()),
+        );
+
+        let body2 = vcx.mk_bin_op(
+            vir::BinOpKind::CmpLt,
+            discr_func_call,
+            vcx.mk_const(adt.variants().len().into()),
+        );
+
+        let body = vcx.mk_and(body1, body2);
+
+        axioms.push(vcx.alloc(vir::DomainAxiomData {
+            name: vir::vir_format!(vcx, "ax_{name_s}_discriminant_bounds"),
+            expr: vcx.mk_forall(
+                vcx.alloc_slice(&[vcx.mk_local_decl("self", ty_s)]),
+                &[],
+                body,
+            ),
+        }));
+    }
 
     Ok(TypeEncoderOutput {
         fields: vcx.alloc_slice(&[vcx.alloc(vir::FieldData {
@@ -684,8 +717,6 @@ fn mk_enum_variant<'vir>(
         field_projection_p,
     );
 
-    read_write_axioms(vcx, ty_s, name_s, &fields, axioms);
-
     let cons_name = vir::vir_format!(vcx, "{name_s}_cons");
     funcs.push(
         vcx.alloc(vir::DomainFunctionData {
@@ -700,14 +731,6 @@ fn mk_enum_variant<'vir>(
             ret: ty_s,
         }),
     );
-
-    // let const_cond = vcx.mk_eq(
-    //     vcx.mk_func_app(
-    //         s_discr_func_name,
-    //         vcx.alloc_slice(&[vcx.mk_local_ex("self")]),
-    //     ),
-    //     vcx.mk_const(variant_idx.into()),
-    // );
 
     cons_read_axioms(name_s, vcx, &fields, cons_name, axioms);
 
@@ -728,11 +751,11 @@ fn mk_enum_variant<'vir>(
             body
         } else {
             // only apply the forall if there are fields
-            vcx.alloc(vir::ExprData::Forall(vcx.alloc(vir::ForallData {
-                qvars: cons_qvars.clone(),
-                triggers: vcx.alloc_slice(&[vcx.alloc_slice(&[cons_call])]),
+            vcx.mk_forall(
+                cons_qvars.clone(),
+                vcx.alloc_slice(&[vcx.alloc_slice(&[cons_call])]),
                 body,
-            })))
+            )
         };
 
         axioms.push(vcx.alloc(vir::DomainAxiomData {
@@ -742,6 +765,8 @@ fn mk_enum_variant<'vir>(
     }
 
     //TODO: discriminant for write axioms
+    read_write_axioms(vcx, ty_s, name_s, &fields, axioms);
+
     predicates.push(mk_struct_predicate(&fields, vcx, name_p));
 
     mk_struct_snap_parts(vcx, name_p, &fields, cons_name)
@@ -945,62 +970,39 @@ fn read_write_axioms<'vir>(
 ) {
     for (write_idx, write_ty_out) in fields.iter().enumerate() {
         for (read_idx, _read_ty_out) in fields.iter().enumerate() {
+            let qvars = vcx.alloc_slice(&[
+                vcx.mk_local_decl("self", ty_s),
+                vcx.mk_local_decl("val", write_ty_out.snapshot),
+            ]);
+
+            let triggers = vcx.alloc_slice(&[vcx.alloc_slice(&[vcx.mk_func_app(
+                vir::vir_format!(vcx, "{name_s}_read_{read_idx}"),
+                &[vcx.mk_func_app(
+                    vir::vir_format!(vcx, "{name_s}_write_{write_idx}"),
+                    &[vcx.mk_local_ex("self"), vcx.mk_local_ex("val")],
+                )],
+            )])]);
+
+            let lhs = vcx.mk_func_app(
+                vir::vir_format!(vcx, "{name_s}_read_{read_idx}"),
+                &[vcx.mk_func_app(
+                    vir::vir_format!(vcx, "{name_s}_write_{write_idx}"),
+                    &[vcx.mk_local_ex("self"), vcx.mk_local_ex("val")],
+                )],
+            );
+
+            let rhs = if read_idx == write_idx {
+                vcx.mk_local_ex("val")
+            } else {
+                vcx.mk_func_app(
+                    vir::vir_format!(vcx, "{name_s}_read_{read_idx}"),
+                    &[vcx.mk_local_ex("self")],
+                )
+            };
+
             axioms.push(vcx.alloc(vir::DomainAxiomData {
                 name: vir::vir_format!(vcx, "ax_{name_s}_write_{write_idx}_read_{read_idx}"),
-                expr: if read_idx == write_idx {
-                    vcx.alloc(vir::ExprData::Forall(vcx.alloc(vir::ForallData {
-                        qvars: vcx.alloc_slice(&[
-                            vcx.mk_local_decl("self", ty_s),
-                            vcx.mk_local_decl("val", write_ty_out.snapshot),
-                        ]),
-                        triggers: vcx.alloc_slice(&[vcx.alloc_slice(&[vcx.mk_func_app(
-                            vir::vir_format!(vcx, "{name_s}_read_{read_idx}"),
-                            &[vcx.mk_func_app(
-                                vir::vir_format!(vcx, "{name_s}_write_{write_idx}"),
-                                &[vcx.mk_local_ex("self"), vcx.mk_local_ex("val")],
-                            )],
-                        )])]),
-                        body: vcx.alloc(vir::ExprData::BinOp(vcx.alloc(vir::BinOpData {
-                            kind: vir::BinOpKind::CmpEq,
-                            lhs: vcx.mk_func_app(
-                                vir::vir_format!(vcx, "{name_s}_read_{read_idx}"),
-                                &[vcx.mk_func_app(
-                                    vir::vir_format!(vcx, "{name_s}_write_{write_idx}"),
-                                    &[vcx.mk_local_ex("self"), vcx.mk_local_ex("val")],
-                                )],
-                            ),
-                            rhs: vcx.mk_local_ex("val"),
-                        }))),
-                    })))
-                } else {
-                    vcx.alloc(vir::ExprData::Forall(vcx.alloc(vir::ForallData {
-                        qvars: vcx.alloc_slice(&[
-                            vcx.mk_local_decl("self", ty_s),
-                            vcx.mk_local_decl("val", write_ty_out.snapshot),
-                        ]),
-                        triggers: vcx.alloc_slice(&[vcx.alloc_slice(&[vcx.mk_func_app(
-                            vir::vir_format!(vcx, "{name_s}_read_{read_idx}"),
-                            &[vcx.mk_func_app(
-                                vir::vir_format!(vcx, "{name_s}_write_{write_idx}"),
-                                &[vcx.mk_local_ex("self"), vcx.mk_local_ex("val")],
-                            )],
-                        )])]),
-                        body: vcx.alloc(vir::ExprData::BinOp(vcx.alloc(vir::BinOpData {
-                            kind: vir::BinOpKind::CmpEq,
-                            lhs: vcx.mk_func_app(
-                                vir::vir_format!(vcx, "{name_s}_read_{read_idx}"),
-                                &[vcx.mk_func_app(
-                                    vir::vir_format!(vcx, "{name_s}_write_{write_idx}"),
-                                    &[vcx.mk_local_ex("self"), vcx.mk_local_ex("val")],
-                                )],
-                            ),
-                            rhs: vcx.mk_func_app(
-                                vir::vir_format!(vcx, "{name_s}_read_{read_idx}"),
-                                &[vcx.mk_local_ex("self")],
-                            ),
-                        }))),
-                    })))
-                },
+                expr: vcx.mk_forall(qvars, triggers, vcx.mk_eq(lhs, rhs)),
             }));
         }
     }
@@ -1033,11 +1035,11 @@ fn cons_axiom<'vir>(
 
     vcx.alloc(vir::DomainAxiomData {
         name: vir::vir_format!(vcx, "ax_{name_s}_cons"),
-        expr: vcx.alloc(vir::ExprData::Forall(vcx.alloc(vir::ForallData {
-            qvars: vcx.alloc_slice(&[vcx.mk_local_decl("self", ty_s)]),
+        expr: vcx.mk_forall(
+            vcx.alloc_slice(&[vcx.mk_local_decl("self", ty_s)]),
             triggers,
             body,
-        }))),
+        ),
     })
 }
 
@@ -1080,19 +1082,21 @@ fn cons_read_axioms<'vir>(
     let (cons_qvars, cons_args, cons_call) = cons_read_parts(vcx, fields, cons_name);
 
     for (read_idx, _) in fields.iter().enumerate() {
+        let forall_body = vcx.mk_eq(
+            vcx.mk_func_app(
+                vir::vir_format!(vcx, "{name_s}_read_{read_idx}"),
+                &[cons_call],
+            ),
+            cons_args[read_idx],
+        );
+
         axioms.push(vcx.alloc(vir::DomainAxiomData {
             name: vir::vir_format!(vcx, "ax_{name_s}_cons_read_{read_idx}"),
-            expr: vcx.alloc(vir::ExprData::Forall(vcx.alloc(vir::ForallData {
-                qvars: cons_qvars.clone(),
-                triggers: vcx.alloc_slice(&[vcx.alloc_slice(&[cons_call])]),
-                body: vcx.mk_eq(
-                    vcx.mk_func_app(
-                        vir::vir_format!(vcx, "{name_s}_read_{read_idx}"),
-                        &[cons_call],
-                    ),
-                    cons_args[read_idx],
-                ),
-            }))),
+            expr: vcx.mk_forall(
+                cons_qvars.clone(),
+                vcx.alloc_slice(&[vcx.alloc_slice(&[cons_call])]),
+                forall_body,
+            ),
         }));
     }
 }
@@ -1173,8 +1177,6 @@ fn mk_structlike<'vir>(
         &mut field_projection_p,
     );
 
-    let field_projection_p = vcx.alloc_slice(&field_projection_p);
-
     read_write_axioms(vcx, ty_s, name_s, &field_ty_out, &mut axioms);
 
     cons_read_axioms(name_s, vcx, &field_ty_out, cons_name, &mut axioms);
@@ -1183,20 +1185,17 @@ fn mk_structlike<'vir>(
         axioms.push(cons_axiom(name_s, vcx, cons_name, &field_ty_out, ty_s));
     }
 
-    // predicate
-    let predicate = mk_struct_predicate(&field_ty_out, vcx, name_p);
-
     Ok(TypeEncoderOutput {
         fields: &[],
         snapshot: vir::vir_domain! { vcx; domain [name_s] {
             with_funcs [funcs];
             with_axioms [axioms];
         } },
-        predicate,
+        predicate: mk_struct_predicate(&field_ty_out, vcx, name_p),
         function_unreachable: mk_unreachable(vcx, name_s, ty_s),
         function_snap: mk_struct_snap(vcx, name_p, &field_ty_out, ty_s, cons_name),
         //method_refold: mk_refold(vcx, name_p, ty_s),
-        field_projection_p,
+        field_projection_p: vcx.alloc_slice(&field_projection_p),
         method_assign: mk_assign(vcx, name_p, ty_s),
         other_predicates: &[],
     })

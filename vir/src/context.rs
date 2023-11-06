@@ -158,6 +158,19 @@ impl<'tcx> VirCtxt<'tcx> {
         self.mk_bin_op(BinOpKind::CmpEq, lhs, rhs)
     }
 
+    pub fn mk_forall<Curr, Next>(
+        &'tcx self,
+        qvars: &'tcx [&'tcx LocalDeclData<'tcx>],
+        triggers: &'tcx [&'tcx [ExprGen<'tcx, Curr, Next>]],
+        body: ExprGen<'tcx, Curr, Next>,
+    ) -> ExprGen<'tcx, Curr, Next> {
+        self.alloc(ExprGenData::Forall(self.alloc(ForallGenData {
+            qvars,
+            triggers,
+            body,
+        })))
+    }
+
     pub fn mk_const<Curr, Next>(&'tcx self, cnst: ConstData) -> ExprGen<'tcx, Curr, Next> {
         self.alloc(ExprGenData::Const(self.alloc(cnst)))
     }

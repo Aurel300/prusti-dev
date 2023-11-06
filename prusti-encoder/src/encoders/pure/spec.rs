@@ -101,11 +101,8 @@ impl TaskEncoder for MirSpecEncoder {
                         substs: ty::List::identity_for_item(vcx.tcx, *spec_def_id),
                     }
                 ).unwrap().expr;
-                let expr = vcx.mk_func_app(
-                    to_bool,
-                    &[expr],
-                );
-                expr.reify(vcx, (*spec_def_id, &pre_args[1..]))
+                let expr = expr.reify(vcx, (*spec_def_id, &pre_args[1..]));
+                to_bool.apply(vcx, [expr])
             }).collect::<Vec<vir::Expr<'_>>>();
 
             let post_args = if pure {
@@ -130,11 +127,8 @@ impl TaskEncoder for MirSpecEncoder {
                         substs: ty::List::identity_for_item(vcx.tcx, *spec_def_id),
                     }
                 ).unwrap().expr;
-                let expr = vcx.mk_func_app(
-                    to_bool,
-                    &[expr],
-                );
-                expr.reify(vcx, (*spec_def_id, post_args))
+                let expr = expr.reify(vcx, (*spec_def_id, post_args));
+                to_bool.apply(vcx, [expr])
             }).collect::<Vec<vir::Expr<'_>>>();
             let data = MirSpecEncoderOutput {
                 pres,

@@ -671,8 +671,10 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
             mir::Rvalue::CheckedBinaryOp(binop, box (l, r)) => {
                 let binop_function = self.deps.require_ref::<crate::encoders::MirBuiltinEncoder>(
                     crate::encoders::MirBuiltinEncoderTask::CheckedBinOp(
+                        rvalue.ty(self.body, self.vcx.tcx),
                         *binop,
-                        l.ty(self.body, self.vcx.tcx), // TODO: ?
+                        l.ty(self.body, self.vcx.tcx),
+                        r.ty(self.body, self.vcx.tcx),
                     ),
                 ).unwrap().function;
                 binop_function.apply(self.vcx, &[

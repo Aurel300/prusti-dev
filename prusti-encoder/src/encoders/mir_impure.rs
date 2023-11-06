@@ -576,9 +576,10 @@ impl<'vir, 'enc> mir::visit::Visitor<'vir> for EncoderVisitor<'vir, 'enc> {
                 // What are we assigning to?
                 let proj_ref = self.encode_place(Place::from(*dest));
 
-                let bool_cons = self.deps.require_ref::<crate::encoders::TypeEncoder>(
-                    self.vcx.tcx.types.bool,
-                ).unwrap().from_fields.unwrap();
+                let rvalue_ty = rvalue.ty(self.local_decls, self.vcx.tcx);
+                let e_rvalue_ty = self.deps.require_ref::<crate::encoders::TypeEncoder>(
+                    rvalue_ty,
+                ).unwrap();
 
                 // What value are we assigning? This will be an option, in most
                 // cases an expression with the snapshot to be assigned to the
@@ -596,7 +597,7 @@ impl<'vir, 'enc> mir::visit::Visitor<'vir> for EncoderVisitor<'vir, 'enc> {
                     //mir::Rvalue::Cast(CastKind, Operand<'tcx>, Ty<'tcx>) => {}
 
                     mir::Rvalue::BinaryOp(mir::BinOp::Eq, box (l, r)) =>
-                        Some(bool_cons.apply(self.vcx,
+                        Some(e_rvalue_ty.from_fields.unwrap().apply(self.vcx,
                             &[self.vcx.alloc(vir::ExprData::BinOp(self.vcx.alloc(vir::BinOpData {
                                 kind: vir::BinOpKind::CmpEq,
                                 lhs: self.encode_operand_snap(l),
@@ -604,27 +605,31 @@ impl<'vir, 'enc> mir::visit::Visitor<'vir> for EncoderVisitor<'vir, 'enc> {
                             })))],
                         )),
                     mir::Rvalue::BinaryOp(op, box (l, r)) => {
-                        let ty_l = self.deps.require_ref::<crate::encoders::TypeEncoder>(
+                        let e_l_ty = self.deps.require_ref::<crate::encoders::TypeEncoder>(
                             l.ty(self.local_decls, self.vcx.tcx),
-                        ).unwrap().to_primitive.unwrap();
-                        let ty_r = self.deps.require_ref::<crate::encoders::TypeEncoder>(
+                        ).unwrap();
+                        let e_r_ty = self.deps.require_ref::<crate::encoders::TypeEncoder>(
                             r.ty(self.local_decls, self.vcx.tcx),
-                        ).unwrap().to_primitive.unwrap();
+                        ).unwrap();
 
-                        Some(bool_cons.apply(self.vcx, &[self.vcx.alloc(vir::ExprData::BinOp(self.vcx.alloc(vir::BinOpData {
+                        Some(e_rvalue_ty.from_fields.unwrap().apply(self.vcx, &[self.vcx.alloc(vir::ExprData::BinOp(self.vcx.alloc(vir::BinOpData {
                             kind: vir::BinOpKind::from(op),
-                            lhs: ty_l.apply(self.vcx, [self.encode_operand_snap(l)]),
-                            rhs: ty_r.apply(self.vcx, [self.encode_operand_snap(r)]),
+                            lhs: e_l_ty.to_primitive.unwrap().apply(self.vcx, [self.encode_operand_snap(l)]),
+                            rhs: e_r_ty.to_primitive.unwrap().apply(self.vcx, [self.encode_operand_snap(r)]),
                         })))]))
                     }
                     //mir::Rvalue::BinaryOp(BinOp, Box<(Operand<'tcx>, Operand<'tcx>)>) => {}
 
                     //mir::Rvalue::CheckedBinaryOp(BinOp, Box<(Operand<'tcx>, Operand<'tcx>)>) => {}
                     mir::Rvalue::CheckedBinaryOp(binop, box (l, r)) => {
+                        let l_ty = l.ty(self.local_decls, self.vcx.tcx);
+                        let r_ty = r.ty(self.local_decls, self.vcx.tcx);
                         let binop_function = self.deps.require_ref::<crate::encoders::MirBuiltinEncoder>(
                             crate::encoders::MirBuiltinEncoderTask::CheckedBinOp(
+                                rvalue_ty,
                                 *binop,
-                                l.ty(self.local_decls, self.vcx.tcx), // TODO: ?
+                                l_ty,
+                                r_ty,
                             ),
                         ).unwrap().function;
                         Some(binop_function.apply(self.vcx, &[
@@ -636,10 +641,12 @@ impl<'vir, 'enc> mir::visit::Visitor<'vir> for EncoderVisitor<'vir, 'enc> {
                     //mir::Rvalue::NullaryOp(NullOp, Ty<'tcx>) => {}
 
                     mir::Rvalue::UnaryOp(unop, operand) => {
+                        let operand_ty = operand.ty(self.local_decls, self.vcx.tcx);
                         let unop_function = self.deps.require_ref::<crate::encoders::MirBuiltinEncoder>(
                             crate::encoders::MirBuiltinEncoderTask::UnOp(
+                                rvalue_ty,
                                 *unop,
-                                rvalue.ty(self.local_decls, self.vcx.tcx),
+                                operand_ty,
                             ),
                         ).unwrap().function;
                         Some(unop_function.apply(self.vcx, &[self.encode_operand_snap(operand)]))

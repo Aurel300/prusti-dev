@@ -86,6 +86,10 @@ impl<'tcx> VirCtxt<'tcx> {
         self.mk_const(true.into())
     }
 
+    pub fn mk_false(&'tcx self) -> Expr<'tcx> {
+        self.mk_const(false.into())
+    }
+
     pub fn mk_tern<Curr, Next>(
         &'tcx self,
         cond: ExprGen<'tcx, Curr, Next>,

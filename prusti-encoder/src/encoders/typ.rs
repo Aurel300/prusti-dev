@@ -21,6 +21,7 @@ pub struct TypeEncoderOutputRefSubStruct<'vir> {
 #[derive(Clone, Debug)]
 pub struct TypeEncoderOutputRefSubEnum<'vir> {
     pub field_discriminant: &'vir str,
+    pub variants: &'vir [TypeEncoderOutputRef<'vir>],
 }
 
 #[derive(Clone, Debug)]
@@ -53,6 +54,13 @@ impl<'vir> TypeEncoderOutputRef<'vir> {
         match self.specifics {
             TypeEncoderOutputRefSub::StructLike(ref data) => data,
             _ => panic!("expected structlike type"),
+        }
+    }
+
+    pub fn expect_enum(&self) -> &TypeEncoderOutputRefSubEnum<'vir> {
+        match self.specifics {
+            TypeEncoderOutputRefSub::Enum(ref data) => data,
+            _ => panic!("expected enum type"),
         }
     }
 
@@ -90,6 +98,7 @@ pub struct TypeEncoderOutput<'vir> {
     pub fields: &'vir [vir::Field<'vir>],
     pub snapshot: vir::Domain<'vir>,
     pub predicate: vir::Predicate<'vir>,
+    pub other_predicates: &'vir [vir::Predicate<'vir>],
     // TODO: these should be generated on demand, put into tiny encoders ?
     pub function_unreachable: vir::Function<'vir>,
     pub function_snap: vir::Function<'vir>,
@@ -205,6 +214,7 @@ impl TaskEncoder for TypeEncoder {
                             axiom_inverse(s_Bool_cons, s_Bool_val, s_Bool);
                         } },
                         predicate: mk_simple_predicate(vcx, "p_Bool", "f_Bool"),
+                        other_predicates: &[],
                         function_unreachable: mk_unreachable(vcx, "s_Bool", ty_s),
                         function_snap: mk_snap(vcx, "p_Bool", "s_Bool", Some("f_Bool"), ty_s),
                         //method_refold: mk_refold(vcx, "p_Bool", ty_s),
@@ -254,6 +264,7 @@ impl TaskEncoder for TypeEncoder {
                             axiom_inverse([name_cons], [name_val], [ty_s]);
                         } },
                         predicate: mk_simple_predicate(vcx, name_p, name_field),
+                        other_predicates: &[],
                         function_unreachable: mk_unreachable(vcx, name_s, ty_s),
                         function_snap: mk_snap(vcx, name_p, name_s, Some(name_field), ty_s),
                         //method_refold: mk_refold(vcx, name_p, ty_s),
@@ -291,6 +302,7 @@ impl TaskEncoder for TypeEncoder {
                             function s_Tuple0_cons(): [ty_s];
                         } },
                         predicate: vir::vir_predicate! { vcx; predicate p_Tuple0(self_p: Ref) },
+                        other_predicates: &[],
                         function_unreachable: mk_unreachable(vcx, "s_Tuple0", ty_s),
                         function_snap: mk_snap(vcx, "p_Tuple0", "s_Tuple0", None, ty_s),
                         //method_refold: mk_refold(vcx, "p_Tuple0", ty_s),
@@ -358,6 +370,7 @@ impl TaskEncoder for TypeEncoder {
                         snapshot: vir::vir_domain! { vcx; domain s_ParamTodo { // TODO: should not be emitted -- make outputs vectors
                         } },
                         predicate: vir::vir_predicate! { vcx; predicate p_ParamTodo(self_p: Ref) },
+                        other_predicates: &[],
                         function_unreachable: mk_unreachable(vcx, "p_Param", ty_s),
                         function_snap: mk_snap(vcx, "p_Param", "s_Param", None, ty_s),
                         //method_refold: mk_refold(vcx, "p_Param", ty_s),
@@ -417,6 +430,7 @@ impl TaskEncoder for TypeEncoder {
                         })]),
                         snapshot: vir::vir_domain! { vcx; domain s_Never {} },
                         predicate: vir::vir_predicate! { vcx; predicate p_Never(self_p: Ref) },
+                        other_predicates: &[],
                         function_unreachable: mk_unreachable(vcx, "s_Never", ty_s),
                         function_snap: mk_snap(vcx, "p_Never", "s_Never", None, ty_s),
                         //method_refold: mk_refold(vcx, "p_Never", ty_s),
@@ -462,6 +476,44 @@ fn mk_enum<'vir>(
 
     let ty_s = vcx.alloc(vir::TypeData::Domain(name_s));
 
+    let mut variants: Vec<TypeEncoderOutputRef<'vir>> = Vec::new();
+
+    for (idx, variant) in adt.variants().iter().enumerate() {
+        let name_s = vir::vir_format!(vcx, "s_Adt_{did_name}_{idx}");
+        let name_p = vir::vir_format!(vcx, "p_Adt_{did_name}_{idx}");
+
+        let mut field_read_names = Vec::new();
+        let mut field_write_names = Vec::new();
+        let mut field_projection_p_names = Vec::new();
+        for idx in 0..variant.fields.len() {
+            field_read_names.push(vir::vir_format!(vcx, "{name_s}_read_{idx}"));
+            field_write_names.push(vir::vir_format!(vcx, "{name_s}_write_{idx}"));
+            field_projection_p_names.push(vir::vir_format!(vcx, "{name_p}_field_{idx}"));
+        }
+        let field_read_names = vcx.alloc_slice(&field_read_names);
+        let field_write_names = vcx.alloc_slice(&field_write_names);
+        let field_projection_p_names = vcx.alloc_slice(&field_projection_p_names);
+
+        let x = TypeEncoderOutputRef {
+            snapshot_name: name_s,
+            predicate_name: name_p,
+            from_primitive: None,
+            to_primitive: None,
+            snapshot: ty_s,
+            function_unreachable: vir::vir_format!(vcx, "{name_s}_unreachable"),
+            function_snap: vir::vir_format!(vcx, "{name_p}_snap"),
+            //method_refold: vir::vir_format!(vcx, "refold_{name_p}"),
+            specifics: TypeEncoderOutputRefSub::StructLike(TypeEncoderOutputRefSubStruct {
+                field_read: field_read_names,
+                field_write: field_write_names,
+                field_projection_p: field_projection_p_names,
+            }),
+            method_assign: vir::vir_format!(vcx, "assign_{name_p}"),
+        };
+
+        variants.push(x);
+    }
+
     deps.emit_output_ref::<TypeEncoder>(
         *task_key,
         TypeEncoderOutputRef {
@@ -475,6 +527,7 @@ fn mk_enum<'vir>(
             //method_refold: vir::vir_format!(vcx, "refold_{name_p}"),
             specifics: TypeEncoderOutputRefSub::Enum(TypeEncoderOutputRefSubEnum {
                 field_discriminant,
+                variants: vcx.alloc(variants),
             }),
             method_assign: vir::vir_format!(vcx, "assign_{name_p}"),
         },
@@ -485,6 +538,7 @@ fn mk_enum<'vir>(
     let mut funcs: Vec<vir::DomainFunction<'vir>> = vec![];
     let mut axioms: Vec<vir::DomainAxiom<'vir>> = vec![];
     let mut field_projection_p = Vec::new();
+    let mut other_predicates = Vec::new();
 
     let s_discr_func_name = vir::vir_format!(vcx, "{name_s}_discriminant");
 
@@ -494,11 +548,24 @@ fn mk_enum<'vir>(
         args: vcx.alloc_slice(&[ty_s]),
         ret: &vir::TypeData::Int,
     }));
+
+    let mut field_t = vcx.mk_false();
+
+    let self_local = vcx.mk_local_ex("self_p");
+
+    let discr_field_access = vcx.alloc(vir::ExprGenData::Field(self_local, field_discriminant));
+    let mut snap_cur = vcx.mk_func_app(vir::vir_format!(vcx, "{name_s}_unreachable"), &[]);
+
+    let pred_app = vcx.alloc(vir::PredicateAppData {
+        target: name_p,
+        args: vcx.alloc_slice(&[self_local]),
+    });
+
     for (idx, variant) in adt.variants().iter().enumerate() {
         let name_s = vir::vir_format!(vcx, "s_Adt_{did_name}_{idx}");
         let name_p = vir::vir_format!(vcx, "p_Adt_{did_name}_{idx}");
 
-        mk_enum_variant(
+        let (a, cons_call) = mk_enum_variant(
             vcx,
             deps,
             variant,
@@ -510,19 +577,27 @@ fn mk_enum<'vir>(
             &mut funcs,
             &mut field_projection_p,
             &mut axioms,
-        )
+            &mut other_predicates,
+        );
+
+        let cond = vcx.mk_eq(discr_field_access, vcx.mk_const(idx.into()));
+        let pred_call = vcx.mk_pred_app(name_p, vcx.alloc_slice(&[self_local]));
+        field_t = vcx.mk_tern(cond, pred_call, field_t);
+
+        let snap_cond = vcx.mk_eq(discr_field_access, vcx.mk_const(idx.into()));
+
+        snap_cur = vcx.mk_tern(snap_cond, cons_call, snap_cur)
     }
 
-    let field_projection_p = vcx.alloc_slice(&field_projection_p);
-
-    let self_local = vcx.mk_local_ex("self_p");
+    let snap_body = vcx.alloc(vir::ExprData::Unfolding(vcx.alloc(vir::UnfoldingData {
+        target: pred_app,
+        expr: snap_cur,
+    })));
 
     let acc = vcx.alloc(vir::ExprData::AccField(vcx.alloc(vir::AccFieldGenData {
         field: field_discriminant,
         recv: self_local,
     })));
-
-    let discr_field_access = vcx.alloc(vir::ExprGenData::Field(self_local, field_discriminant));
 
     // TODO: handle the empty enum? i guess the lower and upper bound together for an empty enum are false which is correct?
     let disc_lower_bound = vcx.mk_bin_op(
@@ -540,30 +615,8 @@ fn mk_enum<'vir>(
     let predicate = vcx.alloc(vir::PredicateData {
         name: name_p,
         args: vcx.alloc_slice(&[vcx.mk_local_decl("self_p", &vir::TypeData::Ref)]),
-        expr: Some(vcx.mk_conj(&[acc, disc_lower_bound, disc_upper_bound])),
+        expr: Some(vcx.mk_conj(&[acc, disc_lower_bound, disc_upper_bound, field_t])),
     });
-
-    let pred_app = vcx.alloc(vir::PredicateAppData {
-        target: name_p,
-        args: vcx.alloc_slice(&[self_local]),
-    });
-
-    let snap_body = {
-        let mut cur = vcx.mk_func_app(vir::vir_format!(vcx, "{name_s}_unreachable"), &[]);
-
-        for (idx, variant) in adt.variants().iter().enumerate() {
-            let cond = vcx.mk_eq(discr_field_access, vcx.mk_const(idx.into()));
-            let cons_name = vir::vir_format!(vcx, "s_Adt_{did_name}_{idx}_cons"); //TODO get better
-
-            let const_call = vcx.mk_func_app(cons_name, &[]); //TODO: args
-            cur = vcx.mk_tern(cond, const_call, cur)
-        }
-
-        vcx.alloc(vir::ExprData::Unfolding(vcx.alloc(vir::UnfoldingData {
-            target: pred_app,
-            expr: cur,
-        })))
-    };
 
     let function_snap = vcx.alloc(vir::FunctionData {
         name: vir::vir_format!(vcx, "{name_p}_snap"),
@@ -584,10 +637,11 @@ fn mk_enum<'vir>(
             with_axioms [axioms];
         } },
         predicate,
+        other_predicates: vcx.alloc_slice(&other_predicates),
         function_unreachable: mk_unreachable(vcx, name_s, ty_s),
         function_snap,
         //method_refold: mk_refold(vcx, name_p, ty_s),
-        field_projection_p,
+        field_projection_p: vcx.alloc_slice(&field_projection_p),
         method_assign: mk_assign(vcx, name_p, ty_s),
     })
 }
@@ -604,7 +658,8 @@ fn mk_enum_variant<'vir>(
     funcs: &mut Vec<&'vir vir::DomainFunctionData<'vir>>,
     field_projection_p: &mut Vec<&'vir FunctionGenData<'vir, !, !>>,
     axioms: &mut Vec<vir::DomainAxiom<'vir>>,
-) {
+    predicates: &mut Vec<&'vir vir::PredicateData<'vir>>,
+) -> (&'vir vir::PredicateAppData<'vir>, &'vir ExprData<'vir>) {
     let substs = ty::List::identity_for_item(vcx.tcx, variant.def_id);
     let fields = variant
         .fields
@@ -663,6 +718,10 @@ fn mk_enum_variant<'vir>(
         Some(const_cond),
         None,
     );
+
+    predicates.push(mk_struct_predicate(&fields, vcx, name_p));
+
+    mk_struct_snap_parts(vcx, name_p, &fields, cons_name)
 }
 
 fn mk_unreachable<'vir>(
@@ -799,13 +858,12 @@ fn mk_snap<'vir>(
     })
 }
 
-fn mk_struct_snap<'vir>(
+fn mk_struct_snap_parts<'vir>(
     vcx: &'vir vir::VirCtxt<'vir>,
     name_p: &'vir str,
     fields: &[TypeEncoderOutputRef<'vir>],
-    ty_s: &'vir TypeData<'vir>,
     cons_name: &'vir str,
-) -> vir::Function<'vir> {
+) -> (&'vir vir::PredicateAppData<'vir>, &'vir ExprData<'vir>) {
     let pred_app = vcx.alloc(vir::PredicateAppData {
         target: name_p,
         args: vcx.alloc_slice(&[vcx.mk_local_ex("self_p")]),
@@ -827,18 +885,30 @@ fn mk_struct_snap<'vir>(
             .collect::<Vec<_>>(),
     );
 
+    let expr = vcx.alloc(vir::ExprData::Unfolding(vcx.alloc(vir::UnfoldingData {
+        target: pred_app,
+        expr: vcx.mk_func_app(cons_name, cons_args),
+    })));
+
+    (pred_app, expr)
+}
+
+fn mk_struct_snap<'vir>(
+    vcx: &'vir vir::VirCtxt<'vir>,
+    name_p: &'vir str,
+    fields: &[TypeEncoderOutputRef<'vir>],
+    ty_s: &'vir TypeData<'vir>,
+    cons_name: &'vir str,
+) -> vir::Function<'vir> {
+    let (pred_app, expr) = mk_struct_snap_parts(vcx, name_p, fields, cons_name);
+
     vcx.alloc(vir::FunctionData {
         name: vir::vir_format!(vcx, "{name_p}_snap"),
         args: vcx.alloc_slice(&[vcx.mk_local_decl("self_p", &vir::TypeData::Ref)]),
         ret: ty_s,
         pres: vcx.alloc_slice(&[vcx.alloc(vir::ExprData::PredicateApp(pred_app))]),
         posts: &[],
-        expr: Some(
-            vcx.alloc(vir::ExprData::Unfolding(vcx.alloc(vir::UnfoldingData {
-                target: pred_app,
-                expr: vcx.mk_func_app(cons_name, cons_args),
-            }))),
-        ),
+        expr: Some(expr),
     })
 }
 
@@ -1090,8 +1160,31 @@ fn mk_structlike<'vir>(
     );
 
     // predicate
+    let predicate = mk_struct_predicate(&field_ty_out, vcx, name_p);
+
+    Ok(TypeEncoderOutput {
+        fields: &[],
+        snapshot: vir::vir_domain! { vcx; domain [name_s] {
+            with_funcs [funcs];
+            with_axioms [axioms];
+        } },
+        predicate,
+        function_unreachable: mk_unreachable(vcx, name_s, ty_s),
+        function_snap: mk_struct_snap(vcx, name_p, &field_ty_out, ty_s, cons_name),
+        //method_refold: mk_refold(vcx, name_p, ty_s),
+        field_projection_p,
+        method_assign: mk_assign(vcx, name_p, ty_s),
+        other_predicates: &[],
+    })
+}
+
+fn mk_struct_predicate<'vir>(
+    fields: &Vec<TypeEncoderOutputRef<'vir>>,
+    vcx: &'vir vir::VirCtxt<'vir>,
+    name_p: &'vir str,
+) -> &'vir vir::PredicateGenData<'vir, !, !> {
     let predicate = {
-        let expr = field_ty_out
+        let expr = fields
             .iter()
             .enumerate()
             .map(|(idx, field_ty_out)| {
@@ -1112,20 +1205,7 @@ fn mk_structlike<'vir>(
             expr: Some(expr),
         })
     };
-
-    Ok(TypeEncoderOutput {
-        fields: &[],
-        snapshot: vir::vir_domain! { vcx; domain [name_s] {
-            with_funcs [funcs];
-            with_axioms [axioms];
-        } },
-        predicate,
-        function_unreachable: mk_unreachable(vcx, name_s, ty_s),
-        function_snap: mk_struct_snap(vcx, name_p, &field_ty_out, ty_s, cons_name),
-        //method_refold: mk_refold(vcx, name_p, ty_s),
-        field_projection_p,
-        method_assign: mk_assign(vcx, name_p, ty_s),
-    })
+    predicate
 }
 
 /// add the field projectsions and add the snapshot version to the funcs vector

@@ -272,7 +272,13 @@ impl<'vir, 'enc> EncoderVisitor<'vir, 'enc> {
                     field_ty_out,
                 )
             }
-            _ => panic!("unsupported projection"),
+            mir::ProjectionElem::Downcast(name, idx) => {
+                let enu = ty_out.expect_enum();
+                let ty_out_struct = &enu.variants[idx.as_usize()];
+
+                (base, ty_out_struct.clone())
+            }
+            other => panic!("unsupported projection {other:?}"),
         }
     }
 
@@ -346,7 +352,7 @@ impl<'vir, 'enc> EncoderVisitor<'vir, 'enc> {
                         return;
                     }
                     let place_ty = place.ty(self.local_decls, self.vcx.tcx);
-                    assert!(place_ty.variant_index.is_none());
+                    //assert!(place_ty.variant_index.is_none());
 
                     let place_ty_out = self
                         .deps

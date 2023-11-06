@@ -537,31 +537,33 @@ impl TaskEncoder for TypeEncoder {
                     }));
                 }
 
-                let cons_call_with_reads = from_fields.apply(vcx,
-                    &field_ty_out
-                        .iter()
-                        .enumerate()
-                        .map(|(idx, _field_ty_out)|
-                            field_access[idx].read.apply(vcx, [vcx.mk_local_ex("self")])
-                        )
-                        .collect::<Vec<_>>(),
-                );
-                axioms.push(vcx.alloc(vir::DomainAxiomData {
-                    name: vir::vir_format!(vcx, "ax_{name_s}_cons"),
-                    expr: vcx.alloc(vir::ExprData::Forall(vcx.alloc(vir::ForallData {
-                        qvars: vcx.alloc_slice(&[
-                            vcx.mk_local_decl("self", ty_s),
-                        ]),
-                        triggers: vcx.alloc_slice(&[vcx.alloc_slice(&[
-                            cons_call_with_reads,
-                        ])]),
-                        body: vcx.alloc(vir::ExprData::BinOp(vcx.alloc(vir::BinOpData {
-                            kind: vir::BinOpKind::CmpEq,
-                            lhs: cons_call_with_reads,
-                            rhs: vcx.mk_local_ex("self"),
+                if !field_ty_out.is_empty() {
+                    let cons_call_with_reads = from_fields.apply(vcx,
+                        &field_ty_out
+                            .iter()
+                            .enumerate()
+                            .map(|(idx, _field_ty_out)|
+                                field_access[idx].read.apply(vcx, [vcx.mk_local_ex("self")])
+                            )
+                            .collect::<Vec<_>>(),
+                    );
+                    axioms.push(vcx.alloc(vir::DomainAxiomData {
+                        name: vir::vir_format!(vcx, "ax_{name_s}_cons"),
+                        expr: vcx.alloc(vir::ExprData::Forall(vcx.alloc(vir::ForallData {
+                            qvars: vcx.alloc_slice(&[
+                                vcx.mk_local_decl("self", ty_s),
+                            ]),
+                            triggers: vcx.alloc_slice(&[vcx.alloc_slice(&[
+                                cons_call_with_reads,
+                            ])]),
+                            body: vcx.alloc(vir::ExprData::BinOp(vcx.alloc(vir::BinOpData {
+                                kind: vir::BinOpKind::CmpEq,
+                                lhs: cons_call_with_reads,
+                                rhs: vcx.mk_local_ex("self"),
+                            }))),
                         }))),
-                    }))),
-                }));
+                    }));
+                }
             }
 
             // predicate
@@ -720,42 +722,6 @@ impl TaskEncoder for TypeEncoder {
                 }, ()))
             }
 
-            TyKind::Tuple(tys) if tys.len() == 0 => {
-                let ty_s = vcx.alloc(vir::TypeData::Domain("s_Tuple0"));
-                let predicate_ref = mk_predicate_ident("p_Tuple0");
-                let function_snap = mk_function_snap_identifier(vcx, "p_Tuple0", ty_s);
-                let function_unreachable = mk_function_unreachable_identifier(vcx, "s_Tuple0");
-                let method_assign = mk_function_assign(vcx, "p_Tuple0", ty_s);
-                deps.emit_output_ref::<Self>(*task_key, TypeEncoderOutputRef {
-                    predicate_ref,
-                    snapshot: ty_s,
-                    from_fields: Some(
-                        mk_from_fields(vcx, "s_Tuple0", &[])
-                    ),
-                    to_primitive: None,
-                    function_unreachable,
-                    function_snap,
-                    //method_refold: "refold_p_Tuple0",
-                    specifics: TypeEncoderOutputRefSub::Primitive,
-                    method_assign,
-                });
-                Ok((TypeEncoderOutput {
-                    fields: vcx.alloc_slice(&[vcx.alloc(vir::FieldData {
-                        name: vir::vir_format!(vcx, "f_Tuple0"),
-                        ty: ty_s,
-                    })]),
-                    snapshot: vir::vir_domain! { vcx; domain s_Tuple0 {
-                        function s_Tuple0_cons(): [ty_s];
-                    } },
-                    predicate: vir::vir_predicate! { vcx; predicate p_Tuple0(self_p: Ref) },
-                    function_unreachable: mk_unreachable(vcx, function_unreachable, ty_s),
-                    function_snap: mk_snap(vcx, "p_Tuple0", function_snap, None, ty_s),
-                    //method_refold: mk_refold(vcx, "p_Tuple0", ty_s),
-                    field_projection_p: &[],
-                    method_assign: mk_assign(vcx, "p_Tuple0", method_assign, function_snap, ty_s),
-                }, ()))
-            }
-
             TyKind::Tuple(tys) => {
                 let field_ty_out = tys
                     .iter()
@@ -765,50 +731,17 @@ impl TaskEncoder for TypeEncoder {
                 // TODO: Properly name the tuple according to its types, or make generic?
 
                 // Temporary fix to make it possisble to have multiple tuples of the same size with different element types
-                let tmp_ty_name = field_ty_out.iter().map(|e| e.snapshot_name).collect::<Vec<&str>>().join("_");
+                let tmp_ty_name = field_ty_out.iter().map(|e| format!("_{}", e.predicate_ref.name())).collect::<String>();
 
 
                 Ok((mk_structlike(
                     vcx,
                     deps,
                     task_key,
-                    vir::vir_format!(vcx, "s_Tuple{}_{}", tys.len(), tmp_ty_name),
-                    vir::vir_format!(vcx, "p_Tuple{}_{}", tys.len(), tmp_ty_name),
+                    vir::vir_format!(vcx, "s_Tuple{}{tmp_ty_name}", tys.len()),
+                    vir::vir_format!(vcx, "p_Tuple{}{tmp_ty_name}", tys.len()),
                     field_ty_out,
                 )?, ()))
-
-                /*
-                let ty_len = tys.len();
-                let name_s = vir::vir_format!(vcx, "s_Tuple{ty_len}");
-                let name_p = vir::vir_format!(vcx, "p_Tuple{ty_len}");
-                let ty_s = vcx.alloc(vir::TypeData::Domain(name_s));
-
-                deps.emit_output_ref::<Self>(*task_key, TypeEncoderOutputRef {
-                    snapshot_name: name_s,
-                    predicate_name: name_p,
-                    snapshot: ty_s,
-                    function_unreachable: "s_Tuple0_unreachable",
-                    function_snap: "p_Tuple0_snap",
-                    //method_refold: "refold_p_Tuple0",
-                    specifics: TypeEncoderOutputRefSub::Primitive,
-                    method_assign: vir::vir_format!(vcx, "assign_p_Tuple0"),
-                });
-                Ok((TypeEncoderOutput {
-                    fields: vcx.alloc_slice(&[vcx.alloc(vir::FieldData {
-                        name: vir::vir_format!(vcx, "f_Tuple0"),
-                        ty: ty_s,
-                    })]),
-                    snapshot: vir::vir_domain! { vcx; domain s_Tuple0 {
-                        function s_Tuple0_cons(): [ty_s];
-                    } },
-                    predicate: vir::vir_predicate! { vcx; predicate p_Tuple0(self_p: Ref) },
-                    function_unreachable: mk_unreachable(vcx, "s_Tuple0", ty_s),
-                    function_snap: mk_snap(vcx, "p_Tuple0", "s_Tuple0", None, ty_s),
-                    //method_refold: mk_refold(vcx, "p_Tuple0", ty_s),
-                    field_projection_p: &[],
-                    method_assign: mk_assign(vcx, "p_Tuple0", ty_s),
-                }, ()))
-                */
             }
 
             TyKind::Param(_param) => {

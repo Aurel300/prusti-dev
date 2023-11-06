@@ -2,7 +2,7 @@ use prusti_rustc_interface::middle::ty;
 use rustc_middle::ty::VariantDef;
 use rustc_type_ir::sty::TyKind;
 use task_encoder::{TaskEncoder, TaskEncoderDependencies};
-use vir::{ExprData, FunctionGenData, TypeData};
+use vir::{ExprData, ExprGenData, FunctionGenData, TypeData};
 
 pub struct TypeEncoder;
 
@@ -701,24 +701,47 @@ fn mk_enum_variant<'vir>(
         }),
     );
 
-    let const_cond = vcx.mk_eq(
-        vcx.mk_func_app(
-            s_discr_func_name,
-            vcx.alloc_slice(&[vcx.mk_local_ex("self")]),
-        ),
-        vcx.mk_const(variant_idx.into()),
-    );
-    constructor_axioms(
-        vcx,
-        ty_s,
-        name_s,
-        &fields,
-        cons_name,
-        axioms,
-        Some(const_cond),
-        None,
-    );
+    // let const_cond = vcx.mk_eq(
+    //     vcx.mk_func_app(
+    //         s_discr_func_name,
+    //         vcx.alloc_slice(&[vcx.mk_local_ex("self")]),
+    //     ),
+    //     vcx.mk_const(variant_idx.into()),
+    // );
 
+    cons_read_axioms(name_s, vcx, &fields, cons_name, axioms);
+
+    if !fields.is_empty() {
+        axioms.push(cons_axiom(name_s, vcx, cons_name, &fields, ty_s));
+    }
+
+    // discriminant of constructor
+    {
+        let (cons_qvars, cons_args, cons_call) = cons_read_parts(vcx, &fields, cons_name);
+
+        let body = vcx.mk_eq(
+            vcx.mk_func_app(s_discr_func_name, &[cons_call]),
+            vcx.mk_const(variant_idx.into()),
+        );
+
+        let ax = if fields.is_empty() {
+            body
+        } else {
+            // only apply the forall if there are fields
+            vcx.alloc(vir::ExprData::Forall(vcx.alloc(vir::ForallData {
+                qvars: cons_qvars.clone(),
+                triggers: vcx.alloc_slice(&[vcx.alloc_slice(&[cons_call])]),
+                body,
+            })))
+        };
+
+        axioms.push(vcx.alloc(vir::DomainAxiomData {
+            name: vir::vir_format!(vcx, "ax_{name_s}_cons_{variant_idx}_discr"),
+            expr: ax,
+        }));
+    }
+
+    //TODO: discriminant for write axioms
     predicates.push(mk_struct_predicate(&fields, vcx, name_p));
 
     mk_struct_snap_parts(vcx, name_p, &fields, cons_name)
@@ -983,16 +1006,49 @@ fn read_write_axioms<'vir>(
     }
 }
 
-/// Create the `_cons_read_` axioms and push them into the `axioms` vector
-fn constructor_axioms<'vir>(
-    vcx: &'vir vir::VirCtxt<'vir>,
-    ty_s: &'vir TypeData<'vir>,
+fn cons_axiom<'vir>(
     name_s: &'vir str,
+    vcx: &'vir vir::VirCtxt<'vir>,
+    cons_name: &'vir str,
+    fields: &[TypeEncoderOutputRef<'vir>],
+    ty_s: &'vir TypeData<'vir>,
+) -> &'vir vir::DomainAxiomData<'vir> {
+    let cons_call_with_reads = vcx.mk_func_app(
+        cons_name,
+        &fields
+            .iter()
+            .enumerate()
+            .map(|(idx, _field_ty_out)| {
+                vcx.mk_func_app(
+                    vir::vir_format!(vcx, "{name_s}_read_{idx}"),
+                    &[vcx.mk_local_ex("self")],
+                )
+            })
+            .collect::<Vec<_>>(),
+    );
+
+    let body = vcx.mk_eq(cons_call_with_reads, vcx.mk_local_ex("self"));
+
+    let triggers = vcx.alloc_slice(&[vcx.alloc_slice(&[cons_call_with_reads])]);
+
+    vcx.alloc(vir::DomainAxiomData {
+        name: vir::vir_format!(vcx, "ax_{name_s}_cons"),
+        expr: vcx.alloc(vir::ExprData::Forall(vcx.alloc(vir::ForallData {
+            qvars: vcx.alloc_slice(&[vcx.mk_local_decl("self", ty_s)]),
+            triggers,
+            body,
+        }))),
+    })
+}
+
+fn cons_read_parts<'vir>(
+    vcx: &'vir vir::VirCtxt<'vir>,
     fields: &[TypeEncoderOutputRef<'vir>],
     cons_name: &'vir str,
-    axioms: &mut Vec<vir::DomainAxiom<'vir>>,
-    cond: Option<&'vir ExprData<'vir>>,
-    extra: Option<&'vir ExprData<'vir>>,
+) -> (
+    &'vir [&'vir vir::LocalDeclData<'vir>],
+    Vec<&'vir vir::ExprData<'vir>>,
+    &'vir vir::ExprData<'vir>,
 ) {
     let cons_qvars = vcx.alloc_slice(
         &fields
@@ -1008,7 +1064,20 @@ fn constructor_axioms<'vir>(
         .enumerate()
         .map(|(idx, _field_ty_out)| vcx.mk_local_ex(vir::vir_format!(vcx, "f{idx}")))
         .collect::<Vec<_>>();
+
     let cons_call = vcx.mk_func_app(cons_name, &cons_args);
+
+    (cons_qvars, cons_args, cons_call)
+}
+
+fn cons_read_axioms<'vir>(
+    name_s: &'vir str,
+    vcx: &'vir vir::VirCtxt<'vir>,
+    fields: &[TypeEncoderOutputRef<'vir>],
+    cons_name: &'vir str,
+    axioms: &mut Vec<&vir::DomainAxiomGenData<'vir, !, !>>,
+) {
+    let (cons_qvars, cons_args, cons_call) = cons_read_parts(vcx, fields, cons_name);
 
     for (read_idx, _) in fields.iter().enumerate() {
         axioms.push(vcx.alloc(vir::DomainAxiomData {
@@ -1026,46 +1095,6 @@ fn constructor_axioms<'vir>(
             }))),
         }));
     }
-
-    let cons_call_with_reads = vcx.mk_func_app(
-        cons_name,
-        &fields
-            .iter()
-            .enumerate()
-            .map(|(idx, _field_ty_out)| {
-                vcx.mk_func_app(
-                    vir::vir_format!(vcx, "{name_s}_read_{idx}"),
-                    &[vcx.mk_local_ex("self")],
-                )
-            })
-            .collect::<Vec<_>>(),
-    );
-
-    let body = {
-        let body = vcx.mk_eq(cons_call_with_reads, vcx.mk_local_ex("self"));
-        if let Some(cond) = cond {
-            vcx.mk_impl(cond, body)
-        } else {
-            body
-        }
-    };
-
-    let triggers = {
-        if fields.is_empty() {
-            vcx.alloc_slice(&[])
-        } else {
-            vcx.alloc_slice(&[vcx.alloc_slice(&[cons_call_with_reads])])
-        }
-    };
-
-    axioms.push(vcx.alloc(vir::DomainAxiomData {
-        name: vir::vir_format!(vcx, "ax_{name_s}_cons"),
-        expr: vcx.alloc(vir::ExprData::Forall(vcx.alloc(vir::ForallData {
-            qvars: vcx.alloc_slice(&[vcx.mk_local_decl("self", ty_s)]),
-            triggers,
-            body,
-        }))),
-    }));
 }
 
 fn mk_structlike<'vir>(
@@ -1148,16 +1177,11 @@ fn mk_structlike<'vir>(
 
     read_write_axioms(vcx, ty_s, name_s, &field_ty_out, &mut axioms);
 
-    constructor_axioms(
-        vcx,
-        ty_s,
-        name_s,
-        &field_ty_out,
-        cons_name,
-        &mut axioms,
-        None,
-        None,
-    );
+    cons_read_axioms(name_s, vcx, &field_ty_out, cons_name, &mut axioms);
+
+    if !field_ty_out.is_empty() {
+        axioms.push(cons_axiom(name_s, vcx, cons_name, &field_ty_out, ty_s));
+    }
 
     // predicate
     let predicate = mk_struct_predicate(&field_ty_out, vcx, name_p);

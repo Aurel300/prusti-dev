@@ -352,12 +352,18 @@ impl<'vir, 'enc> EncoderVisitor<'vir, 'enc> {
                         return;
                     }
                     let place_ty = place.ty(self.local_decls, self.vcx.tcx);
-                    //assert!(place_ty.variant_index.is_none());
 
-                    let place_ty_out = self
+                    let place_ty_encoded = self
                         .deps
                         .require_ref::<crate::encoders::TypeEncoder>(place_ty.ty)
                         .unwrap();
+
+                    let pred_name = match place_ty.variant_index {
+                        None => place_ty_encoded.predicate_name,
+                        Some(idx) => {
+                            place_ty_encoded.expect_enum().variants[idx.as_usize()].predicate_name
+                        }
+                    };
 
                     let ref_p = self.encode_place(place);
                     if matches!(
@@ -366,13 +372,13 @@ impl<'vir, 'enc> EncoderVisitor<'vir, 'enc> {
                     ) {
                         self.stmt(vir::StmtData::Unfold(self.vcx.alloc(
                             vir::PredicateAppData {
-                                target: place_ty_out.predicate_name,
+                                target: pred_name,
                                 args: self.vcx.alloc_slice(&[ref_p]),
                             },
                         )));
                     } else {
                         self.stmt(vir::StmtData::Fold(self.vcx.alloc(vir::PredicateAppData {
-                            target: place_ty_out.predicate_name,
+                            target: pred_name,
                             args: self.vcx.alloc_slice(&[ref_p]),
                         })));
                     }

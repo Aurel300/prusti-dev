@@ -296,7 +296,7 @@ pub trait TaskEncoder {
                         output_dep.clone(),
                     ))),
                     TaskEncoderCacheState::Enqueued | TaskEncoderCacheState::Started { .. } => {
-                        panic!("Encoding already started or enqueued")
+                        panic!("Encoding already started or enqueued for {task_key:?}")
                     }
                 },
                 None => {

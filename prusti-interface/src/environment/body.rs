@@ -19,6 +19,10 @@ impl<'tcx> MirBody<'tcx> {
     pub fn body(&self) -> Rc<mir::Body<'tcx>> {
         self.0.clone()
     }
+
+    pub fn new(body: mir::Body<'tcx>) -> Self {
+        MirBody(Rc::new(body))
+    }
 }
 impl<'tcx> std::ops::Deref for MirBody<'tcx> {
     type Target = mir::Body<'tcx>;

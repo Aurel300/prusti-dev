@@ -7,6 +7,7 @@ use prusti_rustc_interface::{
 };
 use std::collections::HashMap;
 use task_encoder::{TaskEncoder, TaskEncoderDependencies};
+use vir::Reify;
 
 pub struct MirPureEncoder;
 
@@ -211,7 +212,7 @@ impl TaskEncoder for MirPureEncoder {
             // TODO
             task.encoding_depth,
             task.parent_def_id,
-            None,
+            task.promoted,
             task.substs,
         )
     }
@@ -234,13 +235,22 @@ impl TaskEncoder for MirPureEncoder {
         let def_id = task_key.1; //.parent_def_id;
         let local_def_id = def_id.expect_local();
 
-        tracing::debug!("encoding {def_id:?}");
+        tracing::debug!("encoding {task_key:?}");
         let expr = vir::with_vcx(move |vcx| {
             //let body = vcx.tcx.mir_promoted(local_def_id).0.borrow();
-            let body = vcx
-                .body
-                .borrow_mut()
-                .get_impure_fn_body_identity(local_def_id);
+
+            let body = if let Some(promoted) = task_key.2 {
+                // TODO: is this optimal?
+                prusti_interface::environment::body::MirBody::new(
+                    vcx.tcx.promoted_mir(def_id)[promoted].clone(),
+                )
+            } else {
+                vcx.body
+                    .borrow_mut()
+                    .get_impure_fn_body_identity(local_def_id)
+            };
+
+            tracing::warn!("body {:?}", body.body());
 
             let expr_inner = Encoder::new(vcx, task_key.0, &body, deps).encode_body();
 
@@ -1105,8 +1115,27 @@ where
                             todo!("unsupported constant literal type: {unsupported_ty:?}")
                         }
                     },
-                    mir::ConstantKind::Unevaluated(a, b) => {
-                        todo!()
+                    e @ mir::ConstantKind::Unevaluated(uneval, b) => {
+                        let expr = self
+                            .deps
+                            .require_local::<MirPureEncoder>(MirPureEncoderTask {
+                                encoding_depth: 0,
+                                parent_def_id: uneval.def,
+                                promoted: Some(uneval.promoted.unwrap()),
+                                param_env: self.vcx.tcx.param_env(uneval.def),
+                                substs: ty::List::identity_for_item(self.vcx.tcx, uneval.def),
+                            })
+                            .unwrap()
+                            .expr;
+
+                        tracing::warn!("{e:?} became {expr:?}");
+
+                        self.vcx.alloc(vir::ExprGenData::Lazy(
+                            vir::vir_format!(self.vcx, "unevaluated const {:?}", uneval.def),
+                            Box::new(move |vcx, lctx: ExprInput<'_>| {
+                                expr.reify(vcx, (lctx.0, &[])) //TODO: no idea why i do this so probably wrong
+                            }),
+                        ))
                     }
                     unsupported_literal => {
                         todo!("unsupported constant literal: {unsupported_literal:?}")

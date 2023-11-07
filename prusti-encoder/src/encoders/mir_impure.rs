@@ -12,7 +12,7 @@ use task_encoder::{
     TaskEncoder,
     TaskEncoderDependencies,
 };
-use vir::{MethodIdent, UnknownArity};
+use vir::{MethodIdent, UnknownArity, CallableIdent};
 
 pub struct MirImpureEncoder;
 
@@ -327,7 +327,7 @@ impl<'vir, 'enc> EncoderVisitor<'vir, 'enc> {
                     ).unwrap();
 
                     let ref_p = self.encode_place(place);
-                    let predicate = place_ty_out.predicate_ref.apply(self.vcx, [ref_p]);
+                    let predicate = place_ty_out.ref_to_pred.apply(self.vcx, [ref_p]);
                     if matches!(repack_op, mir_state_analysis::free_pcs::RepackOp::Expand(..)) {
                         self.stmt(vir::StmtData::Unfold(predicate));
                     } else {
@@ -344,7 +344,7 @@ impl<'vir, 'enc> EncoderVisitor<'vir, 'enc> {
 
                     let ref_p = self.encode_place(place);
                     self.stmt(vir::StmtData::Exhale(self.vcx.alloc(vir::ExprData::PredicateApp(
-                        place_ty_out.predicate_ref.apply(self.vcx, [ref_p])
+                        place_ty_out.ref_to_pred.apply(self.vcx, [ref_p])
                     ))));
                 }
                 unsupported_op => panic!("unsupported repack op: {unsupported_op:?}"),
@@ -364,7 +364,7 @@ impl<'vir, 'enc> EncoderVisitor<'vir, 'enc> {
                     place_ty.ty,
                 ).unwrap();
                 let place_exp = self.encode_place(Place::from(source));
-                let snap_val = ty_out.function_snap.apply(self.vcx, [place_exp]);
+                let snap_val = ty_out.ref_to_snap.apply(self.vcx, [place_exp]);
 
                 let tmp_exp = self.new_tmp(ty_out.snapshot).1;
                 self.stmt(vir::StmtData::PureAssign(self.vcx.alloc(vir::PureAssignData {
@@ -372,7 +372,7 @@ impl<'vir, 'enc> EncoderVisitor<'vir, 'enc> {
                     rhs: snap_val,
                 })));
                 self.stmt(vir::StmtData::Exhale(self.vcx.alloc(vir::ExprData::PredicateApp(
-                    ty_out.predicate_ref.apply(self.vcx, [place_exp])
+                    ty_out.ref_to_pred.apply(self.vcx, [place_exp])
                 ))));
                 tmp_exp
             }
@@ -382,7 +382,7 @@ impl<'vir, 'enc> EncoderVisitor<'vir, 'enc> {
                 let ty_out = self.deps.require_ref::<crate::encoders::TypeEncoder>(
                     place_ty.ty,
                 ).unwrap();
-                ty_out.function_snap.apply(self.vcx, [self.encode_place(Place::from(source))])
+                ty_out.ref_to_snap.apply(self.vcx, [self.encode_place(Place::from(source))])
             }
             mir::Operand::Constant(box constant) => self.encode_constant(constant),
         }
@@ -400,7 +400,7 @@ impl<'vir, 'enc> EncoderVisitor<'vir, 'enc> {
                 let ty_out = self.deps.require_ref::<crate::encoders::TypeEncoder>(
                     place_ty.ty,
                 ).unwrap();
-                let source = ty_out.function_snap.apply(self.vcx, [self.encode_place(Place::from(source))]);
+                let source = ty_out.ref_to_snap.apply(self.vcx, [self.encode_place(Place::from(source))]);
                 (source, ty_out)
             }
             mir::Operand::Constant(box constant) => {
@@ -673,7 +673,7 @@ impl<'vir, 'enc> mir::visit::Visitor<'vir> for EncoderVisitor<'vir, 'enc> {
                     ) => {
                         let dest_ty_struct = dest_ty_out.expect_structlike();
 
-                        let cons_name = dest_ty_out.from_fields.unwrap();
+                        let cons_name = dest_ty_out.expect_structlike().field_snaps_to_snap;
                         let cons_args: Vec<_> = fields.iter().map(|field| self.encode_operand_snap(field)).collect();
                         let cons = cons_name.apply(self.vcx, &cons_args);
 

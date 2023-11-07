@@ -1,7 +1,7 @@
 use prusti_rustc_interface::{middle::{mir, ty}, span::def_id::DefId};
 
 use task_encoder::{TaskEncoder, TaskEncoderDependencies};
-use vir::{Reify, FunctionIdent, UnknownArity};
+use vir::{Reify, FunctionIdent, UnknownArity, CallableIdent};
 use std::cell::RefCell;
 
 use crate::encoders::{

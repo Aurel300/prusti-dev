@@ -547,12 +547,12 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
 
                         let bool_cons = self.deps.require_ref::<crate::encoders::TypeEncoder>(
                             self.vcx.tcx.types.bool,
-                        ).unwrap().from_fields.unwrap();
+                        ).unwrap().expect_prim().prim_to_snap;
 
-                        let forall = bool_cons.apply(self.vcx, &[self.vcx.alloc(ExprRetData::Forall(self.vcx.alloc(vir::ForallGenData {
+                        let forall = bool_cons.apply(self.vcx, [self.vcx.alloc(ExprRetData::Forall(self.vcx.alloc(vir::ForallGenData {
                             qvars,
                             triggers: &[], // TODO
-                            body: bool_cons.apply(self.vcx, &[body]),
+                            body: bool_cons.apply(self.vcx, [body]),
                         })))]);
 
                         let mut term_update = Update::new();
@@ -617,16 +617,16 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
             mir::Rvalue::BinaryOp(op, box (l, r)) => {
                 let ty_l = self.deps.require_ref::<crate::encoders::TypeEncoder>(
                     l.ty(self.body, self.vcx.tcx),
-                ).unwrap().to_primitive.unwrap();
+                ).unwrap().expect_prim().snap_to_prim;
                 let ty_r = self.deps.require_ref::<crate::encoders::TypeEncoder>(
                     r.ty(self.body, self.vcx.tcx),
-                ).unwrap().to_primitive.unwrap();
+                ).unwrap().expect_prim().snap_to_prim;
                 let ty_rvalue = self.deps.require_ref::<crate::encoders::TypeEncoder>(
                     rvalue.ty(self.body, self.vcx.tcx),
-                ).unwrap().from_fields.unwrap();
+                ).unwrap().expect_prim().prim_to_snap;
 
                 ty_rvalue.apply(self.vcx,
-                    &[self.vcx.alloc(ExprRetData::BinOp(self.vcx.alloc(vir::BinOpGenData {
+                    [self.vcx.alloc(ExprRetData::BinOp(self.vcx.alloc(vir::BinOpGenData {
                         kind: op.into(),
                         lhs: ty_l.apply(self.vcx, [self.encode_operand(curr_ver, l)]),
                         rhs: ty_r.apply(self.vcx, [self.encode_operand(curr_ver, r)]),
@@ -638,13 +638,13 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
             mir::Rvalue::UnaryOp(op, expr) => {
                 let ty_expr = self.deps.require_ref::<crate::encoders::TypeEncoder>(
                     expr.ty(self.body, self.vcx.tcx),
-                ).unwrap().to_primitive.unwrap();
+                ).unwrap().expect_prim().snap_to_prim;
                 let ty_rvalue = self.deps.require_ref::<crate::encoders::TypeEncoder>(
                     rvalue.ty(self.body, self.vcx.tcx),
-                ).unwrap().from_fields.unwrap();
+                ).unwrap().expect_prim().prim_to_snap;
 
                 ty_rvalue.apply(self.vcx,
-                    &[self.vcx.alloc(ExprRetData::UnOp(self.vcx.alloc(vir::UnOpGenData {
+                    [self.vcx.alloc(ExprRetData::UnOp(self.vcx.alloc(vir::UnOpGenData {
                         kind: op.into(),
                         expr: ty_expr.apply(self.vcx, [self.encode_operand(curr_ver, expr)]),
                     })))]

@@ -6,7 +6,7 @@ use task_encoder::{
     TaskEncoder,
     TaskEncoderDependencies,
 };
-use vir::{UnknownArity, FunctionIdent};
+use vir::{UnknownArity, FunctionIdent, CallableIdent};
 
 pub struct MirBuiltinEncoder;
 

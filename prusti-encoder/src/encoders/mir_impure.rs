@@ -790,25 +790,25 @@ impl<'vir, 'enc> mir::visit::Visitor<'vir> for EncoderVisitor<'vir, 'enc> {
                 ))
             }
             mir::TerminatorKind::Assert { cond, expected, msg, target, unwind } => {
-
-                let otherwise = match unwind {
-                    mir::UnwindAction::Cleanup(bb) => bb,
-                    _ => todo!()
-                };
-
                 let e_bool = self.deps.require_ref::<crate::encoders::TypeEncoder>(
                     self.vcx.tcx.types.bool,
                 ).unwrap();
                 let enc = self.encode_operand_snap(cond);
                 let enc = e_bool.expect_prim().snap_to_prim.apply(self.vcx, [enc]);
+                self.stmt(vir::StmtData::Exhale(enc));
 
+                let expected = self.vcx.alloc(vir::ExprData::Const(self.vcx.alloc(vir::ConstData::Bool(*expected))));
                 let target_bb = self.vcx.alloc(vir::CfgBlockLabelData::BasicBlock(target.as_usize()));
-                
+                let otherwise = match unwind {
+                    mir::UnwindAction::Cleanup(bb) =>
+                        self.vcx.alloc(vir::CfgBlockLabelData::BasicBlock(bb.as_usize())),
+                    _ => todo!()
+                };
+
                 self.vcx.alloc(vir::TerminatorStmtData::GotoIf(self.vcx.alloc(vir::GotoIfData {
                     value: enc,  
-                    targets: self.vcx.alloc_slice(&[(self.vcx.alloc(vir::ExprData::Const(self.vcx.alloc(vir::ConstData::Bool(*expected))))
-                    , &target_bb)]),
-                    otherwise: self.vcx.alloc(vir::CfgBlockLabelData::BasicBlock(otherwise.as_usize())),
+                    targets: self.vcx.alloc_slice(&[(expected, &target_bb)]),
+                    otherwise,
                 })))
             }
             unsupported_kind => self.vcx.alloc(vir::TerminatorStmtData::Dummy(

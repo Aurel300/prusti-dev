@@ -78,7 +78,7 @@ impl TaskEncoder for MirFunctionEncoder {
             let function_name = vir::vir_format!(vcx, "f_{}", vcx.tcx.item_name(def_id));
             let args: Vec<_> = (1..=local_defs.arg_count)
                 .map(mir::Local::from)
-                .map(|def_idx| local_defs.locals[def_idx].snapshot)
+                .map(|def_idx| local_defs.locals[def_idx].ty.snapshot)
                 .collect();
             let args = UnknownArity::new(vcx.alloc_slice(&args));
             let function_ref = FunctionIdent::new(function_name, args);
@@ -90,7 +90,7 @@ impl TaskEncoder for MirFunctionEncoder {
 
             let func_args: Vec<_> = (1..=local_defs.arg_count).map(mir::Local::from).map(|arg| vcx.alloc(vir::LocalDeclData {
                 name: local_defs.locals[arg].local.name,
-                ty: local_defs.locals[arg].snapshot,
+                ty: local_defs.locals[arg].ty.snapshot,
             })).collect();
 
             // Encode the body of the function
@@ -104,7 +104,7 @@ impl TaskEncoder for MirFunctionEncoder {
                 })
                 .unwrap()
                 .expr;
-            let expr = expr.reify(vcx, (def_id, &spec.pre_args[1..]));
+            let expr = expr.reify(vcx, (def_id, spec.pre_args));
 
             tracing::debug!("finished {def_id:?}");
 
@@ -113,7 +113,7 @@ impl TaskEncoder for MirFunctionEncoder {
                     function: vcx.alloc(vir::FunctionData {
                         name: function_name,
                         args: vcx.alloc_slice(&func_args),
-                        ret: local_defs.locals[mir::RETURN_PLACE].snapshot,
+                        ret: local_defs.locals[mir::RETURN_PLACE].ty.snapshot,
                         pres: vcx.alloc_slice(&spec.pres),
                         posts: vcx.alloc_slice(&spec.posts),
                         expr: Some(expr),

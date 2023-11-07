@@ -26,6 +26,7 @@ pub struct FieldAccessFunctions<'vir> {
 
 #[derive(Clone, Debug)]
 pub struct TypeEncoderOutputRefSubPrim<'vir> {
+    pub prim_type: vir::Type<'vir>,
     /// Snapshot of self as argument. Returns Viper primitive value.
     pub snap_to_prim: FunctionIdent<'vir, UnaryArity<'vir>>,
     /// Viper primitive value as argument. Returns snapshot.
@@ -67,6 +68,7 @@ pub struct TypeEncoderOutputRef<'vir> {
     /// Ref as first argument, snapshot as second. Ensures predicate
     /// access to ref with snapshot value.
     pub method_assign: MethodIdent<'vir, BinaryArity<'vir>>,
+    /// Always `TypeData::Domain`.
     pub snapshot: vir::Type<'vir>,
     //pub method_refold: &'vir str,
     pub specifics: TypeEncoderOutputRefSub<'vir>,
@@ -88,18 +90,18 @@ impl<'vir> TypeEncoderOutputRef<'vir> {
     }
 
     pub fn expr_from_u128(&self, val: u128) -> vir::Expr<'vir> {
-        match self.snapshot {
+        match self.expect_prim().prim_type {
             vir::TypeData::Bool => vir::with_vcx(|vcx| {
                 self.expect_prim().prim_to_snap.apply(vcx, [vcx.alloc(vir::ExprData::Const(
                     vcx.alloc(vir::ConstData::Bool(val != 0)),
                 ))])
             }),
-            vir::TypeData::Int => vir::with_vcx(|vcx| {
+            vir::TypeData::Int { signed: false, .. } => vir::with_vcx(|vcx| {
                 self.expect_prim().prim_to_snap.apply(vcx, [
                     vcx.alloc(vir::ExprData::Const(vcx.alloc(vir::ConstData::Int(val))))
                 ])
             }),
-            k => todo!("unsupported type in expr_from_u128 {k:?}"),
+            k => todo!("unsupported type in expr_from_u128: {k:?} ({:?})", self.snapshot),
         }
     }
 }
@@ -479,11 +481,11 @@ impl TaskEncoder for TypeEncoder {
 
             let mut field_projection_p = Vec::new();
             for (fa, ty_out) in field_access.iter().zip(&field_ty_out) {
-                let name_r = fa.read.name();
-                funcs.push(vir::vir_domain_func! { vcx; function [name_r]([ty_s]): [ty_out.snapshot] });
+                let read = fa.read;
+                funcs.push(vir::vir_domain_func! { vcx; function read([ty_s]): [ty_out.snapshot] });
 
-                let name_w = fa.write.name();
-                funcs.push(vir::vir_domain_func! { vcx; function [name_w]([ty_s], [ty_out.snapshot]): [ty_s] });
+                let write = fa.write;
+                funcs.push(vir::vir_domain_func! { vcx; function write([ty_s], [ty_out.snapshot]): [ty_s] });
 
                 field_projection_p.push(vcx.alloc(vir::FunctionData {
                     name: fa.projection_p.name(),
@@ -671,6 +673,7 @@ impl TaskEncoder for TypeEncoder {
                 let method_assign = mk_function_assign(vcx, "p_Bool", ty_s);
                 let (snap_to_prim, prim_to_snap) = mk_primitive(vcx, "s_Bool", ty_s, &vir::TypeData::Bool);
                 let specifics = TypeEncoderOutputRefSub::Primitive(TypeEncoderOutputRefSubPrim {
+                    prim_type: &vir::TypeData::Bool,
                     snap_to_prim,
                     prim_to_snap,
                 });
@@ -703,21 +706,25 @@ impl TaskEncoder for TypeEncoder {
             }
             TyKind::Int(_) |
             TyKind::Uint(_) => {
+                let signed = task_key.is_signed();
                 let (sign, name_str) = match task_key.kind() {
                     TyKind::Int(kind) => ("Int", kind.name_str()),
                     TyKind::Uint(kind) => ("Uint", kind.name_str()),
                     _ => unreachable!(),
                 };
+                let bit_width = Self::get_bit_width(vcx.tcx, *task_key);
+                let prim_type = vcx.alloc(vir::TypeData::Int { bit_width: bit_width as u8, signed });
                 let name_s = vir::vir_format!(vcx, "s_{sign}_{name_str}");
                 let name_p = vir::vir_format!(vcx, "p_{sign}_{name_str}");
                 let ref_to_pred = mk_predicate_ident(name_p);
                 let ty_s = vcx.alloc(vir::TypeData::Domain(name_s));
-                let (snap_to_prim, prim_to_snap) = mk_primitive(vcx, name_s, ty_s, &vir::TypeData::Int);
+                let (snap_to_prim, prim_to_snap) = mk_primitive(vcx, name_s, ty_s, prim_type);
                 let name_field = vir::vir_format!(vcx, "f_{name_s}");
                 let ref_to_snap = mk_function_snap_identifier(vcx, name_p, ty_s);
                 let unreachable_to_snap = mk_function_unreachable_identifier(vcx, name_s);
                 let method_assign = mk_function_assign(vcx, name_p, ty_s);
                 let specifics = TypeEncoderOutputRefSub::Primitive(TypeEncoderOutputRefSubPrim {
+                    prim_type,
                     snap_to_prim,
                     prim_to_snap,
                 });
@@ -878,5 +885,16 @@ impl TaskEncoder for TypeEncoder {
             //_ => Err((TypeEncoderError::UnsupportedType, None)),
             unsupported_type => todo!("type not supported: {unsupported_type:?}"),
         })
+    }
+}
+impl TypeEncoder {
+    fn get_bit_width(tcx: ty::TyCtxt, ty: ty::Ty) -> u64 {
+        let pointer_size = tcx.data_layout.pointer_size.bits() as u32;
+        match ty.kind() {
+            // TODO: maybe we don't want to use the target architecture bit-width when verifying?
+            ty::TyKind::Int(ty) => ty.normalize(pointer_size).bit_width().unwrap(),
+            ty::TyKind::Uint(ty) => ty.normalize(pointer_size).bit_width().unwrap(),
+            kind => unreachable!("tried to get bit width of non-integer type {kind:?}"),
+        }
     }
 }

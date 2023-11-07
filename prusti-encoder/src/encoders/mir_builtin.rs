@@ -17,9 +17,8 @@ pub enum MirBuiltinEncoderError {
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum MirBuiltinEncoderTask<'tcx> {
-    // TODO: which type? input or output? -> best to store both?
     UnOp(ty::Ty<'tcx>, mir::UnOp, ty::Ty<'tcx>),
-    // BinOp(mir::BinOp, ty::Ty<'tcx>),
+    BinOp(ty::Ty<'tcx>, mir::BinOp, ty::Ty<'tcx>, ty::Ty<'tcx>),
     CheckedBinOp(ty::Ty<'tcx>, mir::BinOp, ty::Ty<'tcx>, ty::Ty<'tcx>),
 }
 
@@ -87,6 +86,7 @@ impl TaskEncoder for MirBuiltinEncoder {
         vir::with_vcx(|vcx| {
             match *task_key {
                 MirBuiltinEncoderTask::UnOp(rvalue_ty, op, operand_ty) => {
+                    assert_eq!(rvalue_ty, operand_ty);
                     let e_operand_ty = deps.require_ref::<crate::encoders::TypeEncoder>(
                         operand_ty,
                     ).unwrap();
@@ -98,9 +98,43 @@ impl TaskEncoder for MirBuiltinEncoder {
                         function,
                     });
 
-                    let e_rvalue_ty = deps.require_ref::<crate::encoders::TypeEncoder>(
-                        rvalue_ty,
-                    ).unwrap();
+                    let e_rvalue_ty = &e_operand_ty;
+                    let prim_rvalue_ty = e_rvalue_ty.expect_prim();
+                    let snap_arg = vcx.mk_local_ex("arg");
+                    let prim_arg = e_operand_ty.expect_prim().snap_to_prim.apply(vcx, [snap_arg]);
+                    // `prim_to_snap(-snap_to_prim(arg))`
+                    let mut val = prim_rvalue_ty.prim_to_snap.apply(vcx,
+                        [vcx.alloc(vir::ExprData::UnOp(vcx.alloc(vir::UnOpData {
+                            kind: vir::UnOpKind::from(op),
+                            expr: prim_arg,
+                        })))]
+                    );
+                    if op == mir::UnOp::Neg && operand_ty.is_signed() {
+                        // Can overflow when doing `- iN::MIN -> iN::MIN`. There
+                        // is no `CheckedUnOp`, instead the compiler puts an
+                        // `TerminatorKind::Assert` before in debug mode.
+                        let vir::TypeData::Int { bit_width, signed: true } = prim_rvalue_ty.prim_type else {
+                            unreachable!()
+                        };
+                        let bound = vcx.alloc(vir::ExprData::Const(vcx.alloc(vir::ConstData::Int(1 << (bit_width - 1)))));
+                        let bound = vcx.alloc(vir::ExprData::UnOp(vcx.alloc(vir::UnOpData {
+                            kind: vir::UnOpKind::Neg,
+                            expr: bound,
+                        })));
+                        // `snap_to_prim(arg) == -iN::MIN`
+                        let cond = vcx.alloc(vir::ExprData::BinOp(vcx.alloc(vir::BinOpData {
+                            kind: vir::BinOpKind::CmpEq,
+                            lhs: prim_arg,
+                            rhs: bound,
+                        })));
+                        // `snap_to_prim(arg) == -iN::MIN ? arg : prim_to_snap(-snap_to_prim(arg))`
+                        val = vcx.alloc(vir::ExprData::Ternary(vcx.alloc(vir::TernaryData {
+                            cond,
+                            then: snap_arg,
+                            else_: val,
+                        })))
+                    }
+
                     Ok((MirBuiltinEncoderOutput {
                         function: vcx.alloc(vir::FunctionData {
                             name,
@@ -108,57 +142,79 @@ impl TaskEncoder for MirBuiltinEncoder {
                             ret: e_rvalue_ty.snapshot,
                             pres: &[],
                             posts: &[],
-                            expr: Some(
-                                e_rvalue_ty.expect_prim().prim_to_snap.apply(vcx,
-                                    [vcx.alloc(vir::ExprData::UnOp(vcx.alloc(vir::UnOpData {
-                                        kind: vir::UnOpKind::from(op),
-                                        expr: e_operand_ty.expect_prim().snap_to_prim.apply(vcx, [vcx.mk_local_ex("arg")])
-                                    })))]
-                                )
-                            ),
+                            expr: Some(val),
                         }),
                     }, ()))
                 }
 
-                // // TODO: should these be two different functions? precondition?
-                // MirBuiltinEncoderTask::BinOp(mir::BinOp::Add | mir::BinOp::AddUnchecked, ty) => {
-                //     let name = vir::vir_format!(vcx, "mir_binop_add_{}", int_name(*ty));
-                //     deps.emit_output_ref::<Self>(task_key.clone(), MirBuiltinEncoderOutputRef {
-                //         name,
-                //     });
+                MirBuiltinEncoderTask::BinOp(rvalue_ty, op, l_ty, r_ty) => {
+                    let e_l_ty = deps.require_ref::<crate::encoders::TypeEncoder>(
+                        l_ty,
+                    ).unwrap();
+                    let e_r_ty = deps.require_ref::<crate::encoders::TypeEncoder>(
+                        r_ty,
+                    ).unwrap();
+                    let e_rvalue_ty = deps.require_ref::<crate::encoders::TypeEncoder>(
+                        rvalue_ty,
+                    ).unwrap();
+                    let prim_rvalue_ty = e_rvalue_ty.expect_prim();
 
-                //     let ty_out = deps.require_ref::<crate::encoders::TypeEncoder>(
-                //         *ty,
-                //     ).unwrap();
-                //     Ok((MirBuiltinEncoderOutput {
-                //         function: vcx.alloc(vir::FunctionData {
-                //             name,
-                //             args: vcx.alloc_slice(&[
-                //                 vcx.mk_local_decl("arg1", ty_out.snapshot),
-                //                 vcx.mk_local_decl("arg2", ty_out.snapshot),
-                //             ]),
-                //             ret: ty_out.snapshot,
-                //             pres: &[],
-                //             posts: &[],
-                //             expr: Some(vcx.mk_func_app(
-                //                 ty_out.from_primitive.unwrap(),
-                //                 &[vcx.alloc(vir::ExprData::BinOp(vcx.alloc(vir::BinOpData {
-                //                     kind: vir::BinOpKind::Add,
-                //                     lhs: vcx.mk_func_app(
-                //                         ty_out.to_primitive.unwrap(),
-                //                         &[vcx.mk_local_ex("arg1")],
-                //                     ),
-                //                     rhs: vcx.mk_func_app(
-                //                         ty_out.to_primitive.unwrap(),
-                //                         &[vcx.mk_local_ex("arg2")],
-                //                     ),
-                //                 })))],
-                //             )),
-                //         }),
-                //     }, ()))
-                // }
+                    let name = vir::vir_format!(vcx, "mir_binop_{op:?}_{}_{}", int_name(l_ty), int_name(r_ty));
+                    let arity = UnknownArity::new(vcx.alloc_slice(&[e_l_ty.snapshot, e_r_ty.snapshot]));
+                    let function = FunctionIdent::new(name, arity);
+                    deps.emit_output_ref::<Self>(task_key.clone(), MirBuiltinEncoderOutputRef {
+                        function,
+                    });
+                    let val = prim_rvalue_ty.prim_to_snap.apply(vcx,
+                        [vcx.alloc(vir::ExprData::BinOp(vcx.alloc(vir::BinOpData {
+                            kind: vir::BinOpKind::from(op),
+                            lhs: e_l_ty.expect_prim().snap_to_prim.apply(vcx,
+                                [vcx.mk_local_ex("arg1")],
+                            ),
+                            rhs: e_r_ty.expect_prim().snap_to_prim.apply(vcx,
+                                [vcx.mk_local_ex("arg2")],
+                            ),
+                        })))]
+                    );
+                    use mir::BinOp::*;
+                    let (pre, val) = match op {
+                        // Overflow well defined as wrapping
+                        Add | Sub | Mul | Shl | Shr =>
+                            (None, Self::get_wrapped_val(vcx, val, prim_rvalue_ty.prim_type)),
+                        // Undefined behavior to overflow (need precondition)
+                        AddUnchecked | SubUnchecked | MulUnchecked | ShlUnchecked | ShrUnchecked => {
+                            let wrapped_val = Self::get_wrapped_val(vcx, val, prim_rvalue_ty.prim_type);
+                            let pre = vcx.alloc(vir::ExprData::BinOp(vcx.alloc(vir::BinOpData {
+                                kind: vir::BinOpKind::CmpEq,
+                                lhs: val,
+                                rhs: wrapped_val,
+                            })));
+                            (Some(pre), val)
+                        }
+                        // Cannot overflow
+                        Div | Rem | BitXor | BitAnd | BitOr | Eq | Lt | Le | Ne | Ge | Gt | Offset =>
+                            (None, val),
+                    };
+                    let pres = pre.map(|pre| vcx.alloc_slice(&[pre])).unwrap_or_default();
+
+                    Ok((MirBuiltinEncoderOutput {
+                        function: vcx.alloc(vir::FunctionData {
+                            name,
+                            args: vcx.alloc_slice(&[
+                                vcx.mk_local_decl("arg1", e_l_ty.snapshot),
+                                vcx.mk_local_decl("arg2", e_r_ty.snapshot),
+                            ]),
+                            ret: e_rvalue_ty.snapshot,
+                            pres,
+                            posts: &[],
+                            expr: Some(val),
+                        }),
+                    }, ()))
+                }
 
                 MirBuiltinEncoderTask::CheckedBinOp(rvalue_ty, op, l_ty, r_ty) => {
+                    // `op` can only be `Add`, `Sub` or `Mul`
+                    assert!(matches!(op, mir::BinOp::Add | mir::BinOp::Sub | mir::BinOp::Mul));
                     let e_l_ty = deps.require_ref::<crate::encoders::TypeEncoder>(
                         l_ty,
                     ).unwrap();
@@ -173,17 +229,57 @@ impl TaskEncoder for MirBuiltinEncoder {
                         function,
                     });
 
-                    let bool_cons = deps.require_ref::<crate::encoders::TypeEncoder>(
-                        vcx.tcx.types.bool,
-                    ).unwrap().expect_prim().prim_to_snap;
                     let e_rvalue_ty = deps.require_ref::<crate::encoders::TypeEncoder>(
                         rvalue_ty,
                     ).unwrap();
                     // The result of a checked add will always be `(T, bool)`, get the `T` type
                     let rvalue_pure_ty = rvalue_ty.tuple_fields()[0];
+                    let bool_ty = rvalue_ty.tuple_fields()[1];
+                    assert!(bool_ty.is_bool());
+
                     let e_rvalue_pure_ty = deps.require_ref::<crate::encoders::TypeEncoder>(
                         rvalue_pure_ty,
                     ).unwrap();
+                    let bool_cons = deps.require_ref::<crate::encoders::TypeEncoder>(
+                        bool_ty,
+                    ).unwrap().expect_prim().prim_to_snap;
+
+                    // Unbounded value
+                    let val_exp = vcx.alloc(vir::ExprData::BinOp(vcx.alloc(vir::BinOpData {
+                        kind: vir::BinOpKind::from(op),
+                        lhs: e_l_ty.expect_prim().snap_to_prim.apply(vcx,
+                            [vcx.mk_local_ex("arg1")],
+                        ),
+                        rhs: e_r_ty.expect_prim().snap_to_prim.apply(vcx,
+                            [vcx.mk_local_ex("arg2")],
+                        ),
+                    })));
+                    let val_str = vir::vir_format!(vcx, "val");
+                    let val = vcx.mk_local_ex(val_str);
+                    // Wrapped value
+                    let wrapped_val_exp = Self::get_wrapped_val(vcx, val, e_rvalue_pure_ty.expect_prim().prim_type);
+                    let wrapped_val_str = vir::vir_format!(vcx, "wrapped_val");
+                    let wrapped_val = vcx.mk_local_ex(wrapped_val_str);
+                    let wrapped_val_snap = e_rvalue_pure_ty.expect_prim().prim_to_snap.apply(vcx,
+                        [wrapped_val],
+                    );
+                    // Overflowed?
+                    let overflowed = vcx.alloc(vir::ExprData::BinOp(vcx.alloc(vir::BinOpData {
+                        kind: vir::BinOpKind::CmpNe,
+                        lhs: wrapped_val,
+                        rhs: val,
+                    })));
+                    let overflowed_snap = bool_cons.apply(vcx, [overflowed]);
+                    // `tuple(prim_to_snap(wrapped_val), wrapped_val != val)`
+                    let tuple = e_rvalue_ty.expect_structlike().field_snaps_to_snap.apply(vcx,
+                        &[wrapped_val_snap, overflowed_snap]
+                    );
+                    // `let wrapped_val == (val ..) in $tuple`
+                    let inner_let = vcx.alloc(vir::ExprData::Let(vcx.alloc(vir::LetGenData {
+                        name: wrapped_val_str,
+                        val: wrapped_val_exp,
+                        expr: tuple,
+                    })));
 
                     Ok((MirBuiltinEncoderOutput {
                         function: vcx.alloc(vir::FunctionData {
@@ -195,32 +291,62 @@ impl TaskEncoder for MirBuiltinEncoder {
                             ret: e_rvalue_ty.snapshot,
                             pres: &[],
                             posts: &[],
-                            expr: Some(e_rvalue_ty.expect_structlike().field_snaps_to_snap.apply(vcx,
-                                &[
-                                    e_rvalue_pure_ty.expect_prim().prim_to_snap.apply(vcx,
-                                        [vcx.alloc(vir::ExprData::BinOp(vcx.alloc(vir::BinOpData {
-                                            kind: vir::BinOpKind::from(op),
-                                            lhs: e_l_ty.expect_prim().snap_to_prim.apply(vcx,
-                                                [vcx.mk_local_ex("arg1")],
-                                            ),
-                                            rhs: e_r_ty.expect_prim().snap_to_prim.apply(vcx,
-                                                [vcx.mk_local_ex("arg2")],
-                                            ),
-                                        })))],
-                                    ),
-                                    // TODO: overflow condition!
-                                    bool_cons.apply(vcx,
-                                        [&vir::ExprData::Const(&vir::ConstData::Bool(false))],
-                                    ),
-                                ],
-                            )),
+                            expr: Some(vcx.alloc(vir::ExprData::Let(vcx.alloc(vir::LetGenData {
+                                name: val_str,
+                                val: val_exp,
+                                expr: inner_let,
+                            })))),
                         }),
                     }, ()))
                 }
-
-                other => todo!("{other:?}"),
             }
-
         })
+    }
+}
+
+impl MirBuiltinEncoder {
+    fn get_wrapped_val<'vir>(vcx: &'vir vir::VirCtxt<'vir>, exp: &'vir vir::ExprData<'vir>, ty: vir::Type) -> &'vir vir::ExprData<'vir> {
+        let vir::TypeData::Int { bit_width: bw, signed } = *ty else {
+            panic!("Trying to get wrapped val on a non-int type.")
+        };
+        let mk_half =
+            || vcx.alloc(vir::ExprData::Const(vcx.alloc(vir::ConstData::Int(1 << (bw - 1)))));
+        let shift_amount = if signed {
+            Some(mk_half())
+        } else {
+            None
+        };
+        let modulo_val = if bw == 128 {
+            // `1_u128 << bw` would overflow to 0
+            let half = shift_amount.unwrap_or_else(mk_half);
+            vir::ExprData::BinOp(vcx.alloc(vir::BinOpData {
+                kind: vir::BinOpKind::Add,
+                lhs: half,
+                rhs: half,
+            }))
+        } else {
+            vir::ExprData::Const(vcx.alloc(vir::ConstData::Int(1 << bw)))
+        };
+        let mut exp = exp;
+        if let Some(half) = shift_amount {
+            exp = vcx.alloc(vir::ExprData::BinOp(vcx.alloc(vir::BinOpData {
+                kind: vir::BinOpKind::Add,
+                lhs: exp,
+                rhs: half,
+            })));
+        }
+        exp = vcx.alloc(vir::ExprData::BinOp(vcx.alloc(vir::BinOpData {
+            kind: vir::BinOpKind::Mod,
+            lhs: exp,
+            rhs: vcx.alloc(modulo_val),
+        })));
+        if let Some(half) = shift_amount {
+            exp = vcx.alloc(vir::ExprData::BinOp(vcx.alloc(vir::BinOpData {
+                kind: vir::BinOpKind::Sub,
+                lhs: exp,
+                rhs: half,
+            })));
+        }
+        exp
     }
 }

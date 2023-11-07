@@ -123,9 +123,10 @@ macro_rules! vir_format {
 
 #[macro_export]
 macro_rules! vir_type {
-    ($vcx:expr; Int) => { $vcx.alloc($crate::TypeData::Int) };
-    ($vcx:expr; Bool) => { $vcx.alloc($crate::TypeData::Bool) };
-    ($vcx:expr; Ref) => { $vcx.alloc($crate::TypeData::Ref) };
+    ($vcx:expr; Bool) => { & $crate::TypeData::Bool };
+    ($vcx:expr; Ref) => { & $crate::TypeData::Ref };
+    ($vcx:expr; Uint($bit_width:expr)) => { $vcx.alloc($crate::TypeData::Int { signed: false, bit_width: $bit_width }) };
+    ($vcx:expr; Int($bit_width:expr)) => { $vcx.alloc($crate::TypeData::Int { signed: true, bit_width: $bit_width }) };
     ($vcx:expr; [ $ty:expr ]) => { $ty };
     ($vcx:expr; $name:ident) => {
         $vcx.alloc($crate::TypeData::Domain($vcx.alloc_str(stringify!($name))))
@@ -187,7 +188,7 @@ macro_rules! vir_domain_func {
     ($vcx:expr; function $name:tt ( $( $args:tt )* ): $ret:tt ) => {{
         $vcx.alloc($crate::DomainFunctionData {
             unique: false,
-            name: $crate::vir_ident!($vcx; $name),
+            name: $name.name(),
             args: $crate::vir_type_list!($vcx; $($args)*),
             ret: $crate::vir_type!($vcx; $ret),
         })

@@ -109,10 +109,10 @@ impl TaskEncoder for MirBuiltinEncoder {
                             pres: &[],
                             posts: &[],
                             expr: Some(
-                                e_rvalue_ty.from_fields.unwrap().apply(vcx,
-                                    &[vcx.alloc(vir::ExprData::UnOp(vcx.alloc(vir::UnOpData {
+                                e_rvalue_ty.expect_prim().prim_to_snap.apply(vcx,
+                                    [vcx.alloc(vir::ExprData::UnOp(vcx.alloc(vir::UnOpData {
                                         kind: vir::UnOpKind::Not,
-                                        expr:  e_operand_ty.to_primitive.unwrap().apply(vcx, [vcx.mk_local_ex("arg")])
+                                        expr:  e_operand_ty.expect_prim().snap_to_prim.apply(vcx, [vcx.mk_local_ex("arg")])
                                     })))]
                                 )
                             ),
@@ -175,7 +175,7 @@ impl TaskEncoder for MirBuiltinEncoder {
 
                     let bool_cons = deps.require_ref::<crate::encoders::TypeEncoder>(
                         vcx.tcx.types.bool,
-                    ).unwrap().from_fields;
+                    ).unwrap().expect_prim().prim_to_snap;
                     let e_rvalue_ty = deps.require_ref::<crate::encoders::TypeEncoder>(
                         rvalue_ty,
                     ).unwrap();
@@ -195,23 +195,22 @@ impl TaskEncoder for MirBuiltinEncoder {
                             ret: e_rvalue_ty.snapshot,
                             pres: &[],
                             posts: &[],
-                            expr: Some(e_rvalue_ty.from_fields.unwrap().apply(vcx,
+                            expr: Some(e_rvalue_ty.expect_structlike().field_snaps_to_snap.apply(vcx,
                                 &[
-                                    e_rvalue_pure_ty.from_fields.unwrap().apply(vcx,
-                                        &[vcx.alloc(vir::ExprData::BinOp(vcx.alloc(vir::BinOpData {
+                                    e_rvalue_pure_ty.expect_prim().prim_to_snap.apply(vcx,
+                                        [vcx.alloc(vir::ExprData::BinOp(vcx.alloc(vir::BinOpData {
                                             kind: vir::BinOpKind::from(op),
-                                            lhs: e_l_ty.to_primitive.unwrap().apply(vcx,
+                                            lhs: e_l_ty.expect_prim().snap_to_prim.apply(vcx,
                                                 [vcx.mk_local_ex("arg1")],
                                             ),
-                                            rhs: e_r_ty.to_primitive.unwrap().apply(vcx,
+                                            rhs: e_r_ty.expect_prim().snap_to_prim.apply(vcx,
                                                 [vcx.mk_local_ex("arg2")],
                                             ),
                                         })))],
                                     ),
                                     // TODO: overflow condition!
-                                    vcx.mk_func_app(
-                                        "s_Bool_cons",
-                                        &[&vir::ExprData::Const(&vir::ConstData::Bool(false))],
+                                    bool_cons.apply(vcx,
+                                        [&vir::ExprData::Const(&vir::ConstData::Bool(false))],
                                     ),
                                 ],
                             )),

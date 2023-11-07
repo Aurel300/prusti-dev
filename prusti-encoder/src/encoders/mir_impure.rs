@@ -597,8 +597,8 @@ impl<'vir, 'enc> mir::visit::Visitor<'vir> for EncoderVisitor<'vir, 'enc> {
                     //mir::Rvalue::Cast(CastKind, Operand<'tcx>, Ty<'tcx>) => {}
 
                     mir::Rvalue::BinaryOp(mir::BinOp::Eq, box (l, r)) =>
-                        Some(e_rvalue_ty.from_fields.unwrap().apply(self.vcx,
-                            &[self.vcx.alloc(vir::ExprData::BinOp(self.vcx.alloc(vir::BinOpData {
+                        Some(e_rvalue_ty.expect_prim().prim_to_snap.apply(self.vcx,
+                            [self.vcx.alloc(vir::ExprData::BinOp(self.vcx.alloc(vir::BinOpData {
                                 kind: vir::BinOpKind::CmpEq,
                                 lhs: self.encode_operand_snap(l),
                                 rhs: self.encode_operand_snap(r),
@@ -612,10 +612,10 @@ impl<'vir, 'enc> mir::visit::Visitor<'vir> for EncoderVisitor<'vir, 'enc> {
                             r.ty(self.local_decls, self.vcx.tcx),
                         ).unwrap();
 
-                        Some(e_rvalue_ty.from_fields.unwrap().apply(self.vcx, &[self.vcx.alloc(vir::ExprData::BinOp(self.vcx.alloc(vir::BinOpData {
+                        Some(e_rvalue_ty.expect_prim().prim_to_snap.apply(self.vcx, [self.vcx.alloc(vir::ExprData::BinOp(self.vcx.alloc(vir::BinOpData {
                             kind: vir::BinOpKind::from(op),
-                            lhs: e_l_ty.to_primitive.unwrap().apply(self.vcx, [self.encode_operand_snap(l)]),
-                            rhs: e_r_ty.to_primitive.unwrap().apply(self.vcx, [self.encode_operand_snap(r)]),
+                            lhs: e_l_ty.expect_prim().snap_to_prim.apply(self.vcx, [self.encode_operand_snap(l)]),
+                            rhs: e_r_ty.expect_prim().snap_to_prim.apply(self.vcx, [self.encode_operand_snap(r)]),
                         })))]))
                     }
                     //mir::Rvalue::BinaryOp(BinOp, Box<(Operand<'tcx>, Operand<'tcx>)>) => {}

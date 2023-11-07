@@ -796,8 +796,11 @@ impl<'vir, 'enc> mir::visit::Visitor<'vir> for EncoderVisitor<'vir, 'enc> {
                     _ => todo!()
                 };
 
+                let e_bool = self.deps.require_ref::<crate::encoders::TypeEncoder>(
+                    self.vcx.tcx.types.bool,
+                ).unwrap();
                 let enc = self.encode_operand_snap(cond);
-                let enc = self.vcx.mk_func_app("s_Bool_val", &[enc]);
+                let enc = e_bool.expect_prim().snap_to_prim.apply(self.vcx, [enc]);
 
                 let target_bb = self.vcx.alloc(vir::CfgBlockLabelData::BasicBlock(target.as_usize()));
                 

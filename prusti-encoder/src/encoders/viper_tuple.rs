@@ -2,6 +2,7 @@ use task_encoder::{
     TaskEncoder,
     TaskEncoderDependencies,
 };
+use vir::{FunctionIdent, UnknownArity, CallableIdent, UnaryArity};
 use std::cell::RefCell;
 
 pub struct ViperTupleEncoder;
@@ -9,9 +10,9 @@ pub struct ViperTupleEncoder;
 #[derive(Clone, Debug)]
 pub struct ViperTupleEncoderOutputRef<'vir> {
     pub elem_count: usize,
-    pub domain_name: &'vir str,
-    pub cons_name: &'vir str,
-    pub elem_names: &'vir [&'vir str],
+    pub domain_type: vir::Type<'vir>,
+    pub constructor: FunctionIdent<'vir, UnknownArity<'vir>>,
+    pub elem_getters: &'vir [FunctionIdent<'vir, UnaryArity<'vir>>],
 }
 impl<'vir> task_encoder::OutputRefAny<'vir> for ViperTupleEncoderOutputRef<'vir> {}
 
@@ -24,7 +25,7 @@ impl<'vir> ViperTupleEncoderOutputRef<'vir> {
         if self.elem_count == 1 {
             return elems[0];
         }
-        vcx.mk_func_app(self.cons_name, elems)
+        self.constructor.apply(vcx, elems)
     }
 
     pub fn mk_elem<Curr, Next>(
@@ -37,7 +38,7 @@ impl<'vir> ViperTupleEncoderOutputRef<'vir> {
         if self.elem_count == 1 {
             return tuple;
         }
-        vcx.mk_func_app(self.elem_names[elem], &[tuple])
+        self.elem_getters[elem].apply(vcx, [tuple])
     }
 }
 
@@ -89,18 +90,23 @@ impl TaskEncoder for ViperTupleEncoder {
             let elem_names = (0..*task_key)
                 .map(|idx| vir::vir_format!(vcx, "Tuple_{task_key}_elem_{idx}"))
                 .collect::<Vec<_>>();
-            deps.emit_output_ref::<Self>(*task_key, ViperTupleEncoderOutputRef {
-                elem_count: *task_key,
-                domain_name,
-                cons_name,
-                elem_names: vcx.alloc_slice(&elem_names),
-            });
             let typaram_names = (0..*task_key)
                 .map(|idx| vir::vir_format!(vcx, "T{idx}"))
                 .collect::<Vec<_>>();
             let typaram_tys = vcx.alloc_slice(&typaram_names.iter()
                 .map(|name| vcx.alloc(vir::TypeData::Domain(name)))
                 .collect::<Vec<_>>());
+            let constructor = FunctionIdent::new(cons_name, UnknownArity::new(typaram_tys));
+            let domain_type = vcx.alloc(vir::TypeData::Domain(domain_name));
+            let elem_getters = elem_names.iter().map(|name| {
+                FunctionIdent::new(name, UnaryArity::new([domain_type]))
+            }).collect::<Vec<_>>();
+            deps.emit_output_ref::<Self>(*task_key, ViperTupleEncoderOutputRef {
+                elem_count: *task_key,
+                domain_type,
+                constructor,
+                elem_getters: vcx.alloc_slice(&elem_getters),
+            });
             let domain_ty = vcx.alloc(vir::TypeData::DomainParams(domain_name, typaram_tys));
             let qvars_names = (0..*task_key)
                 .map(|idx| vir::vir_format!(vcx, "elem{idx}"))
@@ -111,8 +117,7 @@ impl TaskEncoder for ViperTupleEncoder {
             let qvars_ex = (0..*task_key)
                 .map(|idx| vcx.mk_local_ex(qvars_names[idx]))
                 .collect::<Vec<_>>();
-            let cons_call = vcx.mk_func_app(
-                cons_name,
+            let cons_call = constructor.apply(vcx,
                 &qvars_names.iter()
                     .map(|qvar| vcx.mk_local_ex(qvar))
                     .collect::<Vec<_>>(),
@@ -125,7 +130,7 @@ impl TaskEncoder for ViperTupleEncoder {
                     body: vcx.mk_conj(&(0..*task_key)
                         .map(|idx| vcx.alloc(vir::ExprData::BinOp(vcx.alloc(vir::BinOpData {
                             kind: vir::BinOpKind::CmpEq,
-                            lhs: vcx.mk_func_app(elem_names[idx], &[cons_call]),
+                            lhs: elem_getters[idx].apply(vcx, [cons_call]),
                             rhs: qvars_ex[idx],
                         }))))
                         .collect::<Vec<_>>()),

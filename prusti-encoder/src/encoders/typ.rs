@@ -689,9 +689,9 @@ impl TaskEncoder for TypeEncoder {
                         ty: ty_s,
                     })]),
                     snapshot: vir::vir_domain! { vcx; domain s_Bool {
-                        function s_Bool_cons(Bool): s_Bool;
-                        function s_Bool_val(s_Bool): Bool;
-                        axiom_inverse(s_Bool_val, s_Bool_cons, Bool);
+                        function prim_to_snap(Bool): s_Bool;
+                        function snap_to_prim(s_Bool): Bool;
+                        axiom_inverse(snap_to_prim, prim_to_snap, Bool);
                     } },
                     predicate: mk_simple_predicate(vcx, "p_Bool", "f_Bool"),
                     unreachable_to_snap: mk_unreachable(vcx, unreachable_to_snap, ty_s),
@@ -712,10 +712,7 @@ impl TaskEncoder for TypeEncoder {
                 let name_p = vir::vir_format!(vcx, "p_{sign}_{name_str}");
                 let ref_to_pred = mk_predicate_ident(name_p);
                 let ty_s = vcx.alloc(vir::TypeData::Domain(name_s));
-                let snap_from_field_snaps = mk_from_fields(vcx, name_s, vcx.alloc_slice(&[ty_s]));
-                let name_cons = snap_from_field_snaps.name();
                 let (snap_to_prim, prim_to_snap) = mk_primitive(vcx, name_s, ty_s, &vir::TypeData::Int);
-                let name_val = snap_to_prim.name();
                 let name_field = vir::vir_format!(vcx, "f_{name_s}");
                 let ref_to_snap = mk_function_snap_identifier(vcx, name_p, ty_s);
                 let unreachable_to_snap = mk_function_unreachable_identifier(vcx, name_s);
@@ -739,9 +736,9 @@ impl TaskEncoder for TypeEncoder {
                         ty: ty_s,
                     })]),
                     snapshot: vir::vir_domain! { vcx; domain [name_s] {
-                        function [name_cons](Int): [ty_s];
-                        function [name_val]([ty_s]): Int;
-                        axiom_inverse([name_val], [name_cons], Int);
+                        function prim_to_snap(Int): [ty_s];
+                        function snap_to_prim([ty_s]): Int;
+                        axiom_inverse(snap_to_prim, prim_to_snap, Int);
                     } },
                     predicate: mk_simple_predicate(vcx, name_p, name_field),
                     unreachable_to_snap: mk_unreachable(vcx, unreachable_to_snap, ty_s),

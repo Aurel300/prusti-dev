@@ -146,12 +146,12 @@ macro_rules! vir_local_decl {
 macro_rules! vir_domain_axiom {
     ($vcx:expr; axiom_inverse($a:tt, $b:tt, $ty:tt)) => {{
         let val_ex = $vcx.mk_local_ex("val");
-        let inner = $vcx.mk_func_app($crate::vir_ident!($vcx; $b), &[val_ex]);
+        let inner = $b.apply($vcx, [val_ex]);
         $vcx.alloc($crate::DomainAxiomData {
             name: $vcx.alloc_str(&format!(
                 "ax_inverse_{}_{}",
-                $crate::vir_ident!($vcx; $a),
-                $crate::vir_ident!($vcx; $b),
+                $a.name(),
+                $b.name(),
             )),
             expr: $vcx.alloc($crate::ExprData::Forall($vcx.alloc($crate::ForallData {
                 qvars: $vcx.alloc_slice(&[
@@ -160,7 +160,7 @@ macro_rules! vir_domain_axiom {
                 triggers: $vcx.alloc_slice(&[$vcx.alloc_slice(&[inner])]),
                 body: $vcx.alloc($crate::ExprData::BinOp($vcx.alloc($crate::BinOpData {
                     kind: $crate::BinOpKind::CmpEq,
-                    lhs: $vcx.mk_func_app($crate::vir_ident!($vcx; $a), &[inner]),
+                    lhs: $a.apply($vcx, [inner]),
                     rhs: val_ex,
                 }))),
             }))),
@@ -179,7 +179,7 @@ macro_rules! vir_domain_func {
     ($vcx:expr; unique function $name:tt ( $( $args:tt )* ): $ret:tt ) => {{
         $vcx.alloc($crate::DomainFunctionData {
             unique: true,
-            name: $crate::vir_ident!($vcx; $name),
+            name: $name.name(),
             args: $crate::vir_type_list!($vcx; $($args)*),
             ret: $crate::vir_type!($vcx; $ret),
         })

@@ -111,8 +111,8 @@ impl TaskEncoder for MirBuiltinEncoder {
                             expr: Some(
                                 e_rvalue_ty.expect_prim().prim_to_snap.apply(vcx,
                                     [vcx.alloc(vir::ExprData::UnOp(vcx.alloc(vir::UnOpData {
-                                        kind: vir::UnOpKind::Not,
-                                        expr:  e_operand_ty.expect_prim().snap_to_prim.apply(vcx, [vcx.mk_local_ex("arg")])
+                                        kind: vir::UnOpKind::from(op),
+                                        expr: e_operand_ty.expect_prim().snap_to_prim.apply(vcx, [vcx.mk_local_ex("arg")])
                                     })))]
                                 )
                             ),

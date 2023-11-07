@@ -2,7 +2,6 @@
 #![feature(associated_type_defaults)]
 #![feature(box_patterns)]
 #![feature(local_key_cell_methods)]
-#![feature(never_type)]
 
 extern crate rustc_middle;
 extern crate rustc_serialize;

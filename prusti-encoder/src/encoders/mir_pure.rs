@@ -518,14 +518,18 @@ where
         // then walk terminator
         let term = self.body[start].terminator.as_ref().unwrap();
         match &term.kind {
-            mir::TerminatorKind::Goto { target } => {
+            mir::TerminatorKind::FalseEdge {
+                real_target: target,
+                ..
+            }
+            | mir::TerminatorKind::Goto { target } => {
                 if *target == end {
                     // We are done with the current fragment of the CFG, the
                     // rest is handled in a parent call.
                     return stmt_update;
                 }
 
-                todo!()
+                todo!("Goto for target != end")
             }
 
             mir::TerminatorKind::SwitchInt { discr, targets } => {
@@ -983,6 +987,36 @@ where
                             .collect::<Vec<_>>(),
                     )
                 }
+                mir::AggregateKind::Adt(def_id, variant_idx, args, _, union_field) => {
+                    assert!(union_field.is_none(), "unions not yet implemented");
+                    let ty = self.vcx.tcx.type_of(def_id).skip_binder();
+
+                    let adt_typ = self
+                        .deps
+                        .require_ref::<crate::encoders::TypeEncoder>(ty)
+                        .unwrap();
+
+                    let snapshot_name = match adt_typ.specifics {
+                        crate::encoders::typ::TypeEncoderOutputRefSub::Enum(e) => {
+                            let variant = &e.variants[variant_idx.as_usize()];
+                            variant.snapshot_name
+                        }
+                        crate::encoders::typ::TypeEncoderOutputRefSub::StructLike(_) => {
+                            assert_eq!(variant_idx.as_u32(), 0);
+                            adt_typ.snapshot_name
+                        }
+                        crate::encoders::typ::TypeEncoderOutputRefSub::Primitive => todo!(),
+                    };
+
+                    let cons = vir::vir_format!(self.vcx, "{snapshot_name}_cons"); // TODO: get better
+
+                    let args = fields
+                        .iter()
+                        .map(|field| self.encode_operand(curr_ver, field))
+                        .collect::<Vec<_>>();
+
+                    self.vcx.mk_func_app(cons, self.vcx.alloc_slice(&args))
+                }
                 _ => todo!("Unsupported Rvalue::AggregateKind: {kind:?}"),
             },
             mir::Rvalue::CheckedBinaryOp(binop, box (l, r)) => {
@@ -1002,6 +1036,21 @@ where
                         self.encode_operand(curr_ver, l),
                         self.encode_operand(curr_ver, r),
                     ],
+                )
+            }
+            mir::Rvalue::Discriminant(place) => {
+                let discriminent_func = self
+                    .deps
+                    .require_ref::<crate::encoders::TypeEncoder>(
+                        place.ty(&self.body.local_decls, self.vcx.tcx).ty,
+                    )
+                    .unwrap()
+                    .expect_enum()
+                    .func_discriminant;
+
+                self.vcx.mk_func_app(
+                    discriminent_func,
+                    self.vcx.alloc_slice(&[self.encode_place(curr_ver, place)]),
                 )
             }
             // ShallowInitBox
@@ -1056,6 +1105,9 @@ where
                             todo!("unsupported constant literal type: {unsupported_ty:?}")
                         }
                     },
+                    mir::ConstantKind::Unevaluated(a, b) => {
+                        todo!()
+                    }
                     unsupported_literal => {
                         todo!("unsupported constant literal: {unsupported_literal:?}")
                     }

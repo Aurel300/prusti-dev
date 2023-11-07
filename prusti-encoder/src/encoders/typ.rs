@@ -21,6 +21,7 @@ pub struct TypeEncoderOutputRefSubStruct<'vir> {
 #[derive(Clone, Debug)]
 pub struct TypeEncoderOutputRefSubEnum<'vir> {
     pub field_discriminant: &'vir str,
+    pub func_discriminant: &'vir str,
     pub variants: &'vir [TypeEncoderOutputRef<'vir>],
 }
 
@@ -404,6 +405,9 @@ impl TaskEncoder for TypeEncoder {
                     (),
                 ))
             }
+            TyKind::Adt(adt_def, substs) if adt_def.is_enum() => {
+                Ok((mk_enum(vcx, deps, adt_def, task_key)?, ()))
+            }
 
             TyKind::Never => {
                 let ty_s = vcx.alloc(vir::TypeData::Domain("s_Never"));
@@ -441,14 +445,6 @@ impl TaskEncoder for TypeEncoder {
                 ))
             }
 
-            TyKind::Adt(adt_def, substs) if adt_def.is_enum() => {
-                tracing::error!("encoding enum {adt_def:#?} with substs {substs:?}");
-                tracing::warn!("{:?}", adt_def.all_fields().collect::<Vec<_>>());
-                tracing::warn!("{:#?}", adt_def.variants());
-
-                Ok((mk_enum(vcx, deps, adt_def, task_key)?, ()))
-            }
-
             //_ => Err((TypeEncoderError::UnsupportedType, None)),
             unsupported_type => todo!("type not supported: {unsupported_type:?}"),
         })
@@ -476,23 +472,15 @@ fn mk_enum<'vir>(
 
     let ty_s = vcx.alloc(vir::TypeData::Domain(name_s));
 
+    let s_discr_func_name = vir::vir_format!(vcx, "{name_s}_discriminant");
+
     let mut variants: Vec<TypeEncoderOutputRef<'vir>> = Vec::new();
 
     for (idx, variant) in adt.variants().iter().enumerate() {
         let name_s = vir::vir_format!(vcx, "s_Adt_{did_name}_{idx}");
         let name_p = vir::vir_format!(vcx, "p_Adt_{did_name}_{idx}");
 
-        let mut field_read_names = Vec::new();
-        let mut field_write_names = Vec::new();
-        let mut field_projection_p_names = Vec::new();
-        for idx in 0..variant.fields.len() {
-            field_read_names.push(vir::vir_format!(vcx, "{name_s}_read_{idx}"));
-            field_write_names.push(vir::vir_format!(vcx, "{name_s}_write_{idx}"));
-            field_projection_p_names.push(vir::vir_format!(vcx, "{name_p}_field_{idx}"));
-        }
-        let field_read_names = vcx.alloc_slice(&field_read_names);
-        let field_write_names = vcx.alloc_slice(&field_write_names);
-        let field_projection_p_names = vcx.alloc_slice(&field_projection_p_names);
+        let ref_sub_struct = mk_output_ref_sub_struct(name_p, name_s, variant.fields.len(), vcx);
 
         let x = TypeEncoderOutputRef {
             snapshot_name: name_s,
@@ -503,11 +491,7 @@ fn mk_enum<'vir>(
             function_unreachable: vir::vir_format!(vcx, "{name_s}_unreachable"),
             function_snap: vir::vir_format!(vcx, "{name_p}_snap"),
             //method_refold: vir::vir_format!(vcx, "refold_{name_p}"),
-            specifics: TypeEncoderOutputRefSub::StructLike(TypeEncoderOutputRefSubStruct {
-                field_read: field_read_names,
-                field_write: field_write_names,
-                field_projection_p: field_projection_p_names,
-            }),
+            specifics: TypeEncoderOutputRefSub::StructLike(ref_sub_struct),
             method_assign: vir::vir_format!(vcx, "assign_{name_p}"),
         };
 
@@ -527,6 +511,7 @@ fn mk_enum<'vir>(
             //method_refold: vir::vir_format!(vcx, "refold_{name_p}"),
             specifics: TypeEncoderOutputRefSub::Enum(TypeEncoderOutputRefSubEnum {
                 field_discriminant,
+                func_discriminant: s_discr_func_name,
                 variants: vcx.alloc(variants),
             }),
             method_assign: vir::vir_format!(vcx, "assign_{name_p}"),
@@ -537,8 +522,6 @@ fn mk_enum<'vir>(
     let mut axioms: Vec<vir::DomainAxiom<'vir>> = vec![];
     let mut field_projection_p = Vec::new();
     let mut other_predicates = Vec::new();
-
-    let s_discr_func_name = vir::vir_format!(vcx, "{name_s}_discriminant");
 
     funcs.push(vcx.alloc(vir::DomainFunctionData {
         unique: false,
@@ -689,7 +672,7 @@ fn mk_enum_variant<'vir>(
     name_p: &'vir str,
     s_discr_func_name: &'vir str,
     funcs: &mut Vec<&'vir vir::DomainFunctionData<'vir>>,
-    field_projection_p: &mut Vec<&'vir FunctionGenData<'vir, !, !>>,
+    field_projection_p: &mut Vec<&'vir vir::FunctionData<'vir>>,
     axioms: &mut Vec<vir::DomainAxiom<'vir>>,
     predicates: &mut Vec<&'vir vir::PredicateData<'vir>>,
 ) -> (&'vir vir::PredicateAppData<'vir>, &'vir ExprData<'vir>) {
@@ -702,10 +685,6 @@ fn mk_enum_variant<'vir>(
                 .unwrap()
         })
         .collect::<Vec<_>>();
-
-    // let did_name = vcx.tcx.item_name(variant.def_id).to_ident_string();
-    // let name_s = vir::vir_format!(vcx, "{parent_name_s}_variant_{did_name}");
-    // let name_p = vir::vir_format!(vcx, "{parent_name_p}_variant_{did_name}");
 
     mk_field_projection_p(
         &fields,
@@ -738,7 +717,7 @@ fn mk_enum_variant<'vir>(
         axioms.push(cons_axiom(name_s, vcx, cons_name, &fields, ty_s));
     }
 
-    // discriminant of constructor
+    // discriminant of constructor matches the variant idx
     {
         let (cons_qvars, cons_args, cons_call) = cons_read_parts(vcx, &fields, cons_name);
 
@@ -764,8 +743,31 @@ fn mk_enum_variant<'vir>(
         }));
     }
 
-    //TODO: discriminant for write axioms
     read_write_axioms(vcx, ty_s, name_s, &fields, axioms);
+
+    // discriminant of write call stays the same
+    for (write_idx, write_ty_out) in fields.iter().enumerate() {
+        let qvars = vcx.alloc_slice(&[
+            vcx.mk_local_decl("self", ty_s),
+            vcx.mk_local_decl("val", write_ty_out.snapshot),
+        ]);
+
+        let write_call = vcx.mk_func_app(
+            vir::vir_format!(vcx, "{name_s}_write_{write_idx}"),
+            &[vcx.mk_local_ex("self"), vcx.mk_local_ex("val")],
+        );
+
+        let discriminant_of_write = vcx.mk_func_app(s_discr_func_name, &[write_call]);
+
+        axioms.push(vcx.alloc(vir::DomainAxiomData {
+            name: vir::vir_format!(vcx, "ax_{name_s}_discriminant_write_{write_idx}"),
+            expr: vcx.mk_forall(
+                qvars,
+                vcx.alloc_slice(&[vcx.alloc_slice(&[discriminant_of_write])]),
+                vcx.mk_eq(discriminant_of_write, vcx.mk_const(variant_idx.into())),
+            ),
+        }));
+    }
 
     predicates.push(mk_struct_predicate(&fields, vcx, name_p));
 
@@ -975,20 +977,14 @@ fn read_write_axioms<'vir>(
                 vcx.mk_local_decl("val", write_ty_out.snapshot),
             ]);
 
-            let triggers = vcx.alloc_slice(&[vcx.alloc_slice(&[vcx.mk_func_app(
-                vir::vir_format!(vcx, "{name_s}_read_{read_idx}"),
-                &[vcx.mk_func_app(
-                    vir::vir_format!(vcx, "{name_s}_write_{write_idx}"),
-                    &[vcx.mk_local_ex("self"), vcx.mk_local_ex("val")],
-                )],
-            )])]);
+            let write_call = vcx.mk_func_app(
+                vir::vir_format!(vcx, "{name_s}_write_{write_idx}"),
+                &[vcx.mk_local_ex("self"), vcx.mk_local_ex("val")],
+            );
 
-            let lhs = vcx.mk_func_app(
+            let read_of_write = vcx.mk_func_app(
                 vir::vir_format!(vcx, "{name_s}_read_{read_idx}"),
-                &[vcx.mk_func_app(
-                    vir::vir_format!(vcx, "{name_s}_write_{write_idx}"),
-                    &[vcx.mk_local_ex("self"), vcx.mk_local_ex("val")],
-                )],
+                &[write_call],
             );
 
             let rhs = if read_idx == write_idx {
@@ -1002,7 +998,11 @@ fn read_write_axioms<'vir>(
 
             axioms.push(vcx.alloc(vir::DomainAxiomData {
                 name: vir::vir_format!(vcx, "ax_{name_s}_write_{write_idx}_read_{read_idx}"),
-                expr: vcx.mk_forall(qvars, triggers, vcx.mk_eq(lhs, rhs)),
+                expr: vcx.mk_forall(
+                    qvars,
+                    vcx.alloc_slice(&[vcx.alloc_slice(&[read_of_write])]),
+                    vcx.mk_eq(read_of_write, rhs),
+                ),
             }));
         }
     }
@@ -1077,7 +1077,7 @@ fn cons_read_axioms<'vir>(
     vcx: &'vir vir::VirCtxt<'vir>,
     fields: &[TypeEncoderOutputRef<'vir>],
     cons_name: &'vir str,
-    axioms: &mut Vec<&vir::DomainAxiomGenData<'vir, !, !>>,
+    axioms: &mut Vec<&vir::DomainAxiomData<'vir>>,
 ) {
     let (cons_qvars, cons_args, cons_call) = cons_read_parts(vcx, fields, cons_name);
 
@@ -1115,17 +1115,7 @@ fn mk_structlike<'vir>(
         Option<<TypeEncoder as TaskEncoder>::OutputFullDependency<'vir>>,
     ),
 > {
-    let mut field_read_names = Vec::new();
-    let mut field_write_names = Vec::new();
-    let mut field_projection_p_names = Vec::new();
-    for idx in 0..field_ty_out.len() {
-        field_read_names.push(vir::vir_format!(vcx, "{name_s}_read_{idx}"));
-        field_write_names.push(vir::vir_format!(vcx, "{name_s}_write_{idx}"));
-        field_projection_p_names.push(vir::vir_format!(vcx, "{name_p}_field_{idx}"));
-    }
-    let field_read_names = vcx.alloc_slice(&field_read_names);
-    let field_write_names = vcx.alloc_slice(&field_write_names);
-    let field_projection_p_names = vcx.alloc_slice(&field_projection_p_names);
+    let ref_sub_struct = mk_output_ref_sub_struct(name_p, name_s, field_ty_out.len(), vcx);
 
     deps.emit_output_ref::<TypeEncoder>(
         *task_key,
@@ -1138,11 +1128,7 @@ fn mk_structlike<'vir>(
             function_unreachable: vir::vir_format!(vcx, "{name_s}_unreachable"),
             function_snap: vir::vir_format!(vcx, "{name_p}_snap"),
             //method_refold: vir::vir_format!(vcx, "refold_{name_p}"),
-            specifics: TypeEncoderOutputRefSub::StructLike(TypeEncoderOutputRefSubStruct {
-                field_read: field_read_names,
-                field_write: field_write_names,
-                field_projection_p: field_projection_p_names,
-            }),
+            specifics: TypeEncoderOutputRefSub::StructLike(ref_sub_struct),
             method_assign: vir::vir_format!(vcx, "assign_{name_p}"),
         },
     );
@@ -1201,11 +1187,35 @@ fn mk_structlike<'vir>(
     })
 }
 
+fn mk_output_ref_sub_struct<'vir>(
+    name_p: &'vir str,
+    name_s: &'vir str,
+    field_count: usize,
+    vcx: &'vir vir::VirCtxt<'vir>,
+) -> TypeEncoderOutputRefSubStruct<'vir> {
+    let mut field_read_names = Vec::new();
+    let mut field_write_names = Vec::new();
+    let mut field_projection_p_names = Vec::new();
+    for idx in 0..field_count {
+        field_read_names.push(vir::vir_format!(vcx, "{name_s}_read_{idx}"));
+        field_write_names.push(vir::vir_format!(vcx, "{name_s}_write_{idx}"));
+        field_projection_p_names.push(vir::vir_format!(vcx, "{name_p}_field_{idx}"));
+    }
+    let field_read_names = vcx.alloc_slice(&field_read_names);
+    let field_write_names = vcx.alloc_slice(&field_write_names);
+    let field_projection_p_names = vcx.alloc_slice(&field_projection_p_names);
+    TypeEncoderOutputRefSubStruct {
+        field_read: field_read_names,
+        field_write: field_write_names,
+        field_projection_p: field_projection_p_names,
+    }
+}
+
 fn mk_struct_predicate<'vir>(
     fields: &Vec<TypeEncoderOutputRef<'vir>>,
     vcx: &'vir vir::VirCtxt<'vir>,
     name_p: &'vir str,
-) -> &'vir vir::PredicateGenData<'vir, !, !> {
+) -> &'vir vir::PredicateData<'vir> {
     let predicate = {
         let expr = fields
             .iter()
@@ -1239,7 +1249,7 @@ fn mk_field_projection_p<'vir>(
     name_s: &'vir str,
     name_p: &'vir str,
     funcs: &mut Vec<&vir::DomainFunctionData<'vir>>,
-    field_projection_p: &mut Vec<&FunctionGenData<'vir, !, !>>,
+    field_projection_p: &mut Vec<&vir::FunctionData<'vir>>,
 ) {
     for (idx, ty_out) in fields.iter().enumerate() {
         let name_r = vir::vir_format!(vcx, "{name_s}_read_{idx}");

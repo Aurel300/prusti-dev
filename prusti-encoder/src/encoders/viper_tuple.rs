@@ -84,6 +84,7 @@ impl TaskEncoder for ViperTupleEncoder {
         Self::EncodingError,
         Option<Self::OutputFullDependency<'vir>>,
     )> {
+        let is_unit_tuple = *task_key == 0;
         vir::with_vcx(|vcx| {
             let domain_name = vir::vir_format!(vcx, "Tuple_{task_key}");
             let cons_name = vir::vir_format!(vcx, "Tuple_{task_key}_cons");
@@ -111,31 +112,35 @@ impl TaskEncoder for ViperTupleEncoder {
             let qvars_names = (0..*task_key)
                 .map(|idx| vir::vir_format!(vcx, "elem{idx}"))
                 .collect::<Vec<_>>();
-            let qvars_decl = vcx.alloc_slice(&(0..*task_key)
-                .map(|idx| vcx.mk_local_decl(qvars_names[idx], typaram_tys[idx]))
-                .collect::<Vec<_>>());
-            let qvars_ex = (0..*task_key)
-                .map(|idx| vcx.mk_local_ex(qvars_names[idx]))
-                .collect::<Vec<_>>();
-            let cons_call = constructor.apply(vcx,
-                &qvars_names.iter()
-                    .map(|qvar| vcx.mk_local_ex(qvar))
-                    .collect::<Vec<_>>(),
-            );
-            let axiom = vcx.alloc(vir::DomainAxiomData {
-                name: vir::vir_format!(vcx, "ax_Tuple_{task_key}_elem"),
-                expr: vcx.alloc(vir::ExprData::Forall(vcx.alloc(vir::ForallData {
-                    qvars: qvars_decl,
-                    triggers: vcx.alloc_slice(&[vcx.alloc_slice(&[cons_call])]),
-                    body: vcx.mk_conj(&(0..*task_key)
-                        .map(|idx| vcx.alloc(vir::ExprData::BinOp(vcx.alloc(vir::BinOpData {
-                            kind: vir::BinOpKind::CmpEq,
-                            lhs: elem_getters[idx].apply(vcx, [cons_call]),
-                            rhs: qvars_ex[idx],
-                        }))))
-                        .collect::<Vec<_>>()),
-                }))),
-            });
+            let mut axioms = Vec::new();
+            if !is_unit_tuple {
+                let qvars_decl = vcx.alloc_slice(&(0..*task_key)
+                    .map(|idx| vcx.mk_local_decl(qvars_names[idx], typaram_tys[idx]))
+                    .collect::<Vec<_>>());
+                let qvars_ex = (0..*task_key)
+                    .map(|idx| vcx.mk_local_ex(qvars_names[idx]))
+                    .collect::<Vec<_>>();
+                let cons_call = constructor.apply(vcx,
+                    &qvars_names.iter()
+                        .map(|qvar| vcx.mk_local_ex(qvar))
+                        .collect::<Vec<_>>(),
+                );
+                let axiom = vcx.alloc(vir::DomainAxiomData {
+                    name: vir::vir_format!(vcx, "ax_Tuple_{task_key}_elem"),
+                    expr: vcx.alloc(vir::ExprData::Forall(vcx.alloc(vir::ForallData {
+                        qvars: qvars_decl,
+                        triggers: vcx.alloc_slice(&[vcx.alloc_slice(&[cons_call])]),
+                        body: vcx.mk_conj(&(0..*task_key)
+                            .map(|idx| vcx.alloc(vir::ExprData::BinOp(vcx.alloc(vir::BinOpData {
+                                kind: vir::BinOpKind::CmpEq,
+                                lhs: elem_getters[idx].apply(vcx, [cons_call]),
+                                rhs: qvars_ex[idx],
+                            }))))
+                            .collect::<Vec<_>>()),
+                    }))),
+                });
+                axioms.push(axiom);
+            }
             let elem_args = vcx.alloc_slice(&[domain_ty]);
             let mut functions = (0..*task_key)
                 .map(|idx| vcx.alloc(vir::DomainFunctionData {
@@ -155,7 +160,7 @@ impl TaskEncoder for ViperTupleEncoder {
                 domain: Some(vcx.alloc(vir::DomainData {
                     name: domain_name,
                     typarams: vcx.alloc_slice(&typaram_names),
-                    axioms: if task_key == &0 {&[]} else {vcx.alloc_slice(&[axiom])},
+                    axioms: vcx.alloc_slice(&axioms),
                     functions: vcx.alloc_slice(&functions),
                 })),
             }, ()))

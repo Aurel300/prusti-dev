@@ -1,4 +1,5 @@
 use prusti_rustc_interface::{
+    index::IndexVec,
     middle::{mir, ty},
     span::def_id::DefId,
     type_ir::sty::TyKind,
@@ -164,8 +165,8 @@ struct Encoder<'vir, 'enc>
     encoding_depth: usize,
     body: &'enc mir::Body<'vir>,
     deps: &'enc mut TaskEncoderDependencies<'vir>,
-    visited: HashMap<mir::BasicBlock, bool>, // TODO: IndexVec?
-    version_ctr: HashMap<mir::Local, usize>, // TODO: IndexVec?
+    visited: IndexVec<mir::BasicBlock, bool>,
+    version_ctr: IndexVec<mir::Local, usize>,
     phi_ctr: usize,
 }
 
@@ -185,8 +186,8 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
             encoding_depth,
             body,
             deps,
-            visited: Default::default(),
-            version_ctr: (0..body.local_decls.len()).map(|local| (local.into(), 0)).collect(),
+            visited: IndexVec::from_elem_n(false, body.basic_blocks.len()),
+            version_ctr: IndexVec::from_elem_n(0, body.local_decls.len()),
             phi_ctr: 0,
         }
     }
@@ -229,8 +230,8 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
         local: mir::Local,
         expr: ExprRet<'vir>,
     ) {
-        let new_version = self.version_ctr.get(&local).copied().unwrap_or(0usize);
-        self.version_ctr.insert(local, new_version + 1);
+        let new_version = self.version_ctr[local];
+        self.version_ctr[local] += 1;
         update.binds.push(UpdateBind::Local(local, new_version, expr));
         update.versions.insert(local, new_version);
     }
@@ -587,10 +588,10 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
     ) -> Update<'vir> {
         let mut update = Update::new();
         match &stmt.kind {
-            mir::StatementKind::StorageLive(local) => {
-                let new_version = self.version_ctr.get(local).copied().unwrap_or(0usize);
-                self.version_ctr.insert(*local, new_version + 1);
-                update.versions.insert(*local, new_version);
+            &mir::StatementKind::StorageLive(local) => {
+                let new_version = self.version_ctr[local];
+                self.version_ctr[local] += 1;
+                update.versions.insert(local, new_version);
             },
             mir::StatementKind::StorageDead(..)
             | mir::StatementKind::FakeRead(..)

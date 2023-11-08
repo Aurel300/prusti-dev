@@ -1,5 +1,5 @@
 use prusti_rustc_interface::{
-    data_structures::graph::dominators::Dominators,
+    index::IndexVec,
     middle::{mir, ty},
     span::def_id::DefId,
     type_ir::sty::TyKind,
@@ -168,8 +168,8 @@ struct Encoder<'vir, 'enc>
     encoding_depth: usize,
     body: &'enc mir::Body<'vir>,
     deps: &'enc mut TaskEncoderDependencies<'vir>,
-    visited: HashMap<mir::BasicBlock, bool>, // TODO: IndexVec?
-    version_ctr: HashMap<mir::Local, usize>, // TODO: IndexVec?
+    visited: IndexVec<mir::BasicBlock, bool>,
+    version_ctr: IndexVec<mir::Local, usize>,
     phi_ctr: usize,
 }
 
@@ -189,8 +189,8 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
             encoding_depth,
             body,
             deps,
-            visited: Default::default(),
-            version_ctr: (0..body.local_decls.len()).map(|local| (local.into(), 0)).collect(),
+            visited: IndexVec::from_elem_n(false, body.basic_blocks.len()),
+            version_ctr: IndexVec::from_elem_n(0, body.local_decls.len()),
             phi_ctr: 0,
         }
     }
@@ -233,8 +233,8 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
         local: mir::Local,
         expr: ExprRet<'vir>,
     ) {
-        let new_version = self.version_ctr.get(&local).copied().unwrap_or(0usize);
-        self.version_ctr.insert(local, new_version + 1);
+        let new_version = self.version_ctr[local];
+        self.version_ctr[local] += 1;
         update.binds.push(UpdateBind::Local(local, new_version, expr));
         update.versions.insert(local, new_version);
     }
@@ -306,10 +306,10 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
             init.versions.insert(local.into(), 0);
         }
 
-        let update = self.encode_cfg(
+        let (_, update) = self.encode_cfg(
             &init.versions,
             mir::START_BLOCK,
-            *end_block,
+            None,
         );
 
         let res = init.merge(update);
@@ -318,29 +318,27 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
         self.reify_binds(res, self.mk_local_ex(mir::RETURN_PLACE, ret_version))
     }
 
-    fn find_join_point(
-        &self,
-        dominators: &Dominators<mir::BasicBlock>,
-        start: mir::BasicBlock,
-        end: mir::BasicBlock,
-    ) -> mir::BasicBlock {
-        dominators.dominators(end)
-            .take_while(|bb| *bb != start)
-            .last()
-            .unwrap()
-    }
-
     fn encode_cfg(
         &mut self,
         curr_ver: &HashMap<mir::Local, usize>,
-        start: mir::BasicBlock,
-        end: mir::BasicBlock,
-    ) -> Update<'vir> {
+        curr: mir::BasicBlock,
+        branch_point: Option<mir::BasicBlock>,
+    ) -> (mir::BasicBlock, Update<'vir>) {
         let dominators = self.body.basic_blocks.dominators();
+        // We should never actually reach the join point bb: we should catch
+        // this case and stop recursion in the `Goto` branch below. If this
+        // assert fails we we may need to add catches in the other branches.
+        debug_assert!(match (dominators.immediate_dominator(curr), branch_point) {
+            (Some(immediate_dominator), Some(branch_point)) if immediate_dominator == branch_point =>
+                // We could also be immediately dominated by the join point if we
+                // are the next bb right after the `SwitchInt`.
+                self.body.basic_blocks.predecessors()[curr].contains(&branch_point),
+            _ => true,
+        }, "reached join point bb {curr:?} (bp {branch_point:?})");
 
         // walk block statements first
         let mut new_curr_ver = curr_ver.clone();
-        let stmt_update = self.body[start].statements.iter()
+        let stmt_update = self.body[curr].statements.iter()
             .fold(Update::new(), |update, stmt| {
                 let newer = self.encode_stmt(&new_curr_ver, stmt);
                 newer.add_to_map(&mut new_curr_ver);
@@ -348,16 +346,23 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
             });
 
         // then walk terminator
-        let term = self.body[start].terminator.as_ref().unwrap();
+        let term = self.body[curr].terminator.as_ref().unwrap();
         match &term.kind {
-            mir::TerminatorKind::Goto { target } => {
-                if *target == end {
-                    // We are done with the current fragment of the CFG, the
-                    // rest is handled in a parent call.
-                    return stmt_update;
+            &mir::TerminatorKind::Goto { target } => {
+                match (dominators.immediate_dominator(target), branch_point) {
+                    // As soon as we are about to step to a bb where
+                    (Some(immediate_dominator), Some(branch_point))
+                        if immediate_dominator == branch_point =>
+                        // We are done with the current fragment of the CFG, the
+                        // rest is handled in a parent call.
+                        (target, stmt_update),
+                    _ => {
+                        // If we hit this todo, first verify that the join point
+                        // algorithm is working correctly. If it is then
+                        // consider continuing recursion here?
+                        todo!("goto target not a join point {curr:?} -> {target:?} (branch point {branch_point:?})")
+                    }
                 }
-
-                todo!()
             }
 
             mir::TerminatorKind::SwitchInt { discr, targets } => {
@@ -367,19 +372,18 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
                     discr.ty(self.body, self.vcx.tcx),
                 ).unwrap();
 
-                // find earliest join point `join`
-                let join = self.find_join_point(dominators, start, end);
-
-                // walk `start` -> `targets[i]` -> `join` for each target
+                // walk `curr` -> `targets[i]` -> `join` for each target. The
+                // join point is identified by reaching a bb where
+                // `dominators.immediate_dominator(bb) == curr`.
                 // TODO: indexvec?
                 let mut updates = targets.all_targets().iter()
-                    .map(|target| self.encode_cfg(&new_curr_ver, *target, join))
+                    .map(|target| self.encode_cfg(&new_curr_ver, *target, Some(curr)))
                     .collect::<Vec<_>>();
 
                 // find locals updated in any of the results, which were also
                 // defined before the branch
                 let mut mod_locals = updates.iter()
-                    .map(|update| update.versions.keys())
+                    .map(|(_, update)| update.versions.keys())
                     .flatten()
                     .filter(|local| new_curr_ver.contains_key(&local))
                     .copied()
@@ -391,12 +395,14 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
                 let tuple_ref = self.deps.require_ref::<crate::encoders::ViperTupleEncoder>(
                     mod_locals.len(),
                 ).unwrap();
-                let otherwise_update = updates.pop().unwrap();
+                let (join, otherwise_update) = updates.pop().unwrap();
+                println!("join: {curr:?} -> {join:?}");
+                debug_assert!(updates.iter().all(|(other, _)| join == *other));
                 let phi_expr = targets.iter()
                     .zip(updates.into_iter())
                     .fold(
                         self.reify_branch(&tuple_ref, &mod_locals, &new_curr_ver, otherwise_update),
-                        |expr, ((cond_val, target), branch_update)| self.vcx.alloc(ExprRetData::Ternary(self.vcx.alloc(vir::TernaryGenData {
+                        |expr, ((cond_val, target), (_, branch_update))| self.vcx.alloc(ExprRetData::Ternary(self.vcx.alloc(vir::TernaryGenData {
                             cond: self.vcx.alloc(ExprRetData::BinOp(self.vcx.alloc(vir::BinOpGenData {
                                 kind: vir::BinOpKind::CmpEq,
                                 lhs: discr_expr,
@@ -423,13 +429,13 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
                 }
 
                 // walk `join` -> `end`
-                let end_update = self.encode_cfg(&new_curr_ver, join, end);
-                stmt_update.merge(phi_update.merge(end_update))
+                let (end, end_update) = self.encode_cfg(&new_curr_ver, join, branch_point);
+                (end, stmt_update.merge(phi_update.merge(end_update)))
             }
 
             mir::TerminatorKind::Return => {
-                assert_eq!(start, end);
-                return stmt_update;
+                assert_eq!(branch_point, None);
+                return (curr, stmt_update);
             }
 
             mir::TerminatorKind::Call {
@@ -628,9 +634,9 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
                         term_update.add_to_map(&mut new_curr_ver);
 
                         // walk rest of CFG
-                        let end_update = self.encode_cfg(&new_curr_ver, target.unwrap(), end);
+                        let (end, end_update) = self.encode_cfg(&new_curr_ver, target.unwrap(), branch_point);
 
-                        stmt_update.merge(term_update).merge(end_update)
+                        (end, stmt_update.merge(term_update).merge(end_update))
                     }
                     None => {
                         todo!("call not supported {func:?}");
@@ -649,10 +655,10 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
     ) -> Update<'vir> {
         let mut update = Update::new();
         match &stmt.kind {
-            mir::StatementKind::StorageLive(local) => {
-                let new_version = self.version_ctr.get(local).copied().unwrap_or(0usize);
-                self.version_ctr.insert(*local, new_version + 1);
-                update.versions.insert(*local, new_version);
+            &mir::StatementKind::StorageLive(local) => {
+                let new_version = self.version_ctr[local];
+                self.version_ctr[local] += 1;
+                update.versions.insert(local, new_version);
             },
             mir::StatementKind::StorageDead(..)
             | mir::StatementKind::FakeRead(..)

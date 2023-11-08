@@ -202,7 +202,11 @@ pub enum StmtGenData<'vir, Curr, Next> {
 #[derive(Reify)]
 pub struct GotoIfGenData<'vir, Curr, Next> {
     pub value: ExprGen<'vir, Curr, Next>,
-    pub targets: &'vir [(ExprGen<'vir, Curr, Next>, CfgBlockLabel<'vir>)],
+    pub targets: &'vir [(
+        ExprGen<'vir, Curr, Next>,
+        CfgBlockLabel<'vir>,
+        &'vir [ExprGen<'vir, Curr, Next>],
+    )],
     #[reify_copy]
     pub otherwise: CfgBlockLabel<'vir>,
 }

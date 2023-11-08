@@ -10,7 +10,7 @@ use prusti_rustc_interface::{
 //    SsaAnalysis,
 //};
 use task_encoder::{TaskEncoder, TaskEncoderDependencies};
-use vir::PredicateAppGenData;
+use vir::{ExprData, ExprGenData, PredicateAppGenData};
 
 pub struct MirImpureEncoder;
 
@@ -552,6 +552,12 @@ impl<'vir, 'enc> mir::visit::Visitor<'vir> for EncoderVisitor<'vir, 'enc> {
     fn visit_basic_block_data(&mut self, block: mir::BasicBlock, data: &mir::BasicBlockData<'vir>) {
         self.current_fpcs = Some(self.fpcs_analysis.get_all_for_bb(block));
 
+        
+        tracing::warn!(
+            "fpcs for {block:?} is {:#?}",
+            self.current_fpcs.as_ref().map(|e| &e.terminator)
+        );
+
         self.current_stmts = Some(Vec::with_capacity(
             data.statements.len(), // TODO: not exact?
         ));
@@ -862,6 +868,7 @@ impl<'vir, 'enc> mir::visit::Visitor<'vir> for EncoderVisitor<'vir, 'enc> {
             mir::TerminatorKind::SwitchInt { discr, targets } => {
                 //let discr_version = self.ssa_analysis.version.get(&(location, discr.local)).unwrap();
                 //let discr_name = vir::vir_format!(self.vcx, "_{}s_{}", discr.local.index(), discr_version);
+
                 let ty_out = self
                     .deps
                     .require_ref::<crate::encoders::TypeEncoder>(
@@ -869,15 +876,35 @@ impl<'vir, 'enc> mir::visit::Visitor<'vir> for EncoderVisitor<'vir, 'enc> {
                     )
                     .unwrap();
 
+                tracing::warn!(
+                    "terminator fpcs {:?}",
+                    self.current_fpcs.as_ref().unwrap().terminator
+                );
+
                 let goto_targets = self.vcx.alloc_slice(
                     &targets
                         .iter()
-                        .map(|(value, target)| {
+                        .enumerate()
+                        .map(|(idx, (value, target))| {
+                            let terminator_fpcs =
+                                &self.current_fpcs.as_ref().unwrap().terminator.succs[idx];
+
+                            let extra_exprs = terminator_fpcs
+                                .repacks
+                                .iter()
+                                .map(|repack| {
+                                    self.vcx.alloc(ExprGenData::Todo(
+                                        self.vcx.alloc_str(&format!("{repack:?}")),
+                                    ))
+                                })
+                                .collect::<Vec<_>>();
+
                             (
                                 ty_out.expr_from_u128(value),
                                 //self.vcx.alloc(vir::ExprData::Todo(vir::vir_format!(self.vcx, "constant({value})"))),
                                 self.vcx
                                     .alloc(vir::CfgBlockLabelData::BasicBlock(target.as_usize())),
+                                self.vcx.alloc_slice(&extra_exprs),
                             )
                         })
                         .collect::<Vec<_>>(),
@@ -1013,6 +1040,7 @@ impl<'vir, 'enc> mir::visit::Visitor<'vir> for EncoderVisitor<'vir, 'enc> {
                         targets: self.vcx.alloc_slice(&[(
                             self.vcx.mk_const(vir::ConstData::Bool(*expected)),
                             &target_bb,
+                            &[],
                         )]),
                         otherwise: self
                             .vcx

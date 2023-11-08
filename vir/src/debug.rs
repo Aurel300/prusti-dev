@@ -325,11 +325,13 @@ impl<'vir, Curr, Next> Debug for TerminatorStmtGenData<'vir, Curr, Next> {
                     write!(f, "goto {:?}", data.otherwise)
                 } else {
                     for target in data.targets {
-                        write!(
-                            f,
-                            "if ({:?} == {:?}) {{ goto {:?} }}\n  else",
-                            data.value, target.0, target.1
-                        )?;
+                        write!(f, "if ({:?} == {:?}) {{", data.value, target.0)?;
+
+                        for extra in target.2 {
+                            write!(f, "{extra:?}")?;
+                        }
+
+                        write!(f, " goto {:?} }}\n  else", target.1)?;
                     }
                     write!(f, " {{ goto {:?} }}", data.otherwise)
                 }

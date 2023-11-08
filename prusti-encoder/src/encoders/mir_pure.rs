@@ -250,8 +250,6 @@ impl TaskEncoder for MirPureEncoder {
                     .get_impure_fn_body_identity(local_def_id)
             };
 
-            tracing::warn!("body {:?}", body.body());
-
             let expr_inner = Encoder::new(vcx, task_key.0, &body, deps).encode_body();
 
             // We wrap the expression with an additional lazy that will perform

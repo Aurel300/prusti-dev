@@ -4,6 +4,7 @@ use prusti_rustc_interface::{
     span::def_id::DefId,
     type_ir::sty::TyKind,
 };
+use rustc_middle::ty::GenericArgsRef;
 use task_encoder::{
     TaskEncoder,
     TaskEncoderDependencies,
@@ -19,6 +20,7 @@ pub enum MirPureEncoderError {
     UnsupportedTerminator,
 }
 
+// TODO: does this need to be `&'vir [..]`?
 type ExprInput<'vir> = (DefId, &'vir [vir::Expr<'vir>]);
 type ExprRetData<'vir> = vir::ExprGenData<'vir, ExprInput<'vir>, vir::Expr<'vir>>;
 type ExprRet<'vir> = vir::ExprGen<'vir, ExprInput<'vir>, vir::Expr<'vir>>;
@@ -440,23 +442,25 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
                 #[derive(Debug)]
                 enum PrustiBuiltin {
                     Forall,
+                    SnapshotEquality,
+                    Pure(DefId),
                 }
                 let mut builtin = None;
 
                 // TODO: extracting FnDef given func could be extracted? (duplication in impure)
                 let func_ty = func.ty(self.body, self.vcx.tcx);
                 match func_ty.kind() {
-                    TyKind::FnDef(def_id, arg_tys) => {
+                    &TyKind::FnDef(def_id, arg_tys) => {
                         // TODO: this attribute extraction should be done elsewhere?
-                        let attrs = self.vcx.tcx.get_attrs_unchecked(*def_id);
+                        let attrs = self.vcx.tcx.get_attrs_unchecked(def_id);
                         let normal_attrs = attrs.iter()
                             .filter(|attr| !attr.is_doc_comment())
                             .map(|attr| attr.get_normal_item()).collect::<Vec<_>>();
-                        normal_attrs.iter()
+                        for attr in normal_attrs.iter()
                             .filter(|item| item.path.segments.len() == 2
                                 && item.path.segments[0].ident.as_str() == "prusti"
-                                && item.path.segments[1].ident.as_str() == "builtin")
-                            .for_each(|attr| match &attr.args {
+                                && item.path.segments[1].ident.as_str() == "builtin") {
+                            match &attr.args {
                                 prusti_rustc_interface::ast::AttrArgs::Eq(
                                     _,
                                     prusti_rustc_interface::ast::AttrArgsEq::Hir(lit),
@@ -464,76 +468,77 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
                                     assert!(builtin.is_none(), "multiple prusti::builtin");
                                     builtin = Some((match lit.symbol.as_str() {
                                         "forall" => PrustiBuiltin::Forall,
+                                        "snapshot_equality" => PrustiBuiltin::SnapshotEquality,
                                         _ => panic!("illegal prusti::builtin"),
                                     }, arg_tys));
                                 }
                                 _ => panic!("illegal prusti::builtin"),
-                            });
-
-
-                        let is_pure = normal_attrs.iter().any(|item| 
-                            item.path.segments.len() == 2
-                            && item.path.segments[0].ident.as_str() == "prusti"
-                            && item.path.segments[1].ident.as_str() == "pure"
-                        );
-
-                         // TODO: detect snapshot_equality properly
-                         let is_snapshot_eq = self.vcx.tcx.opt_item_name(*def_id).map(|e| e.as_str() == "snapshot_equality") == Some(true)
-                            && self.vcx.tcx.crate_name(def_id.krate).as_str() == "prusti_contracts";
-
-                        let func_call = if is_pure {
-                            assert!(builtin.is_none(), "Function is pure and builtin?");
-                            let pure_func = self.deps.require_ref::<crate::encoders::MirFunctionEncoder>(*def_id).unwrap().function_name;
-
-                            let encoded_args = args.iter()
-                                .map(|oper| self.encode_operand(&new_curr_ver, oper))
-                                .collect::<Vec<_>>();
-                            
-                            let func_call = self.vcx.mk_func_app(pure_func, &encoded_args);
-
-                           Some(func_call)
+                            }
                         }
 
-                        else if is_snapshot_eq {
-                            assert!(builtin.is_none(), "Function is snapshot_equality and builtin?");
-                            let encoded_args = args.iter()
-                                .map(|oper| self.encode_operand(&new_curr_ver, oper))
-                                .collect::<Vec<_>>();
-
-                            assert_eq!(encoded_args.len(), 2);
-
-
-                            let eq_expr  = self.vcx.alloc(vir::ExprGenData::BinOp(self.vcx.alloc(vir::BinOpGenData {
-                                kind: vir::BinOpKind::CmpEq,
-                                lhs: encoded_args[0],
-                                rhs: encoded_args[1],
-                            })));
-
-
-                            // TODO: type encoder
-                            Some(self.vcx.mk_func_app("s_Bool_cons", &[eq_expr]))
-                        }
-                        else {
-                            None
-                        };
-
-
-                        if let Some(func_call) = func_call {
-                            let mut term_update = Update::new();
-                            assert!(destination.projection.is_empty());
-                            self.bump_version(&mut term_update, destination.local, func_call);
-                            term_update.add_to_map(&mut new_curr_ver);
-    
-                            // walk rest of CFG
-                            let end_update = self.encode_cfg(&new_curr_ver, target.unwrap(), end);
-    
-                            return stmt_update.merge(term_update).merge(end_update);
+                        let is_pure = crate::encoders::with_proc_spec(def_id, |def_spec|
+                            def_spec.kind.is_pure().unwrap_or_default()
+                        ).unwrap_or_default();    
+                        if is_pure {
+                            assert!(builtin.is_none());
+                            builtin = Some((PrustiBuiltin::Pure(def_id), arg_tys))
                         }
                     }
                     _ => todo!(),
                 }
 
                 match builtin {
+                    Some((PrustiBuiltin::SnapshotEquality, arg_tys)) => {
+                        assert!(builtin.is_none(), "Function is snapshot_equality and builtin?");
+                        let encoded_args = args.iter()
+                            .map(|oper| self.encode_operand(&new_curr_ver, oper))
+                            .collect::<Vec<_>>();
+
+                        assert_eq!(encoded_args.len(), 2);
+
+
+                        let eq_expr  = self.vcx.alloc(vir::ExprGenData::BinOp(self.vcx.alloc(vir::BinOpGenData {
+                            kind: vir::BinOpKind::CmpEq,
+                            lhs: encoded_args[0],
+                            rhs: encoded_args[1],
+                        })));
+
+                        let bool_cons = self.deps.require_ref::<crate::encoders::TypeEncoder>( 
+                            self.vcx.tcx.types.bool, 
+                        ).unwrap().expect_prim().prim_to_snap;
+                        let func_call = bool_cons.apply(self.vcx, [eq_expr]);
+
+                        let mut term_update = Update::new();
+                        assert!(destination.projection.is_empty());
+                        self.bump_version(&mut term_update, destination.local, func_call);
+                        term_update.add_to_map(&mut new_curr_ver);
+
+                        // walk rest of CFG
+                        let end_update = self.encode_cfg(&new_curr_ver, target.unwrap(), end);
+
+                        stmt_update.merge(term_update).merge(end_update)
+                    }
+                    Some((PrustiBuiltin::Pure(def_id), arg_tys)) => {
+                        assert!(builtin.is_none(), "Function is pure and builtin?");
+                        let task = (def_id, Some(arg_tys), self.body.source.def_id());
+                        let pure_func = self.deps.require_ref::<crate::encoders::MirFunctionEncoder>(task).unwrap().function_ref;
+
+                        let encoded_args = args.iter()
+                            .map(|oper| self.encode_operand(&new_curr_ver, oper))
+                            .collect::<Vec<_>>();
+                        
+                        let func_call = pure_func.apply(self.vcx, &encoded_args);
+
+                        let mut term_update = Update::new();
+                        assert!(destination.projection.is_empty());
+                        self.bump_version(&mut term_update, destination.local, func_call);
+                        term_update.add_to_map(&mut new_curr_ver);
+
+                        // walk rest of CFG
+                        let end_update = self.encode_cfg(&new_curr_ver, target.unwrap(), end);
+
+                        stmt_update.merge(term_update).merge(end_update)
+                    }
                     Some((PrustiBuiltin::Forall, arg_tys)) => {
                         assert_eq!(arg_tys.len(), 2);
                         let (qvar_tys, upvar_tys, cl_def_id) = match arg_tys[1].expect_ty().kind() {
@@ -840,9 +845,9 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
                     _ => {
                         let local_encoded_ty = self.deps.require_ref::<TypeEncoder>(parent_ty).unwrap();
                         let struct_like = local_encoded_ty.expect_structlike();
-                        let proj = struct_like.field_read[field_idx];
+                        let proj = struct_like.field_access[field_idx].read;
                 
-                        let app = self.vcx.mk_func_app(proj, self.vcx.alloc_slice(&[expr]));
+                        let app = proj.apply(self.vcx, [expr]);
 
                         (field_ty, app)
                     }

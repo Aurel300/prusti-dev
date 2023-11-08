@@ -1,7 +1,7 @@
 use prusti_rustc_interface::{middle::{mir, ty}, span::def_id::DefId};
 
 use task_encoder::{TaskEncoder, TaskEncoderDependencies};
-use vir::Reify;
+use vir::{Reify, FunctionIdent, UnknownArity, CallableIdent};
 use std::cell::RefCell;
 
 use crate::encoders::{
@@ -16,7 +16,7 @@ pub enum MirFunctionEncoderError {
 
 #[derive(Clone, Debug)]
 pub struct MirFunctionEncoderOutputRef<'vir> {
-    pub function_name: &'vir str,
+    pub function_ref: FunctionIdent<'vir, UnknownArity<'vir>>,
 }
 impl<'vir> task_encoder::OutputRefAny<'vir> for MirFunctionEncoderOutputRef<'vir> {}
 
@@ -30,7 +30,11 @@ thread_local! {
 }
 
 impl TaskEncoder for MirFunctionEncoder {
-    type TaskDescription<'vir> = DefId;
+    type TaskDescription<'vir> = (
+        DefId, // ID of the function
+        Option<ty::GenericArgsRef<'vir>>, // ? this should be the "signature", after applying the env/substs
+        DefId, // Caller DefId
+    );
 
     type OutputRef<'vir> = MirFunctionEncoderOutputRef<'vir>;
     type OutputFullLocal<'vir> = MirFunctionEncoderOutput<'vir>;
@@ -67,51 +71,45 @@ impl TaskEncoder for MirFunctionEncoder {
             Option<Self::OutputFullDependency<'vir>>,
         ),
     > {
+        let (def_id, substs, called_def_id) = *task_key;
+        let trusted = crate::encoders::with_proc_spec(def_id, |def_spec|
+            def_spec.trusted.extract_inherit().unwrap_or_default()
+        ).unwrap_or_default();
+
         vir::with_vcx(|vcx| {
-            let def_id = *task_key;
+            let local_defs = deps.require_local::<crate::encoders::local_def::MirLocalDefEncoder>(
+                def_id,
+            ).unwrap();
 
             tracing::debug!("encoding {def_id:?}");
 
             let function_name = vir::vir_format!(vcx, "f_{}", vcx.tcx.item_name(def_id));
-            deps.emit_output_ref::<Self>(*task_key, MirFunctionEncoderOutputRef { function_name });
-
-            let local_def_id = def_id.expect_local();
-            let body = vcx.body.borrow_mut().get_impure_fn_body_identity(local_def_id);
+            let args: Vec<_> = (1..=local_defs.arg_count)
+                .map(mir::Local::from)
+                .map(|def_idx| local_defs.locals[def_idx].ty.snapshot)
+                .collect();
+            let args = UnknownArity::new(vcx.alloc_slice(&args));
+            let function_ref = FunctionIdent::new(function_name, args);
+            deps.emit_output_ref::<Self>(*task_key, MirFunctionEncoderOutputRef { function_ref });
 
             let spec = deps.require_local::<crate::encoders::pure::spec::MirSpecEncoder>(
                 (def_id, true)
             ).unwrap();
 
-            let mut func_args = Vec::with_capacity(body.arg_count);
+            let func_args: Vec<_> = (1..=local_defs.arg_count).map(mir::Local::from).map(|arg| vcx.alloc(vir::LocalDeclData {
+                name: local_defs.locals[arg].local.name,
+                ty: local_defs.locals[arg].ty.snapshot,
+            })).collect();
 
-            for (arg_idx0, arg_local) in body.args_iter().enumerate() {
-                let arg_idx = arg_idx0 + 1; // enumerate is 0 based but we want to start at 1
-
-                let arg_decl = body.local_decls.get(arg_local).unwrap();
-                let arg_type_ref = deps.require_ref::<TypeEncoder>(arg_decl.ty).unwrap();
-
-                let name_p = vir::vir_format!(vcx, "_{arg_idx}p");
-                func_args.push(vcx.alloc(vir::LocalDeclData {
-                    name: name_p,
-                    ty: arg_type_ref.snapshot,
-                }));
-            }
-
-            // TODO: dedup with mir_pure
-            let attrs = vcx.tcx.get_attrs_unchecked(def_id);
-            let is_trusted = attrs
-                .iter()
-                .filter(|attr| !attr.is_doc_comment())
-                .map(|attr| attr.get_normal_item())
-                .any(|item| {
-                    item.path.segments.len() == 2
-                        && item.path.segments[0].ident.as_str() == "prusti"
-                        && item.path.segments[1].ident.as_str() == "trusted"
-                });
-
-            let expr = if is_trusted {
+            let expr = if trusted {
                 None
             } else {
+                let body = if let Some(substs) = substs {
+                    vcx.body.borrow_mut().get_pure_fn_body(def_id, substs, called_def_id);
+                } else {
+                    vcx.body.borrow_mut().get_pure_fn_body_identity(def_id);
+                };
+
                 // Encode the body of the function
                 let expr = deps
                     .require_local::<MirPureEncoder>(MirPureEncoderTask {
@@ -124,14 +122,8 @@ impl TaskEncoder for MirFunctionEncoder {
                     .unwrap()
                     .expr;
 
-                Some(expr.reify(vcx, (def_id, &spec.pre_args.split_last().unwrap().1)))
+                Some(expr.reify(vcx, (def_id, spec.pre_args)))
             };
-
-            // Snapshot type of the return type
-            let ret = deps
-                .require_ref::<TypeEncoder>(body.return_ty())
-                .unwrap()
-                .snapshot;
 
             tracing::debug!("finished {def_id:?}");
 
@@ -140,7 +132,7 @@ impl TaskEncoder for MirFunctionEncoder {
                     function: vcx.alloc(vir::FunctionData {
                         name: function_name,
                         args: vcx.alloc_slice(&func_args),
-                        ret,
+                        ret: local_defs.locals[mir::RETURN_PLACE].ty.snapshot,
                         pres: vcx.alloc_slice(&spec.pres),
                         posts: vcx.alloc_slice(&spec.posts),
                         expr,

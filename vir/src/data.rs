@@ -42,6 +42,7 @@ pub enum BinOpKind {
     And,
     Add,
     Sub,
+    Mod,
     // ...
 }
 impl From<mir::BinOp> for BinOpKind {
@@ -84,7 +85,10 @@ pub enum ConstData {
 }
 
 pub enum TypeData<'vir> {
-    Int,
+    Int {
+        bit_width: u8,
+        signed: bool,
+    },
     Bool,
     Domain(&'vir str), // TODO: identifiers
     DomainParams(&'vir str, &'vir [Type<'vir>]),

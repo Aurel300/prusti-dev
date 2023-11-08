@@ -12,6 +12,7 @@ pub struct MirSpecEncoderOutput<'vir> {
     pub pres: Vec<vir::Expr<'vir>>,
     pub posts: Vec<vir::Expr<'vir>>,
     pub pre_args: &'vir [vir::Expr<'vir>],
+    pub post_args: &'vir [vir::Expr<'vir>],
 }
 
 thread_local! {
@@ -71,28 +72,27 @@ impl TaskEncoder for MirSpecEncoder {
         ).unwrap();
 
         vir::with_vcx(|vcx| {
-            let mut pre_args: Vec<_> = (1..=local_defs.arg_count)
-                .map(mir::Local::from)
-                .map(|local| {
-                    if pure {
-                       local_defs.locals[local].local_ex
-                    } else {
-                        local_defs.locals[local].impure_snap
-                    }
-                })
-                .collect();
-
-            pre_args.push(if pure {
-                vcx.mk_local_ex(vir::vir_format!(vcx, "result"))
+            let local_iter = (1..=local_defs.arg_count).map(mir::Local::from);
+            let all_args: Vec<_> = if pure {
+                    local_iter
+                        .map(|local| local_defs.locals[local].local_ex)
+                        .chain([vcx.mk_local_ex(vir::vir_format!(vcx, "result"))])
+                        .collect()
             } else {
-                local_defs.locals[mir::Local::from(0u32)].impure_snap
-            });
-
-            let pre_args = vcx.alloc_slice(&pre_args);
+                local_iter
+                    .map(|local| local_defs.locals[local].impure_snap)
+                    .collect()
+            };
+            let all_args = vcx.alloc_slice(&all_args);
+            let pre_args = if pure {
+                &all_args[..all_args.len() - 1]
+            } else {
+                all_args
+            };
 
             let to_bool = deps.require_ref::<crate::encoders::TypeEncoder>(
                 vcx.tcx.types.bool,
-            ).unwrap().to_primitive.unwrap();
+            ).unwrap().expect_prim().snap_to_prim;
 
             let pres = specs.pres.iter().map(|spec_def_id| {
                 let expr = deps.require_local::<crate::encoders::MirPureEncoder>(
@@ -104,23 +104,18 @@ impl TaskEncoder for MirSpecEncoder {
                         substs: ty::List::identity_for_item(vcx.tcx, *spec_def_id),
                     }
                 ).unwrap().expr;
-                let expr = vcx.mk_func_app(
-                    to_bool,
-                    &[expr],
-                );
-                expr.reify(vcx, (*spec_def_id, &pre_args.split_last().unwrap().1))
+                let expr = expr.reify(vcx, (*spec_def_id, pre_args));
+                to_bool.apply(vcx, [expr])
             }).collect::<Vec<vir::Expr<'_>>>();
 
             let post_args = if pure {
-                pre_args
+                all_args
             } else {
-                let post_args: Vec<_> = pre_args.iter().enumerate().map(|(idx, arg)| {
-                    if idx == pre_args.len() - 1 {
-                        arg
-                    } else {
+                let post_args: Vec<_> = pre_args.iter().map(|arg|
                         vcx.alloc(vir::ExprData::Old(arg))
-                    }
-                }).collect();
+                    )
+                    .chain([local_defs.locals[mir::RETURN_PLACE].impure_snap])
+                    .collect();
                 vcx.alloc_slice(&post_args)
             };
             let posts = specs.posts.iter().map(|spec_def_id| {
@@ -133,16 +128,14 @@ impl TaskEncoder for MirSpecEncoder {
                         substs: ty::List::identity_for_item(vcx.tcx, *spec_def_id),
                     }
                 ).unwrap().expr;
-                let expr = vcx.mk_func_app(
-                    to_bool,
-                    &[expr],
-                );
-                expr.reify(vcx, (*spec_def_id, post_args))
+                let expr = expr.reify(vcx, (*spec_def_id, post_args));
+                to_bool.apply(vcx, [expr])
             }).collect::<Vec<vir::Expr<'_>>>();
             let data = MirSpecEncoderOutput {
                 pres,
                 posts,
                 pre_args,
+                post_args,
             };
             Ok((data, ()))
         })

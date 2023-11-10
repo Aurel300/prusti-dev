@@ -345,17 +345,18 @@ impl<'tcx, 'vir: 'enc, 'enc> Encoder<'tcx, 'vir, 'enc>
         match &term.kind {
             &mir::TerminatorKind::Goto { target } => {
                 match (dominators.immediate_dominator(target), branch_point) {
-                    // As soon as we are about to step to a bb where
+                    // As soon as we are about to step to a bb where the
+                    // immediate dominator is the last branch point, we stop.
+                    // Walking the rest of the CFG is handled in a parent call.
                     (Some(immediate_dominator), Some(branch_point))
                         if immediate_dominator == branch_point =>
                         // We are done with the current fragment of the CFG, the
                         // rest is handled in a parent call.
                         (target, stmt_update),
                     _ => {
-                        // If we hit this todo, first verify that the join point
-                        // algorithm is working correctly. If it is then
-                        // consider continuing recursion here?
-                        todo!("goto target not a join point {curr:?} -> {target:?} (branch point {branch_point:?})")
+                        // If you hit this then the join point algorithm
+                        // probably not working correctly.
+                        unreachable!("goto target not a join point {curr:?} -> {target:?} (branch point {branch_point:?})")
                     }
                 }
             }
@@ -369,7 +370,8 @@ impl<'tcx, 'vir: 'enc, 'enc> Encoder<'tcx, 'vir, 'enc>
 
                 // walk `curr` -> `targets[i]` -> `join` for each target. The
                 // join point is identified by reaching a bb where
-                // `dominators.immediate_dominator(bb) == curr`.
+                // `dominators.immediate_dominator(bb)` is equal to the bb of
+                // the branch point (so pass `branch_point: Some(curr)`).
                 // TODO: indexvec?
                 let mut updates = targets.all_targets().iter()
                     .map(|target| self.encode_cfg(&new_curr_ver, *target, Some(curr)))
@@ -594,7 +596,7 @@ impl<'tcx, 'vir: 'enc, 'enc> Encoder<'tcx, 'vir, 'enc>
             mir::StatementKind::StorageDead(..)
             | mir::StatementKind::FakeRead(..)
             | mir::StatementKind::AscribeUserType(..) 
-            | mir::StatementKind::PlaceMention(..)=> {}, // nop
+            | mir::StatementKind::PlaceMention(..) => {}, // nop
             mir::StatementKind::Assign(box (dest, rvalue)) => {
                 assert!(dest.projection.is_empty());
                 let expr = self.encode_rvalue(curr_ver, rvalue);

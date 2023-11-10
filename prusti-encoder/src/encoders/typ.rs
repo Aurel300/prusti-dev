@@ -73,7 +73,7 @@ pub struct TypeEncoderOutputRef<'vir> {
     //pub method_refold: &'vir str,
     pub specifics: TypeEncoderOutputRefSub<'vir>,
 }
-impl<'vir> task_encoder::OutputRefAny<'vir> for TypeEncoderOutputRef<'vir> {}
+impl<'vir> task_encoder::OutputRefAny for TypeEncoderOutputRef<'vir> {}
 
 impl<'vir> TypeEncoderOutputRef<'vir> {
     pub fn expect_structlike(&self) -> &TypeEncoderOutputRefSubStruct<'vir> {
@@ -133,8 +133,8 @@ impl TaskEncoder for TypeEncoder {
 
     type EncodingError = TypeEncoderError;
 
-    fn with_cache<'vir, F, R>(f: F) -> R
-        where F: FnOnce(&'vir task_encoder::CacheRef<'vir, TypeEncoder>) -> R,
+    fn with_cache<'tcx: 'vir, 'vir, F, R>(f: F) -> R
+        where F: FnOnce(&'vir task_encoder::CacheRef<'tcx, 'vir, TypeEncoder>) -> R,
     {
         CACHE.with(|cache| {
             // SAFETY: the 'vir and 'tcx given to this function will always be
@@ -178,8 +178,8 @@ impl TaskEncoder for TypeEncoder {
     }
     */
 
-    fn do_encode_full<'vir>(
-        task_key: &Self::TaskKey<'vir>,
+    fn do_encode_full<'tcx: 'vir, 'vir: 'tcx>(
+        task_key: &Self::TaskKey<'tcx>,
         deps: &mut TaskEncoderDependencies<'vir>,
     ) -> Result<(
         Self::OutputFullLocal<'vir>,
@@ -262,8 +262,8 @@ impl TaskEncoder for TypeEncoder {
         //   reassign methods, and in the match cases below
         //   also: is mk_assign really worth it? (used in constant method
         //   arguments only)
-        fn mk_assign<'vir>(
-            vcx: &'vir vir::VirCtxt<'vir>,
+        fn mk_assign<'tcx, 'vir>(
+            vcx: &'vir vir::VirCtxt<'tcx>,
             predicate_name: &'vir str,
             assign_fn: MethodIdent<'vir, BinaryArity<'vir>>,
             snapshot_fn: FunctionIdent<'vir, UnaryArity<'vir>>,
@@ -304,8 +304,8 @@ impl TaskEncoder for TypeEncoder {
             )
         }
 
-        fn mk_from_fields<'vir>(
-            vcx: &'vir vir::VirCtxt<'vir>,
+        fn mk_from_fields<'tcx, 'vir>(
+            vcx: &'vir vir::VirCtxt<'tcx>,
             name_s: &'vir str,
             args: &'vir [vir::Type<'vir>],
         ) -> FunctionIdent<'vir, UnknownArity<'vir>> {
@@ -315,8 +315,8 @@ impl TaskEncoder for TypeEncoder {
             )
         }
 
-        fn mk_function_snap_identifier<'vir>(
-            vcx: &'vir vir::VirCtxt<'vir>,
+        fn mk_function_snap_identifier<'tcx, 'vir>(
+            vcx: &'vir vir::VirCtxt<'tcx>,
             name_p: &'vir str,
             ty: vir::Type<'vir>
         ) -> FunctionIdent<'vir, UnaryArity<'vir>> {
@@ -326,8 +326,8 @@ impl TaskEncoder for TypeEncoder {
             )
         }
 
-        fn mk_primitive<'vir>(
-            vcx: &'vir vir::VirCtxt<'vir>,
+        fn mk_primitive<'tcx, 'vir>(
+            vcx: &'vir vir::VirCtxt<'tcx>,
             name_s: &'vir str,
             ty_s: vir::Type<'vir>,
             ty_prim: vir::Type<'vir>,
@@ -343,8 +343,8 @@ impl TaskEncoder for TypeEncoder {
             (val, prim)
         }
 
-        fn mk_function_unreachable_identifier<'vir>(
-            vcx: &'vir vir::VirCtxt<'vir>,
+        fn mk_function_unreachable_identifier<'tcx, 'vir>(
+            vcx: &'vir vir::VirCtxt<'tcx>,
             name_s: &'vir str,
         ) -> FunctionIdent<'vir, NullaryArity> {
             FunctionIdent::new(
@@ -353,8 +353,8 @@ impl TaskEncoder for TypeEncoder {
             )
         }
 
-        fn mk_function_assign<'vir>(
-            vcx: &'vir vir::VirCtxt<'vir>,
+        fn mk_function_assign<'tcx, 'vir>(
+            vcx: &'vir vir::VirCtxt<'tcx>,
             name_p: &'vir str,
             snapshot_ty: vir::Type<'vir>,
         ) -> MethodIdent<'vir, BinaryArity<'vir>> {
@@ -364,8 +364,8 @@ impl TaskEncoder for TypeEncoder {
             )
         }
 
-        fn mk_function_field_projection<'vir>(
-            vcx: &'vir vir::VirCtxt<'vir>,
+        fn mk_function_field_projection<'tcx, 'vir>(
+            vcx: &'vir vir::VirCtxt<'tcx>,
             name_p: &'vir str,
             name_s: &'vir str,
             idx: usize,
@@ -426,10 +426,10 @@ impl TaskEncoder for TypeEncoder {
                 })))),
             })
         }
-        fn mk_structlike<'vir>(
-            vcx: &'vir vir::VirCtxt<'vir>,
+        fn mk_structlike<'tcx, 'vir>(
+            vcx: &'vir vir::VirCtxt<'tcx>,
             deps: &mut TaskEncoderDependencies<'vir>,
-            task_key: &<TypeEncoder as TaskEncoder>::TaskKey<'vir>,
+            task_key: &<TypeEncoder as TaskEncoder>::TaskKey<'tcx>,
             name_s: &'vir str,
             name_p: &'vir str,
             field_ty_out: Vec<TypeEncoderOutputRef<'vir>>,
@@ -608,7 +608,7 @@ impl TaskEncoder for TypeEncoder {
                         lhs: base,
                         rhs: field_expr,
                     }))))
-                    .unwrap_or_else(|| vcx.mk_true());
+                    .unwrap_or_else(|| vcx.mk_bool::<true>());
                 vcx.alloc(vir::PredicateData {
                     name: name_p,
                     args: vcx.alloc_slice(&[

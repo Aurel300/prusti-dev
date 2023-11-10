@@ -46,21 +46,21 @@ pub struct MirPureEncoderTask<'tcx> {
 }
 
 impl TaskEncoder for MirPureEncoder {
-    type TaskDescription<'vir> = MirPureEncoderTask<'vir>;
+    type TaskDescription<'tcx> = MirPureEncoderTask<'tcx>;
 
-    type TaskKey<'vir> = (
+    type TaskKey<'tcx> = (
         usize, // encoding depth
         DefId, // ID of the function
         Option<mir::Promoted>, // ID of a constant within the function, or `None` if encoding the function itself
-        ty::GenericArgsRef<'vir>, // ? this should be the "signature", after applying the env/substs
+        ty::GenericArgsRef<'tcx>, // ? this should be the "signature", after applying the env/substs
     );
 
     type OutputFullLocal<'vir> = MirPureEncoderOutput<'vir>;
 
     type EncodingError = MirPureEncoderError;
 
-    fn with_cache<'vir, F, R>(f: F) -> R
-       where F: FnOnce(&'vir task_encoder::CacheRef<'vir, MirPureEncoder>) -> R,
+    fn with_cache<'tcx: 'vir, 'vir, F, R>(f: F) -> R
+       where F: FnOnce(&'vir task_encoder::CacheRef<'tcx, 'vir, MirPureEncoder>) -> R,
     {
         CACHE.with(|cache| {
             // SAFETY: the 'vir and 'tcx given to this function will always be
@@ -71,7 +71,7 @@ impl TaskEncoder for MirPureEncoder {
         })
     }
 
-    fn task_to_key<'vir>(task: &Self::TaskDescription<'vir>) -> Self::TaskKey<'vir> {
+    fn task_to_key<'tcx>(task: &Self::TaskDescription<'tcx>) -> Self::TaskKey<'tcx> {
         (
             // TODO
             task.encoding_depth,
@@ -81,8 +81,8 @@ impl TaskEncoder for MirPureEncoder {
         )
     }
 
-    fn do_encode_full<'vir>(
-        task_key: &Self::TaskKey<'vir>,
+    fn do_encode_full<'tcx: 'vir, 'vir: 'tcx>(
+        task_key: &Self::TaskKey<'tcx>,
         deps: &mut TaskEncoderDependencies<'vir>,
     ) -> Result<(
         Self::OutputFullLocal<'vir>,
@@ -158,25 +158,23 @@ impl<'vir> Update<'vir> {
     }
 }
 
-struct Encoder<'vir, 'enc>
-    where 'vir: 'enc
+struct Encoder<'tcx, 'vir: 'enc, 'enc>
 {
-    vcx: &'vir vir::VirCtxt<'vir>,
+    vcx: &'vir vir::VirCtxt<'tcx>,
     encoding_depth: usize,
-    body: &'enc mir::Body<'vir>,
+    body: &'enc mir::Body<'tcx>,
     deps: &'enc mut TaskEncoderDependencies<'vir>,
     visited: IndexVec<mir::BasicBlock, bool>,
     version_ctr: IndexVec<mir::Local, usize>,
     phi_ctr: usize,
 }
 
-impl<'vir, 'enc> Encoder<'vir, 'enc>
-    where 'vir: 'enc
+impl<'tcx, 'vir: 'enc, 'enc> Encoder<'tcx, 'vir, 'enc>
 {
     fn new(
-        vcx: &'vir vir::VirCtxt<'vir>,
+        vcx: &'vir vir::VirCtxt<'tcx>,
         encoding_depth: usize,
-        body: &'enc mir::Body<'vir>,
+        body: &'enc mir::Body<'tcx>,
         deps: &'enc mut TaskEncoderDependencies<'vir>,
     ) -> Self {
         assert!(!body.basic_blocks.is_cfg_cyclic(), "MIR pure encoding does not support loops");
@@ -280,7 +278,7 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
         )
     }
 
-    fn encode_body(&mut self) -> ExprRet<'vir> {
+    fn encode_body(&mut self) -> ExprRet<'vir> where 'vir: 'tcx {
         let end_blocks = self.body.basic_blocks.reverse_postorder()
             .iter()
             .filter(|bb| matches!(
@@ -320,7 +318,7 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
         curr_ver: &HashMap<mir::Local, usize>,
         curr: mir::BasicBlock,
         branch_point: Option<mir::BasicBlock>,
-    ) -> (mir::BasicBlock, Update<'vir>) {
+    ) -> (mir::BasicBlock, Update<'vir>) where 'vir: 'tcx {
         let dominators = self.body.basic_blocks.dominators();
         // We should never actually reach the join point bb: we should catch
         // this case and stop recursion in the `Goto` branch below. If this
@@ -584,8 +582,8 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
     fn encode_stmt(
         &mut self,
         curr_ver: &HashMap<mir::Local, usize>,
-        stmt: &mir::Statement<'vir>,
-    ) -> Update<'vir> {
+        stmt: &mir::Statement<'tcx>,
+    ) -> Update<'vir> where 'vir: 'tcx {
         let mut update = Update::new();
         match &stmt.kind {
             &mir::StatementKind::StorageLive(local) => {
@@ -610,8 +608,8 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
     fn encode_rvalue(
         &mut self,
         curr_ver: &HashMap<mir::Local, usize>,
-        rvalue: &mir::Rvalue<'vir>,
-    ) -> ExprRet<'vir> {
+        rvalue: &mir::Rvalue<'tcx>,
+    ) -> ExprRet<'vir> where 'vir: 'tcx {
         match rvalue {
             mir::Rvalue::Use(op) => self.encode_operand(curr_ver, op),
             // Repeat
@@ -700,7 +698,7 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
     fn encode_operand(
         &mut self,
         curr_ver: &HashMap<mir::Local, usize>,
-        operand: &mir::Operand<'vir>,
+        operand: &mir::Operand<'tcx>,
     ) -> ExprRet<'vir> {
         match operand {
             mir::Operand::Copy(place)
@@ -740,7 +738,7 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
     fn encode_place(
         &mut self,
         curr_ver: &HashMap<mir::Local, usize>,
-        place: &mir::Place<'vir>,
+        place: &mir::Place<'tcx>,
     ) -> ExprRet<'vir> {
         // TODO: remove (debug)
         if !curr_ver.contains_key(&place.local) {

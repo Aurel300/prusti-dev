@@ -14,12 +14,12 @@ pub struct ViperTupleEncoderOutputRef<'vir> {
     pub constructor: FunctionIdent<'vir, UnknownArity<'vir>>,
     pub elem_getters: &'vir [FunctionIdent<'vir, UnaryArity<'vir>>],
 }
-impl<'vir> task_encoder::OutputRefAny<'vir> for ViperTupleEncoderOutputRef<'vir> {}
+impl<'vir> task_encoder::OutputRefAny for ViperTupleEncoderOutputRef<'vir> {}
 
 impl<'vir> ViperTupleEncoderOutputRef<'vir> {
-    pub fn mk_cons<Curr, Next>(
+    pub fn mk_cons<'tcx, Curr, Next>(
         &self,
-        vcx: &'vir vir::VirCtxt<'vir>,
+        vcx: &'vir vir::VirCtxt<'tcx>,
         elems: &[vir::ExprGen<'vir, Curr, Next>]
     ) -> vir::ExprGen<'vir, Curr, Next> {
         if self.elem_count == 1 {
@@ -28,9 +28,9 @@ impl<'vir> ViperTupleEncoderOutputRef<'vir> {
         self.constructor.apply(vcx, elems)
     }
 
-    pub fn mk_elem<Curr, Next>(
+    pub fn mk_elem<'tcx, Curr, Next>(
         &self,
-        vcx: &'vir vir::VirCtxt<'vir>,
+        vcx: &'vir vir::VirCtxt<'tcx>,
         tuple: vir::ExprGen<'vir, Curr, Next>,
         elem: usize,
     ) -> vir::ExprGen<'vir, Curr, Next> {
@@ -58,8 +58,8 @@ impl TaskEncoder for ViperTupleEncoder {
     type OutputFullLocal<'vir> = ViperTupleEncoderOutput<'vir>;
     type EncodingError = ();
 
-    fn with_cache<'vir, F, R>(f: F) -> R
-       where F: FnOnce(&'vir task_encoder::CacheRef<'vir, ViperTupleEncoder>) -> R,
+    fn with_cache<'tcx, 'vir, F, R>(f: F) -> R
+       where F: FnOnce(&'vir task_encoder::CacheRef<'tcx, 'vir, ViperTupleEncoder>) -> R,
     {
         CACHE.with(|cache| {
             // SAFETY: the 'vir and 'tcx given to this function will always be
@@ -74,8 +74,8 @@ impl TaskEncoder for ViperTupleEncoder {
         *task
     }
 
-    fn do_encode_full<'vir>(
-        task_key: &Self::TaskKey<'vir>,
+    fn do_encode_full<'tcx: 'vir, 'vir>(
+        task_key: &Self::TaskKey<'tcx>,
         deps: &mut TaskEncoderDependencies<'vir>,
     ) -> Result<(
         Self::OutputFullLocal<'vir>,

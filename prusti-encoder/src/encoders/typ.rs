@@ -477,8 +477,8 @@ fn mk_enum<'vir>(
     let mut variants: Vec<TypeEncoderOutputRef<'vir>> = Vec::new();
 
     for (idx, variant) in adt.variants().iter().enumerate() {
-        let name_s = vir::vir_format!(vcx, "s_Adt_{did_name}_{idx}");
-        let name_p = vir::vir_format!(vcx, "p_Adt_{did_name}_{idx}");
+        let name_s = vir::vir_format!(vcx, "s_Adt_{did_name}_{idx}_{}", variant.name.as_str());
+        let name_p = vir::vir_format!(vcx, "p_Adt_{did_name}_{idx}_{}", variant.name.as_str());
 
         let ref_sub_struct = mk_output_ref_sub_struct(name_p, name_s, variant.fields.len(), vcx);
 
@@ -538,8 +538,8 @@ fn mk_enum<'vir>(
     let mut snap_cur = vcx.mk_func_app(vir::vir_format!(vcx, "{name_s}_unreachable"), &[]);
 
     for (idx, variant) in adt.variants().iter().enumerate() {
-        let name_s = vir::vir_format!(vcx, "s_Adt_{did_name}_{idx}");
-        let name_p = vir::vir_format!(vcx, "p_Adt_{did_name}_{idx}");
+        let name_s = vir::vir_format!(vcx, "s_Adt_{did_name}_{idx}_{}", variant.name.as_str());
+        let name_p = vir::vir_format!(vcx, "p_Adt_{did_name}_{idx}_{}", variant.name.as_str());
 
         let (_, cons_call) = mk_enum_variant(
             vcx,

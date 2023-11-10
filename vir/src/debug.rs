@@ -333,7 +333,13 @@ impl<'vir, Curr, Next> Debug for TerminatorStmtGenData<'vir, Curr, Next> {
 
                         write!(f, " goto {:?} }}\n  else", target.1)?;
                     }
-                    write!(f, " {{ goto {:?} }}", data.otherwise)
+                    write!(f, " {{ ")?;
+
+                    for extra in data.otherwise_extra {
+                        write!(f, "{extra:?}")?;
+                    }
+
+                    write!(f, "goto {:?} }}", data.otherwise)
                 }
             }
             Self::Exit => write!(f, "// return"),

@@ -10,7 +10,7 @@ use prusti_rustc_interface::{
 //    SsaAnalysis,
 //};
 use task_encoder::{TaskEncoder, TaskEncoderDependencies};
-use vir::{ExprData, ExprGenData, PredicateAppGenData};
+use vir::{ExprData, ExprGenData, PredicateAppGenData, StmtGenData};
 
 pub struct MirImpureEncoder;
 
@@ -337,11 +337,38 @@ impl<'vir, 'enc> EncoderVisitor<'vir, 'enc> {
     }
     */
 
-    fn fpcs_location(&mut self, location: mir::Location) {
-        let repacks = self.current_fpcs.as_ref().unwrap().statements[location.statement_index]
-            .repacks
-            .clone();
+    /// Do the same as [self::fpcs_repacks] but instead of adding the statements to [self.current_stmts] return them instead
+    fn collect_repacks(&mut self, repacks: Vec<RepackOp<'vir>>) -> Vec<&'vir vir::StmtData<'vir>> {
+        let mut real_stmts = Some(Vec::new());
+        std::mem::swap(&mut self.current_stmts, &mut real_stmts);
+
+        // FIXME: debug delete
+        let has_elements = !repacks.is_empty();
+        if has_elements {
+            self.stmt(StmtGenData::Comment(
+                self.vcx.alloc_str(&format!("collect_repacks start")),
+            ));
+        }
+
+        self.fpcs_repacks(repacks);
+
+        // FIXME: debug delete
+        if has_elements {
+            self.stmt(StmtGenData::Comment(
+                self.vcx.alloc_str(&format!("collect_repacks end")),
+            ));
+        }
+
+        std::mem::swap(&mut self.current_stmts, &mut real_stmts);
+
+        real_stmts.unwrap()
+    }
+
+    fn fpcs_repacks(&mut self, repacks: Vec<RepackOp<'vir>>) {
         for repack_op in repacks {
+            self.stmt(StmtGenData::Comment(
+                self.vcx.alloc_str(&format!("repack {repack_op:?}")),
+            ));
             match repack_op {
                 RepackOp::Expand(place, _target, capability_kind)
                 | RepackOp::Collapse(place, _target, capability_kind) => {
@@ -400,9 +427,17 @@ impl<'vir, 'enc> EncoderVisitor<'vir, 'enc> {
                         })),
                     )));
                 }
-                unsupported_op => panic!("unsupported repack op: {unsupported_op:?}"),
+                unsupported_op => tracing::error!("unsupported repack op: {unsupported_op:?}"),
             }
         }
+    }
+
+    fn fpcs_location(&mut self, location: mir::Location) {
+        let repacks = self.current_fpcs.as_ref().unwrap().statements[location.statement_index]
+            .repacks
+            .clone();
+
+        self.fpcs_repacks(repacks)
     }
 
     fn encode_operand_snap(&mut self, operand: &mir::Operand<'vir>) -> vir::Expr<'vir> {
@@ -552,11 +587,10 @@ impl<'vir, 'enc> mir::visit::Visitor<'vir> for EncoderVisitor<'vir, 'enc> {
     fn visit_basic_block_data(&mut self, block: mir::BasicBlock, data: &mir::BasicBlockData<'vir>) {
         self.current_fpcs = Some(self.fpcs_analysis.get_all_for_bb(block));
 
-        
-        tracing::warn!(
-            "fpcs for {block:?} is {:#?}",
-            self.current_fpcs.as_ref().map(|e| &e.terminator)
-        );
+        // tracing::warn!(
+        //     "fpcs for {block:?} is {:#?}",
+        //     self.current_fpcs.as_ref().map(|e| &e.terminator)
+        // );
 
         self.current_stmts = Some(Vec::with_capacity(
             data.statements.len(), // TODO: not exact?
@@ -758,7 +792,8 @@ impl<'vir, 'enc> mir::visit::Visitor<'vir> for EncoderVisitor<'vir, 'enc> {
 
                         let cons_name = match kind {
                             box mir::AggregateKind::Adt(_,vidx,_, _, _) if dest_ty_out.is_enum() => {
-                                vir::vir_format!(self.vcx, "{}_{vidx:?}_cons", dest_ty_out.snapshot_name)
+                                let v_ty = &dest_ty_out.expect_enum().variants[vidx.as_usize()];
+                                vir::vir_format!(self.vcx, "{}_cons", v_ty.snapshot_name) //TODO get differently
                             }
                             _ => vir::vir_format!(self.vcx, "{}_cons", dest_ty_out.snapshot_name)
                         };
@@ -861,10 +896,30 @@ impl<'vir, 'enc> mir::visit::Visitor<'vir> for EncoderVisitor<'vir, 'enc> {
             | mir::TerminatorKind::FalseEdge {
                 real_target: target,
                 ..
-            } => self.vcx.alloc(vir::TerminatorStmtData::Goto(
-                self.vcx
-                    .alloc(vir::CfgBlockLabelData::BasicBlock(target.as_usize())),
-            )),
+            } => {
+                let len = {
+                    let succs = &self.current_fpcs.as_ref().unwrap().terminator.succs;
+                    assert!(succs.len() <= 2);
+                    let real_succ = &succs[0];
+                    assert_eq!(&real_succ.location.block, target);
+                    succs.len()
+                };
+                for i in 0..len {
+                    let repacks = self.current_fpcs.as_ref().unwrap().terminator.succs[i]
+                        .repacks
+                        .clone();
+                    let mut stmts = self.collect_repacks(repacks);
+                    // TODO this is messy
+                    for stmt in stmts.drain(..) {
+                        self.current_stmts.as_mut().unwrap().push(stmt);
+                    }
+                }
+
+                self.vcx.alloc(vir::TerminatorStmtData::Goto(
+                    self.vcx
+                        .alloc(vir::CfgBlockLabelData::BasicBlock(target.as_usize())),
+                ))
+            }
             mir::TerminatorKind::SwitchInt { discr, targets } => {
                 //let discr_version = self.ssa_analysis.version.get(&(location, discr.local)).unwrap();
                 //let discr_name = vir::vir_format!(self.vcx, "_{}s_{}", discr.local.index(), discr_version);
@@ -877,7 +932,7 @@ impl<'vir, 'enc> mir::visit::Visitor<'vir> for EncoderVisitor<'vir, 'enc> {
                     .unwrap();
 
                 tracing::warn!(
-                    "terminator fpcs {:?}",
+                    "goto terminator fpcs {:?}",
                     self.current_fpcs.as_ref().unwrap().terminator
                 );
 
@@ -889,15 +944,9 @@ impl<'vir, 'enc> mir::visit::Visitor<'vir> for EncoderVisitor<'vir, 'enc> {
                             let terminator_fpcs =
                                 &self.current_fpcs.as_ref().unwrap().terminator.succs[idx];
 
-                            let extra_exprs = terminator_fpcs
-                                .repacks
-                                .iter()
-                                .map(|repack| {
-                                    self.vcx.alloc(ExprGenData::Todo(
-                                        self.vcx.alloc_str(&format!("{repack:?}")),
-                                    ))
-                                })
-                                .collect::<Vec<_>>();
+                            assert_eq!(terminator_fpcs.location.block, target);
+
+                            let extra_exprs = self.collect_repacks(terminator_fpcs.repacks.clone());
 
                             (
                                 ty_out.expr_from_u128(value),
@@ -909,9 +958,19 @@ impl<'vir, 'enc> mir::visit::Visitor<'vir> for EncoderVisitor<'vir, 'enc> {
                         })
                         .collect::<Vec<_>>(),
                 );
+
                 let goto_otherwise = self.vcx.alloc(vir::CfgBlockLabelData::BasicBlock(
                     targets.otherwise().as_usize(),
                 ));
+
+                let otherwise_expr = {
+                    let terminator_fpcs =
+                        &self.current_fpcs.as_ref().unwrap().terminator.succs[goto_targets.len()];
+
+                    assert_eq!(terminator_fpcs.location.block, targets.otherwise());
+
+                    self.collect_repacks(terminator_fpcs.repacks.clone())
+                };
 
                 let discr_ex = self.encode_operand_snap(discr);
                 self.vcx
@@ -920,6 +979,7 @@ impl<'vir, 'enc> mir::visit::Visitor<'vir> for EncoderVisitor<'vir, 'enc> {
                             value: discr_ex, // self.vcx.mk_local_ex(discr_name),
                             targets: goto_targets,
                             otherwise: goto_otherwise,
+                            otherwise_extra: self.vcx.alloc_slice(&otherwise_expr),
                         },
                     )))
             }
@@ -1045,6 +1105,7 @@ impl<'vir, 'enc> mir::visit::Visitor<'vir> for EncoderVisitor<'vir, 'enc> {
                         otherwise: self
                             .vcx
                             .alloc(vir::CfgBlockLabelData::BasicBlock(otherwise.as_usize())),
+                        otherwise_extra: &[],
                     }),
                 ))
             }

@@ -70,16 +70,16 @@ impl<'vir, Curr: Copy, NextA, NextB> Reify<'vir, Curr, NextA, NextB>
 }
 
 impl<'vir, Curr: Copy, NextA, NextB> Reify<'vir, Curr, NextA, NextB>
-    for [(
+    for &[(
         ExprGen<'vir, Curr, ExprGen<'vir, NextA, NextB>>,
         CfgBlockLabel<'vir>,
-        &'vir [ExprGen<'vir, Curr, ExprGen<'vir, NextA, NextB>>],
+        &'vir [StmtGen<'vir, Curr, ExprGen<'vir, NextA, NextB>>],
     )]
 {
     type Next = &'vir [(
         ExprGen<'vir, NextA, NextB>,
         CfgBlockLabel<'vir>,
-        &'vir [ExprGen<'vir, NextA, NextB>],
+        &'vir [StmtGen<'vir, NextA, NextB>],
     )];
     fn reify(&self, vcx: &'vir VirCtxt<'vir>, lctx: Curr) -> Self::Next {
         vcx.alloc_slice(

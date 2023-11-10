@@ -18,7 +18,7 @@ pub enum MirFunctionEncoderError {
 pub struct MirFunctionEncoderOutputRef<'vir> {
     pub function_ref: FunctionIdent<'vir, UnknownArity<'vir>>,
 }
-impl<'vir> task_encoder::OutputRefAny<'vir> for MirFunctionEncoderOutputRef<'vir> {}
+impl<'vir> task_encoder::OutputRefAny for MirFunctionEncoderOutputRef<'vir> {}
 
 #[derive(Clone, Debug)]
 pub struct MirFunctionEncoderOutput<'vir> {
@@ -41,9 +41,9 @@ impl TaskEncoder for MirFunctionEncoder {
 
     type EncodingError = MirFunctionEncoderError;
 
-    fn with_cache<'vir, F, R>(f: F) -> R
+    fn with_cache<'tcx, 'vir, F, R>(f: F) -> R
     where
-        F: FnOnce(&'vir task_encoder::CacheRef<'vir, MirFunctionEncoder>) -> R,
+        F: FnOnce(&'vir task_encoder::CacheRef<'tcx, 'vir, MirFunctionEncoder>) -> R,
     {
         CACHE.with(|cache| {
             // SAFETY: the 'vir and 'tcx given to this function will always be
@@ -58,8 +58,8 @@ impl TaskEncoder for MirFunctionEncoder {
         *task
     }
 
-    fn do_encode_full<'vir>(
-        task_key: &Self::TaskKey<'vir>,
+    fn do_encode_full<'tcx: 'vir, 'vir>(
+        task_key: &Self::TaskKey<'tcx>,
         deps: &mut TaskEncoderDependencies<'vir>,
     ) -> Result<
         (

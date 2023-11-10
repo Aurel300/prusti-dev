@@ -17,7 +17,7 @@ pub struct GenericEncoderOutputRef<'vir> {
     pub predicate_param_name: &'vir str,
     pub domain_type_name: &'vir str,
 }
-impl<'vir> task_encoder::OutputRefAny<'vir> for GenericEncoderOutputRef<'vir> {}
+impl<'vir> task_encoder::OutputRefAny for GenericEncoderOutputRef<'vir> {}
 
 #[derive(Clone, Debug)]
 pub struct GenericEncoderOutput<'vir> {
@@ -39,8 +39,8 @@ impl TaskEncoder for GenericEncoder {
 
     type EncodingError = GenericEncoderError;
 
-    fn with_cache<'vir, F, R>(f: F) -> R
-        where F: FnOnce(&'vir task_encoder::CacheRef<'vir, GenericEncoder>) -> R,
+    fn with_cache<'tcx, 'vir, F, R>(f: F) -> R
+        where F: FnOnce(&'vir task_encoder::CacheRef<'tcx, 'vir, GenericEncoder>) -> R,
     {
         CACHE.with(|cache| {
             // SAFETY: the 'vir and 'tcx given to this function will always be
@@ -56,8 +56,8 @@ impl TaskEncoder for GenericEncoder {
     }
 
     #[allow(non_snake_case)]
-    fn do_encode_full<'vir>(
-        task_key: &Self::TaskKey<'vir>,
+    fn do_encode_full<'tcx: 'vir, 'vir>(
+        task_key: &Self::TaskKey<'tcx>,
         deps: &mut TaskEncoderDependencies<'vir>,
     ) -> Result<(
         Self::OutputFullLocal<'vir>,

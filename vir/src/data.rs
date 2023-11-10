@@ -40,6 +40,7 @@ pub enum BinOpKind {
     CmpGe,
     CmpLe,
     And,
+    Or,
     Add,
     Sub,
     Mod,

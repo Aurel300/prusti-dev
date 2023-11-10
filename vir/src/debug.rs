@@ -56,6 +56,7 @@ impl<'vir, Curr, Next> Debug for BinOpGenData<'vir, Curr, Next> {
             BinOpKind::CmpLt => "<",
             BinOpKind::CmpLe => "<=",
             BinOpKind::And => "&&",
+            BinOpKind::Or => "||",
             BinOpKind::Add => "+",
             BinOpKind::Sub => "-",
             BinOpKind::Mod => "%",

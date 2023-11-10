@@ -25,7 +25,7 @@ pub enum MirImpureEncoderError {
 pub struct MirImpureEncoderOutputRef<'vir> {
     pub method_ref: MethodIdent<'vir, UnknownArity<'vir>>,
 }
-impl<'vir> task_encoder::OutputRefAny<'vir> for MirImpureEncoderOutputRef<'vir> {}
+impl<'vir> task_encoder::OutputRefAny for MirImpureEncoderOutputRef<'vir> {}
 
 #[derive(Clone, Debug)]
 pub struct MirImpureEncoderOutput<'vir> {
@@ -51,8 +51,8 @@ impl TaskEncoder for MirImpureEncoder {
 
     type EncodingError = MirImpureEncoderError;
 
-    fn with_cache<'vir, F, R>(f: F) -> R
-        where F: FnOnce(&'vir task_encoder::CacheRef<'vir, MirImpureEncoder>) -> R,
+    fn with_cache<'tcx, 'vir, F, R>(f: F) -> R
+        where F: FnOnce(&'vir task_encoder::CacheRef<'tcx, 'vir, MirImpureEncoder>) -> R,
     {
         CACHE.with(|cache| {
             // SAFETY: the 'vir and 'tcx given to this function will always be
@@ -67,8 +67,8 @@ impl TaskEncoder for MirImpureEncoder {
         *task
     }
 
-    fn do_encode_full<'vir>(
-        task_key: &Self::TaskKey<'vir>,
+    fn do_encode_full<'tcx: 'vir, 'vir>(
+        task_key: &Self::TaskKey<'tcx>,
         deps: &mut TaskEncoderDependencies<'vir>,
     ) -> Result<(
         Self::OutputFullLocal<'vir>,
@@ -510,7 +510,7 @@ impl<'vir, 'enc> mir::visit::Visitor<'vir> for EncoderVisitor<'vir, 'enc> {
         if ENCODE_REACH_BB {
             self.stmt(vir::StmtData::PureAssign(self.vcx.alloc(vir::PureAssignData {
                 lhs: self.vcx.mk_local_ex(vir::vir_format!(self.vcx, "_reach_bb{}", block.as_usize())),
-                rhs: self.vcx.mk_true(),
+                rhs: self.vcx.mk_bool::<true>(),
             })));
         }
 

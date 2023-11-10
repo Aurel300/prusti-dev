@@ -49,21 +49,21 @@ pub struct MirPureEncoderTask<'tcx> {
 }
 
 impl TaskEncoder for MirPureEncoder {
-    type TaskDescription<'vir> = MirPureEncoderTask<'vir>;
+    type TaskDescription<'tcx> = MirPureEncoderTask<'tcx>;
 
-    type TaskKey<'vir> = (
+    type TaskKey<'tcx> = (
         usize, // encoding depth
         DefId, // ID of the function
         Option<mir::Promoted>, // ID of a constant within the function, or `None` if encoding the function itself
-        ty::GenericArgsRef<'vir>, // ? this should be the "signature", after applying the env/substs
+        ty::GenericArgsRef<'tcx>, // ? this should be the "signature", after applying the env/substs
     );
 
     type OutputFullLocal<'vir> = MirPureEncoderOutput<'vir>;
 
     type EncodingError = MirPureEncoderError;
 
-    fn with_cache<'vir, F, R>(f: F) -> R
-       where F: FnOnce(&'vir task_encoder::CacheRef<'vir, MirPureEncoder>) -> R,
+    fn with_cache<'tcx: 'vir, 'vir, F, R>(f: F) -> R
+       where F: FnOnce(&'vir task_encoder::CacheRef<'tcx, 'vir, MirPureEncoder>) -> R,
     {
         CACHE.with(|cache| {
             // SAFETY: the 'vir and 'tcx given to this function will always be
@@ -74,7 +74,7 @@ impl TaskEncoder for MirPureEncoder {
         })
     }
 
-    fn task_to_key<'vir>(task: &Self::TaskDescription<'vir>) -> Self::TaskKey<'vir> {
+    fn task_to_key<'tcx>(task: &Self::TaskDescription<'tcx>) -> Self::TaskKey<'tcx> {
         (
             // TODO
             task.encoding_depth,
@@ -84,8 +84,8 @@ impl TaskEncoder for MirPureEncoder {
         )
     }
 
-    fn do_encode_full<'vir>(
-        task_key: &Self::TaskKey<'vir>,
+    fn do_encode_full<'tcx: 'vir, 'vir: 'tcx>(
+        task_key: &Self::TaskKey<'tcx>,
         deps: &mut TaskEncoderDependencies<'vir>,
     ) -> Result<(
         Self::OutputFullLocal<'vir>,
@@ -161,25 +161,23 @@ impl<'vir> Update<'vir> {
     }
 }
 
-struct Encoder<'vir, 'enc>
-    where 'vir: 'enc
+struct Encoder<'tcx, 'vir: 'enc, 'enc>
 {
-    vcx: &'vir vir::VirCtxt<'vir>,
+    vcx: &'vir vir::VirCtxt<'tcx>,
     encoding_depth: usize,
-    body: &'enc mir::Body<'vir>,
+    body: &'enc mir::Body<'tcx>,
     deps: &'enc mut TaskEncoderDependencies<'vir>,
     visited: IndexVec<mir::BasicBlock, bool>,
     version_ctr: IndexVec<mir::Local, usize>,
     phi_ctr: usize,
 }
 
-impl<'vir, 'enc> Encoder<'vir, 'enc>
-    where 'vir: 'enc
+impl<'tcx, 'vir: 'enc, 'enc> Encoder<'tcx, 'vir, 'enc>
 {
     fn new(
-        vcx: &'vir vir::VirCtxt<'vir>,
+        vcx: &'vir vir::VirCtxt<'tcx>,
         encoding_depth: usize,
-        body: &'enc mir::Body<'vir>,
+        body: &'enc mir::Body<'tcx>,
         deps: &'enc mut TaskEncoderDependencies<'vir>,
     ) -> Self {
         assert!(!body.basic_blocks.is_cfg_cyclic(), "MIR pure encoding does not support loops");
@@ -283,7 +281,7 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
         )
     }
 
-    fn encode_body(&mut self) -> ExprRet<'vir> {
+    fn encode_body(&mut self) -> ExprRet<'vir> where 'vir: 'tcx {
         let end_blocks = self.body.basic_blocks.reverse_postorder()
             .iter()
             .filter(|bb| matches!(
@@ -323,7 +321,7 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
         curr_ver: &HashMap<mir::Local, usize>,
         curr: mir::BasicBlock,
         branch_point: Option<mir::BasicBlock>,
-    ) -> (mir::BasicBlock, Update<'vir>) {
+    ) -> (mir::BasicBlock, Update<'vir>) where 'vir: 'tcx {
         let dominators = self.body.basic_blocks.dominators();
         // We should never actually reach the join point bb: we should catch
         // this case and stop recursion in the `Goto` branch below. If this
@@ -350,17 +348,18 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
         match &term.kind {
             &mir::TerminatorKind::Goto { target } => {
                 match (dominators.immediate_dominator(target), branch_point) {
-                    // As soon as we are about to step to a bb where
+                    // As soon as we are about to step to a bb where the
+                    // immediate dominator is the last branch point, we stop.
+                    // Walking the rest of the CFG is handled in a parent call.
                     (Some(immediate_dominator), Some(branch_point))
                         if immediate_dominator == branch_point =>
                         // We are done with the current fragment of the CFG, the
                         // rest is handled in a parent call.
                         (target, stmt_update),
                     _ => {
-                        // If we hit this todo, first verify that the join point
-                        // algorithm is working correctly. If it is then
-                        // consider continuing recursion here?
-                        todo!("goto target not a join point {curr:?} -> {target:?} (branch point {branch_point:?})")
+                        // If you hit this then the join point algorithm
+                        // probably not working correctly.
+                        unreachable!("goto target not a join point {curr:?} -> {target:?} (branch point {branch_point:?})")
                     }
                 }
             }
@@ -374,7 +373,8 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
 
                 // walk `curr` -> `targets[i]` -> `join` for each target. The
                 // join point is identified by reaching a bb where
-                // `dominators.immediate_dominator(bb) == curr`.
+                // `dominators.immediate_dominator(bb)` is equal to the bb of
+                // the branch point (so pass `branch_point: Some(curr)`).
                 // TODO: indexvec?
                 let mut updates = targets.all_targets().iter()
                     .map(|target| self.encode_cfg(&new_curr_ver, *target, Some(curr)))
@@ -651,8 +651,8 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
     fn encode_stmt(
         &mut self,
         curr_ver: &HashMap<mir::Local, usize>,
-        stmt: &mir::Statement<'vir>,
-    ) -> Update<'vir> {
+        stmt: &mir::Statement<'tcx>,
+    ) -> Update<'vir> where 'vir: 'tcx {
         let mut update = Update::new();
         match &stmt.kind {
             &mir::StatementKind::StorageLive(local) => {
@@ -663,7 +663,7 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
             mir::StatementKind::StorageDead(..)
             | mir::StatementKind::FakeRead(..)
             | mir::StatementKind::AscribeUserType(..) 
-            | mir::StatementKind::PlaceMention(..)=> {}, // nop
+            | mir::StatementKind::PlaceMention(..) => {}, // nop
             mir::StatementKind::Assign(box (dest, rvalue)) => {
                 assert!(dest.projection.is_empty());
                 let expr = self.encode_rvalue(curr_ver, rvalue);
@@ -677,8 +677,8 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
     fn encode_rvalue(
         &mut self,
         curr_ver: &HashMap<mir::Local, usize>,
-        rvalue: &mir::Rvalue<'vir>,
-    ) -> ExprRet<'vir> {
+        rvalue: &mir::Rvalue<'tcx>,
+    ) -> ExprRet<'vir> where 'vir: 'tcx {
         match rvalue {
             mir::Rvalue::Use(op) => self.encode_operand(curr_ver, op),
             // Repeat
@@ -767,7 +767,7 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
     fn encode_operand(
         &mut self,
         curr_ver: &HashMap<mir::Local, usize>,
-        operand: &mir::Operand<'vir>,
+        operand: &mir::Operand<'tcx>,
     ) -> ExprRet<'vir> {
         match operand {
             mir::Operand::Copy(place)
@@ -807,7 +807,7 @@ impl<'vir, 'enc> Encoder<'vir, 'enc>
     fn encode_place(
         &mut self,
         curr_ver: &HashMap<mir::Local, usize>,
-        place: &mir::Place<'vir>,
+        place: &mir::Place<'tcx>,
     ) -> ExprRet<'vir> {
         // TODO: remove (debug)
         if !curr_ver.contains_key(&place.local) {

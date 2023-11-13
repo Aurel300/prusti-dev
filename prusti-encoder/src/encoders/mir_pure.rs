@@ -534,7 +534,7 @@ impl<'tcx, 'vir: 'enc, 'enc> Encoder<'tcx, 'vir, 'enc>
                                     TyKind::Tuple(list) => list,
                                     _ => unreachable!(),
                                 },
-                                cl_args.as_closure().upvar_tys().collect::<Vec<_>>(),
+                                cl_args.as_closure().upvar_tys().iter().collect::<Vec<_>>(),
                                 *cl_def_id,
                             ),
                             _ => panic!("illegal prusti::forall"),
@@ -820,7 +820,7 @@ impl<'tcx, 'vir: 'enc, 'enc> Encoder<'tcx, 'vir, 'enc>
                 let field_idx= field_idx.as_usize();
                 match ty.kind() {
                     TyKind::Closure(_def_id, args) => {
-                        let upvars = args.as_closure().upvar_tys().collect::<Vec<_>>().len();
+                        let upvars = args.as_closure().upvar_tys().iter().collect::<Vec<_>>().len();
                         let tuple_ref = self.deps.require_ref::<ViperTupleEncoder>(
                             upvars,
                         ).unwrap();

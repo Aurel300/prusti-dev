@@ -3,7 +3,7 @@ use prusti_rustc_interface::{
     span::def_id::DefId,
 };
 use mir_state_analysis::{
-    free_pcs::{FreePcsAnalysis, FreePcsBasicBlock, RepackOp, CapabilityKind}, utils::Place,
+    free_pcs::{FreePcsAnalysis, FreePcsBasicBlock, FreePcsLocation, RepackOp, CapabilityKind}, utils::Place,
 };
 //use mir_ssa_analysis::{
 //    SsaAnalysis,
@@ -324,12 +324,13 @@ impl<'tcx, 'vir, 'enc> EncoderVisitor<'tcx, 'vir, 'enc> {
     }
     */
 
-    fn fpcs_location(
+    fn fpcs_repacks(
         &mut self,
         location: mir::Location,
+        repacks: impl for<'a> Fn(&'a FreePcsLocation<'vir>) -> &'a [RepackOp<'vir>],
     ) {
-        let repacks = self.current_fpcs.as_ref().unwrap().statements[location.statement_index].repacks.clone();
-        for repack_op in repacks {
+        let current_fpcs = self.current_fpcs.take().unwrap();
+        for &repack_op in repacks(&current_fpcs.statements[location.statement_index]) {
             match repack_op {
                 RepackOp::Expand(place, _target, capability_kind)
                 | RepackOp::Collapse(place, _target, capability_kind) => {
@@ -339,7 +340,7 @@ impl<'tcx, 'vir, 'enc> EncoderVisitor<'tcx, 'vir, 'enc> {
                         assert!(matches!(repack_op, RepackOp::Collapse(..)));
                         return;
                     }
-                    let place_ty = place.ty(self.local_decls, self.vcx.tcx);
+                    let place_ty = (*place).ty(self.local_decls, self.vcx.tcx);
                     assert!(place_ty.variant_index.is_none());
 
                     let place_ty_out = self.deps.require_ref::<crate::encoders::TypeEncoder>(
@@ -355,7 +356,7 @@ impl<'tcx, 'vir, 'enc> EncoderVisitor<'tcx, 'vir, 'enc> {
                     }
                 }
                 RepackOp::Weaken(place, CapabilityKind::Exclusive, CapabilityKind::Write) => {
-                    let place_ty = place.ty(self.local_decls, self.vcx.tcx);
+                    let place_ty = (*place).ty(self.local_decls, self.vcx.tcx);
                     assert!(place_ty.variant_index.is_none());
 
                     let place_ty_out = self.deps.require_ref::<crate::encoders::TypeEncoder>(
@@ -370,6 +371,7 @@ impl<'tcx, 'vir, 'enc> EncoderVisitor<'tcx, 'vir, 'enc> {
                 unsupported_op => panic!("unsupported repack op: {unsupported_op:?}"),
             }
         }
+        self.current_fpcs = Some(current_fpcs);
     }
 
     fn encode_operand_snap(
@@ -577,7 +579,9 @@ impl<'tcx, 'vir, 'enc> mir::visit::Visitor<'tcx> for EncoderVisitor<'tcx, 'vir, 
             vir::vir_format!(self.vcx, "{statement:?}"),
         ));
 
-        self.fpcs_location(location);
+        self.fpcs_repacks(location, |loc| &loc.repacks_start);
+        // TODO: move this to after getting operands, before assignment
+        self.fpcs_repacks(location, |loc| &loc.repacks_middle);
         match &statement.kind {
             mir::StatementKind::Assign(box (dest, rvalue)) => {
                 //let ssa_update = self.ssa_analysis.updates.get(&location).cloned().unwrap();
@@ -721,7 +725,9 @@ impl<'tcx, 'vir, 'enc> mir::visit::Visitor<'tcx> for EncoderVisitor<'tcx, 'vir, 
             vir::vir_format!(self.vcx, "{:?}", terminator.kind),
         ));
 
-        self.fpcs_location(location);
+        self.fpcs_repacks(location, |loc| &loc.repacks_start);
+        // TODO: move this to after getting operands, before assignment
+        self.fpcs_repacks(location, |loc| &loc.repacks_middle);
         let terminator = match &terminator.kind {
             mir::TerminatorKind::Goto { target }
             | mir::TerminatorKind::FalseUnwind { real_target: target, .. } =>

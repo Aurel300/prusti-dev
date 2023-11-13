@@ -41,7 +41,7 @@ impl TaskEncoder for MirFunctionEncoder {
 
     type EncodingError = MirFunctionEncoderError;
 
-    fn with_cache<'tcx, 'vir, F, R>(f: F) -> R
+    fn with_cache<'tcx: 'vir, 'vir, F, R>(f: F) -> R
     where
         F: FnOnce(&'vir task_encoder::CacheRef<'tcx, 'vir, MirFunctionEncoder>) -> R,
     {
@@ -58,7 +58,7 @@ impl TaskEncoder for MirFunctionEncoder {
         *task
     }
 
-    fn do_encode_full<'tcx: 'vir, 'vir>(
+    fn do_encode_full<'tcx: 'vir, 'vir: 'tcx>(
         task_key: &Self::TaskKey<'tcx>,
         deps: &mut TaskEncoderDependencies<'vir>,
     ) -> Result<

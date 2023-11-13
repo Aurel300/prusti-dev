@@ -520,9 +520,9 @@ impl<'tcx, 'vir: 'enc, 'enc> Encoder<'tcx, 'vir, 'enc>
                         term_update.add_to_map(&mut new_curr_ver);
 
                         // walk rest of CFG
-                        let end_update = self.encode_cfg(&new_curr_ver, target.unwrap(), end);
+                        let (end,  end_update) = self.encode_cfg(&new_curr_ver, target.unwrap(), branch_point);
 
-                        stmt_update.merge(term_update).merge(end_update)
+                        (end,  stmt_update.merge(term_update).merge(end_update))
                     }
                     Some((PrustiBuiltin::Pure(def_id), arg_tys)) => {
                         assert!(builtin.is_none(), "Function is pure and builtin?");
@@ -541,9 +541,9 @@ impl<'tcx, 'vir: 'enc, 'enc> Encoder<'tcx, 'vir, 'enc>
                         term_update.add_to_map(&mut new_curr_ver);
 
                         // walk rest of CFG
-                        let end_update = self.encode_cfg(&new_curr_ver, target.unwrap(), end);
+                        let (end,  end_update) = self.encode_cfg(&new_curr_ver, target.unwrap(), branch_point);
 
-                        stmt_update.merge(term_update).merge(end_update)
+                        (end,  stmt_update.merge(term_update).merge(end_update))
                     }
                     Some((PrustiBuiltin::Forall, arg_tys)) => {
                         assert_eq!(arg_tys.len(), 2);
@@ -768,7 +768,7 @@ impl<'tcx, 'vir: 'enc, 'enc> Encoder<'tcx, 'vir, 'enc>
         &mut self,
         curr_ver: &HashMap<mir::Local, usize>,
         operand: &mir::Operand<'tcx>,
-    ) -> ExprRet<'vir> {
+    ) -> ExprRet<'vir> where 'vir: 'tcx {
         match operand {
             mir::Operand::Copy(place)
             | mir::Operand::Move(place) => self.encode_place(curr_ver, place),
@@ -808,7 +808,7 @@ impl<'tcx, 'vir: 'enc, 'enc> Encoder<'tcx, 'vir, 'enc>
         &mut self,
         curr_ver: &HashMap<mir::Local, usize>,
         place: &mir::Place<'tcx>,
-    ) -> ExprRet<'vir> {
+    ) -> ExprRet<'vir> where 'vir: 'tcx {
         // TODO: remove (debug)
         if !curr_ver.contains_key(&place.local) {
             tracing::error!("unknown version of local! {}", place.local.as_usize());
@@ -829,7 +829,7 @@ impl<'tcx, 'vir: 'enc, 'enc> Encoder<'tcx, 'vir, 'enc>
     }
 
 
-    fn encode_place_element(&mut self, parent_ty: ty::Ty<'vir>, elem: mir::PlaceElem<'vir>, expr: ExprRet<'vir>) -> (ty::Ty<'vir>, ExprRet<'vir>) {
+    fn encode_place_element(&mut self, parent_ty: ty::Ty<'tcx>, elem: mir::PlaceElem<'tcx>, expr: ExprRet<'vir>) -> (ty::Ty<'tcx>, ExprRet<'vir>) where 'vir: 'tcx {
         let parent_ty = parent_ty.peel_refs();
 
          match elem {

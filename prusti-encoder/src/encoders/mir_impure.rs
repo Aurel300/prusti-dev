@@ -51,7 +51,7 @@ impl TaskEncoder for MirImpureEncoder {
 
     type EncodingError = MirImpureEncoderError;
 
-    fn with_cache<'tcx, 'vir, F, R>(f: F) -> R
+    fn with_cache<'tcx: 'vir, 'vir, F, R>(f: F) -> R
         where F: FnOnce(&'vir task_encoder::CacheRef<'tcx, 'vir, MirImpureEncoder>) -> R,
     {
         CACHE.with(|cache| {
@@ -67,7 +67,7 @@ impl TaskEncoder for MirImpureEncoder {
         *task
     }
 
-    fn do_encode_full<'tcx: 'vir, 'vir>(
+    fn do_encode_full<'tcx: 'vir, 'vir: 'tcx>(
         task_key: &Self::TaskKey<'tcx>,
         deps: &mut TaskEncoderDependencies<'vir>,
     ) -> Result<(
@@ -222,13 +222,13 @@ impl TaskEncoder for MirImpureEncoder {
     }
 }
 
-struct EncoderVisitor<'vir, 'enc>
+struct EncoderVisitor<'tcx, 'vir, 'enc>
     where 'vir: 'enc
 {
-    vcx: &'vir vir::VirCtxt<'vir>,
+    vcx: &'vir vir::VirCtxt<'tcx>,
     deps: &'enc mut TaskEncoderDependencies<'vir>,
     def_id: DefId,
-    local_decls: &'enc mir::LocalDecls<'vir>,
+    local_decls: &'enc mir::LocalDecls<'tcx>,
     //ssa_analysis: SsaAnalysis,
     fpcs_analysis: FreePcsAnalysis<'enc, 'vir>,
     local_defs: crate::encoders::local_def::MirLocalDefEncoderOutput<'vir>,
@@ -244,7 +244,7 @@ struct EncoderVisitor<'vir, 'enc>
     encoded_blocks: Vec<vir::CfgBlock<'vir>>, // TODO: use IndexVec ?
 }
 
-impl<'vir, 'enc> EncoderVisitor<'vir, 'enc> {
+impl<'tcx, 'vir: 'tcx, 'enc> EncoderVisitor<'tcx, 'vir, 'enc> {
     fn stmt(&mut self, stmt: vir::StmtData<'vir>) {
         self.current_stmts
             .as_mut()
@@ -256,7 +256,7 @@ impl<'vir, 'enc> EncoderVisitor<'vir, 'enc> {
         &mut self,
         base: vir::Expr<'vir>,
         ty_out: crate::encoders::TypeEncoderOutputRef<'vir>,
-        projection: mir::PlaceElem<'vir>,
+        projection: mir::PlaceElem<'tcx>,
     ) -> (vir::Expr<'vir>, crate::encoders::TypeEncoderOutputRef<'vir>) {
         match projection {
             mir::ProjectionElem::Field(f, ty) => {
@@ -275,7 +275,7 @@ impl<'vir, 'enc> EncoderVisitor<'vir, 'enc> {
         &mut self,
         base: vir::Expr<'vir>,
         ty_out: crate::encoders::TypeEncoderOutputRef<'vir>,
-        projection: &'vir [mir::PlaceElem<'vir>],
+        projection: &'vir [mir::PlaceElem<'tcx>],
     ) -> (vir::Expr<'vir>, crate::encoders::TypeEncoderOutputRef<'vir>) {
         projection.iter()
             .fold((base, ty_out), |(base, ty_out), proj| self.project_one(base, ty_out, *proj))
@@ -373,7 +373,7 @@ impl<'vir, 'enc> EncoderVisitor<'vir, 'enc> {
 
     fn encode_operand_snap(
         &mut self,
-        operand: &mir::Operand<'vir>,
+        operand: &mir::Operand<'tcx>,
     ) -> vir::Expr<'vir> {
         match operand {
             &mir::Operand::Move(source) => {
@@ -409,7 +409,7 @@ impl<'vir, 'enc> EncoderVisitor<'vir, 'enc> {
 
     fn encode_operand(
         &mut self,
-        operand: &mir::Operand<'vir>,
+        operand: &mir::Operand<'tcx>,
     ) -> vir::Expr<'vir> {
         let (snap_val, ty_out) = match operand {
             &mir::Operand::Move(source) => return self.encode_place(Place::from(source)),
@@ -436,7 +436,7 @@ impl<'vir, 'enc> EncoderVisitor<'vir, 'enc> {
 
     fn encode_place(
         &mut self,
-        place: Place<'vir>,
+        place: Place<'tcx>,
     ) -> vir::Expr<'vir> {
         //assert!(place.projection.is_empty());
         //self.vcx.mk_local_ex(vir::vir_format!(self.vcx, "_{}p", place.local.index()))
@@ -451,7 +451,7 @@ impl<'vir, 'enc> EncoderVisitor<'vir, 'enc> {
     // MIR evaluation, more like pure fn body encoding)
     fn encode_constant(
         &self,
-        constant: &mir::Constant<'vir>,
+        constant: &mir::Constant<'tcx>,
     ) -> vir::Expr<'vir> {
         match constant.literal {
             mir::ConstantKind::Val(const_val, const_ty) => {
@@ -493,14 +493,14 @@ impl<'vir, 'enc> EncoderVisitor<'vir, 'enc> {
     }
 }
 
-impl<'vir, 'enc> mir::visit::Visitor<'vir> for EncoderVisitor<'vir, 'enc> {
+impl<'tcx, 'vir: 'tcx, 'enc> mir::visit::Visitor<'tcx> for EncoderVisitor<'tcx, 'vir, 'enc> {
     // fn visit_body(&mut self, body: &mir::Body<'tcx>) {
     //     println!("visiting body!");
     // }
     fn visit_basic_block_data(
         &mut self,
         block: mir::BasicBlock,
-        data: &mir::BasicBlockData<'vir>,
+        data: &mir::BasicBlockData<'tcx>,
     ) {
         self.current_fpcs = Some(self.fpcs_analysis.get_all_for_bb(block));
 
@@ -554,7 +554,7 @@ impl<'vir, 'enc> mir::visit::Visitor<'vir> for EncoderVisitor<'vir, 'enc> {
 
     fn visit_statement(
         &mut self,
-        statement: &mir::Statement<'vir>,
+        statement: &mir::Statement<'tcx>,
         location: mir::Location,
     ) {
         // TODO: these should not be ignored, but should havoc the local instead
@@ -718,7 +718,7 @@ impl<'vir, 'enc> mir::visit::Visitor<'vir> for EncoderVisitor<'vir, 'enc> {
 
     fn visit_terminator(
         &mut self,
-        terminator: &mir::Terminator<'vir>,
+        terminator: &mir::Terminator<'tcx>,
         location: mir::Location,
     ) {
         self.stmt(vir::StmtData::Comment(

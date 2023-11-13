@@ -4,7 +4,6 @@ use prusti_rustc_interface::{
     span::def_id::DefId,
     type_ir::sty::TyKind,
 };
-use rustc_middle::ty::GenericArgsRef;
 use task_encoder::{
     TaskEncoder,
     TaskEncoderDependencies,
@@ -501,57 +500,31 @@ impl<'tcx, 'vir: 'enc, 'enc> Encoder<'tcx, 'vir, 'enc>
                     _ => todo!(),
                 }
 
-                match builtin {
-                    Some((PrustiBuiltin::SnapshotEquality, arg_tys)) => {
-                        assert!(builtin.is_none(), "Function is snapshot_equality and builtin?");
-                        let encoded_args = args.iter()
-                            .map(|oper| self.encode_operand(&new_curr_ver, oper))
-                            .collect::<Vec<_>>();
-
-                        assert_eq!(encoded_args.len(), 2);
-
-
+                let expr = match builtin {
+                    Some((PrustiBuiltin::SnapshotEquality, _arg_tys)) => {
+                        assert_eq!(args.len(), 2);
+                        let lhs = self.encode_operand(&new_curr_ver, &args[0]);
+                        let rhs = self.encode_operand(&new_curr_ver, &args[1]);
                         let eq_expr  = self.vcx.alloc(vir::ExprGenData::BinOp(self.vcx.alloc(vir::BinOpGenData {
                             kind: vir::BinOpKind::CmpEq,
-                            lhs: encoded_args[0],
-                            rhs: encoded_args[1],
+                            lhs,
+                            rhs,
                         })));
 
-                        let bool_cons = self.deps.require_ref::<crate::encoders::TypeEncoder>( 
-                            self.vcx.tcx.types.bool, 
+                        let bool_cons = self.deps.require_ref::<crate::encoders::TypeEncoder>(
+                            self.vcx.tcx.types.bool,
                         ).unwrap().expect_prim().prim_to_snap;
-                        let func_call = bool_cons.apply(self.vcx, [eq_expr]);
-
-                        let mut term_update = Update::new();
-                        assert!(destination.projection.is_empty());
-                        self.bump_version(&mut term_update, destination.local, func_call);
-                        term_update.add_to_map(&mut new_curr_ver);
-
-                        // walk rest of CFG
-                        let (end,  end_update) = self.encode_cfg(&new_curr_ver, target.unwrap(), branch_point);
-
-                        (end,  stmt_update.merge(term_update).merge(end_update))
+                        bool_cons.apply(self.vcx, [eq_expr])
                     }
                     Some((PrustiBuiltin::Pure(def_id), arg_tys)) => {
-                        assert!(builtin.is_none(), "Function is pure and builtin?");
                         let task = (def_id, arg_tys, self.def_id);
                         let pure_func = self.deps.require_ref::<crate::encoders::MirFunctionEncoder>(task).unwrap().function_ref;
 
                         let encoded_args = args.iter()
                             .map(|oper| self.encode_operand(&new_curr_ver, oper))
                             .collect::<Vec<_>>();
-                        
-                        let func_call = pure_func.apply(self.vcx, &encoded_args);
 
-                        let mut term_update = Update::new();
-                        assert!(destination.projection.is_empty());
-                        self.bump_version(&mut term_update, destination.local, func_call);
-                        term_update.add_to_map(&mut new_curr_ver);
-
-                        // walk rest of CFG
-                        let (end,  end_update) = self.encode_cfg(&new_curr_ver, target.unwrap(), branch_point);
-
-                        (end,  stmt_update.merge(term_update).merge(end_update))
+                        pure_func.apply(self.vcx, &encoded_args)
                     }
                     Some((PrustiBuiltin::Forall, arg_tys)) => {
                         assert_eq!(arg_tys.len(), 2);
@@ -639,20 +612,22 @@ impl<'tcx, 'vir: 'enc, 'enc> Encoder<'tcx, 'vir, 'enc>
                             body: bool.snap_to_prim.apply(self.vcx, [body]),
                         })))]);
 
-                        let mut term_update = Update::new();
-                        assert!(destination.projection.is_empty());
-                        self.bump_version(&mut term_update, destination.local, forall);
-                        term_update.add_to_map(&mut new_curr_ver);
-
-                        // walk rest of CFG
-                        let (end, end_update) = self.encode_cfg(&new_curr_ver, target.unwrap(), branch_point);
-
-                        (end, stmt_update.merge(term_update).merge(end_update))
+                        forall
                     }
                     None => {
                         todo!("call not supported {func:?}");
                     }
-                }
+                };
+
+                let mut term_update = Update::new();
+                assert!(destination.projection.is_empty());
+                self.bump_version(&mut term_update, destination.local, expr);
+                term_update.add_to_map(&mut new_curr_ver);
+
+                // walk rest of CFG
+                let (end,  end_update) = self.encode_cfg(&new_curr_ver, target.unwrap(), branch_point);
+
+                (end,  stmt_update.merge(term_update).merge(end_update))
             }
 
             k => todo!("terminator kind {k:?}"),

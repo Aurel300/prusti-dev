@@ -327,7 +327,7 @@ impl<'tcx, 'vir, 'enc> EncoderVisitor<'tcx, 'vir, 'enc> {
     fn fpcs_repacks(
         &mut self,
         location: mir::Location,
-        repacks: impl for<'a> Fn(&'a FreePcsLocation<'vir>) -> &'a [RepackOp<'vir>],
+        repacks: impl for<'a, 'b> Fn(&'a FreePcsLocation<'b>) -> &'a [RepackOp<'b>],
     ) {
         let current_fpcs = self.current_fpcs.take().unwrap();
         for &repack_op in repacks(&current_fpcs.statements[location.statement_index]) {

@@ -5,8 +5,10 @@ use vir::{Reify, FunctionIdent, UnknownArity, CallableIdent};
 use std::cell::RefCell;
 
 use crate::encoders::{
-    MirPureEncoder, MirPureEncoderTask, SpecEncoder, SpecEncoderTask, TypeEncoder,
+    MirPureEncoder, MirPureEncoderTask, SpecEncoder, SpecEncoderTask, TypeEncoder, mir_pure::PureKind,
 };
+
+use super::TypeEncoderOutputRef;
 pub struct MirFunctionEncoder;
 
 #[derive(Clone, Debug)]
@@ -17,6 +19,8 @@ pub enum MirFunctionEncoderError {
 #[derive(Clone, Debug)]
 pub struct MirFunctionEncoderOutputRef<'vir> {
     pub function_ref: FunctionIdent<'vir, UnknownArity<'vir>>,
+    /// Always `TypeData::Domain`.
+    pub return_type: &'vir TypeEncoderOutputRef<'vir>,
 }
 impl<'vir> task_encoder::OutputRefAny for MirFunctionEncoderOutputRef<'vir> {}
 
@@ -32,8 +36,8 @@ thread_local! {
 impl TaskEncoder for MirFunctionEncoder {
     type TaskDescription<'vir> = (
         DefId, // ID of the function
-        Option<ty::GenericArgsRef<'vir>>, // ? this should be the "signature", after applying the env/substs
-        DefId, // Caller DefId
+        ty::GenericArgsRef<'vir>, // ? this should be the "signature", after applying the env/substs
+        DefId, // Caller DefID
     );
 
     type OutputRef<'vir> = MirFunctionEncoderOutputRef<'vir>;
@@ -71,7 +75,7 @@ impl TaskEncoder for MirFunctionEncoder {
             Option<Self::OutputFullDependency<'vir>>,
         ),
     > {
-        let (def_id, substs, called_def_id) = *task_key;
+        let (def_id, substs, caller_def_id) = *task_key;
         let trusted = crate::encoders::with_proc_spec(def_id, |def_spec|
             def_spec.trusted.extract_inherit().unwrap_or_default()
         ).unwrap_or_default();
@@ -83,14 +87,15 @@ impl TaskEncoder for MirFunctionEncoder {
 
             tracing::debug!("encoding {def_id:?}");
 
-            let function_name = vir::vir_format!(vcx, "f_{}", vcx.tcx.item_name(def_id));
+            let extra: String = substs.iter().map(|s| format!("_{s}")).collect();
+            let function_name = vir::vir_format!(vcx, "f_{}{extra}_CALLER_{}", vcx.tcx.item_name(def_id), vcx.tcx.item_name(caller_def_id));
             let args: Vec<_> = (1..=local_defs.arg_count)
                 .map(mir::Local::from)
                 .map(|def_idx| local_defs.locals[def_idx].ty.snapshot)
                 .collect();
             let args = UnknownArity::new(vcx.alloc_slice(&args));
             let function_ref = FunctionIdent::new(function_name, args);
-            deps.emit_output_ref::<Self>(*task_key, MirFunctionEncoderOutputRef { function_ref });
+            deps.emit_output_ref::<Self>(*task_key, MirFunctionEncoderOutputRef { function_ref, return_type: local_defs.locals[mir::RETURN_PLACE].ty });
 
             let spec = deps.require_local::<crate::encoders::pure::spec::MirSpecEncoder>(
                 (def_id, true)
@@ -104,20 +109,16 @@ impl TaskEncoder for MirFunctionEncoder {
             let expr = if trusted {
                 None
             } else {
-                let body = if let Some(substs) = substs {
-                    vcx.body.borrow_mut().get_pure_fn_body(def_id, substs, called_def_id);
-                } else {
-                    vcx.body.borrow_mut().get_pure_fn_body_identity(def_id);
-                };
-
                 // Encode the body of the function
                 let expr = deps
                     .require_local::<MirPureEncoder>(MirPureEncoderTask {
                         encoding_depth: 0,
+                        kind: PureKind::Pure,
                         parent_def_id: def_id,
                         promoted: None,
                         param_env: vcx.tcx.param_env(def_id),
-                        substs: ty::List::identity_for_item(vcx.tcx, def_id),
+                        substs,
+                        caller_def_id,
                     })
                     .unwrap()
                     .expr;

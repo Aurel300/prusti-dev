@@ -4,7 +4,7 @@ use task_encoder::{TaskEncoder, TaskEncoderDependencies};
 use vir::Reify;
 use std::cell::RefCell;
 
-use crate::encoders::MirPureEncoder;
+use crate::encoders::{MirPureEncoder, mir_pure::PureKind};
 pub struct MirSpecEncoder;
 
 #[derive(Clone)]
@@ -98,10 +98,12 @@ impl TaskEncoder for MirSpecEncoder {
                 let expr = deps.require_local::<crate::encoders::MirPureEncoder>(
                     crate::encoders::MirPureEncoderTask {
                         encoding_depth: 0,
+                        kind: PureKind::Spec,
                         parent_def_id: *spec_def_id,
                         promoted: None,
                         param_env: vcx.tcx.param_env(spec_def_id),
                         substs: ty::List::identity_for_item(vcx.tcx, *spec_def_id),
+                        caller_def_id: def_id,
                     }
                 ).unwrap().expr;
                 let expr = expr.reify(vcx, (*spec_def_id, pre_args));
@@ -122,10 +124,12 @@ impl TaskEncoder for MirSpecEncoder {
                 let expr = deps.require_local::<crate::encoders::MirPureEncoder>(
                     crate::encoders::MirPureEncoderTask {
                         encoding_depth: 0,
+                        kind: PureKind::Spec,
                         parent_def_id: *spec_def_id,
                         promoted: None,
                         param_env: vcx.tcx.param_env(spec_def_id),
                         substs: ty::List::identity_for_item(vcx.tcx, *spec_def_id),
+                        caller_def_id: def_id,
                     }
                 ).unwrap().expr;
                 let expr = expr.reify(vcx, (*spec_def_id, post_args));

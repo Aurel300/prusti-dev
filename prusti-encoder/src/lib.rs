@@ -126,7 +126,7 @@ pub fn test_entrypoint<'tcx>(
 
     // TODO: this should be a "crate" encoder, which will deps.require all the methods in the crate
 
-    for def_id in tcx.hir_crate_items(()).definitions() {
+    for def_id in tcx.hir().body_owners() {
         tracing::debug!("test_entrypoint item: {def_id:?}");
         let kind = tcx.def_kind(def_id);
         //println!("  kind: {:?}", kind);
@@ -134,7 +134,8 @@ pub fn test_entrypoint<'tcx>(
             continue;
         }*/
         match kind {
-            hir::def::DefKind::Fn => {
+            hir::def::DefKind::Fn |
+            hir::def::DefKind::AssocFn => {
                 let def_id = def_id.to_def_id();
                 if prusti_interface::specs::is_spec_fn(tcx, def_id) {
                     continue;
@@ -147,17 +148,11 @@ pub fn test_entrypoint<'tcx>(
                 }).unwrap_or_default();
 
                 if !(is_trusted && is_pure) {
-                    let res = crate::encoders::MirImpureEncoder::encode((def_id, None));
+                    let substs = ty::GenericArgs::identity_for_item(tcx, def_id);
+                    let res = crate::encoders::MirImpureEncoder::encode((def_id, substs, None));
                     assert!(res.is_ok());
                 }
 
-                if is_pure {
-                    tracing::debug!("Encoding {def_id:?} as a pure function because it is labeled as pure");
-                    let res = crate::encoders::MirFunctionEncoder::encode((def_id, None, def_id));
-                    assert!(res.is_ok());
-                }
-
-            
                 /*
                 match res {
                     Ok(res) => println!("ok: {:?}", res),

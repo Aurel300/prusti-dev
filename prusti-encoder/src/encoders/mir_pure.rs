@@ -37,15 +37,24 @@ thread_local! {
     static CACHE: task_encoder::CacheStaticRef<MirPureEncoder> = RefCell::new(Default::default());
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum PureKind {
+    Closure,
+    Spec,
+    Pure,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct MirPureEncoderTask<'tcx> {
     // TODO: depth of encoding should be in the lazy context rather than here;
     //   can we integrate the lazy context into the identifier system?
     pub encoding_depth: usize,
+    pub kind: PureKind,
     pub parent_def_id: DefId, // ID of the function
     pub promoted: Option<mir::Promoted>, // ID of a constant within the function
     pub param_env: ty::ParamEnv<'tcx>, // param environment at the usage site
     pub substs: ty::GenericArgsRef<'tcx>, // type substitutions at the usage site
+    pub caller_def_id: DefId, // Caller/Use DefID
 }
 
 impl TaskEncoder for MirPureEncoder {
@@ -53,9 +62,11 @@ impl TaskEncoder for MirPureEncoder {
 
     type TaskKey<'tcx> = (
         usize, // encoding depth
+        PureKind, // encoding a pure function?
         DefId, // ID of the function
         Option<mir::Promoted>, // ID of a constant within the function, or `None` if encoding the function itself
         ty::GenericArgsRef<'tcx>, // ? this should be the "signature", after applying the env/substs
+        DefId, // Caller/Use DefID
     );
 
     type OutputFullLocal<'vir> = MirPureEncoderOutput<'vir>;
@@ -78,9 +89,11 @@ impl TaskEncoder for MirPureEncoder {
         (
             // TODO
             task.encoding_depth,
+            task.kind,
             task.parent_def_id,
             None,
             task.substs,
+            task.caller_def_id,
         )
     }
 
@@ -96,15 +109,18 @@ impl TaskEncoder for MirPureEncoder {
     )> {
         deps.emit_output_ref::<Self>(*task_key, ());
 
-        let def_id = task_key.1; //.parent_def_id;
-        let local_def_id = def_id.expect_local();
+        let (_, kind, def_id, promoted, substs, caller_def_id) = *task_key;
 
         tracing::debug!("encoding {def_id:?}");
         let expr = vir::with_vcx(move |vcx| {
             //let body = vcx.tcx.mir_promoted(local_def_id).0.borrow();
-            let body = vcx.body.borrow_mut().get_impure_fn_body_identity(local_def_id);
+            let body = match kind {
+                PureKind::Closure => vcx.body.borrow_mut().get_closure_body(def_id, substs, caller_def_id),
+                PureKind::Spec => vcx.body.borrow_mut().get_spec_body(def_id, substs, caller_def_id),
+                PureKind::Pure => vcx.body.borrow_mut().get_pure_fn_body(def_id, substs, caller_def_id),
+            };
 
-            let expr_inner = Encoder::new(vcx, task_key.0, &body, deps).encode_body();
+            let expr_inner = Encoder::new(vcx, task_key.0, def_id, &body, deps).encode_body();
 
             // We wrap the expression with an additional lazy that will perform
             // some sanity checks. These requirements cannot be expressed using
@@ -165,6 +181,7 @@ struct Encoder<'tcx, 'vir: 'enc, 'enc>
 {
     vcx: &'vir vir::VirCtxt<'tcx>,
     encoding_depth: usize,
+    def_id: DefId,
     body: &'enc mir::Body<'tcx>,
     deps: &'enc mut TaskEncoderDependencies<'vir>,
     visited: IndexVec<mir::BasicBlock, bool>,
@@ -177,6 +194,7 @@ impl<'tcx, 'vir: 'enc, 'enc> Encoder<'tcx, 'vir, 'enc>
     fn new(
         vcx: &'vir vir::VirCtxt<'tcx>,
         encoding_depth: usize,
+        def_id: DefId,
         body: &'enc mir::Body<'tcx>,
         deps: &'enc mut TaskEncoderDependencies<'vir>,
     ) -> Self {
@@ -185,6 +203,7 @@ impl<'tcx, 'vir: 'enc, 'enc> Encoder<'tcx, 'vir, 'enc>
         Self {
             vcx,
             encoding_depth,
+            def_id,
             body,
             deps,
             visited: IndexVec::from_elem_n(false, body.basic_blocks.len()),
@@ -282,17 +301,6 @@ impl<'tcx, 'vir: 'enc, 'enc> Encoder<'tcx, 'vir, 'enc>
     }
 
     fn encode_body(&mut self) -> ExprRet<'vir> where 'vir: 'tcx {
-        let end_blocks = self.body.basic_blocks.reverse_postorder()
-            .iter()
-            .filter(|bb| matches!(
-                self.body[**bb].terminator,
-                Some(mir::Terminator { kind: mir::TerminatorKind::Return, .. }),
-            ))
-            .collect::<Vec<_>>();
-        assert!(end_blocks.len() > 0, "no Return block found");
-        assert!(end_blocks.len() < 2, "multiple Return blocks found");
-        let end_block = end_blocks[0];
-
         let mut init = Update::new();
         init.versions.insert(mir::RETURN_PLACE, 0);
         for local in 1..=self.body.arg_count {
@@ -526,7 +534,7 @@ impl<'tcx, 'vir: 'enc, 'enc> Encoder<'tcx, 'vir, 'enc>
                     }
                     Some((PrustiBuiltin::Pure(def_id), arg_tys)) => {
                         assert!(builtin.is_none(), "Function is pure and builtin?");
-                        let task = (def_id, Some(arg_tys), self.body.source.def_id());
+                        let task = (def_id, arg_tys, self.def_id);
                         let pure_func = self.deps.require_ref::<crate::encoders::MirFunctionEncoder>(task).unwrap().function_ref;
 
                         let encoded_args = args.iter()
@@ -603,10 +611,12 @@ impl<'tcx, 'vir: 'enc, 'enc> Encoder<'tcx, 'vir, 'enc>
                         let body = self.deps.require_local::<MirPureEncoder>(
                             MirPureEncoderTask {
                                 encoding_depth: self.encoding_depth + 1,
+                                kind: PureKind::Closure,
                                 parent_def_id: cl_def_id,
                                 promoted: None,
                                 param_env: self.vcx.tcx.param_env(cl_def_id),
                                 substs: ty::List::identity_for_item(self.vcx.tcx, cl_def_id),
+                                caller_def_id: self.def_id,
                             }
                         ).unwrap().expr
                         // arguments to the closure are
@@ -618,14 +628,15 @@ impl<'tcx, 'vir: 'enc, 'enc> Encoder<'tcx, 'vir, 'enc>
                             ))
                             .lift();
 
-                        let bool_cons = self.deps.require_ref::<crate::encoders::TypeEncoder>(
+                        let bool = self.deps.require_ref::<crate::encoders::TypeEncoder>(
                             self.vcx.tcx.types.bool,
-                        ).unwrap().expect_prim().prim_to_snap;
+                        ).unwrap();
+                        let bool = bool.expect_prim();
 
-                        let forall = bool_cons.apply(self.vcx, [self.vcx.alloc(ExprRetData::Forall(self.vcx.alloc(vir::ForallGenData {
+                        let forall = bool.prim_to_snap.apply(self.vcx, [self.vcx.alloc(ExprRetData::Forall(self.vcx.alloc(vir::ForallGenData {
                             qvars,
                             triggers: &[], // TODO
-                            body: bool_cons.apply(self.vcx, [body]),
+                            body: bool.snap_to_prim.apply(self.vcx, [body]),
                         })))]);
 
                         let mut term_update = Update::new();

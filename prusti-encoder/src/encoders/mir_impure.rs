@@ -43,7 +43,8 @@ impl TaskEncoder for MirImpureEncoder {
     // TODO: local def id (+ promoted, substs, etc)
     type TaskDescription<'vir> = (
         DefId, // ID of the function
-        Option<ty::GenericArgsRef<'vir>>, // ? this should be the "signature", after applying the env/substs
+        ty::GenericArgsRef<'vir>, // ? this should be the "signature", after applying the env/substs
+        Option<DefId>, // ID of the caller function, if any
     );
 
     type OutputRef<'vir> = MirImpureEncoderOutputRef<'vir>;
@@ -77,7 +78,7 @@ impl TaskEncoder for MirImpureEncoder {
         Self::EncodingError,
         Option<Self::OutputFullDependency<'vir>>,
     )> {
-        let (def_id, substs) = *task_key;
+        let (def_id, substs, caller_def_id) = *task_key;
 
         let trusted = crate::encoders::with_proc_spec(def_id, |def_spec|
             def_spec.trusted.extract_inherit().unwrap_or_default()
@@ -101,7 +102,10 @@ impl TaskEncoder for MirImpureEncoder {
             // TODO: type parameters
             let arg_count = local_defs.arg_count + 1;
 
-            let method_name = vir::vir_format!(vcx, "m_{}", vcx.tcx.item_name(def_id));
+            let extra: String = substs.iter().map(|s| format!("_{s}")).collect();
+            let caller = caller_def_id.map(|id| vcx.tcx.item_name(id));
+            let caller = caller.as_ref().map(|name| name.as_str()).unwrap_or_default();
+            let method_name = vir::vir_format!(vcx, "m_{}{extra}_CALLER_{caller}", vcx.tcx.item_name(def_id));
             let args = vec![&vir::TypeData::Ref; arg_count];
             let args = UnknownArity::new(vcx.alloc_slice(&args));
             let method_ref = MethodIdent::new(method_name, args);
@@ -109,13 +113,11 @@ impl TaskEncoder for MirImpureEncoder {
                 method_ref,
             });
 
-            let local_def_id = def_id.as_local().filter(|_| !trusted);
+            // Do not encode the method body if it is external, trusted or just
+            // a call stub.
+            let local_def_id = def_id.as_local().filter(|_| !trusted && caller_def_id.is_none());
             let blocks = if let Some(local_def_id) = local_def_id {
-                let body = if let Some(substs) = substs {
-                    vcx.body.borrow_mut().get_impure_fn_body(local_def_id, substs)
-                } else {
-                    vcx.body.borrow_mut().get_impure_fn_body_identity(local_def_id)
-                };
+                let body = vcx.body.borrow_mut().get_impure_fn_body(local_def_id, substs, caller_def_id);
                 // let body = vcx.tcx.mir_promoted(local_def_id).0.borrow();
 
                 let fpcs_analysis = mir_state_analysis::run_free_pcs(&body, vcx.tcx);
@@ -674,12 +676,6 @@ impl<'tcx, 'vir: 'tcx, 'enc> mir::visit::Visitor<'tcx> for EncoderVisitor<'tcx, 
                         let cons = cons_name.apply(self.vcx, &cons_args);
 
                         self.stmt(dest_ty_out.method_assign.apply(self.vcx, [proj_ref, cons]));
-                        
-                        for field in fields {
-                            if let mir::Operand::Move(source) = field {
-                                
-                            }
-                        }
                         None
                     }
 
@@ -768,7 +764,6 @@ impl<'tcx, 'vir: 'tcx, 'enc> mir::visit::Visitor<'tcx> for EncoderVisitor<'tcx, 
                 target,
                 ..
             } => {
-                let def_id = self.def_id;
                 // TODO: extracting FnDef given func could be extracted? (duplication in pure)
                 let func_ty = func.ty(self.local_decls, self.vcx.tcx);
                 let (func_def_id, arg_tys) = match func_ty.kind() {
@@ -782,42 +777,28 @@ impl<'tcx, 'vir: 'tcx, 'enc> mir::visit::Visitor<'tcx> for EncoderVisitor<'tcx, 
                 ).unwrap_or_default();
 
                 let dest = self.encode_place(Place::from(*destination));
-                let call_args = args.iter().map(|op| 
-                    if is_pure {
-                        self.encode_operand_snap(op)
-                    } else {
-                        self.encode_operand(op)
-                    }
-                );
 
-                let task = (func_def_id, Some(arg_tys), def_id);
+                let task = (func_def_id, arg_tys, self.def_id);
                 if is_pure {
-                    let func_args = call_args.collect::<Vec<_>>();
                     let pure_func = self.deps.require_ref::<crate::encoders::MirFunctionEncoder>(
                         task
-                    ).unwrap().function_ref;
+                    ).unwrap();
 
-                    let pure_func_app = pure_func.apply(self.vcx, &func_args);
+                    let func_args: Vec<_> = args.iter().map(|op| self.encode_operand_snap(op)).collect();
+                    let pure_func_app = pure_func.function_ref.apply(self.vcx, &func_args);
 
-                    let method_assign = {
-                        //TODO: Can we get `method_assign` in a better way? Maybe from the MirFunctionEncoder?
-                        let body = self.vcx.body.borrow_mut().get_impure_fn_body_identity(func_def_id.expect_local());
-                        let return_type = self.deps
-                            .require_ref::<crate::encoders::TypeEncoder>(body.return_ty())
-                            .unwrap();
-                        return_type.method_assign
-                    };
-
-                    self.stmt(method_assign.apply(self.vcx, [dest, pure_func_app]));
+                    self.stmt(pure_func.return_type.method_assign.apply(self.vcx, [dest, pure_func_app]));
                 }
                 else {
-                    let method_args = std::iter::once(dest)
-                        .chain(call_args)
-                        .collect::<Vec<_>>();
                     let func_out = self.deps.require_ref::<crate::encoders::MirImpureEncoder>(
-                        (task.0, task.1),
+                        (task.0, task.1, Some(task.2)),
                     ).unwrap();
-    
+
+                    let method_in = args.iter().map(|op| self.encode_operand(op));
+                    let method_args = std::iter::once(dest)
+                        .chain(method_in)
+                        .collect::<Vec<_>>();
+
                     self.stmt(func_out.method_ref.apply(self.vcx, &method_args));
                 }
 

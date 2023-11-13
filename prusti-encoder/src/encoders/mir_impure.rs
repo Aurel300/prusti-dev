@@ -375,7 +375,9 @@ impl<'vir, 'enc> EncoderVisitor<'vir, 'enc> {
                     if matches!(capability_kind, CapabilityKind::Write) {
                         // Collapsing an already exhaled place is a no-op
                         // TODO: unless it's through a Ref I imagine?
-                        assert!(matches!(repack_op, RepackOp::Collapse(..)));
+                        if !matches!(repack_op, RepackOp::Collapse(..)) {
+                            tracing::error!("TODO: Not matching Collapse: {repack_op:?}")
+                        }
                         return;
                     }
                     let place_ty = place.ty(self.local_decls, self.vcx.tcx);
@@ -427,7 +429,13 @@ impl<'vir, 'enc> EncoderVisitor<'vir, 'enc> {
                         })),
                     )));
                 }
-                unsupported_op => tracing::error!("unsupported repack op: {unsupported_op:?}"),
+                unsupported_op => {
+                    self.stmt(vir::StmtData::Comment(
+                        self.vcx
+                            .alloc_str(&format!("unsupported repack op: {unsupported_op:?}")),
+                    ));
+                    tracing::error!("unsupported repack op: {unsupported_op:?}");
+                }
             }
         }
     }
@@ -900,20 +908,23 @@ impl<'vir, 'enc> mir::visit::Visitor<'vir> for EncoderVisitor<'vir, 'enc> {
                 let len = {
                     let succs = &self.current_fpcs.as_ref().unwrap().terminator.succs;
                     assert!(succs.len() <= 2);
-                    let real_succ = &succs[0];
-                    assert_eq!(&real_succ.location.block, target);
                     succs.len()
                 };
-                for i in 0..len {
-                    let repacks = self.current_fpcs.as_ref().unwrap().terminator.succs[i]
-                        .repacks
-                        .clone();
-                    let mut stmts = self.collect_repacks(repacks);
-                    // TODO this is messy
-                    for stmt in stmts.drain(..) {
-                        self.current_stmts.as_mut().unwrap().push(stmt);
-                    }
+
+                {
+                    let real_succ = &self.current_fpcs.as_ref().unwrap().terminator.succs[0];
+                    assert_eq!(&real_succ.location.block, target);
+                    self.fpcs_repacks(real_succ.repacks.clone());
                 }
+
+                // TODO: do we really need all succs or just the real_succ one?
+                // for i in 0..len {
+                //     let repacks = self.current_fpcs.as_ref().unwrap().terminator.succs[i]
+                //         .repacks
+                //         .clone();
+
+                //     self.fpcs_repacks(repacks)
+                // }
 
                 self.vcx.alloc(vir::TerminatorStmtData::Goto(
                     self.vcx

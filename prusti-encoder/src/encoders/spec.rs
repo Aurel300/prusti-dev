@@ -41,6 +41,7 @@ where
 {
     DEF_SPEC_MAP.with_borrow(|def_spec: &Option<DefSpecificationMap>| {
         let def_spec = def_spec.as_ref().unwrap();
+        // TODO: handle `SpecGraph` better than simply taking the `base_spec`
         def_spec.get_proc_spec(&def_id).map(|spec| &spec.base_spec).map(f)
     })
 }

@@ -68,7 +68,7 @@ impl TaskEncoder for MirImpureEncoder {
         *task
     }
 
-    fn do_encode_full<'tcx: 'vir, 'vir: 'tcx>(
+    fn do_encode_full<'tcx: 'vir, 'vir>(
         task_key: &Self::TaskKey<'tcx>,
         deps: &mut TaskEncoderDependencies<'vir>,
     ) -> Result<(
@@ -232,13 +232,13 @@ struct EncoderVisitor<'tcx, 'vir, 'enc>
     def_id: DefId,
     local_decls: &'enc mir::LocalDecls<'tcx>,
     //ssa_analysis: SsaAnalysis,
-    fpcs_analysis: FreePcsAnalysis<'enc, 'vir>,
+    fpcs_analysis: FreePcsAnalysis<'enc, 'tcx>,
     local_defs: crate::encoders::local_def::MirLocalDefEncoderOutput<'vir>,
 
     tmp_ctr: usize,
 
     // for the current basic block
-    current_fpcs: Option<FreePcsBasicBlock<'vir>>,
+    current_fpcs: Option<FreePcsBasicBlock<'tcx>>,
 
     current_stmts: Option<Vec<vir::Stmt<'vir>>>,
     current_terminator: Option<vir::TerminatorStmt<'vir>>,
@@ -246,7 +246,7 @@ struct EncoderVisitor<'tcx, 'vir, 'enc>
     encoded_blocks: Vec<vir::CfgBlock<'vir>>, // TODO: use IndexVec ?
 }
 
-impl<'tcx, 'vir: 'tcx, 'enc> EncoderVisitor<'tcx, 'vir, 'enc> {
+impl<'tcx, 'vir, 'enc> EncoderVisitor<'tcx, 'vir, 'enc> {
     fn stmt(&mut self, stmt: vir::StmtData<'vir>) {
         self.current_stmts
             .as_mut()
@@ -495,7 +495,7 @@ impl<'tcx, 'vir: 'tcx, 'enc> EncoderVisitor<'tcx, 'vir, 'enc> {
     }
 }
 
-impl<'tcx, 'vir: 'tcx, 'enc> mir::visit::Visitor<'tcx> for EncoderVisitor<'tcx, 'vir, 'enc> {
+impl<'tcx, 'vir, 'enc> mir::visit::Visitor<'tcx> for EncoderVisitor<'tcx, 'vir, 'enc> {
     // fn visit_body(&mut self, body: &mir::Body<'tcx>) {
     //     println!("visiting body!");
     // }

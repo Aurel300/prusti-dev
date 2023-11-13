@@ -96,7 +96,7 @@ impl TaskEncoder for MirPureEncoder {
         )
     }
 
-    fn do_encode_full<'tcx: 'vir, 'vir: 'tcx>(
+    fn do_encode_full<'tcx: 'vir, 'vir>(
         task_key: &Self::TaskKey<'tcx>,
         deps: &mut TaskEncoderDependencies<'vir>,
     ) -> Result<(
@@ -299,7 +299,7 @@ impl<'tcx, 'vir: 'enc, 'enc> Encoder<'tcx, 'vir, 'enc>
         )
     }
 
-    fn encode_body(&mut self) -> ExprRet<'vir> where 'vir: 'tcx {
+    fn encode_body(&mut self) -> ExprRet<'vir> {
         let mut init = Update::new();
         init.versions.insert(mir::RETURN_PLACE, 0);
         for local in 1..=self.body.arg_count {
@@ -328,7 +328,7 @@ impl<'tcx, 'vir: 'enc, 'enc> Encoder<'tcx, 'vir, 'enc>
         curr_ver: &HashMap<mir::Local, usize>,
         curr: mir::BasicBlock,
         branch_point: Option<mir::BasicBlock>,
-    ) -> (mir::BasicBlock, Update<'vir>) where 'vir: 'tcx {
+    ) -> (mir::BasicBlock, Update<'vir>) {
         let dominators = self.body.basic_blocks.dominators();
         // We should never actually reach the join point bb: we should catch
         // this case and stop recursion in the `Goto` branch below. If this
@@ -638,7 +638,7 @@ impl<'tcx, 'vir: 'enc, 'enc> Encoder<'tcx, 'vir, 'enc>
         &mut self,
         curr_ver: &HashMap<mir::Local, usize>,
         stmt: &mir::Statement<'tcx>,
-    ) -> Update<'vir> where 'vir: 'tcx {
+    ) -> Update<'vir> {
         let mut update = Update::new();
         match &stmt.kind {
             &mir::StatementKind::StorageLive(local) => {
@@ -664,7 +664,7 @@ impl<'tcx, 'vir: 'enc, 'enc> Encoder<'tcx, 'vir, 'enc>
         &mut self,
         curr_ver: &HashMap<mir::Local, usize>,
         rvalue: &mir::Rvalue<'tcx>,
-    ) -> ExprRet<'vir> where 'vir: 'tcx {
+    ) -> ExprRet<'vir> {
         match rvalue {
             mir::Rvalue::Use(op) => self.encode_operand(curr_ver, op),
             // Repeat
@@ -754,7 +754,7 @@ impl<'tcx, 'vir: 'enc, 'enc> Encoder<'tcx, 'vir, 'enc>
         &mut self,
         curr_ver: &HashMap<mir::Local, usize>,
         operand: &mir::Operand<'tcx>,
-    ) -> ExprRet<'vir> where 'vir: 'tcx {
+    ) -> ExprRet<'vir> {
         match operand {
             mir::Operand::Copy(place)
             | mir::Operand::Move(place) => self.encode_place(curr_ver, place),
@@ -794,7 +794,7 @@ impl<'tcx, 'vir: 'enc, 'enc> Encoder<'tcx, 'vir, 'enc>
         &mut self,
         curr_ver: &HashMap<mir::Local, usize>,
         place: &mir::Place<'tcx>,
-    ) -> ExprRet<'vir> where 'vir: 'tcx {
+    ) -> ExprRet<'vir> {
         // TODO: remove (debug)
         if !curr_ver.contains_key(&place.local) {
             tracing::error!("unknown version of local! {}", place.local.as_usize());
@@ -812,7 +812,7 @@ impl<'tcx, 'vir: 'enc, 'enc> Encoder<'tcx, 'vir, 'enc>
         expr
     }
 
-    fn encode_place_element(&mut self, ty: ty::Ty<'tcx>, elem: mir::PlaceElem<'tcx>, expr: ExprRet<'vir>) -> ExprRet<'vir> where 'vir: 'tcx {
+    fn encode_place_element(&mut self, ty: ty::Ty<'tcx>, elem: mir::PlaceElem<'tcx>, expr: ExprRet<'vir>) -> ExprRet<'vir> {
          match elem {
             mir::ProjectionElem::Deref =>
                 expr,

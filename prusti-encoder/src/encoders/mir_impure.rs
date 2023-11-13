@@ -103,8 +103,7 @@ impl TaskEncoder for MirImpureEncoder {
             let arg_count = local_defs.arg_count + 1;
 
             let extra: String = substs.iter().map(|s| format!("_{s}")).collect();
-            let caller = caller_def_id.map(|id| vcx.tcx.item_name(id));
-            let caller = caller.as_ref().map(|name| name.as_str()).unwrap_or_default();
+            let caller = caller_def_id.map(|id| format!("{}_{}", id.krate, id.index.index())).unwrap_or_default();
             let method_name = vir::vir_format!(vcx, "m_{}{extra}_CALLER_{caller}", vcx.tcx.item_name(def_id));
             let args = vec![&vir::TypeData::Ref; arg_count];
             let args = UnknownArity::new(vcx.alloc_slice(&args));

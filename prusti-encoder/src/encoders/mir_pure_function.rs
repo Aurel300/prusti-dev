@@ -88,7 +88,8 @@ impl TaskEncoder for MirFunctionEncoder {
             tracing::debug!("encoding {def_id:?}");
 
             let extra: String = substs.iter().map(|s| format!("_{s}")).collect();
-            let function_name = vir::vir_format!(vcx, "f_{}{extra}_CALLER_{}", vcx.tcx.item_name(def_id), vcx.tcx.item_name(caller_def_id));
+            let (krate, index) = (caller_def_id.krate, caller_def_id.index.index());
+            let function_name = vir::vir_format!(vcx, "f_{}{extra}_CALLER_{krate}_{index}", vcx.tcx.item_name(def_id));
             let args: Vec<_> = (1..=local_defs.arg_count)
                 .map(mir::Local::from)
                 .map(|def_idx| local_defs.locals[def_idx].ty.snapshot)

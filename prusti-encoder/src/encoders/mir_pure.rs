@@ -803,48 +803,37 @@ impl<'tcx, 'vir: 'enc, 'enc> Encoder<'tcx, 'vir, 'enc>
             ));
         }
 
-        let local = self.mk_local_ex(place.local, curr_ver[&place.local]);
-        let mut partent_ty =  self.body.local_decls[place.local].ty;
-        let mut expr = local;
-
+        let mut place_ty =  mir::tcx::PlaceTy::from_ty(self.body.local_decls[place.local].ty);
+        let mut expr = self.mk_local_ex(place.local, curr_ver[&place.local]);
         for elem in place.projection {
-            (partent_ty, expr) = self.encode_place_element(partent_ty, elem, expr);
+            expr = self.encode_place_element(place_ty.ty, elem, expr);
+            place_ty = place_ty.projection_ty(self.vcx.tcx, elem);
         }
-
         expr
     }
 
-
-    fn encode_place_element(&mut self, parent_ty: ty::Ty<'tcx>, elem: mir::PlaceElem<'tcx>, expr: ExprRet<'vir>) -> (ty::Ty<'tcx>, ExprRet<'vir>) where 'vir: 'tcx {
-        let parent_ty = parent_ty.peel_refs();
-
+    fn encode_place_element(&mut self, ty: ty::Ty<'tcx>, elem: mir::PlaceElem<'tcx>, expr: ExprRet<'vir>) -> ExprRet<'vir> where 'vir: 'tcx {
          match elem {
-            mir::ProjectionElem::Deref => {
-                (parent_ty, expr)
-            }
-            mir::ProjectionElem::Field(field_idx, field_ty) => {
+            mir::ProjectionElem::Deref =>
+                expr,
+            mir::ProjectionElem::Field(field_idx, _) => {
                 let field_idx= field_idx.as_usize();
-                match parent_ty.kind() {
+                match ty.kind() {
                     TyKind::Closure(_def_id, args) => {
                         let upvars = args.as_closure().upvar_tys().collect::<Vec<_>>().len();
                         let tuple_ref = self.deps.require_ref::<ViperTupleEncoder>(
                             upvars,
                         ).unwrap();
-                        let tup  = tuple_ref.mk_elem(self.vcx, expr, field_idx);
-
-                        (field_ty, tup)
+                        tuple_ref.mk_elem(self.vcx, expr, field_idx)
                     }
                     _ => {
-                        let local_encoded_ty = self.deps.require_ref::<TypeEncoder>(parent_ty).unwrap();
-                        let struct_like = local_encoded_ty.expect_structlike();
+                        let e_ty = self.deps.require_ref::<TypeEncoder>(ty).unwrap();
+                        let struct_like = e_ty.expect_structlike();
                         let proj = struct_like.field_access[field_idx].read;
-                
-                        let app = proj.apply(self.vcx, [expr]);
-
-                        (field_ty, app)
+                        proj.apply(self.vcx, [expr])
                     }
                 }
-            }   
+            }
             _ => todo!("Unsupported ProjectionElem {:?}", elem),
         }
     }

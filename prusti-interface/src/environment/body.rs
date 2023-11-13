@@ -228,13 +228,6 @@ impl<'tcx> EnvBody<'tcx> {
         self.set_monomorphised(def_id, substs, Some(caller_def_id), body)
     }
 
-    pub fn get_pure_fn_body_identity(
-        &self,
-        def_id: DefId,
-    ) -> MirBody<'tcx> {
-        self.pure_fns.expect(def_id)
-    }
-
     /// Get the MIR body of a local or external pure function,
     /// monomorphised with the given type substitutions.
     pub fn get_pure_fn_body(

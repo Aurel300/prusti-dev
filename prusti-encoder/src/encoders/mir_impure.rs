@@ -788,8 +788,7 @@ impl<'tcx, 'vir: 'tcx, 'enc> mir::visit::Visitor<'tcx> for EncoderVisitor<'tcx, 
                     let pure_func_app = pure_func.function_ref.apply(self.vcx, &func_args);
 
                     self.stmt(pure_func.return_type.method_assign.apply(self.vcx, [dest, pure_func_app]));
-                }
-                else {
+                } else {
                     let func_out = self.deps.require_ref::<crate::encoders::MirImpureEncoder>(
                         (task.0, task.1, Some(task.2)),
                     ).unwrap();

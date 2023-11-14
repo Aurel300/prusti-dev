@@ -762,13 +762,14 @@ impl TaskEncoder for TypeEncoder {
                     .map(|ty| deps.require_ref::<crate::encoders::TypeEncoder>(ty).unwrap())
                     .collect::<Vec<_>>();
                 // TODO: name the tuple according to its types, or make generic?
+                let tmp_ty_name: String = field_ty_out.iter().map(|e| format!("_{}", e.snapshot.get_domain().unwrap())).collect();
 
                 Ok((mk_structlike(
                     vcx,
                     deps,
                     task_key,
-                    vir::vir_format!(vcx, "s_Tuple{}", tys.len()),
-                    vir::vir_format!(vcx, "p_Tuple{}", tys.len()),
+                    vir::vir_format!(vcx, "s_Tuple{}{tmp_ty_name}", tys.len()),
+                    vir::vir_format!(vcx, "p_Tuple{}{tmp_ty_name}", tys.len()),
                     field_ty_out,
                 )?, ()))
 

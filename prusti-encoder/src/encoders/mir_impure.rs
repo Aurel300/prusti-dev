@@ -41,9 +41,9 @@ const ENCODE_REACH_BB: bool = false;
 
 impl TaskEncoder for MirImpureEncoder {
     // TODO: local def id (+ promoted, substs, etc)
-    type TaskDescription<'vir> = (
+    type TaskDescription<'tcx> = (
         DefId, // ID of the function
-        ty::GenericArgsRef<'vir>, // ? this should be the "signature", after applying the env/substs
+        ty::GenericArgsRef<'tcx>, // ? this should be the "signature", after applying the env/substs
         Option<DefId>, // ID of the caller function, if any
     );
 
@@ -87,7 +87,7 @@ impl TaskEncoder for MirImpureEncoder {
         vir::with_vcx(|vcx| {
             use mir::visit::Visitor;
             let local_defs = deps.require_local::<crate::encoders::local_def::MirLocalDefEncoder>(
-                def_id,
+                *task_key,
             ).unwrap();
 
             // Argument count for the Viper method:
@@ -190,7 +190,7 @@ impl TaskEncoder for MirImpureEncoder {
             };
 
             let spec = deps.require_local::<crate::encoders::pure::spec::MirSpecEncoder>(
-                (def_id, false)
+                (def_id, substs, caller_def_id, false)
             ).unwrap();
             let (spec_pres, spec_posts) = (spec.pres, spec.posts);
 

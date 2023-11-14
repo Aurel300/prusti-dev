@@ -82,7 +82,7 @@ impl TaskEncoder for MirFunctionEncoder {
 
         vir::with_vcx(|vcx| {
             let local_defs = deps.require_local::<crate::encoders::local_def::MirLocalDefEncoder>(
-                def_id,
+                (def_id, substs, Some(caller_def_id)),
             ).unwrap();
 
             tracing::debug!("encoding {def_id:?}");
@@ -99,7 +99,7 @@ impl TaskEncoder for MirFunctionEncoder {
             deps.emit_output_ref::<Self>(*task_key, MirFunctionEncoderOutputRef { function_ref, return_type: local_defs.locals[mir::RETURN_PLACE].ty });
 
             let spec = deps.require_local::<crate::encoders::pure::spec::MirSpecEncoder>(
-                (def_id, true)
+                (def_id, substs, Some(caller_def_id), true)
             ).unwrap();
 
             let func_args: Vec<_> = (1..=local_defs.arg_count).map(mir::Local::from).map(|arg| vcx.alloc(vir::LocalDeclData {

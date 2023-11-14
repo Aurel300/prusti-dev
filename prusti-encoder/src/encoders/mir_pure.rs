@@ -2,7 +2,7 @@ use prusti_rustc_interface::{
     index::IndexVec,
     middle::{mir, ty},
     span::def_id::DefId,
-    type_ir::sty::TyKind,
+    type_ir::sty::TyKind, ast,
 };
 use task_encoder::{
     TaskEncoder,
@@ -452,171 +452,29 @@ impl<'tcx, 'vir: 'enc, 'enc> Encoder<'tcx, 'vir, 'enc>
                 target,
                 ..
             } => {
-                #[derive(Debug)]
-                enum PrustiBuiltin {
-                    Forall,
-                    SnapshotEquality,
-                    Pure(DefId),
-                }
-                let mut builtin = None;
-
                 // TODO: extracting FnDef given func could be extracted? (duplication in impure)
                 let func_ty = func.ty(self.body, self.vcx.tcx);
-                match func_ty.kind() {
+                let expr = match func_ty.kind() {
                     &TyKind::FnDef(def_id, arg_tys) => {
-                        // TODO: this attribute extraction should be done elsewhere?
-                        let attrs = self.vcx.tcx.get_attrs_unchecked(def_id);
-                        let normal_attrs = attrs.iter()
-                            .filter(|attr| !attr.is_doc_comment())
-                            .map(|attr| attr.get_normal_item()).collect::<Vec<_>>();
-                        for attr in normal_attrs.iter()
-                            .filter(|item| item.path.segments.len() == 2
-                                && item.path.segments[0].ident.as_str() == "prusti"
-                                && item.path.segments[1].ident.as_str() == "builtin") {
-                            match &attr.args {
-                                prusti_rustc_interface::ast::AttrArgs::Eq(
-                                    _,
-                                    prusti_rustc_interface::ast::AttrArgsEq::Hir(lit),
-                                ) => {
-                                    assert!(builtin.is_none(), "multiple prusti::builtin");
-                                    builtin = Some((match lit.symbol.as_str() {
-                                        "forall" => PrustiBuiltin::Forall,
-                                        "snapshot_equality" => PrustiBuiltin::SnapshotEquality,
-                                        _ => panic!("illegal prusti::builtin"),
-                                    }, arg_tys));
-                                }
-                                _ => panic!("illegal prusti::builtin"),
-                            }
-                        }
-
+                        // A fn call in pure can only be one of two kinds: a
+                        // call to another pure function, or a call to a prusti
+                        // builtin function.
                         let is_pure = crate::encoders::with_proc_spec(def_id, |def_spec|
                             def_spec.kind.is_pure().unwrap_or_default()
-                        ).unwrap_or_default();    
+                        ).unwrap_or_default();
                         if is_pure {
-                            assert!(builtin.is_none());
-                            builtin = Some((PrustiBuiltin::Pure(def_id), arg_tys))
+                            let pure_func = self.deps.require_ref::<crate::encoders::MirFunctionEncoder>(
+                                (def_id, arg_tys, self.def_id)
+                            ).unwrap().function_ref;
+                            let encoded_args = args.iter()
+                                .map(|oper| self.encode_operand(&new_curr_ver, oper))
+                                .collect::<Vec<_>>();
+                            pure_func.apply(self.vcx, &encoded_args)
+                        } else {
+                            self.encode_prusti_builtin(&new_curr_ver, def_id, arg_tys, args)
                         }
                     }
                     _ => todo!(),
-                }
-
-                let expr = match builtin {
-                    Some((PrustiBuiltin::SnapshotEquality, _arg_tys)) => {
-                        assert_eq!(args.len(), 2);
-                        let lhs = self.encode_operand(&new_curr_ver, &args[0]);
-                        let rhs = self.encode_operand(&new_curr_ver, &args[1]);
-                        let eq_expr  = self.vcx.alloc(vir::ExprGenData::BinOp(self.vcx.alloc(vir::BinOpGenData {
-                            kind: vir::BinOpKind::CmpEq,
-                            lhs,
-                            rhs,
-                        })));
-
-                        let bool_cons = self.deps.require_ref::<crate::encoders::TypeEncoder>(
-                            self.vcx.tcx.types.bool,
-                        ).unwrap().expect_prim().prim_to_snap;
-                        bool_cons.apply(self.vcx, [eq_expr])
-                    }
-                    Some((PrustiBuiltin::Pure(def_id), arg_tys)) => {
-                        let task = (def_id, arg_tys, self.def_id);
-                        let pure_func = self.deps.require_ref::<crate::encoders::MirFunctionEncoder>(task).unwrap().function_ref;
-
-                        let encoded_args = args.iter()
-                            .map(|oper| self.encode_operand(&new_curr_ver, oper))
-                            .collect::<Vec<_>>();
-
-                        pure_func.apply(self.vcx, &encoded_args)
-                    }
-                    Some((PrustiBuiltin::Forall, arg_tys)) => {
-                        assert_eq!(arg_tys.len(), 2);
-                        let (qvar_tys, upvar_tys, cl_def_id) = match arg_tys[1].expect_ty().kind() {
-                            TyKind::Closure(cl_def_id, cl_args) => (
-                                match cl_args.as_closure().sig().skip_binder().inputs()[0].kind() {
-                                    TyKind::Tuple(list) => list,
-                                    _ => unreachable!(),
-                                },
-                                cl_args.as_closure().upvar_tys().iter().collect::<Vec<_>>(),
-                                *cl_def_id,
-                            ),
-                            _ => panic!("illegal prusti::forall"),
-                        };
-
-                        let qvars = self.vcx.alloc_slice(&qvar_tys.iter()
-                            .enumerate()
-                            .map(|(idx, qvar_ty)| {
-                                let ty_out = self.deps.require_ref::<crate::encoders::TypeEncoder>(
-                                    qvar_ty,
-                                ).unwrap();
-                                self.vcx.mk_local_decl(
-                                    vir::vir_format!(self.vcx, "qvar_{}_{idx}", self.encoding_depth),
-                                    ty_out.snapshot,
-                                )
-                            })
-                            .collect::<Vec<_>>());
-                        //let qvar_tuple_ref = self.deps.require_ref::<crate::encoders::ViperTupleEncoder>(
-                        //    qvars.len(),
-                        //).unwrap();
-                        //let upvar_tuple_ref = self.deps.require_ref::<crate::encoders::ViperTupleEncoder>(
-                        //    upvar_tys.len(),
-                        //).unwrap();
-
-                        let mut reify_args = vec![];
-                        // TODO: big hack!
-                        //   the problem is that we expect this to
-                        //   be a simple Expr, but `encode_operand`
-                        //   returns an ExprRet; do we need ExprRet
-                        //   to be piped throughout this encoder?
-                        //   alternatively, can we have an "unlift"
-                        //   operation, which will work like reify
-                        //   but panicking on a Lazy(..)?
-                        reify_args.push(unsafe {
-                            std::mem::transmute(self.encode_operand(&new_curr_ver, &args[1]))
-                        });
-                        reify_args.extend((0..qvars.len())
-                            .map(|idx| self.vcx.mk_local_ex(
-                                vir::vir_format!(self.vcx, "qvar_{}_{idx}", self.encoding_depth),
-                            )));
-
-                        // TODO: recursively invoke MirPure encoder to encode
-                        // the body of the closure; pass the closure as the
-                        // variable to use, then closure access = tuple access
-                        // (then hope to optimise this away later ...?)
-                        use vir::Reify;
-                        let body = self.deps.require_local::<MirPureEncoder>(
-                            MirPureEncoderTask {
-                                encoding_depth: self.encoding_depth + 1,
-                                kind: PureKind::Closure,
-                                parent_def_id: cl_def_id,
-                                promoted: None,
-                                param_env: self.vcx.tcx.param_env(cl_def_id),
-                                substs: ty::List::identity_for_item(self.vcx.tcx, cl_def_id),
-                                caller_def_id: self.def_id,
-                            }
-                        ).unwrap().expr
-                        // arguments to the closure are
-                        // - the closure itself
-                        // - the qvars
-                            .reify(self.vcx, (
-                                cl_def_id,
-                                self.vcx.alloc_slice(&reify_args),
-                            ))
-                            .lift();
-
-                        let bool = self.deps.require_ref::<crate::encoders::TypeEncoder>(
-                            self.vcx.tcx.types.bool,
-                        ).unwrap();
-                        let bool = bool.expect_prim();
-
-                        let forall = bool.prim_to_snap.apply(self.vcx, [self.vcx.alloc(ExprRetData::Forall(self.vcx.alloc(vir::ForallGenData {
-                            qvars,
-                            triggers: &[], // TODO
-                            body: bool.snap_to_prim.apply(self.vcx, [body]),
-                        })))]);
-
-                        forall
-                    }
-                    None => {
-                        todo!("call not supported {func:?}");
-                    }
                 };
 
                 let mut term_update = Update::new();
@@ -835,6 +693,146 @@ impl<'tcx, 'vir: 'enc, 'enc> Encoder<'tcx, 'vir, 'enc>
                 }
             }
             _ => todo!("Unsupported ProjectionElem {:?}", elem),
+        }
+    }
+
+    fn encode_prusti_builtin(&mut self, curr_ver: &HashMap<mir::Local, usize>, def_id: DefId, arg_tys: ty::GenericArgsRef<'tcx>, args: &Vec<mir::Operand<'tcx>>) -> ExprRet<'vir> {
+        #[derive(Debug)]
+        enum PrustiBuiltin {
+            Forall,
+            SnapshotEquality,
+        }
+
+        // TODO: this attribute extraction should be done elsewhere?
+        let attrs = self.vcx.tcx.get_attrs_unchecked(def_id);
+        let normal_attrs = attrs.iter()
+            .filter(|attr| !attr.is_doc_comment())
+            .map(|attr| attr.get_normal_item()).collect::<Vec<_>>();
+        let mut builtin = None;
+        for attr in normal_attrs.iter()
+            .filter(|item| item.path.segments.len() == 2
+                && item.path.segments[0].ident.as_str() == "prusti"
+                && item.path.segments[1].ident.as_str() == "builtin") {
+            match &attr.args {
+                ast::AttrArgs::Eq(
+                    _,
+                    ast::AttrArgsEq::Hir(lit),
+                ) => {
+                    assert!(builtin.is_none(), "multiple prusti::builtin");
+                    builtin = Some(match lit.symbol.as_str() {
+                        "forall" => PrustiBuiltin::Forall,
+                        "snapshot_equality" => PrustiBuiltin::SnapshotEquality,
+                        other => panic!("illegal prusti::builtin ({other})"),
+                    });
+                }
+                _ => panic!("illegal prusti::builtin"),
+            }
+        }
+        
+        match builtin.expect("call to unknown non-pure function in pure code") {
+            PrustiBuiltin::SnapshotEquality => {
+                assert_eq!(args.len(), 2);
+                let lhs = self.encode_operand(&curr_ver, &args[0]);
+                let rhs = self.encode_operand(&curr_ver, &args[1]);
+                let eq_expr  = self.vcx.alloc(vir::ExprGenData::BinOp(self.vcx.alloc(vir::BinOpGenData {
+                    kind: vir::BinOpKind::CmpEq,
+                    lhs,
+                    rhs,
+                })));
+
+                let bool_cons = self.deps.require_ref::<crate::encoders::TypeEncoder>(
+                    self.vcx.tcx.types.bool,
+                ).unwrap().expect_prim().prim_to_snap;
+                bool_cons.apply(self.vcx, [eq_expr])
+            }
+            PrustiBuiltin::Forall => {
+                assert_eq!(arg_tys.len(), 2);
+                let (qvar_tys, upvar_tys, cl_def_id) = match arg_tys[1].expect_ty().kind() {
+                    TyKind::Closure(cl_def_id, cl_args) => (
+                        match cl_args.as_closure().sig().skip_binder().inputs()[0].kind() {
+                            TyKind::Tuple(list) => list,
+                            _ => unreachable!(),
+                        },
+                        cl_args.as_closure().upvar_tys().iter().collect::<Vec<_>>(),
+                        *cl_def_id,
+                    ),
+                    _ => panic!("illegal prusti::forall"),
+                };
+
+                let qvars = self.vcx.alloc_slice(&qvar_tys.iter()
+                    .enumerate()
+                    .map(|(idx, qvar_ty)| {
+                        let ty_out = self.deps.require_ref::<crate::encoders::TypeEncoder>(
+                            qvar_ty,
+                        ).unwrap();
+                        self.vcx.mk_local_decl(
+                            vir::vir_format!(self.vcx, "qvar_{}_{idx}", self.encoding_depth),
+                            ty_out.snapshot,
+                        )
+                    })
+                    .collect::<Vec<_>>());
+                //let qvar_tuple_ref = self.deps.require_ref::<crate::encoders::ViperTupleEncoder>(
+                //    qvars.len(),
+                //).unwrap();
+                //let upvar_tuple_ref = self.deps.require_ref::<crate::encoders::ViperTupleEncoder>(
+                //    upvar_tys.len(),
+                //).unwrap();
+
+                let mut reify_args = vec![];
+                // TODO: big hack!
+                //   the problem is that we expect this to
+                //   be a simple Expr, but `encode_operand`
+                //   returns an ExprRet; do we need ExprRet
+                //   to be piped throughout this encoder?
+                //   alternatively, can we have an "unlift"
+                //   operation, which will work like reify
+                //   but panicking on a Lazy(..)?
+                reify_args.push(unsafe {
+                    std::mem::transmute(self.encode_operand(&curr_ver, &args[1]))
+                });
+                reify_args.extend((0..qvars.len())
+                    .map(|idx| self.vcx.mk_local_ex(
+                        vir::vir_format!(self.vcx, "qvar_{}_{idx}", self.encoding_depth),
+                    )));
+
+                // TODO: recursively invoke MirPure encoder to encode
+                // the body of the closure; pass the closure as the
+                // variable to use, then closure access = tuple access
+                // (then hope to optimise this away later ...?)
+                use vir::Reify;
+                let body = self.deps.require_local::<MirPureEncoder>(
+                    MirPureEncoderTask {
+                        encoding_depth: self.encoding_depth + 1,
+                        kind: PureKind::Closure,
+                        parent_def_id: cl_def_id,
+                        promoted: None,
+                        param_env: self.vcx.tcx.param_env(cl_def_id),
+                        substs: ty::List::identity_for_item(self.vcx.tcx, cl_def_id),
+                        caller_def_id: self.def_id,
+                    }
+                ).unwrap().expr
+                // arguments to the closure are
+                // - the closure itself
+                // - the qvars
+                    .reify(self.vcx, (
+                        cl_def_id,
+                        self.vcx.alloc_slice(&reify_args),
+                    ))
+                    .lift();
+
+                let bool = self.deps.require_ref::<crate::encoders::TypeEncoder>(
+                    self.vcx.tcx.types.bool,
+                ).unwrap();
+                let bool = bool.expect_prim();
+
+                let forall = bool.prim_to_snap.apply(self.vcx, [self.vcx.alloc(ExprRetData::Forall(self.vcx.alloc(vir::ForallGenData {
+                    qvars,
+                    triggers: &[], // TODO
+                    body: bool.snap_to_prim.apply(self.vcx, [body]),
+                })))]);
+
+                forall
+            }
         }
     }
 }

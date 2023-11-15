@@ -1,7 +1,7 @@
 use std::fmt::Debug;
 
-use prusti_rustc_interface::middle::mir;
 use crate::refs::*;
+use prusti_rustc_interface::middle::mir;
 
 pub struct LocalData<'vir> {
     pub name: &'vir str, // TODO: identifiers
@@ -86,10 +86,7 @@ pub enum ConstData {
 }
 
 pub enum TypeData<'vir> {
-    Int {
-        bit_width: u8,
-        signed: bool,
-    },
+    Int { bit_width: u8, signed: bool },
     Bool,
     Domain(&'vir str), // TODO: identifiers
     DomainParams(&'vir str, &'vir [Type<'vir>]),

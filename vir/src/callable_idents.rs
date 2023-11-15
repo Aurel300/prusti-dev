@@ -1,4 +1,6 @@
-use crate::{ExprGen, PredicateAppGen, Type, PredicateAppGenData, StmtGenData, MethodCallGenData, VirCtxt};
+use crate::{
+    ExprGen, MethodCallGenData, PredicateAppGen, PredicateAppGenData, StmtGenData, Type, VirCtxt,
+};
 use sealed::sealed;
 
 pub trait CallableIdent<'vir, A: Arity> {
@@ -56,7 +58,11 @@ pub trait Arity: Copy {
     fn check<'vir, Curr: 'vir, Next: 'vir>(&self, name: &str, args: &[ExprGen<'vir, Curr, Next>]) {
         if cfg!(debug_assertions) {
             let args_len = args.len();
-            assert!(self.len_matches(args_len), "{name} called with {args_len} args (expected {})", self.args().len());
+            assert!(
+                self.len_matches(args_len),
+                "{name} called with {args_len} args (expected {})",
+                self.args().len()
+            );
             for (_arg, _ty) in args.iter().zip(self.args()) {
                 // TODO: check that the types match
             }
@@ -108,8 +114,8 @@ impl<'vir, const N: usize> FunctionIdent<'vir, KnownArity<'vir, N>> {
     pub fn apply<'tcx, Curr: 'vir, Next: 'vir>(
         &self,
         vcx: &'vir VirCtxt<'tcx>,
-        args: [ExprGen<'vir, Curr, Next>; N]
-    ) -> ExprGen<'vir, Curr, Next>{
+        args: [ExprGen<'vir, Curr, Next>; N],
+    ) -> ExprGen<'vir, Curr, Next> {
         self.1.check(self.name(), &args);
         vcx.mk_func_app(self.name(), &args)
     }
@@ -118,8 +124,8 @@ impl<'vir, const N: usize> PredicateIdent<'vir, KnownArity<'vir, N>> {
     pub fn apply<'tcx, Curr: 'vir, Next: 'vir>(
         &self,
         vcx: &'vir VirCtxt<'tcx>,
-        args: [ExprGen<'vir, Curr, Next>; N]
-    ) -> PredicateAppGen<'vir, Curr, Next>{
+        args: [ExprGen<'vir, Curr, Next>; N],
+    ) -> PredicateAppGen<'vir, Curr, Next> {
         self.1.check(self.name(), &args);
         vcx.alloc(PredicateAppGenData {
             target: self.name(),
@@ -131,8 +137,8 @@ impl<'vir, const N: usize> MethodIdent<'vir, KnownArity<'vir, N>> {
     pub fn apply<'tcx, Curr: 'vir, Next: 'vir>(
         &self,
         vcx: &'vir VirCtxt<'tcx>,
-        args: [ExprGen<'vir, Curr, Next>; N]
-    ) -> StmtGenData<'vir, Curr, Next>{
+        args: [ExprGen<'vir, Curr, Next>; N],
+    ) -> StmtGenData<'vir, Curr, Next> {
         self.1.check(self.name(), &args);
         StmtGenData::MethodCall(vcx.alloc(MethodCallGenData {
             targets: &[],
@@ -148,8 +154,8 @@ impl<'vir> FunctionIdent<'vir, UnknownArity<'vir>> {
     pub fn apply<'tcx, Curr: 'vir, Next: 'vir>(
         &self,
         vcx: &'vir VirCtxt<'tcx>,
-        args: &[ExprGen<'vir, Curr, Next>]
-    ) -> ExprGen<'vir, Curr, Next>{
+        args: &[ExprGen<'vir, Curr, Next>],
+    ) -> ExprGen<'vir, Curr, Next> {
         self.1.check(self.name(), args);
         vcx.mk_func_app(self.name(), args)
     }
@@ -158,8 +164,8 @@ impl<'vir> PredicateIdent<'vir, UnknownArity<'vir>> {
     pub fn apply<'tcx, Curr: 'vir, Next: 'vir>(
         &self,
         vcx: &'vir VirCtxt<'tcx>,
-        args: &[ExprGen<'vir, Curr, Next>]
-    ) -> PredicateAppGen<'vir, Curr, Next>{
+        args: &[ExprGen<'vir, Curr, Next>],
+    ) -> PredicateAppGen<'vir, Curr, Next> {
         self.1.check(self.name(), args);
         vcx.alloc(PredicateAppGenData {
             target: self.name(),
@@ -171,8 +177,8 @@ impl<'vir> MethodIdent<'vir, UnknownArity<'vir>> {
     pub fn apply<'tcx, Curr: 'vir, Next: 'vir>(
         &self,
         vcx: &'vir VirCtxt<'tcx>,
-        args: &[ExprGen<'vir, Curr, Next>]
-    ) -> StmtGenData<'vir, Curr, Next>{
+        args: &[ExprGen<'vir, Curr, Next>],
+    ) -> StmtGenData<'vir, Curr, Next> {
         self.1.check(self.name(), args);
         StmtGenData::MethodCall(vcx.alloc(MethodCallGenData {
             targets: &[],

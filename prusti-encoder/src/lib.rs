@@ -10,10 +10,7 @@ extern crate rustc_type_ir;
 mod encoders;
 
 use prusti_interface::{environment::EnvBody, specs::typed::SpecificationItem};
-use prusti_rustc_interface::{
-    middle::ty,
-    hir,
-};
+use prusti_rustc_interface::{hir, middle::ty};
 
 /*
 struct MirBodyPureEncoder;
@@ -100,7 +97,7 @@ impl<'vir, 'tcx> TaskEncoder<'vir, 'tcx> for MirBodyImpureEncoder<'vir, 'tcx> {
     );
     // TaskKey, OutputRef same as above
     type OutputFull = vir::Method<'vir>;
-} 
+}
 
 struct MirTyEncoder<'vir, 'tcx>(PhantomData<&'vir ()>, PhantomData<&'tcx ()>);
 impl<'vir, 'tcx> TaskEncoder<'vir, 'tcx> for MirTyEncoder<'vir, 'tcx> {
@@ -134,18 +131,18 @@ pub fn test_entrypoint<'tcx>(
             continue;
         }*/
         match kind {
-            hir::def::DefKind::Fn |
-            hir::def::DefKind::AssocFn => {
+            hir::def::DefKind::Fn | hir::def::DefKind::AssocFn => {
                 let def_id = def_id.to_def_id();
                 if prusti_interface::specs::is_spec_fn(tcx, def_id) {
                     continue;
                 }
 
                 let (is_pure, is_trusted) = crate::encoders::with_proc_spec(def_id, |proc_spec| {
-                        let is_pure = proc_spec.kind.is_pure().unwrap_or_default();
-                        let is_trusted = proc_spec.trusted.extract_inherit().unwrap_or_default();
-                        (is_pure, is_trusted)
-                }).unwrap_or_default();
+                    let is_pure = proc_spec.kind.is_pure().unwrap_or_default();
+                    let is_trusted = proc_spec.trusted.extract_inherit().unwrap_or_default();
+                    (is_pure, is_trusted)
+                })
+                .unwrap_or_default();
 
                 if !(is_trusted && is_pure) {
                     let substs = ty::GenericArgs::identity_for_item(tcx, def_id);
@@ -220,20 +217,20 @@ pub fn test_entrypoint<'tcx>(
 
     std::fs::write("local-testing/simple.vpr", viper_code).unwrap();
 
-    vir::with_vcx(|vcx| vcx.alloc(vir::ProgramData {
-        fields: &[],
-        domains: &[],
-        predicates: &[],
-        functions: vcx.alloc_slice(&[
-            vcx.alloc(vir::FunctionData {
+    vir::with_vcx(|vcx| {
+        vcx.alloc(vir::ProgramData {
+            fields: &[],
+            domains: &[],
+            predicates: &[],
+            functions: vcx.alloc_slice(&[vcx.alloc(vir::FunctionData {
                 name: "test_function",
                 args: &[],
                 ret: &vir::TypeData::Bool,
                 pres: &[],
                 posts: &[],
                 expr: None,
-            }),
-        ]),
-        methods: &[],
-    }))
+            })]),
+            methods: &[],
+        })
+    })
 }

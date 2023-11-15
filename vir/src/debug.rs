@@ -1,13 +1,14 @@
 use std::fmt::{Debug, Display, Formatter, Result as FmtResult};
 
-use crate::data::*;
-use crate::gendata::*;
+use crate::{data::*, gendata::*};
 
 fn fmt_comma_sep_display<T: Display>(f: &mut Formatter<'_>, els: &[T]) -> FmtResult {
     els.iter()
         .enumerate()
         .map(|(idx, el)| {
-            if idx > 0 { write!(f, ", ")? }
+            if idx > 0 {
+                write!(f, ", ")?
+            }
             el.fmt(f)
         })
         .collect::<FmtResult>()
@@ -16,7 +17,9 @@ fn fmt_comma_sep<T: Debug>(f: &mut Formatter<'_>, els: &[T]) -> FmtResult {
     els.iter()
         .enumerate()
         .map(|(idx, el)| {
-            if idx > 0 { write!(f, ", ")? }
+            if idx > 0 {
+                write!(f, ", ")?
+            }
             el.fmt(f)
         })
         .collect::<FmtResult>()
@@ -32,10 +35,7 @@ fn fmt_comma_sep_lines<T: Debug>(f: &mut Formatter<'_>, els: &[T]) -> FmtResult 
     Ok(())
 }
 fn indent(s: String) -> String {
-    s
-        .split("\n")
-        .intersperse("\n  ")
-        .collect::<String>()
+    s.split("\n").intersperse("\n  ").collect::<String>()
 }
 
 impl<'vir, Curr, Next> Debug for AccFieldGenData<'vir, Curr, Next> {
@@ -48,19 +48,23 @@ impl<'vir, Curr, Next> Debug for BinOpGenData<'vir, Curr, Next> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         write!(f, "(")?;
         self.lhs.fmt(f)?;
-        write!(f, ") {} (", match self.kind {
-            BinOpKind::CmpEq => "==",
-            BinOpKind::CmpNe => "!=",
-            BinOpKind::CmpGt => ">",
-            BinOpKind::CmpGe => ">=",
-            BinOpKind::CmpLt => "<",
-            BinOpKind::CmpLe => "<=",
-            BinOpKind::And => "&&",
-            BinOpKind::Or => "||",
-            BinOpKind::Add => "+",
-            BinOpKind::Sub => "-",
-            BinOpKind::Mod => "%",
-        })?;
+        write!(
+            f,
+            ") {} (",
+            match self.kind {
+                BinOpKind::CmpEq => "==",
+                BinOpKind::CmpNe => "!=",
+                BinOpKind::CmpGt => ">",
+                BinOpKind::CmpGe => ">=",
+                BinOpKind::CmpLt => "<",
+                BinOpKind::CmpLe => "<=",
+                BinOpKind::And => "&&",
+                BinOpKind::Or => "||",
+                BinOpKind::Add => "+",
+                BinOpKind::Sub => "-",
+                BinOpKind::Mod => "%",
+            }
+        )?;
         self.rhs.fmt(f)?;
         write!(f, ")")
     }
@@ -95,8 +99,14 @@ impl<'vir, Curr, Next> Debug for DomainGenData<'vir, Curr, Next> {
             write!(f, "]")?;
         }
         writeln!(f, " {{")?;
-        self.axioms.iter().map(|el| el.fmt(f)).collect::<FmtResult>()?;
-        self.functions.iter().map(|el| el.fmt(f)).collect::<FmtResult>()?;
+        self.axioms
+            .iter()
+            .map(|el| el.fmt(f))
+            .collect::<FmtResult>()?;
+        self.functions
+            .iter()
+            .map(|el| el.fmt(f))
+            .collect::<FmtResult>()?;
         writeln!(f, "}}")
     }
 }
@@ -176,8 +186,14 @@ impl<'vir, Curr, Next> Debug for FunctionGenData<'vir, Curr, Next> {
         writeln!(f, "function {}(", self.name)?;
         fmt_comma_sep_lines(f, &self.args)?;
         writeln!(f, "): {:?}", self.ret)?;
-        self.pres.iter().map(|el| writeln!(f, "  requires {:?}", el)).collect::<FmtResult>()?;
-        self.posts.iter().map(|el| writeln!(f, "  ensures {:?}", el)).collect::<FmtResult>()?;
+        self.pres
+            .iter()
+            .map(|el| writeln!(f, "  requires {:?}", el))
+            .collect::<FmtResult>()?;
+        self.posts
+            .iter()
+            .map(|el| writeln!(f, "  ensures {:?}", el))
+            .collect::<FmtResult>()?;
         if let Some(expr) = self.expr {
             write!(f, "{{\n  ")?;
             expr.fmt(f)?;
@@ -224,8 +240,14 @@ impl<'vir, Curr, Next> Debug for MethodGenData<'vir, Curr, Next> {
         } else {
             writeln!(f, ")")?;
         }
-        self.pres.iter().map(|el| writeln!(f, "  requires {:?}", el)).collect::<FmtResult>()?;
-        self.posts.iter().map(|el| writeln!(f, "  ensures {:?}", el)).collect::<FmtResult>()?;
+        self.pres
+            .iter()
+            .map(|el| writeln!(f, "  requires {:?}", el))
+            .collect::<FmtResult>()?;
+        self.posts
+            .iter()
+            .map(|el| writeln!(f, "  ensures {:?}", el))
+            .collect::<FmtResult>()?;
         if let Some(blocks) = self.blocks.as_ref() {
             writeln!(f, "{{")?;
             for block in blocks.iter() {
@@ -304,7 +326,11 @@ impl<'vir, Curr, Next> Debug for TerminatorStmtGenData<'vir, Curr, Next> {
                     write!(f, "goto {:?}", data.otherwise)
                 } else {
                     for target in data.targets {
-                        write!(f, "if ({:?} == {:?}) {{ goto {:?} }}\n  else", data.value, target.0, target.1)?;
+                        write!(
+                            f,
+                            "if ({:?} == {:?}) {{ goto {:?} }}\n  else",
+                            data.value, target.0, target.1
+                        )?;
                     }
                     write!(f, " {{ goto {:?} }}", data.otherwise)
                 }
@@ -345,10 +371,15 @@ impl<'vir> Debug for TypeData<'vir> {
 
 impl<'vir, Curr, Next> Debug for UnOpGenData<'vir, Curr, Next> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        write!(f, "{}({:?})", match self.kind {
-            UnOpKind::Neg => "-",
-            UnOpKind::Not => "!",
-        }, self.expr)
+        write!(
+            f,
+            "{}({:?})",
+            match self.kind {
+                UnOpKind::Neg => "-",
+                UnOpKind::Not => "!",
+            },
+            self.expr
+        )
     }
 }
 

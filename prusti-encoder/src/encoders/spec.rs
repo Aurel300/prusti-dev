@@ -1,12 +1,6 @@
-use prusti_rustc_interface::{
-    //middle::{mir, ty},
-    span::def_id::DefId,
-};
 use prusti_interface::specs::typed::{DefSpecificationMap, ProcedureSpecification};
-use task_encoder::{
-    TaskEncoder,
-    TaskEncoderDependencies,
-};
+use prusti_rustc_interface::span::def_id::DefId;
+use task_encoder::{TaskEncoder, TaskEncoderDependencies};
 
 pub struct SpecEncoder;
 
@@ -42,7 +36,10 @@ where
     DEF_SPEC_MAP.with_borrow(|def_spec: &Option<DefSpecificationMap>| {
         let def_spec = def_spec.as_ref().unwrap();
         // TODO: handle `SpecGraph` better than simply taking the `base_spec`
-        def_spec.get_proc_spec(&def_id).map(|spec| &spec.base_spec).map(f)
+        def_spec
+            .get_proc_spec(&def_id)
+            .map(|spec| &spec.base_spec)
+            .map(f)
     })
 }
 
@@ -53,7 +50,7 @@ pub fn init_def_spec(def_spec: DefSpecificationMap) {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct SpecEncoderTask {
     pub def_id: DefId, // ID of the function
-    // TODO: substs here?
+                       // TODO: substs here?
 }
 
 impl TaskEncoder for SpecEncoder {
@@ -68,7 +65,8 @@ impl TaskEncoder for SpecEncoder {
     type EncodingError = SpecEncoderError;
 
     fn with_cache<'tcx, 'vir, F, R>(f: F) -> R
-       where F: FnOnce(&'vir task_encoder::CacheRef<'tcx, 'vir, SpecEncoder>) -> R,
+    where
+        F: FnOnce(&'vir task_encoder::CacheRef<'tcx, 'vir, SpecEncoder>) -> R,
     {
         CACHE.with(|cache| {
             // SAFETY: the 'vir and 'tcx given to this function will always be
@@ -89,13 +87,16 @@ impl TaskEncoder for SpecEncoder {
     fn do_encode_full<'tcx: 'vir, 'vir>(
         task_key: &Self::TaskKey<'tcx>,
         deps: &mut TaskEncoderDependencies<'vir>,
-    ) -> Result<(
-        Self::OutputFullLocal<'vir>,
-        Self::OutputFullDependency<'vir>,
-    ), (
-        Self::EncodingError,
-        Option<Self::OutputFullDependency<'vir>>,
-    )> {
+    ) -> Result<
+        (
+            Self::OutputFullLocal<'vir>,
+            Self::OutputFullDependency<'vir>,
+        ),
+        (
+            Self::EncodingError,
+            Option<Self::OutputFullDependency<'vir>>,
+        ),
+    > {
         deps.emit_output_ref::<Self>(task_key.clone(), ());
         vir::with_vcx(|vcx| {
             with_def_spec(|def_spec| {
@@ -109,7 +110,7 @@ impl TaskEncoder for SpecEncoder {
                     .and_then(|specs| specs.base_spec.posts.expect_empty_or_inherent())
                     .map(|specs| vcx.alloc_slice(specs))
                     .unwrap_or_default();
-                Ok((SpecEncoderOutput { pres, posts, }, () ))
+                Ok((SpecEncoderOutput { pres, posts }, ()))
             })
         })
     }

@@ -1,18 +1,11 @@
-use crate::VirCtxt;
-use crate::gendata::*;
-use crate::genrefs::*;
-use crate::refs::*;
+use crate::{gendata::*, genrefs::*, refs::*, VirCtxt};
 
 pub use vir_proc_macro::*;
 
 pub trait Reify<'vir, Curr> {
     type Next: Sized;
 
-    fn reify<'tcx>(
-        &self,
-        vcx: &'vir VirCtxt<'tcx>,
-        lctx: Curr,
-    ) -> Self::Next;
+    fn reify<'tcx>(&self, vcx: &'vir VirCtxt<'tcx>, lctx: Curr) -> Self::Next;
 }
 
 impl<'vir, Curr: Copy, NextA, NextB> Reify<'vir, Curr>
@@ -31,7 +24,9 @@ impl<'vir, Curr: Copy, NextA, NextB> Reify<'vir, Curr>
             ExprGenData::Forall(v) => vcx.alloc(ExprGenData::Forall(v.reify(vcx, lctx))),
             ExprGenData::Let(v) => vcx.alloc(ExprGenData::Let(v.reify(vcx, lctx))),
             ExprGenData::FuncApp(v) => vcx.alloc(ExprGenData::FuncApp(v.reify(vcx, lctx))),
-            ExprGenData::PredicateApp(v) => vcx.alloc(ExprGenData::PredicateApp(v.reify(vcx, lctx))),
+            ExprGenData::PredicateApp(v) => {
+                vcx.alloc(ExprGenData::PredicateApp(v.reify(vcx, lctx)))
+            }
 
             ExprGenData::Local(v) => vcx.alloc(ExprGenData::Local(v)),
             ExprGenData::Const(v) => vcx.alloc(ExprGenData::Const(v)),
@@ -51,9 +46,12 @@ impl<'vir, Curr: Copy, NextA, NextB> Reify<'vir, Curr>
 {
     type Next = &'vir [ExprGen<'vir, NextA, NextB>];
     fn reify<'tcx>(&self, vcx: &'vir VirCtxt<'tcx>, lctx: Curr) -> Self::Next {
-        vcx.alloc_slice(&self.iter()
-            .map(|elem| elem.reify(vcx, lctx))
-            .collect::<Vec<_>>())
+        vcx.alloc_slice(
+            &self
+                .iter()
+                .map(|elem| elem.reify(vcx, lctx))
+                .collect::<Vec<_>>(),
+        )
     }
 }
 
@@ -62,20 +60,29 @@ impl<'vir, Curr: Copy, NextA, NextB> Reify<'vir, Curr>
 {
     type Next = &'vir [&'vir [ExprGen<'vir, NextA, NextB>]];
     fn reify<'tcx>(&self, vcx: &'vir VirCtxt<'tcx>, lctx: Curr) -> Self::Next {
-        vcx.alloc_slice(&self.iter()
-            .map(|elem| elem.reify(vcx, lctx))
-            .collect::<Vec<_>>())
+        vcx.alloc_slice(
+            &self
+                .iter()
+                .map(|elem| elem.reify(vcx, lctx))
+                .collect::<Vec<_>>(),
+        )
     }
 }
 
 impl<'vir, Curr: Copy, NextA, NextB> Reify<'vir, Curr>
-    for [(ExprGen<'vir, Curr, ExprGen<'vir, NextA, NextB>>, CfgBlockLabel<'vir>)]
+    for [(
+        ExprGen<'vir, Curr, ExprGen<'vir, NextA, NextB>>,
+        CfgBlockLabel<'vir>,
+    )]
 {
     type Next = &'vir [(ExprGen<'vir, NextA, NextB>, CfgBlockLabel<'vir>)];
     fn reify<'tcx>(&self, vcx: &'vir VirCtxt<'tcx>, lctx: Curr) -> Self::Next {
-        vcx.alloc_slice(&self.iter()
-            .map(|(elem, label)| (elem.reify(vcx, lctx), *label))
-            .collect::<Vec<_>>())
+        vcx.alloc_slice(
+            &self
+                .iter()
+                .map(|(elem, label)| (elem.reify(vcx, lctx), *label))
+                .collect::<Vec<_>>(),
+        )
     }
 }
 
@@ -96,7 +103,6 @@ impl<'vir, Curr: Copy, NextA, NextB> Reify<'vir, Curr>
         self.map(|elem| elem.reify(vcx, lctx))
     }
 }
-
 
 /*
 impl<

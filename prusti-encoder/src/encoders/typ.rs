@@ -747,7 +747,7 @@ impl TaskEncoder for TypeEncoder {
                         function prim_to_snap(Int): [ty_s];
                         function snap_to_prim([ty_s]): Int;
                         axiom_inverse(snap_to_prim, prim_to_snap, Int);
-                        axiom_inverse(prim_to_snap, snap_to_prim, ty_s);
+                        axiom_inverse(prim_to_snap, snap_to_prim, [ty_s]);
                     } },
                     predicate: mk_simple_predicate(vcx, name_p, name_field),
                     unreachable_to_snap: mk_unreachable(vcx, unreachable_to_snap, ty_s),

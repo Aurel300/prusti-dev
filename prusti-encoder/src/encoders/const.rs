@@ -18,14 +18,11 @@ pub struct ConstEncoderOutputRef<'vir> {
 }
 impl<'vir> task_encoder::OutputRefAny for ConstEncoderOutputRef<'vir> {}
 
-use std::cell::RefCell;
-
 use crate::encoders::{MirPureEncoder, mir_pure::PureKind, MirPureEncoderTask, SnapshotEnc};
-thread_local! {
-    static CACHE: task_encoder::CacheStaticRef<ConstEncoder> = RefCell::new(Default::default());
-}
 
 impl TaskEncoder for ConstEncoder {
+    task_encoder::encoder_cache!(ConstEncoder);
+
     type TaskDescription<'tcx> = (
         mir::ConstantKind<'tcx>,
         usize, // current encoding depth
@@ -33,18 +30,6 @@ impl TaskEncoder for ConstEncoder {
     );
     type OutputFullLocal<'vir> = vir::Expr<'vir>;
     type EncodingError = ();
-
-    fn with_cache<'tcx: 'vir, 'vir, F, R>(f: F) -> R
-        where F: FnOnce(&'vir task_encoder::CacheRef<'tcx, 'vir, ConstEncoder>) -> R,
-    {
-        CACHE.with(|cache| {
-            // SAFETY: the 'vir and 'tcx given to this function will always be
-            //   the same (or shorter) than the lifetimes of the VIR arena and
-            //   the rustc type context, respectively
-            let cache = unsafe { std::mem::transmute(cache) };
-            f(cache)
-        })
-    }
 
     fn task_to_key<'vir>(task: &Self::TaskDescription<'vir>) -> Self::TaskKey<'vir> {
         *task

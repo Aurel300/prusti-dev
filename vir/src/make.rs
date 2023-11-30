@@ -249,6 +249,15 @@ impl<'tcx> VirCtxt<'tcx> {
         self.alloc(ExprGenData::new(self.alloc(ExprKindGenData::Old(expr))))
     }
 
+    pub fn mk_rel_expr<'vir, Curr, Next>(
+        &'vir self,
+        expr: ExprGen<'vir, Curr, Next>,
+        exec: u32,
+    ) -> ExprGen<'vir, Curr, Next> {
+        let v = self.mk_const_expr(ConstData::Int(exec as u128));
+        self.mk_func_app("rel", &[expr, v], expr.typ())
+    }
+
     pub fn mk_forall_expr<'vir, Curr, Next>(
         &'vir self,
         qvars: &'vir [LocalDecl<'vir>],

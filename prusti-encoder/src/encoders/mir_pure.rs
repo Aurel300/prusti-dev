@@ -20,6 +20,17 @@ pub enum MirPureEncError {
     UnsupportedTerminator,
 }
 
+#[derive(Clone, Debug)]
+pub enum ModeMarker {
+    OldStart, 
+    OldEnd,
+    Rel1Start,
+    Rel1End,
+    Rel0Start,
+    Rel0End,
+}
+
+
 // TODO: does this need to be `&'vir [..]`?
 type ExprInput<'vir> = (DefId, &'vir [vir::Expr<'vir>]);
 type ExprRet<'vir> = vir::ExprGen<'vir, ExprInput<'vir>, vir::ExprKind<'vir>>;
@@ -170,6 +181,9 @@ struct Enc<'tcx, 'vir: 'enc, 'enc>
     visited: IndexVec<mir::BasicBlock, bool>,
     version_ctr: IndexVec<mir::Local, usize>,
     phi_ctr: usize,
+    old_mode: bool,
+    rel0_mode: bool,
+    rel1_mode: bool,
 }
 
 impl<'tcx, 'vir: 'enc, 'enc> Enc<'tcx, 'vir, 'enc>
@@ -192,6 +206,9 @@ impl<'tcx, 'vir: 'enc, 'enc> Enc<'tcx, 'vir, 'enc>
             visited: IndexVec::from_elem_n(false, body.basic_blocks.len()),
             version_ctr: IndexVec::from_elem_n(0, body.local_decls.len()),
             phi_ctr: 0,
+            old_mode: false,
+            rel0_mode: false,
+            rel1_mode: false,
         }
     }
 
@@ -611,6 +628,9 @@ impl<'tcx, 'vir: 'enc, 'enc> Enc<'tcx, 'vir, 'enc>
         curr_ver: &HashMap<mir::Local, usize>,
         place: &mir::Place<'tcx>,
     ) -> ExprRet<'vir> {
+
+        
+
         // TODO: remove (debug)
         if !curr_ver.contains_key(&place.local) {
             tracing::error!("unknown version of local! {}", place.local.as_usize());
@@ -620,7 +640,27 @@ impl<'tcx, 'vir: 'enc, 'enc> Enc<'tcx, 'vir, 'enc>
         }
 
         let mut place_ty =  mir::tcx::PlaceTy::from_ty(self.body.local_decls[place.local].ty);
-        let mut expr = self.mk_local_ex(place.local, curr_ver[&place.local]);
+
+
+        let is_in_a_mode = self.old_mode || self.rel0_mode || self.rel1_mode;
+
+        let should_wrap = self.body.local_kind(place.local) == mir::LocalKind::Arg && is_in_a_mode;
+
+        let mut expr = if should_wrap {
+            let local_as_uzize = place.local.as_usize();
+
+
+            let local_ex = self.vcx.mk_lazy_expr(
+                vir::vir_format!(self.vcx, "wraped in _{}",local_as_uzize),
+                Box::new(move |_vcx, lctx: ExprInput<'vir>| lctx.1[local_as_uzize - 1].kind),
+            );
+
+            local_ex
+        }
+        else {
+            self.mk_local_ex(place.local, curr_ver[&place.local])
+        };
+
         // TODO: factor this out (duplication with impure encoder)?
         for elem in place.projection {
             expr = self.encode_place_element(place_ty, elem, expr);
@@ -628,7 +668,24 @@ impl<'tcx, 'vir: 'enc, 'enc> Enc<'tcx, 'vir, 'enc>
         }
         // Can we ever have the use of a projected place?
         assert!(place_ty.variant_index.is_none());
-        expr
+
+        if should_wrap {
+            if self.old_mode {
+                self.vcx.mk_old_expr(expr)
+            }
+            else if self.rel0_mode {
+                self.vcx.mk_rel_expr(expr, 0)
+            }
+            else if self.rel1_mode {
+                self.vcx.mk_rel_expr(expr, 1)
+            }
+            else {
+                unreachable!()
+            }
+        }
+        else {
+            expr
+        }
     }
 
     fn encode_place_element(&mut self, place_ty: mir::tcx::PlaceTy<'tcx>, elem: mir::PlaceElem<'tcx>, expr: ExprRet<'vir>) -> ExprRet<'vir> {
@@ -663,6 +720,7 @@ impl<'tcx, 'vir: 'enc, 'enc> Enc<'tcx, 'vir, 'enc>
         enum PrustiBuiltin {
             Forall,
             SnapshotEquality,
+            Mode(ModeMarker),
         }
 
         // TODO: this attribute extraction should be done elsewhere?
@@ -684,6 +742,12 @@ impl<'tcx, 'vir: 'enc, 'enc> Enc<'tcx, 'vir, 'enc>
                     builtin = Some(match lit.symbol.as_str() {
                         "forall" => PrustiBuiltin::Forall,
                         "snapshot_equality" => PrustiBuiltin::SnapshotEquality,
+                        "old_start" => PrustiBuiltin::Mode(ModeMarker::OldStart),
+                        "old_end" => PrustiBuiltin::Mode(ModeMarker::OldEnd),
+                        "rel0_start" => PrustiBuiltin::Mode(ModeMarker::Rel0Start),
+                        "rel0_end" => PrustiBuiltin::Mode(ModeMarker::Rel0End),
+                        "rel1_start" => PrustiBuiltin::Mode(ModeMarker::Rel1Start),
+                        "rel1_end" => PrustiBuiltin::Mode(ModeMarker::Rel1End),
                         other => panic!("illegal prusti::builtin ({other})"),
                     });
                 }
@@ -791,6 +855,44 @@ impl<'tcx, 'vir: 'enc, 'enc> Enc<'tcx, 'vir, 'enc>
                     &[], // TODO
                     bool.snap_to_prim.apply(self.vcx, [body]),
                 )])
+            }
+            PrustiBuiltin::Mode(marker) => {
+                match marker {
+                    ModeMarker::OldStart => {
+                        assert!(!self.old_mode);
+                        self.old_mode = true;
+                    }
+                    ModeMarker::OldEnd => {
+                        assert!(self.old_mode);
+                        self.old_mode = false;
+                    }
+                    ModeMarker::Rel1Start => {
+                        assert!(!self.rel1_mode);
+                        assert!(!self.rel0_mode);
+
+                        self.rel1_mode = true;
+                    }
+                    ModeMarker::Rel1End => {
+                        assert!(!self.rel0_mode);
+                        assert!(self.rel1_mode);
+
+                        self.rel1_mode = false;
+                    }
+                    ModeMarker::Rel0Start => {
+                        assert!(!self.rel0_mode);
+                        assert!(!self.rel1_mode);
+
+                        self.rel0_mode = true;
+                    }
+                    ModeMarker::Rel0End => {
+                        assert!(self.rel0_mode);
+                        assert!(!self.rel1_mode);
+
+                        self.rel0_mode = false;
+                    }
+                }
+
+                self.vcx.mk_todo_expr("true") //TODO what value do we return?
             }
         }
     }

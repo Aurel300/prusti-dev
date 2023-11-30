@@ -138,6 +138,16 @@ impl<'tcx> VirCtxt<'tcx> {
         })
     }
 
+    pub fn mk_rel_expr<'vir, Curr, Next>(
+        &'vir self,
+        src_args: ExprGen<'vir, Curr, Next>,
+        exec: u32,
+    ) -> ExprGen<'vir, Curr, Next> {
+    let v = self.mk_const_expr(ConstData::Int(exec as u128));
+
+       self.mk_func_app("rel", &[src_args, v], None) //TODO: should ty be None or not?
+    }
+
     pub fn mk_forall_expr<'vir, Curr, Next>(
         &'vir self,
         qvars: &'vir [LocalDecl<'vir>],

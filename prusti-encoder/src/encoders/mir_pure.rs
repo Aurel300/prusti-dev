@@ -628,9 +628,6 @@ impl<'tcx, 'vir: 'enc, 'enc> Enc<'tcx, 'vir, 'enc>
         curr_ver: &HashMap<mir::Local, usize>,
         place: &mir::Place<'tcx>,
     ) -> ExprRet<'vir> {
-
-        
-
         // TODO: remove (debug)
         if !curr_ver.contains_key(&place.local) {
             tracing::error!("unknown version of local! {}", place.local.as_usize());
@@ -644,18 +641,17 @@ impl<'tcx, 'vir: 'enc, 'enc> Enc<'tcx, 'vir, 'enc>
 
         let is_in_a_mode = self.old_mode || self.rel0_mode || self.rel1_mode;
 
-        let should_wrap = self.body.local_kind(place.local) == mir::LocalKind::Arg && is_in_a_mode;
+        let local_kind = self.body.local_kind(place.local);
+
+        let should_wrap = (local_kind == mir::LocalKind::Arg || local_kind == mir::LocalKind::ReturnPointer) && is_in_a_mode;
 
         let mut expr = if should_wrap {
             let local_as_uzize = place.local.as_usize();
 
-
-            let local_ex = self.vcx.mk_lazy_expr(
+            self.vcx.mk_lazy_expr(
                 vir::vir_format!(self.vcx, "wraped in _{}",local_as_uzize),
                 Box::new(move |_vcx, lctx: ExprInput<'vir>| lctx.1[local_as_uzize - 1].kind),
-            );
-
-            local_ex
+            )
         }
         else {
             self.mk_local_ex(place.local, curr_ver[&place.local])
@@ -671,21 +667,17 @@ impl<'tcx, 'vir: 'enc, 'enc> Enc<'tcx, 'vir, 'enc>
 
         if should_wrap {
             if self.old_mode {
-                self.vcx.mk_old_expr(expr)
+                expr = self.vcx.mk_old_expr(expr)
             }
-            else if self.rel0_mode {
-                self.vcx.mk_rel_expr(expr, 0)
+            if self.rel0_mode {
+                expr = self.vcx.mk_rel_expr(expr, 0)
             }
-            else if self.rel1_mode {
-                self.vcx.mk_rel_expr(expr, 1)
-            }
-            else {
-                unreachable!()
+            if self.rel1_mode {
+                expr = self.vcx.mk_rel_expr(expr, 1)
             }
         }
-        else {
-            expr
-        }
+
+        expr
     }
 
     fn encode_place_element(&mut self, place_ty: mir::tcx::PlaceTy<'tcx>, elem: mir::PlaceElem<'tcx>, expr: ExprRet<'vir>) -> ExprRet<'vir> {

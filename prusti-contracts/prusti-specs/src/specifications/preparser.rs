@@ -96,25 +96,6 @@ struct PrustiTokenStream {
 }
 
 impl PrustiTokenStream {
-
-    fn parse_old(&mut self, span: Span, kind: MarkerKind) -> syn::Result<TokenStream> {
-        let args = self.pop_group(Delimiter::Parenthesis).ok_or_else(|| {
-            error(span, "expected parenthesized expression after mode marker")
-        })?;
-
-        let parsed = args.parse()?;
-        let start_fn = kind.start_fn();
-        let end_fn = kind.end_fn();
-
-        Ok(quote_spanned! { span => {
-            #start_fn ;
-            let r = { #parsed };
-            #end_fn ;
-            r
-        }
-        })
-    }
-
     /// Constructs a stream of Prusti tokens from a stream of Rust tokens.
     fn new(source: TokenStream) -> Self {
         let source_span = source.span();
@@ -303,7 +284,7 @@ impl PrustiTokenStream {
                 todo!()
             }
             Some(PrustiToken::ModeMarker(span, kind )) => {
-               self.parse_old(span, kind)?
+               self.parse_marker(span, kind)?
             }
             Some(PrustiToken::Quantifier(span, kind)) => {
                 let mut stream = self.pop_group(Delimiter::Parenthesis).ok_or_else(|| {
@@ -405,7 +386,7 @@ impl PrustiTokenStream {
                     let kind = kind.clone();
 
                     self.tokens.pop_front();
-                    lhs.extend(self.parse_old(span, kind)?);
+                    lhs.extend(self.parse_marker(span, kind)?);
 
                     continue;
                  }
@@ -514,6 +495,24 @@ impl PrustiTokenStream {
             .map(|stream| stream.and_then(|s| s.parse()))
             .collect::<syn::Result<Vec<NestedSpec<TokenStream>>>>()?;
         Ok(parsed)
+    }
+
+    fn parse_marker(&mut self, span: Span, kind: MarkerKind) -> syn::Result<TokenStream> {
+        let args = self.pop_group(Delimiter::Parenthesis).ok_or_else(|| {
+            error(span, "expected parenthesized expression after mode marker")
+        })?;
+
+        let parsed = args.parse()?;
+        let start_fn = kind.start_fn();
+        let end_fn = kind.end_fn();
+
+        Ok(quote_spanned! { span => {
+            #start_fn ;
+            let r = { #parsed };
+            #end_fn ;
+            r
+        }
+        })
     }
 
     fn split(self, split_on: PrustiBinaryOp, allow_trailing: bool) -> Vec<Self> {

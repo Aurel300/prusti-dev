@@ -345,7 +345,7 @@ impl<'tcx, 'vir: 'enc, 'enc> Enc<'tcx, 'vir, 'enc>
                 // join point the bb which is an immediate reverse dominator of
                 // the branch point.
                 // TODO: indexvec?
-                let new_join_point = self.rev_doms.join_point(curr);
+                let new_join_point = self.rev_doms.immediate_dominator(curr);
                 let mut updates = targets.all_targets().iter()
                     .map(|target| self.encode_cfg(&new_curr_ver, *target, new_join_point))
                     .collect::<Vec<_>>();
@@ -796,7 +796,7 @@ mod rev_doms {
                 end: rbb.start_node(),
             }
         }
-        pub fn join_point(&self, bb: mir::BasicBlock) -> mir::BasicBlock {
+        pub fn immediate_dominator(&self, bb: mir::BasicBlock) -> mir::BasicBlock {
             // This unwrap should never fail since all blocks can reach `end`
             self.dom.immediate_dominator(bb).unwrap()
         }

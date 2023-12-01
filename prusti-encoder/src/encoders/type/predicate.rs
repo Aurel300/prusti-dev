@@ -390,8 +390,9 @@ impl<'vir, 'tcx> PredicateEncValues<'vir, 'tcx> {
         let self_field = self.vcx.mk_acc_field_expr(self.self_ex, data.ref_field, None);
 
         let self_ref = self.vcx.mk_field_expr(self.self_ex, data.ref_field);
+        let non_null = self.vcx.mk_bin_op_expr(vir::BinOpKind::CmpNe, self_ref, self.vcx.mk_null());
         let inner_pred = self.vcx.mk_predicate_app_expr(inner.ref_to_pred.apply(self.vcx, [self_ref], data.perm));
-        let predicate = self.vcx.mk_conj(&[self_field, inner_pred]);
+        let predicate = self.vcx.mk_conj(&[self_field, non_null, inner_pred]);
         self.predicates.push(self.vcx.mk_predicate(self.ref_to_pred.name(), self.self_decl, Some(predicate)));
 
         let inner_snap = inner.ref_to_snap.apply(self.vcx, [self_ref]);

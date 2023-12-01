@@ -512,8 +512,20 @@ impl<'tcx, 'vir: 'enc, 'enc> Enc<'tcx, 'vir, 'enc>
                     rvalue_ty,
                 ).unwrap().specifics.expect_structlike().field_snaps_to_snap;
                 let snap = self.encode_place(curr_ver, place);
-                // TODO: make `null` first class and decide if it even belongs here.
-                e_rvalue_ty.apply(self.vcx, &[snap, self.vcx.mk_local_ex("null")])
+                // We want any references created in pure code to be different
+                // to external "non-pure" references, but to disregard the
+                // pointed-to address when comparing two "pure" references.
+                // That is, the following should hold in pure code:
+                // ```
+                // let a = 3;
+                // let b = 3;
+                // assert!(&a === &b);
+                // ```
+                // Even though in impure code, `a` and `b` might have a
+                // different address.
+                // Therefore we use the address `null` in the snapshot of all
+                // pure references.
+                e_rvalue_ty.apply(self.vcx, &[snap, self.vcx.mk_null()])
             }
             // ThreadLocalRef
             // AddressOf

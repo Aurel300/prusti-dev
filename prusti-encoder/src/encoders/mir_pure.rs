@@ -643,8 +643,6 @@ impl<'tcx, 'vir: 'enc, 'enc> Enc<'tcx, 'vir, 'enc>
         assert!(curr_ver.contains_key(&place.local));
 
         let mut place_ty =  mir::tcx::PlaceTy::from_ty(self.body.local_decls[place.local].ty);
-<<<<<<< HEAD
-
 
         let is_in_a_mode = self.old_mode || self.rel0_mode || self.rel1_mode;
 
@@ -664,10 +662,8 @@ impl<'tcx, 'vir: 'enc, 'enc> Enc<'tcx, 'vir, 'enc>
             self.mk_local_ex(place.local, curr_ver[&place.local])
         };
 
-=======
-        let mut expr = self.mk_local_ex(place.local, curr_ver[&place.local]);
         let mut place_ref = None;
->>>>>>> aurel/rewrite-2023
+
         // TODO: factor this out (duplication with impure encoder)?
         for elem in place.projection {
             (expr, place_ref) = self.encode_place_element(place_ty, elem, expr, place_ref);
@@ -675,7 +671,6 @@ impl<'tcx, 'vir: 'enc, 'enc> Enc<'tcx, 'vir, 'enc>
         }
         // Can we ever have the use of a projected place?
         assert!(place_ty.variant_index.is_none());
-<<<<<<< HEAD
 
         if should_wrap {
             if self.old_mode {
@@ -689,10 +684,8 @@ impl<'tcx, 'vir: 'enc, 'enc> Enc<'tcx, 'vir, 'enc>
             }
         }
 
-        expr
-=======
+
         (expr, place_ref)
->>>>>>> aurel/rewrite-2023
     }
 
     fn encode_place_element(

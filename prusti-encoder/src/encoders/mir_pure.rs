@@ -487,25 +487,29 @@ impl<'tcx, 'vir: 'enc, 'enc> Enc<'tcx, 'vir, 'enc>
         match rvalue {
             mir::Rvalue::Use(op) => self.encode_operand(curr_ver, op),
             // Repeat
-            mir::Rvalue::Ref(_, _, place) => {
+            mir::Rvalue::Ref(_, kind, place) => {
                 let e_rvalue_ty = self.deps.require_local::<SnapshotEnc>(
                     rvalue_ty,
                 ).unwrap().specifics.expect_structlike().field_snaps_to_snap;
                 let snap = self.encode_place(curr_ver, place);
-                // We want any references created in pure code to be different
-                // to external "non-pure" references, but to disregard the
-                // pointed-to address when comparing two "pure" references.
-                // That is, the following should hold in pure code:
-                // ```
-                // let a = 3;
-                // let b = 3;
-                // assert!(&a === &b);
-                // ```
-                // Even though in impure code, `a` and `b` might have a
-                // different address.
-                // Therefore we use the address `null` in the snapshot of all
-                // pure references.
-                e_rvalue_ty.apply(self.vcx, &[snap, self.vcx.mk_null()])
+                if kind.mutability().is_mut() {
+                    // We want any references created in pure code to be different
+                    // to external "non-pure" references, but to disregard the
+                    // pointed-to address when comparing two "pure" references.
+                    // That is, the following should hold in pure code:
+                    // ```
+                    // let mut a = 3;
+                    // let mut b = 3;
+                    // assert!(&mut a === &mut b);
+                    // ```
+                    // Even though in impure code, `a` and `b` might have a
+                    // different address.
+                    // Therefore we use the address `null` in the snapshot of all
+                    // pure references.
+                    e_rvalue_ty.apply(self.vcx, &[snap, self.vcx.mk_null()])
+                } else {
+                    e_rvalue_ty.apply(self.vcx, &[snap])
+                }
             }
             // ThreadLocalRef
             // AddressOf

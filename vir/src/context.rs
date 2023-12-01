@@ -254,7 +254,7 @@ impl<'tcx> VirCtxt<'tcx> {
         &ExprGenData { kind : &ExprKindGenData::Const(&ConstData::Null) }
     }
     pub const fn mk_result<'vir, Curr, Next>(&'vir self) -> ExprGen<'vir, Curr, Next> {
-        &ExprGenData { kind : &ExprKindGenData::Const(&ConstData::Result) }
+        &ExprGenData { kind : &ExprKindGenData::Result }
     }
 
     pub fn mk_field<'vir>(

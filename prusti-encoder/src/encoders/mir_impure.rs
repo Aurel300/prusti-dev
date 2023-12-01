@@ -433,7 +433,7 @@ impl<'tcx, 'vir, 'enc> EncVisitor<'tcx, 'vir, 'enc> {
     }
 
     fn encode_place_element(&mut self, place_ty: mir::tcx::PlaceTy<'tcx>, elem: mir::PlaceElem<'tcx>, expr: vir::Expr<'vir>) -> vir::Expr<'vir> {
-         match elem {
+        match elem {
             mir::ProjectionElem::Field(field_idx, _) => {
                 let e_ty = self.deps.require_ref::<PredicateEnc>(place_ty.ty).unwrap();
                 let field_access = e_ty.expect_variant_opt(place_ty.variant_index).ref_to_field_refs;

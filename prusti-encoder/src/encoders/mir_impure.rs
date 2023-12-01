@@ -375,7 +375,15 @@ impl<'tcx, 'vir, 'enc> EncVisitor<'tcx, 'vir, 'enc> {
         let ty = operand.ty(self.local_decls, self.vcx.tcx);
         match operand {
             &mir::Operand::Move(source) => {
-                let (tmp_exp, _) = self.encode_place_snap(Place::from(source), ty, None);
+                let ty_out = self.deps.require_ref::<PredicateEnc>(ty).unwrap();
+                let place_exp = self.encode_place(Place::from(source));
+                let snap_val = ty_out.ref_to_snap.apply(self.vcx, [place_exp]);
+
+                let tmp_exp = self.new_tmp(ty_out.snapshot).1;
+                self.stmt(self.vcx.mk_pure_assign_stmt(tmp_exp, snap_val));
+                self.stmt(self.vcx.mk_exhale_stmt(self.vcx.mk_predicate_app_expr(
+                    ty_out.ref_to_pred.apply(self.vcx, [place_exp], None)
+                )));
                 tmp_exp
             }
             &mir::Operand::Copy(source) => {
@@ -408,24 +416,6 @@ impl<'tcx, 'vir, 'enc> EncVisitor<'tcx, 'vir, 'enc> {
         let tmp_exp = self.new_tmp(&vir::TypeData::Ref).1;
         self.stmt(self.vcx.alloc(ty_out.method_assign.apply(self.vcx, [tmp_exp, snap_val])));
         tmp_exp
-    }
-
-    fn encode_place_snap(
-        &mut self,
-        place: Place<'tcx>,
-        ty: ty::Ty<'tcx>,
-        perm: Option<vir::Expr<'vir>>,
-    ) -> (vir::Expr<'vir>, vir::Expr<'vir>) {
-        let ty_out = self.deps.require_ref::<PredicateEnc>(ty).unwrap();
-        let place_exp = self.encode_place(Place::from(place));
-        let snap_val = ty_out.ref_to_snap.apply(self.vcx, [place_exp]);
-
-        let tmp_exp = self.new_tmp(ty_out.snapshot).1;
-        self.stmt(self.vcx.mk_pure_assign_stmt(tmp_exp, snap_val));
-        self.stmt(self.vcx.mk_exhale_stmt(self.vcx.mk_predicate_app_expr(
-            ty_out.ref_to_pred.apply(self.vcx, [place_exp], perm)
-        )));
-        (tmp_exp, place_exp)
     }
 
     fn encode_place(

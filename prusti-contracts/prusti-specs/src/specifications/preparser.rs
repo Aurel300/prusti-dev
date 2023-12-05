@@ -298,7 +298,7 @@ impl PrustiTokenStream {
                     .ok_or_else(|| error(span, "expected parenthesized expression after outer"))?;
                 todo!()
             }
-            Some(PrustiToken::ModeMarker(span, kind )) => {
+            Some(PrustiToken::ModeMarker(span, kind)) => {
                self.parse_marker(span, kind)?
             }
             Some(PrustiToken::Quantifier(span, kind)) => {
@@ -396,7 +396,7 @@ impl PrustiTokenStream {
                 Some(PrustiToken::Quantifier(span, _)) => {
                     return err(*span, "unexpected quantifier")
                 }
-                Some(PrustiToken::ModeMarker(span, kind )) => {
+                Some(PrustiToken::ModeMarker(span, kind)) => {
                     let span = span.clone();
                     let kind = kind.clone();
 
@@ -521,12 +521,13 @@ impl PrustiTokenStream {
         let start_fn = kind.start_fn();
         let end_fn = kind.end_fn();
 
-        Ok(quote_spanned! { span => {
-            #start_fn ;
-            let r = { #parsed };
-            #end_fn ;
-            r
-        }
+        Ok(quote_spanned! { span =>
+            {
+                #start_fn ;
+                let r = { #parsed };
+                #end_fn ;
+                r
+            }
         })
     }
 

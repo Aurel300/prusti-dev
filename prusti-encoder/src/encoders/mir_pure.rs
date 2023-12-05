@@ -30,7 +30,6 @@ pub enum ModeMarker {
     Rel0End,
 }
 
-
 // TODO: does this need to be `&'vir [..]`?
 type ExprInput<'vir> = (DefId, &'vir [vir::Expr<'vir>]);
 type ExprRet<'vir> = vir::ExprGen<'vir, ExprInput<'vir>, vir::ExprKind<'vir>>;
@@ -644,17 +643,17 @@ impl<'tcx, 'vir: 'enc, 'enc> Enc<'tcx, 'vir, 'enc>
 
         let mut place_ty =  mir::tcx::PlaceTy::from_ty(self.body.local_decls[place.local].ty);
 
-        let is_in_a_mode = self.old_mode || self.rel0_mode || self.rel1_mode;
-
-        let local_kind = self.body.local_kind(place.local);
-
-        let should_wrap = (local_kind == mir::LocalKind::Arg || local_kind == mir::LocalKind::ReturnPointer) && is_in_a_mode;
+        let should_wrap = {
+            let is_in_a_mode = self.old_mode || self.rel0_mode || self.rel1_mode;
+            let local_kind = self.body.local_kind(place.local);
+            (local_kind == mir::LocalKind::Arg || local_kind == mir::LocalKind::ReturnPointer) && is_in_a_mode
+        };
 
         let mut expr = if should_wrap {
             let local_as_uzize = place.local.as_usize();
 
             self.vcx.mk_lazy_expr(
-                vir::vir_format!(self.vcx, "wraped in _{}",local_as_uzize),
+                vir::vir_format!(self.vcx, "wraped in _{}", local_as_uzize),
                 Box::new(move |_vcx, lctx: ExprInput<'vir>| lctx.1[local_as_uzize - 1].kind),
             )
         }
@@ -663,7 +662,6 @@ impl<'tcx, 'vir: 'enc, 'enc> Enc<'tcx, 'vir, 'enc>
         };
 
         let mut place_ref = None;
-
         // TODO: factor this out (duplication with impure encoder)?
         for elem in place.projection {
             (expr, place_ref) = self.encode_place_element(place_ty, elem, expr, place_ref);
@@ -683,7 +681,6 @@ impl<'tcx, 'vir: 'enc, 'enc> Enc<'tcx, 'vir, 'enc>
                 expr = self.vcx.mk_rel_expr(expr, 1)
             }
         }
-
 
         (expr, place_ref)
     }

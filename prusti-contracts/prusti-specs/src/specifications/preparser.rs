@@ -506,12 +506,13 @@ impl PrustiTokenStream {
         let start_fn = kind.start_fn();
         let end_fn = kind.end_fn();
 
-        Ok(quote_spanned! { span => {
-            #start_fn ;
-            let r = { #parsed };
-            #end_fn ;
-            r
-        }
+        Ok(quote_spanned! { span =>
+            {
+                #start_fn ;
+                let r = { #parsed };
+                #end_fn ;
+                r
+            }
         })
     }
 

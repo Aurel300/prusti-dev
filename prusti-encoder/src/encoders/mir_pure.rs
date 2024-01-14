@@ -119,7 +119,14 @@ impl TaskEncoder for MirPureEnc {
                     assert_eq!(lctx.1.len(), body.arg_count);
 
                     use vir::Reify;
-                    expr_inner.kind.reify(vcx, lctx)
+                    let r = expr_inner.kind.reify(vcx, lctx);
+
+                    if false {
+                        let r = vcx.alloc(vir::ExprGenData { kind: r });
+                        vir::opt(r, &mut Default::default()).kind
+                    } else {
+                        r
+                    }
                 }),
             )
         });

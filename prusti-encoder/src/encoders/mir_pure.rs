@@ -121,7 +121,7 @@ impl TaskEncoder for MirPureEnc {
                     use vir::Reify;
                     let r = expr_inner.kind.reify(vcx, lctx);
 
-                    if true {
+                    if false {
                         vir::opt(r)
                     } else {
                         r

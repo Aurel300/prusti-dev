@@ -22,6 +22,82 @@ pub use genrefs::*;
 pub use refs::*;
 pub use reify::*;
 
+fn default_fold_expr<'vir, Cur, Next, T: ExprFolder<'vir, Cur, Next>>(
+    this: &mut T,
+    e: &'vir crate::ExprGenData<'vir, Cur, Next>,
+) -> &'vir crate::ExprGenData<'vir, Cur, Next> {
+    match e.kind {
+        ExprKindGenData::Local(local) => this.fold_local(local),
+        ExprKindGenData::Field(recv, field) => this.fold_field(recv, field),
+        ExprKindGenData::Old(expr) => this.fold_old(expr),
+        ExprKindGenData::Const(value) => this.fold_const(value),
+        ExprKindGenData::Result => this.fold_result(),
+        ExprKindGenData::AccField(AccFieldGenData { recv, field, perm }) => {
+            this.fold_acc_field(recv, field, *perm)
+        }
+        ExprKindGenData::Unfolding(_) => todo!(),
+        ExprKindGenData::UnOp(_) => todo!(),
+        ExprKindGenData::BinOp(_) => todo!(),
+        ExprKindGenData::Ternary(_) => todo!(),
+        ExprKindGenData::Forall(_) => todo!(),
+        ExprKindGenData::Let(_) => todo!(),
+        ExprKindGenData::FuncApp(_) => todo!(),
+        ExprKindGenData::PredicateApp(_) => todo!(),
+        ExprKindGenData::Lazy(_, _) => todo!(),
+        ExprKindGenData::Todo(_) => todo!(),
+    }
+}
+
+pub trait ExprFolder<'vir, Cur, Next>: Sized {
+    fn fold(&mut self, e: crate::ExprGen<'vir, Cur, Next>) -> crate::ExprGen<'vir, Cur, Next> {
+        default_fold_expr(self, e)
+    }
+
+    fn fold_local(&mut self, local: crate::Local<'vir>) -> crate::ExprGen<'vir, Cur, Next> {
+        crate::with_vcx(move |vcx| vcx.mk_local_ex_local(local))
+    }
+
+    fn fold_field(
+        &mut self,
+        recv: crate::ExprGen<'vir, Cur, Next>,
+        field: crate::Field<'vir>,
+    ) -> crate::ExprGen<'vir, Cur, Next> {
+        crate::with_vcx(move |vcx| vcx.mk_field_expr(recv, field))
+    }
+
+    fn fold_old(
+        &mut self,
+        expr: crate::ExprGen<'vir, Cur, Next>,
+    ) -> crate::ExprGen<'vir, Cur, Next> {
+        crate::with_vcx(move |vcx| vcx.mk_old_expr(expr))
+    }
+
+    fn fold_const(&mut self, value: crate::Const<'vir>) -> crate::ExprGen<'vir, Cur, Next> {
+        crate::with_vcx(move |vcx| {
+            vcx.alloc(ExprGenData {
+                kind: vcx.alloc(ExprKindGenData::Const(value)),
+            })
+        })
+    }
+
+    fn fold_result(&mut self) -> crate::ExprGen<'vir, Cur, Next> {
+        crate::with_vcx(move |vcx| {
+            vcx.alloc(ExprGenData {
+                kind: vcx.alloc(ExprKindGenData::Result),
+            })
+        })
+    }
+
+    fn fold_acc_field(
+        &mut self,
+        recv: ExprGen<'vir, Cur, Next>,
+        field: Field<'vir>,
+        perm: Option<ExprGen<'vir, Cur, Next>>,
+    ) -> crate::ExprGen<'vir, Cur, Next> {
+        crate::with_vcx(move |vcx| vcx.mk_acc_field_expr(recv, field, perm))
+    }
+}
+
 pub fn opt<'vir, Cur, Next>(
     expr: &'vir crate::ExprKindGenData<'vir, Cur, Next>,
 ) -> &'vir crate::ExprKindGenData<'vir, Cur, Next> {
@@ -32,7 +108,7 @@ pub fn opt<'vir, Cur, Next>(
 
 fn opt_slice<'vir, Cur, Next>(
     slice: &[&'vir crate::ExprGenData<'vir, Cur, Next>],
-    rename: &mut HashMap<String, String>,
+    rename: &mut HashMap<String, &'vir str>,
 ) -> Vec<&'vir crate::ExprGenData<'vir, Cur, Next>> {
     slice
         .iter()
@@ -47,16 +123,12 @@ fn opt_slice<'vir, Cur, Next>(
 /// This should be replaced with a proper solution
 fn opt_intenal<'vir, Cur, Next>(
     expr: &'vir crate::ExprGenData<'vir, Cur, Next>,
-    rename: &mut HashMap<String, String>,
+    rename: &mut HashMap<String, &'vir str>,
 ) -> &'vir crate::ExprGenData<'vir, Cur, Next> {
     match expr.kind {
         crate::ExprKindGenData::Local(d) => {
-            let nam = rename
-                .get(d.name)
-                .map(|e| e.as_str())
-                .unwrap_or(d.name)
-                .to_owned();
-            crate::with_vcx(move |vcx| vcx.mk_local_ex(vcx.alloc_str(&nam), d.ty))
+            let nam = rename.get(d.name).map(|e| *e).unwrap_or(d.name);
+            crate::with_vcx(move |vcx| vcx.mk_local_ex(&nam, d.ty))
         }
 
         crate::ExprKindGenData::Let(crate::LetGenData { name, val, expr }) => {
@@ -68,7 +140,7 @@ fn opt_intenal<'vir, Cur, Next>(
                     let t = rename
                         .get(loc.name)
                         .map(|e| e.to_owned())
-                        .unwrap_or(loc.name.to_string());
+                        .unwrap_or(loc.name);
                     assert!(rename.insert(name.to_string(), t).is_none());
                     return opt_intenal(*expr, rename);
                 }

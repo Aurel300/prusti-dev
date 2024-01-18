@@ -35,22 +35,59 @@ fn default_fold_expr<'vir, Cur, Next, T: ExprFolder<'vir, Cur, Next>>(
         ExprKindGenData::AccField(AccFieldGenData { recv, field, perm }) => {
             this.fold_acc_field(recv, field, *perm)
         }
-        ExprKindGenData::Unfolding(_) => todo!(),
-        ExprKindGenData::UnOp(_) => todo!(),
-        ExprKindGenData::BinOp(_) => todo!(),
-        ExprKindGenData::Ternary(_) => todo!(),
-        ExprKindGenData::Forall(_) => todo!(),
-        ExprKindGenData::Let(_) => todo!(),
-        ExprKindGenData::FuncApp(_) => todo!(),
-        ExprKindGenData::PredicateApp(_) => todo!(),
-        ExprKindGenData::Lazy(_, _) => todo!(),
-        ExprKindGenData::Todo(_) => todo!(),
+        ExprKindGenData::Unfolding(UnfoldingGenData { target, expr }) => {
+            this.fold_unfolding(target, expr)
+        }
+        ExprKindGenData::UnOp(UnOpGenData { kind, expr }) => this.fold_unop(*kind, expr),
+        ExprKindGenData::BinOp(BinOpGenData { kind, lhs, rhs }) => this.fold_binop(*kind, lhs, rhs),
+        ExprKindGenData::Ternary(TernaryGenData { cond, then, else_ }) => {
+            this.fold_ternary(cond, then, else_)
+        }
+        ExprKindGenData::Forall(ForallGenData {
+            qvars,
+            triggers,
+            body,
+        }) => this.fold_forall(qvars, triggers, body),
+        ExprKindGenData::Let(LetGenData { name, val, expr }) => this.fold_let(name, val, expr),
+        ExprKindGenData::FuncApp(FuncAppGenData {
+            target,
+            args,
+            result_ty,
+        }) => this.fold_func_app(target, args, *result_ty),
+        ExprKindGenData::PredicateApp(PredicateAppGenData { target, args, perm }) => {
+            this.fold_predicate_app(target, args, *perm)
+        }
+        ExprKindGenData::Lazy(name, func) => this.fold_lazy(name, func),
+        ExprKindGenData::Todo(msg) => this.fold_todo(msg),
     }
 }
 
 pub trait ExprFolder<'vir, Cur, Next>: Sized {
     fn fold(&mut self, e: crate::ExprGen<'vir, Cur, Next>) -> crate::ExprGen<'vir, Cur, Next> {
         default_fold_expr(self, e)
+    }
+
+    fn fold_option(
+        &mut self,
+        e: Option<ExprGen<'vir, Cur, Next>>,
+    ) -> Option<ExprGen<'vir, Cur, Next>> {
+        e.map(|i| self.fold(i))
+    }
+
+    fn fold_slice(
+        &mut self,
+        s: &'vir [ExprGen<'vir, Cur, Next>],
+    ) -> &'vir [ExprGen<'vir, Cur, Next>] {
+        let vec = s.iter().map(|e| self.fold(e)).collect::<Vec<_>>();
+
+        crate::with_vcx(move |vcx| vcx.alloc_slice(&vec))
+    }
+
+    fn fold_slice_slice(
+        &mut self,
+        s: &'vir [&'vir [ExprGen<'vir, Cur, Next>]],
+    ) -> &'vir [&'vir [ExprGen<'vir, Cur, Next>]] {
+        todo!()
     }
 
     fn fold_local(&mut self, local: crate::Local<'vir>) -> crate::ExprGen<'vir, Cur, Next> {
@@ -62,6 +99,7 @@ pub trait ExprFolder<'vir, Cur, Next>: Sized {
         recv: crate::ExprGen<'vir, Cur, Next>,
         field: crate::Field<'vir>,
     ) -> crate::ExprGen<'vir, Cur, Next> {
+        let recv = self.fold(recv);
         crate::with_vcx(move |vcx| vcx.mk_field_expr(recv, field))
     }
 
@@ -69,6 +107,8 @@ pub trait ExprFolder<'vir, Cur, Next>: Sized {
         &mut self,
         expr: crate::ExprGen<'vir, Cur, Next>,
     ) -> crate::ExprGen<'vir, Cur, Next> {
+        let expr = self.fold(expr);
+
         crate::with_vcx(move |vcx| vcx.mk_old_expr(expr))
     }
 
@@ -94,7 +134,132 @@ pub trait ExprFolder<'vir, Cur, Next>: Sized {
         field: Field<'vir>,
         perm: Option<ExprGen<'vir, Cur, Next>>,
     ) -> crate::ExprGen<'vir, Cur, Next> {
+        let recv = self.fold(recv);
+        let perm = self.fold_option(perm);
+
         crate::with_vcx(move |vcx| vcx.mk_acc_field_expr(recv, field, perm))
+    }
+
+    fn fold_predicate_app(
+        &mut self,
+        target: &'vir str, // TODO: identifiers
+        args: &'vir [ExprGen<'vir, Cur, Next>],
+        perm: Option<ExprGen<'vir, Cur, Next>>,
+    ) -> crate::ExprGen<'vir, Cur, Next> {
+        let args = self.fold_slice(args);
+        let perm = self.fold_option(perm);
+
+        crate::with_vcx(move |vcx| {
+            let pred_app = vcx.alloc(PredicateAppGenData { target, args, perm });
+
+            vcx.mk_predicate_app_expr(pred_app)
+        })
+    }
+
+    fn fold_unfolding(
+        &mut self,
+        PredicateAppGenData { target, args, perm }: PredicateAppGen<'vir, Cur, Next>,
+        expr: ExprGen<'vir, Cur, Next>,
+    ) -> crate::ExprGen<'vir, Cur, Next> {
+        let expr = self.fold(expr);
+
+        let args = self.fold_slice(args);
+        let perm = self.fold_option(*perm);
+
+        crate::with_vcx(move |vcx| {
+            let target = vcx.alloc(PredicateAppGenData { target, args, perm });
+            vcx.mk_unfolding_expr(target, expr)
+        })
+    }
+
+    fn fold_unop(
+        &mut self,
+        kind: UnOpKind,
+        expr: ExprGen<'vir, Cur, Next>,
+    ) -> crate::ExprGen<'vir, Cur, Next> {
+        let expr = self.fold(expr);
+        crate::with_vcx(move |vcx| vcx.mk_unary_op_expr(kind, expr))
+    }
+
+    fn fold_binop(
+        &mut self,
+        kind: BinOpKind,
+        lhs: ExprGen<'vir, Cur, Next>,
+        rhs: ExprGen<'vir, Cur, Next>,
+    ) -> crate::ExprGen<'vir, Cur, Next> {
+        let lhs = self.fold(lhs);
+        let rhs = self.fold(rhs);
+
+        crate::with_vcx(move |vcx| vcx.mk_bin_op_expr(kind, lhs, rhs))
+    }
+
+    fn fold_ternary(
+        &mut self,
+        cond: ExprGen<'vir, Cur, Next>,
+        then: ExprGen<'vir, Cur, Next>,
+        else_: ExprGen<'vir, Cur, Next>,
+    ) -> crate::ExprGen<'vir, Cur, Next> {
+        let cond = self.fold(cond);
+        let then = self.fold(then);
+        let else_ = self.fold(else_);
+
+        crate::with_vcx(move |vcx| vcx.mk_ternary_expr(cond, then, else_))
+    }
+
+    fn fold_forall(
+        &mut self,
+        qvars: &'vir [LocalDecl<'vir>],
+        triggers: &'vir [&'vir [ExprGen<'vir, Cur, Next>]],
+        body: ExprGen<'vir, Cur, Next>,
+    ) -> crate::ExprGen<'vir, Cur, Next> {
+        let triggers = self.fold_slice_slice(triggers);
+        let body = self.fold(body);
+
+        crate::with_vcx(move |vcx| vcx.mk_forall_expr(qvars, triggers, body))
+    }
+
+    fn fold_let(
+        &mut self,
+        name: &'vir str,
+        val: ExprGen<'vir, Cur, Next>,
+        expr: ExprGen<'vir, Cur, Next>,
+    ) -> crate::ExprGen<'vir, Cur, Next> {
+        let val = self.fold(val);
+        let expr = self.fold(expr);
+
+        crate::with_vcx(move |vcx| vcx.mk_let_expr(name, val, expr))
+    }
+
+    fn fold_func_app(
+        &mut self,
+        target: &'vir str,
+        src_args: &'vir [ExprGen<'vir, Cur, Next>],
+        result_ty: Option<Type<'vir>>,
+    ) -> crate::ExprGen<'vir, Cur, Next> {
+        let src_args = self.fold_slice(src_args);
+
+        crate::with_vcx(move |vcx| vcx.mk_func_app(target, src_args, result_ty))
+    }
+
+    fn fold_todo(&mut self, msg: &'vir str) -> crate::ExprGen<'vir, Cur, Next> {
+        crate::with_vcx(move |vcx| vcx.mk_todo_expr(msg))
+    }
+
+    fn fold_lazy(
+        &mut self,
+        name: &'vir str,
+        func: Box<dyn for<'a> Fn(&'vir VirCtxt<'a>, Cur) -> Next + 'vir>,
+    ) -> crate::ExprGen<'vir, Cur, Next> {
+        crate::with_vcx(move |vcx| {
+            vcx.mk_lazy_expr(
+                name,
+                Box::new(move |ctx, c| {
+                    let r = func(ctx, c);
+                    // TODO
+                    r
+                }),
+            )
+        })
     }
 }
 

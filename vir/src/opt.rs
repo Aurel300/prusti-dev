@@ -16,6 +16,14 @@ impl<'vir, Cur, Next> ExprFolder<'vir, Cur, Next> for OptFolder<'vir> {
         crate::with_vcx(move |vcx| vcx.mk_local_ex(&nam, local.ty))
     }
 
+    fn fold_old(
+        &mut self,
+        expr: crate::ExprGen<'vir, Cur, Next>,
+    ) -> crate::ExprGen<'vir, Cur, Next> {
+        // Do not go inside of old
+        crate::with_vcx(|vcx| vcx.mk_old_expr(expr))
+    }
+
     fn fold_let(
         &mut self,
         name: &'vir str,

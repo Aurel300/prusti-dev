@@ -149,6 +149,12 @@ impl PrustiTokenStream {
                     PrustiToken::Quantifier(ident.span(), Quantifier::Forall),
                 (TokenTree::Ident(ident), _, _, _) if ident == "exists" =>
                     PrustiToken::Quantifier(ident.span(), Quantifier::Exists),
+                (TokenTree::Ident(ident), _, _, _) if ident == "old" =>
+                PrustiToken::ModeMarker(ident.span(), MarkerKind::Old),
+                (TokenTree::Ident(ident), _, _, _) if ident == "rel0" =>
+                PrustiToken::ModeMarker(ident.span(), MarkerKind::Rel0),
+                (TokenTree::Ident(ident), _, _, _) if ident == "rel1" =>
+                    PrustiToken::ModeMarker(ident.span(), MarkerKind::Rel1),
                 (TokenTree::Punct(punct), _, _, _)
                     if punct.as_char() == ',' && punct.spacing() == Alone =>
                     PrustiToken::BinOp(punct.span(), PrustiBinaryOp::Rust(RustOp::Comma)),
@@ -277,6 +283,9 @@ impl PrustiTokenStream {
                     .ok_or_else(|| error(span, "expected parenthesized expression after outer"))?;
                 todo!()
             }
+            Some(PrustiToken::ModeMarker(span, kind)) => {
+               self.parse_marker(span, kind)?
+            }
             Some(PrustiToken::Quantifier(span, kind)) => {
                 let mut stream = self.pop_group(Delimiter::Parenthesis).ok_or_else(|| {
                     error(span, "expected parenthesized expression after quantifier")
@@ -372,6 +381,15 @@ impl PrustiTokenStream {
                 Some(PrustiToken::Quantifier(span, _)) => {
                     return err(*span, "unexpected quantifier")
                 }
+                Some(PrustiToken::ModeMarker(span, kind)) => {
+                    let span = span.clone();
+                    let kind = kind.clone();
+
+                    self.tokens.pop_front();
+                    lhs.extend(self.parse_marker(span, kind)?);
+
+                    continue;
+                 }
 
                 None => break,
             };
@@ -477,6 +495,25 @@ impl PrustiTokenStream {
             .map(|stream| stream.and_then(|s| s.parse()))
             .collect::<syn::Result<Vec<NestedSpec<TokenStream>>>>()?;
         Ok(parsed)
+    }
+
+    fn parse_marker(&mut self, span: Span, kind: MarkerKind) -> syn::Result<TokenStream> {
+        let args = self.pop_group(Delimiter::Parenthesis).ok_or_else(|| {
+            error(span, "expected parenthesized expression after mode marker")
+        })?;
+
+        let parsed = args.parse()?;
+        let start_fn = kind.start_fn();
+        let end_fn = kind.end_fn();
+
+        Ok(quote_spanned! { span =>
+            {
+                #start_fn ;
+                let r = { #parsed };
+                #end_fn ;
+                r
+            }
+        })
     }
 
     fn split(self, split_on: PrustiBinaryOp, allow_trailing: bool) -> Vec<Self> {
@@ -651,6 +688,7 @@ enum PrustiToken {
     Quantifier(Span, Quantifier),
     SpecEnt(Span, bool),
     CallDesc(Span, bool),
+    ModeMarker(Span, MarkerKind)
 }
 
 fn translate_spec_ent(
@@ -804,7 +842,8 @@ impl PrustiToken {
             | Self::Outer(span)
             | Self::Quantifier(span, _)
             | Self::SpecEnt(span, _)
-            | Self::CallDesc(span, _) => *span,
+            | Self::CallDesc(span, _)
+            | Self::ModeMarker(span, _)=> *span,
             Self::Token(tree) => tree.span(),
         }
     }
@@ -908,6 +947,31 @@ enum PrustiBinaryOp {
     And,
     SnapEq,
     SnapNe,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MarkerKind {
+   Old,
+   Rel0,
+   Rel1,
+}
+
+impl MarkerKind {
+    fn start_fn(&self) -> TokenStream {
+        match self {
+            MarkerKind::Old =>  quote!(::prusti_contracts::old_start()),
+            MarkerKind::Rel0 => quote!(::prusti_contracts::rel0_start()),
+            MarkerKind::Rel1 => quote!(::prusti_contracts::rel1_start()),
+        }
+    }
+
+    fn end_fn(&self) -> TokenStream {
+        match self {
+            MarkerKind::Old =>  quote!(::prusti_contracts::old_end()),
+            MarkerKind::Rel0 => quote!(::prusti_contracts::rel0_end()),
+            MarkerKind::Rel1 => quote!(::prusti_contracts::rel1_end()),
+        }
+    }
 }
 
 impl PrustiBinaryOp {

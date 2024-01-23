@@ -339,6 +339,25 @@ pub fn old<T>(arg: T) -> T {
     arg
 }
 
+#[prusti::builtin="old_start"]
+pub fn old_start(){}
+#[prusti::builtin="old_end"]
+pub fn old_end(){}
+
+
+#[prusti::builtin="rel0_start"]
+pub fn rel0_start(){}
+#[prusti::builtin="rel0_end"]
+pub fn rel0_end(){}
+
+
+#[prusti::builtin="rel1_start"]
+pub fn rel1_start(){}
+#[prusti::builtin="rel1_end"]
+pub fn rel1_end(){}
+
+
+
 /// Universal quantifier.
 ///
 /// This is a Prusti-internal representation of the `forall` syntax.

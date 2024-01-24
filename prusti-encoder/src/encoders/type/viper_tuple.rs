@@ -15,6 +15,9 @@ pub struct ViperTupleEncOutput<'vir> {
     tuple: Option<DomainDataStruct<'vir>>,
 }
 
+impl<'vir> task_encoder::Optimizable for ViperTupleEncOutput<'vir>  {}
+
+
 impl<'vir> ViperTupleEncOutput<'vir> {
     pub fn mk_cons<'tcx, Curr, Next>(
         &self,

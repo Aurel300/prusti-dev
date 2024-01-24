@@ -26,6 +26,9 @@ pub struct GenericEncOutput<'vir> {
     pub domain_type: vir::Domain<'vir>,
 }
 
+impl<'vir> task_encoder::Optimizable for GenericEncOutput<'vir>  {}
+
+
 impl TaskEncoder for GenericEnc {
     task_encoder::encoder_cache!(GenericEnc);
 

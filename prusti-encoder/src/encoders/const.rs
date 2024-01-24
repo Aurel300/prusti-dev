@@ -11,6 +11,19 @@ use vir::{CallableIdent, Arity};
 
 pub struct ConstEnc;
 
+
+#[derive(Clone)]
+pub struct ConstEncOutput<'vir>(pub vir::Expr<'vir>);
+
+
+impl<'vir> task_encoder::Optimizable for ConstEncOutput<'vir>  {}
+
+impl<'vir> From<vir::Expr<'vir>> for ConstEncOutput<'vir> {
+    fn from(value: vir::Expr<'vir>) -> Self {
+        Self(value)
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct ConstEncOutputRef<'vir> {
     pub base_name: String,
@@ -28,7 +41,7 @@ impl TaskEncoder for ConstEnc {
         usize, // current encoding depth
         DefId, // DefId of the current function
     );
-    type OutputFullLocal<'vir> = vir::Expr<'vir>;
+    type OutputFullLocal<'vir> = ConstEncOutput<'vir>;
     type EncodingError = ();
 
     fn task_to_key<'vir>(task: &Self::TaskDescription<'vir>) -> Self::TaskKey<'vir> {
@@ -94,6 +107,6 @@ impl TaskEncoder for ConstEnc {
             }),
             mir::ConstantKind::Ty(_) => todo!(),
         };
-        Ok((res, ()))
+        Ok((res.into(), ()))
     }
 }

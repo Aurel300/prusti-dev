@@ -4,8 +4,7 @@ use prusti_rustc_interface::{
 };
 use prusti_interface::specs::typed::{DefSpecificationMap, ProcedureSpecification};
 use task_encoder::{
-    TaskEncoder,
-    TaskEncoderDependencies,
+    Optimizable, TaskEncoder, TaskEncoderDependencies
 };
 
 pub struct SpecEnc;
@@ -18,6 +17,8 @@ pub struct SpecEncOutput<'vir> {
     pub pres: &'vir [DefId],
     pub posts: &'vir [DefId],
 }
+
+impl<'vir>  Optimizable for SpecEncOutput<'vir>  {}
 
 use std::cell::RefCell;
 thread_local! {

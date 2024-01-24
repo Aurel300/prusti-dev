@@ -28,6 +28,9 @@ pub struct MirFunctionEncOutput<'vir> {
     pub function: vir::Function<'vir>,
 }
 
+impl<'vir> task_encoder::Optimizable for MirFunctionEncOutput<'vir>  {}
+
+
 impl TaskEncoder for MirFunctionEnc {
     task_encoder::encoder_cache!(MirFunctionEnc);
 

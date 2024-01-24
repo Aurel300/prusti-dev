@@ -12,7 +12,7 @@ use task_encoder::{
     TaskEncoder,
     TaskEncoderDependencies,
 };
-use vir::{MethodIdent, UnknownArity, CallableIdent};
+use vir::{with_vcx, CallableIdent, MethodIdent, Optimizable, UnknownArity};
 
 pub struct MirImpureEnc;
 
@@ -31,6 +31,15 @@ impl<'vir> task_encoder::OutputRefAny for MirImpureEncOutputRef<'vir> {}
 pub struct MirImpureEncOutput<'vir> {
     pub method: vir::Method<'vir>,
 }
+
+impl<'vir> task_encoder::Optimizable for MirImpureEncOutput<'vir>  {
+    fn optimize(self) -> Self {
+        let method = self.method.optimize();
+        let method = with_vcx(|vcx| vcx.alloc(method));
+        MirImpureEncOutput { method }
+    }
+}
+
 
 use crate::encoders::{PredicateEnc, ConstEnc, MirBuiltinEnc, MirFunctionEnc, MirLocalDefEnc, MirSpecEnc};
 
@@ -391,7 +400,7 @@ impl<'tcx, 'vir, 'enc> EncVisitor<'tcx, 'vir, 'enc> {
                 ty_out.ref_to_snap.apply(self.vcx, [self.encode_place(Place::from(source))])
             }
             mir::Operand::Constant(box constant) =>
-                self.deps.require_local::<ConstEnc>((constant.literal, 0, self.def_id)).unwrap()
+                self.deps.require_local::<ConstEnc>((constant.literal, 0, self.def_id)).unwrap().0
         }
     }
 
@@ -409,7 +418,7 @@ impl<'tcx, 'vir, 'enc> EncVisitor<'tcx, 'vir, 'enc> {
             }
             mir::Operand::Constant(box constant) => {
                 let ty_out = self.deps.require_ref::<PredicateEnc>(ty).unwrap();
-                let constant = self.deps.require_local::<ConstEnc>((constant.literal, 0, self.def_id)).unwrap();
+                let constant = self.deps.require_local::<ConstEnc>((constant.literal, 0, self.def_id)).unwrap().0;
                 (constant, ty_out)
             }
         };

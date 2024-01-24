@@ -31,6 +31,10 @@ pub struct MirPureEncOutput<'vir> {
     pub expr: ExprRet<'vir>,
 }
 
+impl<'vir> task_encoder::Optimizable for MirPureEncOutput<'vir>  {}
+
+
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum PureKind {
     Closure,
@@ -119,13 +123,7 @@ impl TaskEncoder for MirPureEnc {
                     assert_eq!(lctx.1.len(), body.arg_count);
 
                     use vir::Reify;
-                    let r = expr_inner.kind.reify(vcx, lctx);
-
-                    if true {
-                        vir::opt(r)
-                    } else {
-                        r
-                    }
+                    expr_inner.kind.reify(vcx, lctx)
                 }),
             )
         });
@@ -630,7 +628,7 @@ impl<'tcx, 'vir: 'enc, 'enc> Enc<'tcx, 'vir, 'enc>
             mir::Operand::Copy(place)
             | mir::Operand::Move(place) => self.encode_place(curr_ver, place),
             mir::Operand::Constant(box constant) =>
-                self.deps.require_local::<ConstEnc>((constant.literal, self.encoding_depth, self.def_id)).unwrap().lift(),
+                self.deps.require_local::<ConstEnc>((constant.literal, self.encoding_depth, self.def_id)).unwrap().0.lift(),
         }
     }
 

@@ -88,6 +88,11 @@ impl<A, B: GenRow> GenRow for fn(A) -> B {
 pub struct ExprGenData<'vir, Curr: 'vir, Next: 'vir>{
     pub kind: ExprKindGen<'vir, Curr, Next>
 }
+impl<'vir, Curr, Next>crate::Optimizable for ExprGenData<'vir, Curr, Next> {
+    fn optimize(&self) -> Self {
+        ExprGenData { kind: crate::opt(self.kind) }
+    }
+}
 
 pub enum ExprKindGenData<'vir, Curr: 'vir, Next: 'vir> {
     Local(Local<'vir>),
@@ -223,6 +228,20 @@ pub struct MethodGenData<'vir, Curr, Next> {
     pub(crate) pres: &'vir [ExprGen<'vir, Curr, Next>],
     pub(crate) posts: &'vir [ExprGen<'vir, Curr, Next>],
     pub(crate) blocks: Option<&'vir [CfgBlockGen<'vir, Curr, Next>]>, // first one is the entrypoint
+}
+
+
+impl<'vir, Curr, Next> crate::Optimizable for MethodGenData<'vir, Curr, Next> {
+    fn optimize(&self) -> Self {
+        MethodGenData {
+            name: self. name,
+            args: self.args,
+            rets: self.rets,
+            blocks: self.blocks,
+            pres: self.pres.optimize(),
+            posts: self.posts.optimize(),
+        }
+    }
 }
 
 #[derive(Debug, Reify)]

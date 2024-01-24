@@ -33,6 +33,9 @@ pub struct MirBuiltinEncOutput<'vir> {
     pub function: vir::Function<'vir>,
 }
 
+impl<'vir> task_encoder::Optimizable for MirBuiltinEncOutput<'vir>  {}
+
+
 use crate::encoders::SnapshotEnc;
 
 impl TaskEncoder for MirBuiltinEnc {

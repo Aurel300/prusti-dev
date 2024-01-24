@@ -16,6 +16,9 @@ pub struct MirLocalDefEncOutput<'vir> {
 }
 pub type MirLocalDefEncError = ();
 
+
+impl<'vir> task_encoder::Optimizable for MirLocalDefEncOutput<'vir>  {}
+
 #[derive(Clone, Copy)]
 pub struct LocalDef<'vir> {
     pub local: vir::Local<'vir>,

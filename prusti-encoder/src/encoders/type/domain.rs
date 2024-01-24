@@ -77,9 +77,21 @@ pub struct DomainEncOutputRef<'vir> {
 }
 impl<'vir> task_encoder::OutputRefAny for DomainEncOutputRef<'vir> {}
 
+
+#[derive(Clone)]
+pub struct DomainEncOutput<'vir>(pub vir::Domain<'vir>);
+
+impl<'vir> task_encoder::Optimizable for DomainEncOutput<'vir>  {}
+
+impl<'vir> From<vir::Domain<'vir>> for DomainEncOutput<'vir> {
+    fn from(value: vir::Domain<'vir>) -> Self {
+        DomainEncOutput(value)
+    }
+}
+
 use crate::encoders::SnapshotEnc;
 
-pub fn all_outputs<'vir>() -> Vec<vir::Domain<'vir>> {
+pub fn all_outputs<'vir>() -> Vec<DomainEncOutput<'vir>> {
     DomainEnc::all_outputs()
 }
 
@@ -90,7 +102,7 @@ impl TaskEncoder for DomainEnc {
 
     type OutputRef<'vir> = DomainEncOutputRef<'vir>;
     type OutputFullDependency<'vir> = DomainEncSpecifics<'vir>;
-    type OutputFullLocal<'vir> = vir::Domain<'vir>;
+    type OutputFullLocal<'vir> = DomainEncOutput<'vir>;
     //type OutputFullDependency<'vir> = DomainEncOutputDep<'vir>;
 
     type EncodingError = ();
@@ -109,7 +121,7 @@ impl TaskEncoder for DomainEnc {
         Self::EncodingError,
         Option<Self::OutputFullDependency<'vir>>,
     )> {
-        vir::with_vcx(|vcx| match task_key.kind() {
+        (vir::with_vcx(|vcx| match task_key.kind() {
             TyKind::Bool | TyKind::Char | TyKind::Int(_) | TyKind::Uint(_) | TyKind::Float(_)  => {
                 let (base_name, prim_type) = match task_key.kind() {
                     TyKind::Bool => (String::from("Bool"), &vir::TypeData::Bool),
@@ -197,7 +209,7 @@ impl TaskEncoder for DomainEnc {
                 Ok((enc.finalize(), specifics))
             }
             kind => todo!("{kind:?}"),
-        })
+        }))
     }
 }
 
@@ -531,13 +543,13 @@ impl<'vir, 'tcx> DomainEncData<'vir, 'tcx> {
             domain: self.domain,
         }
     }
-    fn finalize(self) -> vir::Domain<'vir> {
+    fn finalize(self) -> DomainEncOutput<'vir> {
         self.vcx.mk_domain(
             self.domain.name(),
             self.domain.arity().args(),
             self.vcx.alloc_slice(&self.axioms),
             self.vcx.alloc_slice(&self.functions),
-        )
+        ).into()
     }
 }
 

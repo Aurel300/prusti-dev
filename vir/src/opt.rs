@@ -2,6 +2,26 @@ use std::collections::HashMap;
 
 use crate::{ExprFolder, ExprGen, ExprGenData};
 
+pub trait Optimizable: Sized {
+    fn optimize(&self) -> Self;
+}
+
+impl<'vir, T> Optimizable for &'vir [&T]
+where
+    T: Optimizable,
+{
+    fn optimize(&self) -> Self {
+        let v = self
+            .iter()
+            .map(|e| {
+                let e = e.optimize();
+                crate::with_vcx(|vcx| vcx.alloc(e))
+            })
+            .collect::<Vec<_>>();
+        crate::with_vcx(move |vcx| vcx.alloc_slice(&v))
+    }
+}
+
 struct OptFolder<'vir> {
     rename: HashMap<String, &'vir str>,
 }

@@ -6,6 +6,18 @@ use std::cell::RefCell;
 pub trait OutputRefAny {}
 impl OutputRefAny for () {}
 
+
+pub trait Optimizable: Sized {
+    fn optimize(self) -> Self {
+        self
+    }
+}
+
+impl<T> Optimizable for Vec<T> where T: Optimizable {
+    fn optimize(self) -> Self {
+        self.into_iter().map(|e|e.optimize()).collect()
+    }
+}
 pub enum TaskEncoderCacheState<'vir, E: TaskEncoder + 'vir + ?Sized> {
     // None, // indicated by absence in the cache
 
@@ -177,7 +189,7 @@ pub trait TaskEncoder {
     /// Fully encoded output for this task. When encoding items which can be
     /// dependencies (such as methods), this output should only be emitted in
     /// one Viper program.
-    type OutputFullLocal<'vir>: Clone;
+    type OutputFullLocal<'vir>: Clone + Optimizable;
 
     /// Fully encoded output for this task for dependents. When encoding items
     /// which can be dependencies (such as methods), this output should be

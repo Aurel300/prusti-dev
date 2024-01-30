@@ -6,6 +6,18 @@ pub trait Optimizable: Sized {
     fn optimize(&self) -> Self;
 }
 
+impl<'vir, T> Optimizable for Option<&'vir T>
+where
+    T: Optimizable,
+{
+    fn optimize(&self) -> Self {
+        self.map(|inner| {
+            let o = inner.optimize();
+            crate::with_vcx(move |vcx| vcx.alloc(o))
+        })
+    }
+}
+
 impl<'vir, T> Optimizable for &'vir [&T]
 where
     T: Optimizable,

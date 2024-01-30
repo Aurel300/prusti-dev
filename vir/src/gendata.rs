@@ -162,6 +162,19 @@ pub struct FunctionGenData<'vir, Curr, Next> {
     pub(crate) expr: Option<ExprGen<'vir, Curr, Next>>,
 }
 
+impl<'vir, Curr, Next> crate::Optimizable for FunctionGenData<'vir, Curr, Next> {
+    fn optimize(&self) -> Self {
+        FunctionGenData {
+            name: self. name,
+            args: self.args,
+            ret: self.ret,
+            expr: self.expr.optimize(),
+            pres: self.pres.optimize(),
+            posts: self.posts.optimize(),
+        }
+    }
+}
+
 // TODO: why is this called "pure"?
 #[derive(Reify)]
 pub struct PureAssignGenData<'vir, Curr, Next> {

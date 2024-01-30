@@ -1,7 +1,7 @@
 use prusti_rustc_interface::{middle::{mir, ty}, span::def_id::DefId};
 
 use task_encoder::{TaskEncoder, TaskEncoderDependencies};
-use vir::{Reify, FunctionIdent, UnknownArity, CallableIdent};
+use vir::{CallableIdent, FunctionIdent, Optimizable, Reify, UnknownArity};
 
 use crate::encoders::{
     MirPureEnc, MirPureEncTask, mir_pure::PureKind, MirSpecEnc, MirLocalDefEnc,

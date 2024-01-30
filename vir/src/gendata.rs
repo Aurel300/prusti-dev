@@ -88,11 +88,7 @@ impl<A, B: GenRow> GenRow for fn(A) -> B {
 pub struct ExprGenData<'vir, Curr: 'vir, Next: 'vir>{
     pub kind: ExprKindGen<'vir, Curr, Next>
 }
-impl<'vir, Curr, Next>crate::Optimizable for ExprGenData<'vir, Curr, Next> {
-    fn optimize(&self) -> Self {
-        ExprGenData { kind: crate::opt(self.kind) }
-    }
-}
+
 
 pub enum ExprKindGenData<'vir, Curr: 'vir, Next: 'vir> {
     Local(Local<'vir>),

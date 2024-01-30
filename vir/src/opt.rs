@@ -34,11 +34,53 @@ where
     }
 }
 
-struct OptFolder<'vir> {
+impl<'vir, Curr, Next> crate::Optimizable for ExprGenData<'vir, Curr, Next> {
+    fn optimize(&self) -> Self {
+        let r = crate::with_vcx(move |vcx| vcx.alloc(ExprGenData { kind: self.kind }));
+        let s1 = (VariableOptimizerFolder {
+            rename: Default::default(),
+        })
+        .fold(r);
+
+        let s2 = BoolOptimizerFolder.fold(s1);
+
+        ExprGenData { kind: s2.kind }
+    }
+}
+
+struct BoolOptimizerFolder;
+
+impl<'vir, Cur, Next> ExprFolder<'vir, Cur, Next> for BoolOptimizerFolder {
+    fn fold_binop(
+        &mut self,
+        kind: crate::BinOpKind,
+        lhs: ExprGen<'vir, Cur, Next>,
+        rhs: ExprGen<'vir, Cur, Next>,
+    ) -> crate::ExprGen<'vir, Cur, Next> {
+        let lhs = self.fold(lhs);
+        let rhs = self.fold(rhs);
+
+        if let crate::BinOpKind::CmpNe = kind {
+            if let crate::ExprKindGenData::Const(crate::ConstData::Bool(b)) = rhs.kind {
+                return if *b {
+                    // case lhs == true
+                    lhs
+                } else {
+                    // case lhs == false
+                    crate::with_vcx(move |vcx| vcx.mk_unary_op_expr(crate::UnOpKind::Not, lhs))
+                };
+            }
+        }
+
+        crate::with_vcx(move |vcx| vcx.mk_bin_op_expr(kind, lhs, rhs))
+    }
+}
+
+pub(crate) struct VariableOptimizerFolder<'vir> {
     rename: HashMap<String, &'vir str>,
 }
 
-impl<'vir, Cur, Next> ExprFolder<'vir, Cur, Next> for OptFolder<'vir> {
+impl<'vir, Cur, Next> ExprFolder<'vir, Cur, Next> for VariableOptimizerFolder<'vir> {
     fn fold_local(&mut self, local: crate::Local<'vir>) -> crate::ExprGen<'vir, Cur, Next> {
         let nam = self
             .rename
@@ -88,16 +130,4 @@ impl<'vir, Cur, Next> ExprFolder<'vir, Cur, Next> for OptFolder<'vir> {
         }
         crate::with_vcx(move |vcx| vcx.mk_let_expr(name, val, expr))
     }
-}
-
-pub fn opt<'vir, Cur, Next>(
-    expr: &'vir crate::ExprKindGenData<'vir, Cur, Next>,
-) -> &'vir crate::ExprKindGenData<'vir, Cur, Next> {
-    let r = crate::with_vcx(move |vcx| vcx.alloc(ExprGenData { kind: expr }));
-
-    (OptFolder {
-        rename: Default::default(),
-    })
-    .fold(r)
-    .kind
 }

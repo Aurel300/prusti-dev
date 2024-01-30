@@ -60,7 +60,7 @@ impl<'vir, Cur, Next> ExprFolder<'vir, Cur, Next> for BoolOptimizerFolder {
         let lhs = self.fold(lhs);
         let rhs = self.fold(rhs);
 
-        if let crate::BinOpKind::CmpNe = kind {
+        if let crate::BinOpKind::CmpEq = kind {
             if let crate::ExprKindGenData::Const(crate::ConstData::Bool(b)) = rhs.kind {
                 return if *b {
                     // case lhs == true

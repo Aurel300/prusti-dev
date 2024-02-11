@@ -96,18 +96,46 @@ impl<'vir, Cur, Next> ExprFolder<'vir, Cur, Next> for EveryThingInliner<'vir, Cu
         val: ExprGen<'vir, Cur, Next>,
         expr: ExprGen<'vir, Cur, Next>,
     ) -> crate::ExprGen<'vir, Cur, Next> {
+        let val = self.fold(val);
+
         self.rename.insert(name, val);
 
-        let val = self.fold(val);
         let expr = self.fold(expr);
 
-        crate::with_vcx(move |vcx| vcx.mk_let_expr(name, val, expr))
+        expr
     }
 
     fn fold_local(&mut self, local: crate::Local<'vir>) -> crate::ExprGen<'vir, Cur, Next> {
         let lcl = crate::with_vcx(move |vcx| vcx.mk_local_ex_local(local));
 
         self.rename.get(local.name).map(|e| *e).unwrap_or(lcl)
+    }
+
+    fn fold_func_app(
+        &mut self,
+        target: &'vir str,
+        src_args: &'vir [ExprGen<'vir, Cur, Next>],
+        result_ty: Option<crate::Type<'vir>>,
+    ) -> crate::ExprGen<'vir, Cur, Next> {
+        let src_args = self.fold_slice(src_args);
+
+        // Hacky way to do read of cons:
+        if src_args.len() == 1 {
+            if let crate::ExprKindGenData::FuncApp(innerfuncapp) = src_args[0].kind {
+                if let Some((start, "cons")) = innerfuncapp.target.rsplit_once("_") {
+                    if let Some((_, read_nr)) = target.rsplit_once("_") {
+                        let read_nr: usize = read_nr.parse().unwrap();
+                        if target.ends_with(&format!("read_{}", read_nr))
+                            && target.starts_with(start)
+                        {
+                            return innerfuncapp.args[read_nr];
+                        }
+                    }
+                }
+            }
+        }
+
+        crate::with_vcx(move |vcx| vcx.mk_func_app(target, src_args, result_ty))
     }
 }
 

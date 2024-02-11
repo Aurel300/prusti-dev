@@ -43,8 +43,9 @@ impl<'vir, Curr, Next> crate::Optimizable for ExprGenData<'vir, Curr, Next> {
         .fold(r);
 
         let s2 = BoolOptimizerFolder.fold(s1);
+        let s3 = EveryThingInliner::new().fold(s2);
 
-        ExprGenData { kind: s2.kind }
+        ExprGenData { kind: s3.kind }
     }
 }
 
@@ -73,6 +74,40 @@ impl<'vir, Cur, Next> ExprFolder<'vir, Cur, Next> for BoolOptimizerFolder {
         }
 
         crate::with_vcx(move |vcx| vcx.mk_bin_op_expr(kind, lhs, rhs))
+    }
+}
+
+pub(crate) struct EveryThingInliner<'vir, Cur, Next> {
+    rename: HashMap<&'vir str, crate::ExprGen<'vir, Cur, Next>>,
+}
+
+impl<'vir, Cur, Next> EveryThingInliner<'vir, Cur, Next> {
+    fn new() -> Self {
+        Self {
+            rename: HashMap::new(),
+        }
+    }
+}
+
+impl<'vir, Cur, Next> ExprFolder<'vir, Cur, Next> for EveryThingInliner<'vir, Cur, Next> {
+    fn fold_let(
+        &mut self,
+        name: &'vir str,
+        val: ExprGen<'vir, Cur, Next>,
+        expr: ExprGen<'vir, Cur, Next>,
+    ) -> crate::ExprGen<'vir, Cur, Next> {
+        self.rename.insert(name, val);
+
+        let val = self.fold(val);
+        let expr = self.fold(expr);
+
+        crate::with_vcx(move |vcx| vcx.mk_let_expr(name, val, expr))
+    }
+
+    fn fold_local(&mut self, local: crate::Local<'vir>) -> crate::ExprGen<'vir, Cur, Next> {
+        let lcl = crate::with_vcx(move |vcx| vcx.mk_local_ex_local(local));
+
+        self.rename.get(local.name).map(|e| *e).unwrap_or(lcl)
     }
 }
 

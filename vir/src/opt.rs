@@ -124,14 +124,14 @@ impl<'vir, Cur, Next> ExprFolder<'vir, Cur, Next> for EveryThingInliner<'vir, Cu
             if let crate::ExprKindGenData::FuncApp(innerfuncapp) = src_args[0].kind {
                 if let Some((start, "cons")) = innerfuncapp.target.rsplit_once("_") {
                     if let Some((_, read_nr)) = target.rsplit_once("_") {
-                        if let Ok(read_nr) = read_nr.parse::<usize>() {
-                            if target.ends_with(&format!("read_{}", read_nr))
-                                && target.starts_with(start)
-                            {
+                        if target.ends_with(&format!("read_{}", read_nr))
+                            && target.starts_with(start)
+                        {
+                            if let Ok(read_nr) = read_nr.parse::<usize>() {
                                 return innerfuncapp.args[read_nr];
+                            } else {
+                                println!("ERROR: Not a number: {} {}", innerfuncapp.target, target);
                             }
-                        } else {
-                            println!("ERROR: Not a number: {} {}", innerfuncapp.target, target);
                         }
                     }
                 }

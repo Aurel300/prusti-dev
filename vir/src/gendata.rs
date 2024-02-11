@@ -115,6 +115,7 @@ impl <'vir, Curr: 'vir, Next: 'vir> ExprGenData<'vir, Curr, Next> {
     }
 }
 
+
 pub enum ExprKindGenData<'vir, Curr: 'vir, Next: 'vir> {
     Local(Local<'vir>),
     Field(ExprGen<'vir, Curr, Next>, Field<'vir>), // TODO: FieldApp?
@@ -211,6 +212,19 @@ pub struct FunctionGenData<'vir, Curr, Next> {
     pub(crate) expr: Option<ExprGen<'vir, Curr, Next>>,
 }
 
+impl<'vir, Curr, Next> crate::Optimizable for FunctionGenData<'vir, Curr, Next> {
+    fn optimize(&self) -> Self {
+        FunctionGenData {
+            name: self. name,
+            args: self.args,
+            ret: self.ret,
+            expr: self.expr.optimize(),
+            pres: self.pres.optimize(),
+            posts: self.posts.optimize(),
+        }
+    }
+}
+
 // TODO: why is this called "pure"?
 #[derive(Reify)]
 pub struct PureAssignGenData<'vir, Curr, Next> {
@@ -277,6 +291,20 @@ pub struct MethodGenData<'vir, Curr, Next> {
     pub(crate) pres: &'vir [ExprGen<'vir, Curr, Next>],
     pub(crate) posts: &'vir [ExprGen<'vir, Curr, Next>],
     pub(crate) blocks: Option<&'vir [CfgBlockGen<'vir, Curr, Next>]>, // first one is the entrypoint
+}
+
+
+impl<'vir, Curr, Next> crate::Optimizable for MethodGenData<'vir, Curr, Next> {
+    fn optimize(&self) -> Self {
+        MethodGenData {
+            name: self. name,
+            args: self.args,
+            rets: self.rets,
+            blocks: self.blocks,
+            pres: self.pres.optimize(),
+            posts: self.posts.optimize(),
+        }
+    }
 }
 
 #[derive(Debug, Reify)]

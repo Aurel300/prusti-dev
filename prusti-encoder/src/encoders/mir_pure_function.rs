@@ -1,7 +1,7 @@
 use prusti_rustc_interface::{middle::{mir, ty}, span::def_id::DefId};
 
 use task_encoder::{TaskEncoder, TaskEncoderDependencies};
-use vir::{Reify, FunctionIdent, UnknownArity, CallableIdent};
+use vir::{CallableIdent, FunctionIdent, Optimizable, Reify, UnknownArity};
 
 use crate::encoders::{
     MirPureEnc, MirPureEncTask, mir_pure::PureKind, MirSpecEnc, MirLocalDefEnc,
@@ -24,6 +24,15 @@ impl<'vir> task_encoder::OutputRefAny for MirFunctionEncOutputRef<'vir> {}
 #[derive(Clone, Debug)]
 pub struct MirFunctionEncOutput<'vir> {
     pub function: vir::Function<'vir>,
+}
+
+impl<'vir> task_encoder::Optimizable for MirFunctionEncOutput<'vir> {
+    fn optimize(self) -> Self {
+        let function = self.function.optimize();
+        let function = vir::with_vcx(|vcx| vcx.alloc(function));
+
+        MirFunctionEncOutput { function }
+    }
 }
 
 impl TaskEncoder for MirFunctionEnc {

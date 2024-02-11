@@ -14,6 +14,26 @@ use prusti_rustc_interface::{
     hir,
 };
 
+
+const ENABLE_OPTIMIZATION : bool = true;
+
+// Wrapper Trait for task_encoder::Optimizable to allow toggling of optimization
+// TODO: replace with config
+trait MaybeOptimize {
+    fn optimize(self) -> Self;
+}
+
+impl<T> MaybeOptimize for T where T : task_encoder::Optimizable {
+    fn optimize(self) -> Self {
+       if ENABLE_OPTIMIZATION {
+        task_encoder::Optimizable::optimize(self)
+       }
+       else {
+        self
+       }
+    }
+}
+
 pub fn test_entrypoint<'tcx>(
     tcx: ty::TyCtxt<'tcx>,
     body: EnvBody<'tcx>,
@@ -63,34 +83,34 @@ pub fn test_entrypoint<'tcx>(
     let mut viper_code = String::new();
 
     header(&mut viper_code, "methods");
-    for output in crate::encoders::MirImpureEnc::all_outputs() {
+    for output in crate::encoders::MirImpureEnc::all_outputs().optimize() {
         viper_code.push_str(&format!("{:?}\n", output.method));
     }
 
     header(&mut viper_code, "functions");
-    for output in crate::encoders::MirFunctionEnc::all_outputs() {
+    for output in crate::encoders::MirFunctionEnc::all_outputs().optimize() {
         viper_code.push_str(&format!("{:?}\n", output.function));
     }
 
     header(&mut viper_code, "MIR builtins");
-    for output in crate::encoders::MirBuiltinEnc::all_outputs() {
+    for output in crate::encoders::MirBuiltinEnc::all_outputs().optimize() {
         viper_code.push_str(&format!("{:?}\n", output.function));
     }
 
     header(&mut viper_code, "generics");
-    for output in crate::encoders::GenericEnc::all_outputs() {
+    for output in crate::encoders::GenericEnc::all_outputs().optimize() {
         viper_code.push_str(&format!("{:?}\n", output.snapshot_param));
         viper_code.push_str(&format!("{:?}\n", output.predicate_param));
         viper_code.push_str(&format!("{:?}\n", output.domain_type));
     }
 
     header(&mut viper_code, "snapshots");
-    for output in crate::encoders::DomainEnc_all_outputs() {
-        viper_code.push_str(&format!("{:?}\n", output));
+    for output in crate::encoders::DomainEnc_all_outputs().optimize() {
+        viper_code.push_str(&format!("{:?}\n", output.0));
     }
 
     header(&mut viper_code, "types");
-    for output in crate::encoders::PredicateEnc::all_outputs() {
+    for output in crate::encoders::PredicateEnc::all_outputs().optimize() {
         for field in output.fields {
             viper_code.push_str(&format!("{:?}", field));
         }

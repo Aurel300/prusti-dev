@@ -14,6 +14,9 @@ pub struct MirSpecEncOutput<'vir> {
     pub post_args: &'vir [vir::Expr<'vir>],
 }
 
+impl<'vir> task_encoder::Optimizable for MirSpecEncOutput<'vir>  {}
+
+
 impl TaskEncoder for MirSpecEnc {
     task_encoder::encoder_cache!(MirSpecEnc);
 

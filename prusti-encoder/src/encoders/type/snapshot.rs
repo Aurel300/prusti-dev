@@ -25,6 +25,9 @@ pub struct SnapshotEncOutput<'vir> {
     pub specifics: DomainEncSpecifics<'vir>,
 }
 
+
+impl<'vir> task_encoder::Optimizable for SnapshotEncOutput<'vir>  {}
+
 use super::domain::{DomainEnc, DomainEncSpecifics};
 
 impl TaskEncoder for SnapshotEnc {

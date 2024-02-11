@@ -146,6 +146,9 @@ pub struct PredicateEncOutput<'vir> {
     pub method_assign: vir::Method<'vir>,
 }
 
+impl<'vir> task_encoder::Optimizable for PredicateEncOutput<'vir>  {}
+
+
 use super::{snapshot::SnapshotEnc, domain::{DomainDataPrim, DomainDataStruct, DomainDataEnum, DiscrBounds}};
 
 impl TaskEncoder for PredicateEnc {

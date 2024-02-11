@@ -42,8 +42,8 @@ impl<'vir, Curr, Next> crate::Optimizable for ExprGenData<'vir, Curr, Next> {
         })
         .fold(r);
 
-        let s2 = BoolOptimizerFolder.fold(s1);
-        let s3 = EveryThingInliner::new().fold(s2);
+        let s2 = EveryThingInliner::new().fold(s1);
+        let s3 = BoolOptimizerFolder.fold(s2);
 
         ExprGenData { kind: s3.kind }
     }
@@ -52,6 +52,7 @@ impl<'vir, Curr, Next> crate::Optimizable for ExprGenData<'vir, Curr, Next> {
 struct BoolOptimizerFolder;
 
 impl<'vir, Cur, Next> ExprFolder<'vir, Cur, Next> for BoolOptimizerFolder {
+    // transforms `a == true` into `a` and `a == false` into `!a`
     fn fold_binop(
         &mut self,
         kind: crate::BinOpKind,
@@ -74,6 +75,28 @@ impl<'vir, Cur, Next> ExprFolder<'vir, Cur, Next> for BoolOptimizerFolder {
         }
 
         crate::with_vcx(move |vcx| vcx.mk_bin_op_expr(kind, lhs, rhs))
+    }
+
+    // Transforms `c? true : false` into `c`
+    fn fold_ternary(
+        &mut self,
+        cond: ExprGen<'vir, Cur, Next>,
+        then: ExprGen<'vir, Cur, Next>,
+        else_: ExprGen<'vir, Cur, Next>,
+    ) -> crate::ExprGen<'vir, Cur, Next> {
+        let cond = self.fold(cond);
+        let then = self.fold(then);
+        let else_ = self.fold(else_);
+
+        if let (
+            crate::ExprKindGenData::Const(crate::ConstData::Bool(true)),
+            crate::ExprKindGenData::Const(crate::ConstData::Bool(false)),
+        ) = (then.kind, else_.kind)
+        {
+            return cond;
+        }
+
+        crate::with_vcx(move |vcx| vcx.mk_ternary_expr(cond, then, else_))
     }
 }
 
@@ -111,6 +134,41 @@ impl<'vir, Cur, Next> ExprFolder<'vir, Cur, Next> for EveryThingInliner<'vir, Cu
         self.rename.get(local.name).map(|e| *e).unwrap_or(lcl)
     }
 
+    // Transforms `C ? f(a) : f(b)` into `f(C? a : b)`
+    fn fold_ternary(
+        &mut self,
+        cond: ExprGen<'vir, Cur, Next>,
+        then: ExprGen<'vir, Cur, Next>,
+        else_: ExprGen<'vir, Cur, Next>,
+    ) -> crate::ExprGen<'vir, Cur, Next> {
+        let cond = self.fold(cond);
+        let then = self.fold(then);
+        let else_ = self.fold(else_);
+
+        if let (
+            crate::ExprKindGenData::FuncApp(then_app),
+            crate::ExprKindGenData::FuncApp(else_app),
+        ) = (then.kind, else_.kind)
+        {
+            if then_app.args.len() == 1
+                && else_app.args.len() == 1
+                && else_app.target == then_app.target
+                && else_app.result_ty == then_app.result_ty
+            {
+                return crate::with_vcx(move |vcx| {
+                    vcx.mk_func_app(
+                        then_app.target,
+                        &[vcx.mk_ternary_expr(cond, then_app.args[0], else_app.args[0])],
+                        then_app.result_ty,
+                    )
+                });
+            }
+        }
+
+        crate::with_vcx(move |vcx| vcx.mk_ternary_expr(cond, then, else_))
+    }
+
+    // transforms `foo_read_x(foo_cons(a_1, ... a_n))` into a_x
     fn fold_func_app(
         &mut self,
         target: &'vir str,

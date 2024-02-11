@@ -88,6 +88,7 @@ pub enum ConstData {
     Null,
 }
 
+#[derive(PartialEq, Eq)]
 pub enum TypeData<'vir> {
     Int {
         bit_width: u8,
@@ -102,12 +103,12 @@ pub enum TypeData<'vir> {
     Unsupported(UnsupportedType<'vir>)
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct UnsupportedType<'vir> {
     pub name: &'vir str,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct DomainParamData<'vir> {
     pub name: &'vir str, // TODO: identifiers
 }

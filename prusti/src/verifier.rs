@@ -1,7 +1,7 @@
 //! A module that invokes the verifier `prusti-viper`
 
 use log::{debug, warn};
-use prusti_common::{config, report::user};
+use prusti_utils::{config, report::user};
 use prusti_interface::{
     data::{VerificationResult, VerificationTask},
     environment::Environment,
@@ -43,12 +43,19 @@ pub fn verify(env: Environment<'_>, def_spec: typed::DefSpecificationMap) {
             }
         }*/
 
-        let program = prusti_encoder::test_entrypoint(
+        // encode the crate to a RequestWithContext
+        // TODO: push RequestWithContext through (replace VerificationRequest
+        //   which is constructed further inside `prusti_server`)
+        let request = prusti_encoder::test_entrypoint(
             env.tcx(),
             env.body,
             def_spec,
         );
-        //viper::verify(program);
+        let program = request.program;
+
+        let results = prusti_server::verify_programs(vec![program]);
+        println!("verification results: {results:?}");
+        // TODO: backtranslate verification results
 
         //let verification_result =
         //    if verification_task.procedures.is_empty() && verification_task.types.is_empty() {

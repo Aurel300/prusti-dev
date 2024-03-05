@@ -12,7 +12,7 @@ members = [
     "mir-state-analysis",
     "mir-ssa-analysis",
     "prusti-interface",
-    # "prusti-server",
+    "prusti-server",
     "prusti-launch",
     "prusti-smt-solver",
     "prusti-rustc-interface",

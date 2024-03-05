@@ -7,7 +7,7 @@
 use crate::{Backend, VerificationRequest, ViperBackendConfig};
 use log::info;
 use once_cell::sync::Lazy;
-use prusti_common::{
+use prusti_utils::{
     config,
     report::log::{report, to_legal_file_name},
     //vir::{program_normalization::NormalizationInfo, ToViper},
@@ -43,16 +43,17 @@ pub fn process_verification_request<'v, 't: 'v>(
     info!(
         "Verification request hash: {} - for program {}",
         hash,
-        todo!() //request.program.get_name()
+        "program", // TODO: request.program.get_name(),
     );
-
+    /*
     let build_or_dump_viper_program = || {
         let mut stopwatch = Stopwatch::start("prusti-server", "construction of JVM objects");
         let ast_factory = verification_context.new_ast_factory();
-        /*
-        let viper_program = request
-            .program
-            .to_viper(prusti_common::vir::LoweringContext::default(), &ast_factory);
+
+        let viper_program = prusti_viper::program_to_viper(request.program, &ast_factory);
+        //let viper_program = request
+        //    .program
+        //    .to_viper(prusti_common::vir::LoweringContext::default(), &ast_factory);
         if config::dump_viper_program() {
             stopwatch.start_next("dumping viper program");
             dump_viper_program(
@@ -62,15 +63,14 @@ pub fn process_verification_request<'v, 't: 'v>(
             );
         }
 
-        viper_program*/
-        todo!()
+        viper_program
     };
 
     // Only for testing: Print the hash and skip verification.
     if config::print_hash() {
         println!(
             "Received verification request for: {}",
-            todo!(), // request.program.get_name()
+            request.program.get_name()
         );
         println!("Hash of the request is: {hash}");
         // Some tests need the dump to report a diff of the Viper programs.
@@ -88,7 +88,7 @@ pub fn process_verification_request<'v, 't: 'v>(
             info!(
                 "Using cached result {:?} for program {}",
                 &result,
-                todo!(), // request.program.get_name()
+                request.program.get_name()
             );
             if config::dump_viper_program() {
                 ast_utils.with_local_frame(16, || {
@@ -99,7 +99,7 @@ pub fn process_verification_request<'v, 't: 'v>(
             return result;
         }
     };
-
+*/
     let mut stopwatch = Stopwatch::start("prusti-server", "verifier startup");
 
     // Create a new verifier each time.
@@ -107,7 +107,7 @@ pub fn process_verification_request<'v, 't: 'v>(
     let mut backend = match request.backend_config.backend {
         VerificationBackend::Carbon | VerificationBackend::Silicon => Backend::Viper(
             new_viper_verifier(
-                todo!(), // request.program.get_name(),
+                "program", // TODO: request.program.get_name(),
                 verification_context,
                 request.backend_config,
             ),
@@ -116,14 +116,14 @@ pub fn process_verification_request<'v, 't: 'v>(
     };
 
     stopwatch.start_next("backend verification");
-    let mut result = backend.verify(/*&request.program*/);
+    let mut result = backend.verify(request.program);
 
     // Don't cache Java exceptions, which might be due to misconfigured paths.
     if config::enable_cache() && !matches!(result, VerificationResult::JavaException(_)) {
         info!(
             "Storing new cached result {:?} for program {}",
             &result,
-            todo!(), // request.program.get_name()
+            "program", // TODO: request.program.get_name()
         );
         cache.insert(hash, result.clone());
     }
@@ -175,7 +175,8 @@ fn new_viper_verifier<'v, 't: 'v>(
     } else {
         report_path = None;
         if backend_config.backend == VerificationBackend::Silicon {
-            verifier_args.extend(vec!["--disableTempDirectory".to_string()]);
+            // TODO: unknown option?
+            // verifier_args.extend(vec!["--disableTempDirectory".to_string()]);
         }
     }
     let (smt_solver, smt_manager) = if config::use_smt_wrapper() {

@@ -1,4 +1,4 @@
-use crate::{ExprGen, PredicateAppGen, Type, PredicateAppGenData, StmtGenData, MethodCallGenData, VirCtxt, TypeData, DomainParamData, TySubsts};
+use crate::{VirCtxt, data::*, gendata::*, genrefs::*, refs::*};
 use sealed::sealed;
 use std::collections::HashMap;
 
@@ -98,7 +98,7 @@ impl<'vir, A: Arity<'vir>> CallableIdent<'vir, A, ()> for DomainIdent<'vir, A> {
         ()
     }
 }
-pub type DomainIdentUnknownArity<'vir> = DomainIdent<'vir, UnknownArityAny<'vir, DomainParamData<'vir>>>;
+pub type DomainIdentUnknownArity<'vir> = DomainIdent<'vir, UnknownArityAny<'vir, DomainParam<'vir>>>;
 
 #[sealed]
 pub trait Arity<'vir>: Copy {
@@ -125,7 +125,7 @@ impl<'vir, T> Arity<'vir> for UnknownArityAny<'vir, T> {
     }
 }
 
-trait CheckTypes<'vir> {
+pub trait CheckTypes<'vir> {
     fn check_types<Curr: 'vir, Next: 'vir>(&self, name: &str, args: &[ExprGen<'vir, Curr, Next>]) -> HashMap<&'vir str, Type<'vir>>;
 }
 
@@ -242,7 +242,7 @@ impl<'vir, const N: usize> MethodIdent<'vir, KnownArity<'vir, N>> {
         }))
     }
 }
-impl<'vir, const N: usize> DomainIdent<'vir, KnownArityAny<'vir, DomainParamData<'vir>, N>> {
+impl<'vir, const N: usize> DomainIdent<'vir, KnownArityAny<'vir, DomainParam<'vir>, N>> {
     pub fn apply<'tcx>(
         &self,
         vcx: &'vir VirCtxt<'tcx>,
@@ -296,7 +296,7 @@ impl<'vir> MethodIdent<'vir, UnknownArity<'vir>> {
         }))
     }
 }
-impl<'vir> DomainIdent<'vir, UnknownArityAny<'vir, DomainParamData<'vir>>> {
+impl<'vir> DomainIdent<'vir, UnknownArityAny<'vir, DomainParam<'vir>>> {
     pub fn apply<'tcx>(
         &self,
         vcx: &'vir VirCtxt<'tcx>,

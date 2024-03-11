@@ -9,13 +9,13 @@ use vir_proc_macro::*;
 
 #[derive(Reify, VirSerde)]
 pub struct UnOpGenData<'vir, Curr, Next> {
-    #[reify_copy] pub kind: UnOpKind,
+    #[vir(reify_pass)] pub kind: UnOpKind,
     pub expr: ExprGen<'vir, Curr, Next>,
 }
 
 #[derive(Reify, VirSerde)]
 pub struct BinOpGenData<'vir, Curr, Next> {
-    #[reify_copy] pub kind: BinOpKind,
+    #[vir(reify_pass)] pub kind: BinOpKind,
     pub lhs: ExprGen<'vir, Curr, Next>,
     pub rhs: ExprGen<'vir, Curr, Next>,
 }
@@ -44,7 +44,7 @@ pub struct TernaryGenData<'vir, Curr, Next> {
 
 #[derive(Reify, VirSerde)]
 pub struct ForallGenData<'vir, Curr, Next> {
-    #[reify_copy] pub qvars: &'vir [LocalDecl<'vir>],
+    #[vir(reify_pass)] pub qvars: &'vir [LocalDecl<'vir>],
     pub triggers: &'vir [TriggerGen<'vir, Curr, Next>],
     pub body: ExprGen<'vir, Curr, Next>,
 }
@@ -58,7 +58,7 @@ pub struct TriggerGenData<'vir, Curr, Next> {
 pub struct FuncAppGenData<'vir, Curr, Next> {
     pub target: &'vir str, // TODO: identifiers
     pub args: &'vir [ExprGen<'vir, Curr, Next>],
-    #[reify_copy_ref] pub result_ty: Type<'vir>,
+    #[vir(reify_pass, is_ref)] pub result_ty: Type<'vir>,
 }
 
 #[derive(Reify, VirSerde)]
@@ -77,7 +77,7 @@ pub struct UnfoldingGenData<'vir, Curr, Next> {
 #[derive(Reify, VirSerde)]
 pub struct AccFieldGenData<'vir, Curr, Next> {
     pub recv: ExprGen<'vir, Curr, Next>,
-    #[reify_copy_ref] pub field: Field<'vir>, // TODO: identifiers
+    #[vir(reify_pass, is_ref)] pub field: Field<'vir>, // TODO: identifiers
     pub perm: Option<ExprGen<'vir, Curr, Next>>,
 }
 
@@ -108,7 +108,7 @@ impl<A, B: GenRow> GenRow for fn(A) -> B {
 #[derive(VirSerde)]
 pub struct ExprGenData<'vir, Curr: 'vir, Next: 'vir> {
     pub kind: ExprKindGen<'vir, Curr, Next>,
-    #[reify_copy] pub debug_info: DebugInfo,
+    #[vir(reify_pass)] pub debug_info: DebugInfo,
 }
 
 impl <'vir, Curr: 'vir, Next: 'vir> ExprGenData<'vir, Curr, Next> {
@@ -218,23 +218,23 @@ pub struct DomainAxiomGenData<'vir, Curr, Next> {
 #[derive(Reify, VirSerde)]
 pub struct DomainGenData<'vir, Curr, Next> {
     pub name: &'vir str, // TODO: identifiers
-    #[reify_copy] pub typarams: &'vir [DomainParam<'vir>],
+    #[vir(reify_pass)] pub typarams: &'vir [DomainParam<'vir>],
     pub axioms: &'vir [DomainAxiomGen<'vir, Curr, Next>],
-    #[reify_copy] pub functions: &'vir [DomainFunction<'vir>],
+    #[vir(reify_pass)] pub functions: &'vir [DomainFunction<'vir>],
 }
 
 #[derive(Reify, VirSerde)]
 pub struct PredicateGenData<'vir, Curr, Next> {
     pub name: &'vir str, // TODO: identifiers
-    #[reify_copy] pub args: &'vir [LocalDecl<'vir>],
+    #[vir(reify_pass)] pub args: &'vir [LocalDecl<'vir>],
     pub expr: Option<ExprGen<'vir, Curr, Next>>,
 }
 
 #[derive(Reify, VirSerde)]
 pub struct FunctionGenData<'vir, Curr, Next> {
     pub name: &'vir str, // TODO: identifiers
-    #[reify_copy] pub args: &'vir [LocalDecl<'vir>],
-    #[reify_copy_ref] pub ret: Type<'vir>,
+    #[vir(reify_pass)] pub args: &'vir [LocalDecl<'vir>],
+    #[vir(reify_pass, is_ref)] pub ret: Type<'vir>,
     pub pres: &'vir [ExprGen<'vir, Curr, Next>],
     pub posts: &'vir [ExprGen<'vir, Curr, Next>],
     pub expr: Option<ExprGen<'vir, Curr, Next>>,
@@ -251,7 +251,7 @@ pub struct PureAssignGenData<'vir, Curr, Next> {
 
 #[derive(Reify, VirSerde)]
 pub struct MethodCallGenData<'vir, Curr, Next> {
-    #[reify_copy] pub targets: &'vir [Local<'vir>],
+    #[vir(reify_pass)] pub targets: &'vir [Local<'vir>],
     pub method: &'vir str,
     pub args: &'vir [ExprGen<'vir, Curr, Next>],
 }
@@ -259,7 +259,7 @@ pub struct MethodCallGenData<'vir, Curr, Next> {
 #[derive(Reify, VirSerde)]
 pub enum StmtGenData<'vir, Curr, Next> {
     LocalDecl(
-        #[reify_copy_ref] LocalDecl<'vir>,
+        #[vir(reify_pass, is_ref)] LocalDecl<'vir>,
         Option<ExprGen<'vir, Curr, Next>>,
     ),
     PureAssign(PureAssignGen<'vir, Curr, Next>),
@@ -276,21 +276,21 @@ pub enum StmtGenData<'vir, Curr, Next> {
 pub struct GotoIfGenData<'vir, Curr, Next> {
     pub value: ExprGen<'vir, Curr, Next>,
     pub targets: &'vir [GotoIfTargetGen<'vir, Curr, Next>],
-    #[reify_copy_ref] pub otherwise: CfgBlockLabel<'vir>,
+    #[vir(reify_pass, is_ref)] pub otherwise: CfgBlockLabel<'vir>,
     pub otherwise_statements: &'vir [StmtGen<'vir, Curr, Next>],
 }
 
 #[derive(Reify, VirSerde)]
 pub struct GotoIfTargetGenData<'vir, Curr, Next> {
     pub value: ExprGen<'vir, Curr, Next>,
-    #[reify_copy_ref] pub label: CfgBlockLabel<'vir>,
+    #[vir(reify_pass, is_ref)] pub label: CfgBlockLabel<'vir>,
     pub statements: &'vir [StmtGen<'vir, Curr, Next>],
 }
 
 #[derive(Reify, VirSerde)]
 pub enum TerminatorStmtGenData<'vir, Curr, Next> {
     AssumeFalse,
-    Goto(#[reify_copy_ref] CfgBlockLabel<'vir>),
+    Goto(#[vir(reify_pass, is_ref)] CfgBlockLabel<'vir>),
     GotoIf(GotoIfGen<'vir, Curr, Next>),
     Exit,
     Dummy(&'vir str),
@@ -298,7 +298,7 @@ pub enum TerminatorStmtGenData<'vir, Curr, Next> {
 
 #[derive(Debug, Reify, VirSerde)]
 pub struct CfgBlockGenData<'vir, Curr, Next> {
-    #[reify_copy_ref] pub label: CfgBlockLabel<'vir>,
+    #[vir(reify_pass, is_ref)] pub label: CfgBlockLabel<'vir>,
     pub stmts: &'vir [StmtGen<'vir, Curr, Next>],
     pub terminator: TerminatorStmtGen<'vir, Curr, Next>,
 }
@@ -306,8 +306,8 @@ pub struct CfgBlockGenData<'vir, Curr, Next> {
 #[derive(Reify, VirSerde)]
 pub struct MethodGenData<'vir, Curr, Next> {
     pub name: &'vir str, // TODO: identifiers
-    #[reify_copy] pub args: &'vir [LocalDecl<'vir>],
-    #[reify_copy] pub rets: &'vir [LocalDecl<'vir>],
+    #[vir(reify_pass)] pub args: &'vir [LocalDecl<'vir>],
+    #[vir(reify_pass)] pub rets: &'vir [LocalDecl<'vir>],
     // TODO: pre/post - add a comment variant
     pub pres: &'vir [ExprGen<'vir, Curr, Next>],
     pub posts: &'vir [ExprGen<'vir, Curr, Next>],
@@ -321,7 +321,7 @@ pub struct MethodBodyGenData<'vir, Curr, Next> {
 
 #[derive(Debug, Reify, VirSerde)]
 pub struct ProgramGenData<'vir, Curr, Next> {
-    #[reify_copy] pub fields: &'vir [Field<'vir>],
+    #[vir(reify_pass)] pub fields: &'vir [Field<'vir>],
     pub domains: &'vir [DomainGen<'vir, Curr, Next>],
     pub predicates: &'vir [PredicateGen<'vir, Curr, Next>],
     pub functions: &'vir [FunctionGen<'vir, Curr, Next>],

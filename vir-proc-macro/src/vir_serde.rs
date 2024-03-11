@@ -55,11 +55,11 @@ pub fn derive_vir_serde(input: TokenStream) -> TokenStream {
                 .zip(field_idents_f.iter())
                 .map(|(field, field_ident_f)| {
                     match ReifyKind::of_field(field) {
-                        ReifyKind::String => quote! {
+                        ReifyKind::PassString => quote! {
                             let s: String = seq_val;
                             let #field_ident_f = crate::with_vcx(|vcx| vcx.alloc_str(&s));
                         },
-                        ReifyKind::SliceReify | ReifyKind::SliceCopy => quote! {
+                        ReifyKind::ReifySlice | ReifyKind::PassSlice => quote! {
                             let vec_of_data: Vec<_> = seq_val;
                             let #field_ident_f = crate::with_vcx(|vcx| {
                                 let vec_of_refs = vec_of_data.into_iter()
@@ -68,14 +68,14 @@ pub fn derive_vir_serde(input: TokenStream) -> TokenStream {
                                 vcx.alloc_slice(&vec_of_refs)
                             });
                         },
-                        ReifyKind::OptionReify => quote! {
+                        ReifyKind::ReifyOption => quote! {
                             let opt: Option<_> = seq_val;
                             let #field_ident_f = crate::with_vcx(|vcx| opt.map(|val| vcx.alloc(val)));
                         },
-                        ReifyKind::Copy => quote! {
+                        ReifyKind::PassOwned => quote! {
                             let #field_ident_f = seq_val;
                         },
-                        ReifyKind::CopyRef | ReifyKind::Other => quote! {
+                        ReifyKind::PassRef | ReifyKind::ReifyOwned => quote! {
                             let #field_ident_f = crate::with_vcx(|vcx| vcx.alloc(seq_val));
                         },
                     }
@@ -169,11 +169,11 @@ pub fn derive_vir_serde(input: TokenStream) -> TokenStream {
 
                             let variant_allocs = unnamed.iter()
                                 .map(|field| match ReifyKind::of_field(field) {
-                                    ReifyKind::String => quote! {
+                                    ReifyKind::PassString => quote! {
                                         let s: String = seq_val;
                                         crate::with_vcx(|vcx| vcx.alloc_str(&s))
                                     },
-                                    ReifyKind::SliceReify | ReifyKind::SliceCopy => quote! {
+                                    ReifyKind::ReifySlice | ReifyKind::PassSlice => quote! {
                                         let vec_of_data: Vec<_> = seq_val;
                                         crate::with_vcx(|vcx| {
                                             let vec_of_refs = vec_of_data.into_iter()
@@ -182,14 +182,14 @@ pub fn derive_vir_serde(input: TokenStream) -> TokenStream {
                                             vcx.alloc_slice(&vec_of_refs)
                                         })
                                     },
-                                    ReifyKind::OptionReify => quote! {
+                                    ReifyKind::ReifyOption => quote! {
                                         let opt: Option<_> = seq_val;
                                         crate::with_vcx(|vcx| opt.map(|val| vcx.alloc(val)))
                                     },
-                                    ReifyKind::Copy => quote! {
+                                    ReifyKind::PassOwned => quote! {
                                         seq_val
                                     },
-                                    ReifyKind::CopyRef | ReifyKind::Other => quote! {
+                                    ReifyKind::PassRef | ReifyKind::ReifyOwned => quote! {
                                         crate::with_vcx(|vcx| vcx.alloc(seq_val))
                                     },
                                 })

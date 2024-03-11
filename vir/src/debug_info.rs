@@ -34,7 +34,7 @@ cfg_if! {
     }
 }
 
-// serde
+// serde and hash no-ops
 impl serde::Serialize for DebugInfo {
     fn serialize<S>(&self, ser: S) -> Result<S::Ok, S::Error>
     where S: serde::ser::Serializer
@@ -49,6 +49,12 @@ impl<'de> serde::Deserialize<'de> for DebugInfo {
         deser.deserialize_unit(serde::de::IgnoredAny)?;
         Ok(DEBUGINFO_NONE)
     }
+}
+impl std::hash::Hash for DebugInfo {
+    fn hash<H>(&self, state: &mut H)
+    where
+        H: std::hash::Hasher,
+    {}
 }
 
 // DEBUGINFO_NONE

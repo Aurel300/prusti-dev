@@ -1,22 +1,24 @@
+use std::collections::HashMap;
 use std::fmt::Debug;
+use serde::{Serialize, Deserialize};
 
 use prusti_rustc_interface::middle::mir;
-use crate::{refs::*, FunctionIdent, UnknownArity};
-use std::collections::HashMap;
 
-#[derive(serde::Serialize, serde::Deserialize)]
+use crate::{refs::*, FunctionIdent, UnknownArity};
+
+#[derive(Serialize, Deserialize, Hash)]
 pub struct LocalData<'vir> {
     #[serde(with = "crate::serde::serde_str")] pub name: &'vir str, // TODO: identifiers
     #[serde(with = "crate::serde::serde_ref")] pub ty: Type<'vir>,
 }
 
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Serialize, Deserialize, Hash)]
 pub struct LocalDeclData<'vir> {
     #[serde(with = "crate::serde::serde_str")] pub name: &'vir str, // TODO: identifiers
     #[serde(with = "crate::serde::serde_ref")] pub ty: Type<'vir>,
 }
 
-#[derive(PartialEq, Eq, Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(PartialEq, Eq, Clone, Copy, Debug, Serialize, Deserialize, Hash)]
 pub enum UnOpKind {
     Neg,
     Not,
@@ -35,7 +37,7 @@ impl From<&mir::UnOp> for UnOpKind {
     }
 }
 
-#[derive(PartialEq, Eq, Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(PartialEq, Eq, Clone, Copy, Debug, Serialize, Deserialize, Hash)]
 pub enum BinOpKind {
     CmpEq,
     CmpNe,
@@ -89,7 +91,7 @@ impl From<&mir::BinOp> for BinOpKind {
     }
 }
 
-#[derive(PartialEq, Eq, Clone, Copy, serde::Serialize, serde::Deserialize)]
+#[derive(PartialEq, Eq, Clone, Copy, Serialize, Deserialize, Hash)]
 pub enum ConstData {
     Bool(bool),
     Int(u128), // TODO: what about negative numbers? larger numbers?
@@ -108,7 +110,7 @@ impl ConstData {
     }
 }
 
-#[derive(PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub enum TypeData<'vir> {
     Int,
     Bool,
@@ -124,25 +126,25 @@ pub enum TypeData<'vir> {
     Unsupported(UnsupportedType<'vir>)
 }
 
-#[derive(PartialEq, Eq, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(PartialEq, Eq, Clone, Serialize, Deserialize, Hash)]
 pub struct UnsupportedType<'vir> {
     #[serde(with = "crate::serde::serde_str")] pub name: &'vir str,
 }
 
 pub type TySubsts<'vir> = HashMap<&'vir str, Type<'vir>>;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub struct DomainParamData<'vir> {
     #[serde(with = "crate::serde::serde_str")] pub name: &'vir str, // TODO: identifiers
 }
 
-#[derive(PartialEq, Eq, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(PartialEq, Eq, Clone, Serialize, Deserialize, Hash)]
 pub struct FieldData<'vir> {
     #[serde(with = "crate::serde::serde_str")] pub name: &'vir str, // TODO: identifiers
     #[serde(with = "crate::serde::serde_ref")] pub ty: Type<'vir>,
 }
 
-#[derive(PartialEq, Eq, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(PartialEq, Eq, Clone, Serialize, Deserialize, Hash)]
 pub struct DomainFunctionData<'vir> {
     pub unique: bool,
     #[serde(with = "crate::serde::serde_str")] pub name: &'vir str, // TODO: identifiers
@@ -160,7 +162,7 @@ impl <'vir> DomainFunctionData<'vir> {
     }
 }
 
-#[derive(PartialEq, Eq, Clone, Copy, serde::Serialize, serde::Deserialize)]
+#[derive(PartialEq, Eq, Clone, Copy, Serialize, Deserialize, Hash)]
 pub enum CfgBlockLabelData {
     Start,
     End,

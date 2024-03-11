@@ -9,7 +9,7 @@ use rustc_hash::FxHasher;
 use std::hash::{Hash, Hasher};
 use viper::{self, VerificationBackend};
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)] // , Hash)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct VerificationRequest {
     pub program: vir::ProgramRef,
     pub backend_config: ViperBackendConfig,
@@ -17,9 +17,7 @@ pub struct VerificationRequest {
 
 impl<'vir> VerificationRequest {
     pub(crate) fn get_hash(&self) -> u64 {
-        let mut hasher = FxHasher::default();
-        // TODO: self.hash(&mut hasher);
-        hasher.finish()
+        self.program.get_hash()
     }
 }
 

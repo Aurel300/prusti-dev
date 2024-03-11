@@ -64,7 +64,7 @@ impl ReifyKind {
             ReifyPass,
             IsRef,
         }
-        let mut flags = field.attrs.iter()
+        let flags = field.attrs.iter()
             .filter(|attr| match &attr.meta {
                 syn::Meta::List(l) => l.path.segments.len() == 1 && l.path.segments[0].ident == "vir",
                 _ => false,

@@ -7,14 +7,13 @@ use prusti_interface::{
     environment::Environment,
     specs::typed,
 };
-//use prusti_viper::verifier::Verifier;
 
 #[tracing::instrument(name = "prusti::verify", level = "debug", skip(env))]
 pub fn verify(env: Environment<'_>, def_spec: typed::DefSpecificationMap) {
     if env.diagnostic.has_errors() {
         warn!("The compiler reported an error, so the program will not be verified.");
     } else {
-        debug!("Prepare verification task...");/*
+        debug!("Prepare verification task...");
         // TODO: can we replace `get_annotated_procedures` with information
         // that is already in `def_spec`?
         let (annotated_procedures, types) = env.get_annotated_procedures_and_types();
@@ -41,7 +40,7 @@ pub fn verify(env: Environment<'_>, def_spec: typed::DefSpecificationMap) {
                     env.query.get_def_span(procedure)
                 );
             }
-        }*/
+        }
 
         // encode the crate to a RequestWithContext
         // TODO: push RequestWithContext through (replace VerificationRequest

@@ -5,7 +5,7 @@ use syn::spanned::Spanned;
 
 use super::reify_kind::ReifyKind;
 
-pub fn derive_vir_serde(input: TokenStream) -> TokenStream {
+pub fn derive_serde(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let name = input.ident;
 

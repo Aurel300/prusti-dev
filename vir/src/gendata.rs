@@ -7,13 +7,13 @@ use crate::refs::*;
 
 use vir_proc_macro::*;
 
-#[derive(Reify, VirSerde)]
+#[derive(VirHash, VirReify, VirSerde)]
 pub struct UnOpGenData<'vir, Curr, Next> {
     #[vir(reify_pass)] pub kind: UnOpKind,
     pub expr: ExprGen<'vir, Curr, Next>,
 }
 
-#[derive(Reify, VirSerde)]
+#[derive(VirHash, VirReify, VirSerde)]
 pub struct BinOpGenData<'vir, Curr, Next> {
     #[vir(reify_pass)] pub kind: BinOpKind,
     pub lhs: ExprGen<'vir, Curr, Next>,
@@ -35,53 +35,53 @@ impl<'vir, Curr, Next> BinOpGenData<'vir, Curr, Next> {
     }
 }
 
-#[derive(Reify, VirSerde)]
+#[derive(VirHash, VirReify, VirSerde)]
 pub struct TernaryGenData<'vir, Curr, Next> {
     pub cond: ExprGen<'vir, Curr, Next>,
     pub then: ExprGen<'vir, Curr, Next>,
     pub else_: ExprGen<'vir, Curr, Next>,
 }
 
-#[derive(Reify, VirSerde)]
+#[derive(VirHash, VirReify, VirSerde)]
 pub struct ForallGenData<'vir, Curr, Next> {
     #[vir(reify_pass)] pub qvars: &'vir [LocalDecl<'vir>],
     pub triggers: &'vir [TriggerGen<'vir, Curr, Next>],
     pub body: ExprGen<'vir, Curr, Next>,
 }
 
-#[derive(Reify, VirSerde)]
+#[derive(VirHash, VirReify, VirSerde)]
 pub struct TriggerGenData<'vir, Curr, Next> {
     pub exprs: &'vir [ExprGen<'vir, Curr, Next>],
 }
 
-#[derive(Reify, VirSerde)]
+#[derive(VirHash, VirReify, VirSerde)]
 pub struct FuncAppGenData<'vir, Curr, Next> {
     pub target: &'vir str, // TODO: identifiers
     pub args: &'vir [ExprGen<'vir, Curr, Next>],
     #[vir(reify_pass, is_ref)] pub result_ty: Type<'vir>,
 }
 
-#[derive(Reify, VirSerde)]
+#[derive(VirHash, VirReify, VirSerde)]
 pub struct PredicateAppGenData<'vir, Curr, Next> {
     pub target: &'vir str, // TODO: identifiers
     pub args: &'vir [ExprGen<'vir, Curr, Next>],
     pub perm: Option<ExprGen<'vir, Curr, Next>>,
 }
 
-#[derive(Reify, VirSerde)]
+#[derive(VirHash, VirReify, VirSerde)]
 pub struct UnfoldingGenData<'vir, Curr, Next> {
     pub target: PredicateAppGen<'vir, Curr, Next>,
     pub expr: ExprGen<'vir, Curr, Next>,
 }
 
-#[derive(Reify, VirSerde)]
+#[derive(VirHash, VirReify, VirSerde)]
 pub struct AccFieldGenData<'vir, Curr, Next> {
     pub recv: ExprGen<'vir, Curr, Next>,
     #[vir(reify_pass, is_ref)] pub field: Field<'vir>, // TODO: identifiers
     pub perm: Option<ExprGen<'vir, Curr, Next>>,
 }
 
-#[derive(Reify, VirSerde)]
+#[derive(VirHash, VirReify, VirSerde)]
 pub struct LetGenData<'vir, Curr, Next> {
     pub name: &'vir str,
     pub val: ExprGen<'vir, Curr, Next>,
@@ -105,7 +105,7 @@ impl<A, B: GenRow> GenRow for fn(A) -> B {
 }*/
 
 // TODO add position and other metadata
-#[derive(VirSerde)]
+#[derive(VirHash, VirSerde)]
 pub struct ExprGenData<'vir, Curr: 'vir, Next: 'vir> {
     pub kind: ExprKindGen<'vir, Curr, Next>,
     #[vir(reify_pass)] pub debug_info: DebugInfo,
@@ -120,7 +120,7 @@ impl <'vir, Curr: 'vir, Next: 'vir> ExprGenData<'vir, Curr, Next> {
     }
 }
 
-#[derive(VirSerde)]
+#[derive(VirHash, VirSerde)]
 pub enum ExprKindGenData<'vir, Curr: 'vir, Next: 'vir> {
     Local(Local<'vir>),
     Field(ExprGen<'vir, Curr, Next>, Field<'vir>), // TODO: FieldApp?
@@ -194,6 +194,13 @@ pub struct LazyGenData<'vir, Curr: 'vir, Next: 'vir> {
     pub func: Box<dyn for <'a> Fn(&'vir crate::VirCtxt<'a>, Curr) -> Next + 'vir>,
 }
 
+impl<'vir, Curr: 'vir, Next: 'vir> std::hash::Hash for LazyGenData<'vir, Curr, Next> {
+    fn hash<H>(&self, state: &mut H)
+    where H: std::hash::Hasher
+    {
+        panic!("cannot hash lazy expression {}", self.name)
+    }
+}
 impl<'vir, Curr: 'vir, Next: 'vir> serde::Serialize for LazyGenData<'vir, Curr, Next> {
     fn serialize<S>(&self, _serializer: S) -> Result<S::Ok, S::Error>
     where S: serde::ser::Serializer
@@ -209,13 +216,13 @@ impl<'vir, Curr: 'vir, Next: 'vir> serde::Deserialize<'vir> for LazyGenData<'vir
     }
 }
 
-#[derive(Reify, VirSerde)]
+#[derive(VirHash, VirReify, VirSerde)]
 pub struct DomainAxiomGenData<'vir, Curr, Next> {
     pub name: &'vir str, // ? or comment, then auto-gen the names?
     pub expr: ExprGen<'vir, Curr, Next>,
 }
 
-#[derive(Reify, VirSerde)]
+#[derive(VirHash, VirReify, VirSerde)]
 pub struct DomainGenData<'vir, Curr, Next> {
     pub name: &'vir str, // TODO: identifiers
     #[vir(reify_pass)] pub typarams: &'vir [DomainParam<'vir>],
@@ -223,14 +230,14 @@ pub struct DomainGenData<'vir, Curr, Next> {
     #[vir(reify_pass)] pub functions: &'vir [DomainFunction<'vir>],
 }
 
-#[derive(Reify, VirSerde)]
+#[derive(VirHash, VirReify, VirSerde)]
 pub struct PredicateGenData<'vir, Curr, Next> {
     pub name: &'vir str, // TODO: identifiers
     #[vir(reify_pass)] pub args: &'vir [LocalDecl<'vir>],
     pub expr: Option<ExprGen<'vir, Curr, Next>>,
 }
 
-#[derive(Reify, VirSerde)]
+#[derive(VirHash, VirReify, VirSerde)]
 pub struct FunctionGenData<'vir, Curr, Next> {
     pub name: &'vir str, // TODO: identifiers
     #[vir(reify_pass)] pub args: &'vir [LocalDecl<'vir>],
@@ -241,7 +248,7 @@ pub struct FunctionGenData<'vir, Curr, Next> {
 }
 
 // TODO: why is this called "pure"?
-#[derive(Reify, VirSerde)]
+#[derive(VirHash, VirReify, VirSerde)]
 pub struct PureAssignGenData<'vir, Curr, Next> {
     pub lhs: ExprGen<'vir, Curr, Next>,
     //pub dest: Local<'vir>,
@@ -249,14 +256,14 @@ pub struct PureAssignGenData<'vir, Curr, Next> {
     pub rhs: ExprGen<'vir, Curr, Next>,
 }
 
-#[derive(Reify, VirSerde)]
+#[derive(VirHash, VirReify, VirSerde)]
 pub struct MethodCallGenData<'vir, Curr, Next> {
     #[vir(reify_pass)] pub targets: &'vir [Local<'vir>],
     pub method: &'vir str,
     pub args: &'vir [ExprGen<'vir, Curr, Next>],
 }
 
-#[derive(Reify, VirSerde)]
+#[derive(VirHash, VirReify, VirSerde)]
 pub enum StmtGenData<'vir, Curr, Next> {
     LocalDecl(
         #[vir(reify_pass, is_ref)] LocalDecl<'vir>,
@@ -272,7 +279,7 @@ pub enum StmtGenData<'vir, Curr, Next> {
     Dummy(&'vir str),
 }
 
-#[derive(Reify, VirSerde)]
+#[derive(VirHash, VirReify, VirSerde)]
 pub struct GotoIfGenData<'vir, Curr, Next> {
     pub value: ExprGen<'vir, Curr, Next>,
     pub targets: &'vir [GotoIfTargetGen<'vir, Curr, Next>],
@@ -280,14 +287,14 @@ pub struct GotoIfGenData<'vir, Curr, Next> {
     pub otherwise_statements: &'vir [StmtGen<'vir, Curr, Next>],
 }
 
-#[derive(Reify, VirSerde)]
+#[derive(VirHash, VirReify, VirSerde)]
 pub struct GotoIfTargetGenData<'vir, Curr, Next> {
     pub value: ExprGen<'vir, Curr, Next>,
     #[vir(reify_pass, is_ref)] pub label: CfgBlockLabel<'vir>,
     pub statements: &'vir [StmtGen<'vir, Curr, Next>],
 }
 
-#[derive(Reify, VirSerde)]
+#[derive(VirHash, VirReify, VirSerde)]
 pub enum TerminatorStmtGenData<'vir, Curr, Next> {
     AssumeFalse,
     Goto(#[vir(reify_pass, is_ref)] CfgBlockLabel<'vir>),
@@ -296,14 +303,14 @@ pub enum TerminatorStmtGenData<'vir, Curr, Next> {
     Dummy(&'vir str),
 }
 
-#[derive(Debug, Reify, VirSerde)]
+#[derive(Debug, VirHash, VirReify, VirSerde)]
 pub struct CfgBlockGenData<'vir, Curr, Next> {
     #[vir(reify_pass, is_ref)] pub label: CfgBlockLabel<'vir>,
     pub stmts: &'vir [StmtGen<'vir, Curr, Next>],
     pub terminator: TerminatorStmtGen<'vir, Curr, Next>,
 }
 
-#[derive(Reify, VirSerde)]
+#[derive(VirHash, VirReify, VirSerde)]
 pub struct MethodGenData<'vir, Curr, Next> {
     pub name: &'vir str, // TODO: identifiers
     #[vir(reify_pass)] pub args: &'vir [LocalDecl<'vir>],
@@ -314,12 +321,12 @@ pub struct MethodGenData<'vir, Curr, Next> {
     pub body: Option<MethodBodyGen<'vir, Curr, Next>>,
 }
 
-#[derive(Reify, VirSerde)]
+#[derive(VirHash, VirReify, VirSerde)]
 pub struct MethodBodyGenData<'vir, Curr, Next> {
     pub blocks: &'vir [CfgBlockGen<'vir, Curr, Next>], // first one is the entrypoint
 }
 
-#[derive(Debug, Reify, VirSerde)]
+#[derive(Debug, VirHash, VirReify, VirSerde)]
 pub struct ProgramGenData<'vir, Curr, Next> {
     #[vir(reify_pass)] pub fields: &'vir [Field<'vir>],
     pub domains: &'vir [DomainGen<'vir, Curr, Next>],
@@ -331,7 +338,11 @@ pub struct ProgramGenData<'vir, Curr, Next> {
 
 impl<'vir> ProgramGenData<'vir, !, !> {
     pub fn to_ref(&self) -> crate::ProgramRef {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        self.hash(&mut hasher);
         crate::ProgramRef {
+            hash: hasher.finish(),
             // SAFETY: this transmutes a `'vir` (or shorter) reference to a
             //   `'static` reference. The reference is not used except in
             //   `VirCtxt::get_program`. See comment there.

@@ -96,8 +96,16 @@ impl<'tcx> VirCtxt<'tcx> {
 
 #[derive(Clone, Copy, Debug)]
 pub struct ProgramRef {
+    pub(crate) hash: u64,
     pub(crate) program: Program<'static>,
 }
+
+impl ProgramRef {
+    pub fn get_hash(&self) -> u64 {
+        self.hash
+    }
+}
+
 impl serde::Serialize for ProgramRef {
     fn serialize<S>(&self, s: S) -> Result<S::Ok, S::Error>
     where S: serde::Serializer

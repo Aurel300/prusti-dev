@@ -7,7 +7,6 @@
 #![warn(clippy::disallowed_types)]
 
 use log::info;
-use prusti_interface::environment::Environment;
 use prusti_utils::{config, Stopwatch};
 use viper::{PersistentCache, Viper};
 use once_cell::sync::Lazy;
@@ -29,30 +28,13 @@ pub use tokio;
 
 /// Verify a list of programs.
 /// Returns a list of (program_name, verification_result) tuples.
-pub fn verify_programs(
-    // env: &Environment,
-    programs: Vec<vir::ProgramRef>,
-) -> Vec<(String, viper::VerificationResult)> {
-    let source_path = std::path::Path::new("source/path"); // TODO: env.name.source_path();
-    let rust_program_name = source_path
-        .file_name()
-        .unwrap()
-        .to_str()
-        .unwrap()
-        .to_owned();
+pub fn verify_programs(programs: Vec<vir::ProgramRef>) -> Vec<(String, viper::VerificationResult)> {
     let verification_requests = programs.into_iter().map(|mut program| {
-        let program_name = "program".to_string();
-        //let program_name = program.get_name().to_string();
-        //let check_mode = program.get_check_mode();
+        let rust_program_name = program.get_rust_name().to_string();
+        let program_name = program.get_name().to_string();
         // Prepend the Rust file name to the program.
-        //program.set_name(&format!("{rust_program_name}_{program_name}"));
-        let backend = //if check_mode == CheckMode::Specifications {
-        //    config::verify_specifications_backend()
-        //} else {
-            config::viper_backend()
-        //}
-        .parse()
-        .unwrap();
+        program.set_name(&format!("{rust_program_name}_{program_name}"));
+        let backend = config::viper_backend().parse().unwrap();
         let request = VerificationRequest {
             program,
             backend_config: ViperBackendConfig::new(backend),

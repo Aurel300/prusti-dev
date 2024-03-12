@@ -60,7 +60,7 @@ where
         // verification runs is deallocated
         vir::init_vcx(vir::VirCtxt::new_without_tcx());
         data
-    };
+    }
     let build_verification_request_handler = |viper_arc: Arc<Lazy<Viper, _>>, cache| {
         move |request: VerificationRequest| {
             let stopwatch = Stopwatch::start("prusti-server", "attach thread to JVM");

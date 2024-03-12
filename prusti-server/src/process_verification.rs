@@ -10,7 +10,6 @@ use once_cell::sync::Lazy;
 use prusti_utils::{
     config,
     report::log::{report, to_legal_file_name},
-    //vir::{program_normalization::NormalizationInfo, ToViper},
     Stopwatch,
 };
 use std::{fs::create_dir_all, path::PathBuf};
@@ -18,16 +17,17 @@ use viper::{
     smt_manager::SmtManager, Cache, VerificationBackend, VerificationContext, VerificationResult,
 };
 
-//#[tracing::instrument(level = "debug", skip_all, fields(program = %request.program.get_name()))]
+#[tracing::instrument(level = "debug", skip_all, fields(program = %request.program.get_name()))]
 pub fn process_verification_request<'v, 't: 'v>(
     verification_context: &'v Lazy<VerificationContext<'t>, impl Fn() -> VerificationContext<'t>>,
-    mut request: VerificationRequest,
+    request: VerificationRequest,
     cache: impl Cache,
 ) -> viper::VerificationResult {
+    /*
     let ast_utils = verification_context.new_ast_utils();
 
     // Only for testing: Check that the normalization is reversible.
-    /*if config::print_hash() {
+    if config::print_hash() {
         debug_assert!({
             let mut program = request.program.clone();
             let normalization_info = NormalizationInfo::normalize_program(&mut program);
@@ -43,7 +43,7 @@ pub fn process_verification_request<'v, 't: 'v>(
     info!(
         "Verification request hash: {} - for program {}",
         hash,
-        "program", // TODO: request.program.get_name(),
+        request.program.get_name(),
     );
     /*
     let build_or_dump_viper_program = || {
@@ -81,25 +81,25 @@ pub fn process_verification_request<'v, 't: 'v>(
         }
         return viper::VerificationResult::Success;
     }
-
+*/
     // Early return in case of cache hit
     if config::enable_cache() {
-        if let Some(mut result) = cache.get(hash) {
+        if let Some(result) = cache.get(hash) {
             info!(
                 "Using cached result {:?} for program {}",
                 &result,
                 request.program.get_name()
             );
-            if config::dump_viper_program() {
+            /*if config::dump_viper_program() {
                 ast_utils.with_local_frame(16, || {
                     let _ = build_or_dump_viper_program();
                 });
             }
-            /*normalization_info.denormalize_result(&mut result);*/
+            normalization_info.denormalize_result(&mut result);*/
             return result;
         }
     };
-*/
+
     let mut stopwatch = Stopwatch::start("prusti-server", "verifier startup");
 
     // Create a new verifier each time.
@@ -107,7 +107,7 @@ pub fn process_verification_request<'v, 't: 'v>(
     let mut backend = match request.backend_config.backend {
         VerificationBackend::Carbon | VerificationBackend::Silicon => Backend::Viper(
             new_viper_verifier(
-                "program", // TODO: request.program.get_name(),
+                request.program.get_name(),
                 verification_context,
                 request.backend_config,
             ),
@@ -116,14 +116,14 @@ pub fn process_verification_request<'v, 't: 'v>(
     };
 
     stopwatch.start_next("backend verification");
-    let mut result = backend.verify(request.program);
+    let result = backend.verify(request.program);
 
     // Don't cache Java exceptions, which might be due to misconfigured paths.
     if config::enable_cache() && !matches!(result, VerificationResult::JavaException(_)) {
         info!(
             "Storing new cached result {:?} for program {}",
             &result,
-            "program", // TODO: request.program.get_name()
+            request.program.get_name(),
         );
         cache.insert(hash, result.clone());
     }

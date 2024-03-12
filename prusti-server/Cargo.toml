@@ -20,7 +20,6 @@ doctest = false
 log = { version = "0.4", features = ["release_max_level_info"] }
 vir = { path = "../vir" }
 viper = { path = "../viper" }
-prusti-interface = { path = "../prusti-interface" }
 prusti-viper = { path = "../prusti-viper" }
 prusti-utils = { path = "../prusti-utils" }
 tracing = { path = "../tracing" }

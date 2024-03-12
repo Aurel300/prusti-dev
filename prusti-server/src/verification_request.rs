@@ -5,8 +5,6 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 use prusti_utils::config;
-use rustc_hash::FxHasher;
-use std::hash::{Hash, Hasher};
 use viper::{self, VerificationBackend};
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

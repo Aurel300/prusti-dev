@@ -104,6 +104,12 @@ impl ProgramRef {
     pub fn get_hash(&self) -> u64 {
         self.hash
     }
+
+    pub fn get_name(&self) -> &str { "program" }
+    pub fn get_rust_name(&self) -> &str { "rustprogram" }
+    pub fn get_check_mode(&self) -> &str { "check" }
+    pub fn get_name_with_check_mode(&self) -> &str { "program-check" }
+    pub fn set_name(&mut self, _name: &str) {}
 }
 
 impl serde::Serialize for ProgramRef {

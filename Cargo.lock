@@ -1862,7 +1862,6 @@ dependencies = [
  "log",
  "num_cpus",
  "once_cell",
- "prusti-interface",
  "prusti-utils",
  "prusti-viper",
  "reqwest",

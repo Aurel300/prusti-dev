@@ -135,6 +135,16 @@ pub fn test_entrypoint<'tcx>(
         vcx.alloc_slice(&program_methods),
     ));
 
+    /*
+    let source_path = std::path::Path::new("source/path"); // TODO: env.name.source_path();
+    let rust_program_name = source_path
+        .file_name()
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_owned();
+    */
+
     request::RequestWithContext {
         program: program.to_ref(),
     }

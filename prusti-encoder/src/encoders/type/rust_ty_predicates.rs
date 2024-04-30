@@ -1,5 +1,5 @@
 use prusti_rustc_interface::middle::ty::{self};
-use task_encoder::{TaskEncoder, TaskEncoderDependencies};
+use task_encoder::{TaskEncoder, TaskEncoderDependencies, EncodeFullResult};
 use vir::{with_vcx, Type, TypeData};
 
 use crate::encoders::{PredicateEnc, PredicateEncOutputRef};
@@ -92,16 +92,7 @@ impl TaskEncoder for RustTyPredicatesEnc {
     fn do_encode_full<'tcx: 'vir, 'vir>(
         task_key: &Self::TaskKey<'tcx>,
         deps: &mut TaskEncoderDependencies<'vir>,
-    ) -> Result<
-        (
-            Self::OutputFullLocal<'vir>,
-            Self::OutputFullDependency<'vir>,
-        ),
-        (
-            Self::EncodingError,
-            Option<Self::OutputFullDependency<'vir>>,
-        ),
-    > {
+    ) -> EncodeFullResult<'vir, Self> {
         with_vcx(|vcx| {
             let (generic_ty, args) = extract_type_params(vcx.tcx(), *task_key);
             let generic_predicate = deps.require_ref::<PredicateEnc>(generic_ty).unwrap();

@@ -7,6 +7,7 @@ use rustc_middle::ty::ParamTy;
 use task_encoder::{
     TaskEncoder,
     TaskEncoderDependencies,
+    EncodeFullResult,
 };
 use vir::{
     BinaryArity, CallableIdent, DomainParamData, FunctionIdent, NullaryArityAny, ToKnownArity, UnaryArity, UnknownArity
@@ -138,13 +139,7 @@ impl TaskEncoder for DomainEnc {
     fn do_encode_full<'tcx: 'vir, 'vir>(
         task_key: &Self::TaskKey<'tcx>,
         deps: &mut TaskEncoderDependencies<'vir>,
-    ) -> Result<(
-        Self::OutputFullLocal<'vir>,
-        Self::OutputFullDependency<'vir>,
-    ), (
-        Self::EncodingError,
-        Option<Self::OutputFullDependency<'vir>>,
-    )> {
+    ) -> EncodeFullResult<'vir, Self> {
         vir::with_vcx(|vcx| {
             let base_name = task_key.get_vir_base_name(vcx);
             match task_key.kind() {

@@ -1,7 +1,8 @@
-use prusti_rustc_interface::
-    middle::{mir, ty::Ty}
-;
-use task_encoder::{TaskEncoder, TaskEncoderDependencies};
+use prusti_rustc_interface::{
+    middle::{mir, ty::{GenericArgs, Ty}},
+    span::def_id::DefId,
+};
+use task_encoder::{TaskEncoder, TaskEncoderDependencies, EncodeFullResult};
 use vir::{CallableIdent, ExprGen, FunctionIdent, Reify, UnknownArity, ViperIdent};
 
 use crate::encoders::{

@@ -6,6 +6,7 @@ use rustc_middle::mir::interpret::{ConstValue, Scalar, GlobalAlloc};
 use task_encoder::{
     TaskEncoder,
     TaskEncoderDependencies,
+    EncodeFullResult,
 };
 use vir::{CallableIdent, Arity};
 
@@ -40,13 +41,7 @@ impl TaskEncoder for ConstEnc {
     fn do_encode_full<'tcx: 'vir, 'vir>(
         task_key: &Self::TaskKey<'tcx>,
         deps: &mut TaskEncoderDependencies<'vir>,
-    ) -> Result<(
-        Self::OutputFullLocal<'vir>,
-        Self::OutputFullDependency<'vir>,
-    ), (
-        Self::EncodingError,
-        Option<Self::OutputFullDependency<'vir>>,
-    )> {
+    ) -> EncodeFullResult<'vir, Self> {
         deps.emit_output_ref::<Self>(*task_key, ());
         let (const_, encoding_depth, def_id) = *task_key;
         let res = match const_ {

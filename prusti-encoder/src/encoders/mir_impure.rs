@@ -13,7 +13,7 @@ use prusti_rustc_interface::{
 //use mir_ssa_analysis::{
 //    SsaAnalysis,
 //};
-use task_encoder::{TaskEncoder, TaskEncoderDependencies};
+use task_encoder::{TaskEncoder, TaskEncoderDependencies, EncodeFullResult};
 use vir::{MethodIdent, UnknownArity};
 
 pub struct MirImpureEnc;
@@ -88,16 +88,7 @@ impl TaskEncoder for MirImpureEnc {
     fn do_encode_full<'tcx: 'vir, 'vir>(
         task_key: &Self::TaskKey<'tcx>,
         deps: &mut TaskEncoderDependencies<'vir>,
-    ) -> Result<
-        (
-            Self::OutputFullLocal<'vir>,
-            Self::OutputFullDependency<'vir>,
-        ),
-        (
-            Self::EncodingError,
-            Option<Self::OutputFullDependency<'vir>>,
-        ),
-    > {
+    ) -> EncodeFullResult<'vir, Self> {
         let monomorphize = Self::monomorphize();
         let output_ref = if monomorphize {
             deps.require_ref::<MirMonoImpureEnc>(*task_key).unwrap()

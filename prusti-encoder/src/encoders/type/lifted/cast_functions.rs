@@ -1,4 +1,4 @@
-use task_encoder::{TaskEncoder, TaskEncoderDependencies};
+use task_encoder::{TaskEncoder, TaskEncoderDependencies, EncodeFullResult};
 use vir::{CallableIdent, FunctionIdent, UnaryArity, UnknownArity};
 
 use crate::encoders::{
@@ -103,16 +103,7 @@ impl TaskEncoder for CastFunctionsEnc {
     fn do_encode_full<'tcx: 'vir, 'vir>(
         ty: &Self::TaskKey<'tcx>,
         deps: &mut TaskEncoderDependencies<'vir>,
-    ) -> Result<
-        (
-            Self::OutputFullLocal<'vir>,
-            Self::OutputFullDependency<'vir>,
-        ),
-        (
-            Self::EncodingError,
-            Option<Self::OutputFullDependency<'vir>>,
-        ),
-    > {
+    ) -> EncodeFullResult<'vir, Self> {
         if ty.is_generic() {
             deps.emit_output_ref::<Self>(*ty, CastFunctionsOutputRef::AlreadyGeneric);
             return Ok((&[], ()));

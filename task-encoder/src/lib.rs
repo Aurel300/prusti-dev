@@ -77,6 +77,29 @@ impl<'vir, E: TaskEncoder> TaskEncoderOutput<'vir, E> {
     }
 }
 */
+
+/// The result of the actual encoder implementation (`do_encode_full`).
+pub type EncodeFullResult<'vir, E: TaskEncoder + ?Sized> = Result<(
+    E::OutputFullLocal<'vir>,
+    E::OutputFullDependency<'vir>,
+), EncodeFullError<'vir, E>>;
+
+/// An unsuccessful result occurring in `do_encode_full`.
+pub enum EncodeFullError<'vir, E: TaskEncoder + ?Sized> {
+    /// Indicates that the current task has already been encoded. This can
+    /// occur when there are cyclic dependencies between multiple encoders.
+    /// This error is specifically returned when one encoder depends on
+    /// another encoder (using e.g. `TaskEncoderDependencies::require_ref`),
+    /// that latter encoder then depending on the former again, causing the
+    /// former encoder to complete its full encoding in the inner invocation.
+    /// The outer invocation remains on the stack, but will be aborted early
+    /// as soon as the control flow returns to it.
+    AlreadyEncoded,
+
+    /// An actual error occurred during encoding.
+    EncodingError(<E as TaskEncoder>::EncodingError, Option<E::OutputFullDependency<'vir>>),
+}
+
 pub enum TaskEncoderError<E: TaskEncoder + ?Sized> {
     EnqueueingError(<E as TaskEncoder>::EnqueueingError),
     EncodingError(<E as TaskEncoder>::EncodingError),
@@ -326,7 +349,8 @@ pub trait TaskEncoder {
                     output_dep,
                 ))
             }
-            Err((err, maybe_output_dep)) => {
+            Err(EncodeFullError::AlreadyEncoded) => todo!(),
+            Err(EncodeFullError::EncodingError(err, maybe_output_dep)) => {
                 Self::with_cache(|cache| cache.borrow_mut().insert(task_key, TaskEncoderCacheState::ErrorEncode {
                     output_ref: output_ref.clone(),
                     deps,
@@ -452,13 +476,7 @@ pub trait TaskEncoder {
     fn do_encode_full<'tcx: 'vir, 'vir>(
         task_key: &Self::TaskKey<'tcx>,
         deps: &mut TaskEncoderDependencies<'vir>,
-    ) -> Result<(
-        Self::OutputFullLocal<'vir>,
-        Self::OutputFullDependency<'vir>,
-    ), (
-        Self::EncodingError,
-        Option<Self::OutputFullDependency<'vir>>,
-    )>;
+    ) -> EncodeFullResult<'vir, Self>;
 
     fn all_outputs<'vir>() -> Vec<Self::OutputFullLocal<'vir>>
         where Self: 'vir

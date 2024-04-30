@@ -8,6 +8,7 @@ use prusti_rustc_interface::{
 use task_encoder::{
     TaskEncoder,
     TaskEncoderDependencies,
+    EncodeFullResult,
 };
 use vir::add_debug_note;
 use std::collections::HashMap;
@@ -94,13 +95,7 @@ impl TaskEncoder for MirPureEnc {
     fn do_encode_full<'tcx: 'vir, 'vir>(
         task_key: &Self::TaskKey<'tcx>,
         deps: &mut TaskEncoderDependencies<'vir>,
-    ) -> Result<(
-        Self::OutputFullLocal<'vir>,
-        Self::OutputFullDependency<'vir>,
-    ), (
-        Self::EncodingError,
-        Option<Self::OutputFullDependency<'vir>>,
-    )> {
+    ) -> EncodeFullResult<'vir, Self> {
         deps.emit_output_ref::<Self>(*task_key, ());
 
         let (_, kind, def_id, substs, caller_def_id) = *task_key;

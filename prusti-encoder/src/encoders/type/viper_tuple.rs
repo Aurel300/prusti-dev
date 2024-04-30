@@ -1,6 +1,7 @@
 use task_encoder::{
     TaskEncoder,
     TaskEncoderDependencies,
+    EncodeFullResult,
 };
 
 use super::{domain::{DomainDataStruct, DomainEnc}, most_generic_ty::MostGenericTy};
@@ -50,13 +51,7 @@ impl TaskEncoder for ViperTupleEnc {
     fn do_encode_full<'tcx: 'vir, 'vir>(
         task_key: &Self::TaskKey<'tcx>,
         deps: &mut TaskEncoderDependencies<'vir>,
-    ) -> Result<(
-        Self::OutputFullLocal<'vir>,
-        Self::OutputFullDependency<'vir>,
-    ), (
-        Self::EncodingError,
-        Option<Self::OutputFullDependency<'vir>>,
-    )> {
+    ) -> EncodeFullResult<'vir, Self> {
         deps.emit_output_ref::<Self>(*task_key, ());
         if *task_key == 1 {
             Ok((ViperTupleEncOutput { tuple: None }, ()))

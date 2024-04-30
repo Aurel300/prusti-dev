@@ -1,4 +1,4 @@
-use task_encoder::{OutputRefAny, TaskEncoder};
+use task_encoder::{OutputRefAny, TaskEncoder, EncodeFullResult};
 use vir::{
     vir_format_identifier, CallableIdent, FunctionIdent, UnaryArity, UnknownArity
 };
@@ -56,16 +56,7 @@ impl TaskEncoder for TyConstructorEnc {
     fn do_encode_full<'tcx: 'vir, 'vir>(
         task_key: &Self::TaskKey<'tcx>,
         deps: &mut task_encoder::TaskEncoderDependencies<'vir>,
-    ) -> Result<
-        (
-            Self::OutputFullLocal<'vir>,
-            Self::OutputFullDependency<'vir>,
-        ),
-        (
-            Self::EncodingError,
-            Option<Self::OutputFullDependency<'vir>>,
-        ),
-    > {
+    ) -> EncodeFullResult<'vir, Self> {
         let generic_ref = deps.require_ref::<GenericEnc>(()).unwrap();
         let mut functions = vec![];
         let mut axioms = vec![];

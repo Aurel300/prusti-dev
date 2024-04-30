@@ -6,6 +6,7 @@ use prusti_interface::specs::typed::{DefSpecificationMap, ProcedureSpecification
 use task_encoder::{
     TaskEncoder,
     TaskEncoderDependencies,
+    EncodeFullResult,
 };
 
 pub struct SpecEnc;
@@ -78,13 +79,7 @@ impl TaskEncoder for SpecEnc {
     fn do_encode_full<'tcx: 'vir, 'vir>(
         task_key: &Self::TaskKey<'tcx>,
         deps: &mut TaskEncoderDependencies<'vir>,
-    ) -> Result<(
-        Self::OutputFullLocal<'vir>,
-        Self::OutputFullDependency<'vir>,
-    ), (
-        Self::EncodingError,
-        Option<Self::OutputFullDependency<'vir>>,
-    )> {
+    ) -> EncodeFullResult<'vir, Self> {
         deps.emit_output_ref::<Self>(task_key.clone(), ());
         vir::with_vcx(|vcx| {
             with_def_spec(|def_spec| {

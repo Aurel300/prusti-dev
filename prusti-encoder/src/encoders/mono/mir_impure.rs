@@ -1,5 +1,5 @@
 use prusti_rustc_interface::{middle::ty::GenericArgs, span::def_id::DefId};
-use task_encoder::{TaskEncoder, TaskEncoderDependencies};
+use task_encoder::{TaskEncoder, TaskEncoderDependencies, EncodeFullResult};
 use vir::{MethodIdent, UnknownArity};
 /// Encodes a Rust function as a Viper method using the monomorphic encoding of generics.
 pub struct MirMonoImpureEnc;
@@ -69,16 +69,7 @@ impl TaskEncoder for MirMonoImpureEnc {
     fn do_encode_full<'tcx: 'vir, 'vir>(
         task_key: &Self::TaskKey<'tcx>,
         deps: &mut TaskEncoderDependencies<'vir>,
-    ) -> Result<
-        (
-            Self::OutputFullLocal<'vir>,
-            Self::OutputFullDependency<'vir>,
-        ),
-        (
-            Self::EncodingError,
-            Option<Self::OutputFullDependency<'vir>>,
-        ),
-    > {
+    ) -> EncodeFullResult<'vir, Self> {
         Ok((<Self as ImpureFunctionEnc>::encode(*task_key, deps), ()))
     }
 }

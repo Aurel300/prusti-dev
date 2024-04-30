@@ -1,5 +1,5 @@
 use prusti_rustc_interface::middle::ty;
-use task_encoder::TaskEncoder;
+use task_encoder::{TaskEncoder, EncodeFullResult};
 use vir::with_vcx;
 
 use crate::encoders::SnapshotEnc;
@@ -39,16 +39,7 @@ impl TaskEncoder for RustTySnapshotsEnc {
     fn do_encode_full<'tcx: 'vir, 'vir>(
         task_key: &Self::TaskKey<'tcx>,
         deps: &mut task_encoder::TaskEncoderDependencies<'vir>,
-    ) -> Result<
-        (
-            Self::OutputFullLocal<'vir>,
-            Self::OutputFullDependency<'vir>,
-        ),
-        (
-            Self::EncodingError,
-            Option<Self::OutputFullDependency<'vir>>,
-        ),
-    > {
+    ) -> EncodeFullResult<'vir, Self> {
         with_vcx(|vcx| {
             let (generic_ty, args) = extract_type_params(vcx.tcx(), *task_key);
             let generic_snapshot = deps.require_ref::<SnapshotEnc>(generic_ty).unwrap();

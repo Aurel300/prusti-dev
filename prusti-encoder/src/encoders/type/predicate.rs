@@ -2,7 +2,7 @@ use prusti_rustc_interface::{
     abi,
     middle::ty::{self, TyKind},
 };
-use task_encoder::{TaskEncoder, TaskEncoderDependencies};
+use task_encoder::{TaskEncoder, TaskEncoderDependencies, EncodeFullResult};
 use vir::{
     add_debug_note, CallableIdent, FunctionIdent, MethodIdent, NullaryArity, PredicateIdent,
     TypeData, UnaryArity, UnknownArity, VirCtxt,
@@ -201,16 +201,7 @@ impl TaskEncoder for PredicateEnc {
     fn do_encode_full<'tcx: 'vir, 'vir>(
         task_key: &Self::TaskKey<'tcx>,
         deps: &mut TaskEncoderDependencies<'vir>,
-    ) -> Result<
-        (
-            Self::OutputFullLocal<'vir>,
-            Self::OutputFullDependency<'vir>,
-        ),
-        (
-            Self::EncodingError,
-            Option<Self::OutputFullDependency<'vir>>,
-        ),
-    > {
+    ) -> EncodeFullResult<'vir, Self> {
         let snap = deps.require_local::<SnapshotEnc>(*task_key).unwrap();
         let generic_output_ref = deps.require_ref::<GenericEnc>(()).unwrap();
         let mut enc = vir::with_vcx(|vcx| {

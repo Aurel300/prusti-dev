@@ -1,4 +1,4 @@
-use task_encoder::{TaskEncoder, TaskEncoderDependencies};
+use task_encoder::{TaskEncoder, TaskEncoderDependencies, EncodeFullResult};
 use vir::{
     BinaryArity, CallableIdent, DomainIdent, DomainParamData, FunctionIdent,
     KnownArityAny, NullaryArity, PredicateIdent, TypeData, UnaryArity, ViperIdent,
@@ -54,16 +54,7 @@ impl TaskEncoder for GenericEnc {
     fn do_encode_full<'tcx: 'vir, 'vir>(
         task_key: &Self::TaskKey<'tcx>,
         deps: &mut TaskEncoderDependencies<'vir>,
-    ) -> Result<
-        (
-            Self::OutputFullLocal<'vir>,
-            Self::OutputFullDependency<'vir>,
-        ),
-        (
-            Self::EncodingError,
-            Option<Self::OutputFullDependency<'vir>>,
-        ),
-    > {
+    ) -> EncodeFullResult<'vir, Self> {
         let ref_to_pred =
             PredicateIdent::new(ViperIdent::new("p_Param"), BinaryArity::new(&[&TypeData::Ref, &TYP_DOMAIN]));
         let type_domain_ident = DomainIdent::nullary(ViperIdent::new("Type"));

@@ -4,7 +4,7 @@ use prusti_rustc_interface::{
     span::def_id::DefId
 };
 
-use task_encoder::{TaskEncoder, TaskEncoderDependencies};
+use task_encoder::{TaskEncoder, TaskEncoderDependencies, EncodeFullResult};
 
 use crate::encoders::{
     rust_ty_predicates::{RustTyPredicatesEnc, RustTyPredicatesEncOutputRef},
@@ -48,16 +48,7 @@ impl TaskEncoder for MirLocalDefEnc {
     fn do_encode_full<'tcx: 'vir, 'vir>(
         task_key: &Self::TaskKey<'tcx>,
         deps: &mut TaskEncoderDependencies<'vir>,
-    ) -> Result<
-        (
-            Self::OutputFullLocal<'vir>,
-            Self::OutputFullDependency<'vir>,
-        ),
-        (
-            Self::EncodingError,
-            Option<Self::OutputFullDependency<'vir>>,
-        ),
-    > {
+    ) -> EncodeFullResult<'vir, Self> {
         let (def_id, substs, caller_def_id) = *task_key;
         deps.emit_output_ref::<Self>(*task_key, ());
 

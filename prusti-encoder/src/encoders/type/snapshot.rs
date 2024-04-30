@@ -1,4 +1,4 @@
-use task_encoder::{TaskEncoder, TaskEncoderDependencies};
+use task_encoder::{TaskEncoder, TaskEncoderDependencies, EncodeFullResult};
 
 use super::{domain::{DomainEnc, DomainEncSpecifics}, lifted::generic::{LiftedGeneric, LiftedGenericEnc}, most_generic_ty::MostGenericTy};
 
@@ -36,16 +36,7 @@ impl TaskEncoder for SnapshotEnc {
     fn do_encode_full<'tcx: 'vir, 'vir>(
         ty: &Self::TaskKey<'tcx>,
         deps: &mut TaskEncoderDependencies<'vir>,
-    ) -> Result<
-        (
-            Self::OutputFullLocal<'vir>,
-            Self::OutputFullDependency<'vir>,
-        ),
-        (
-            Self::EncodingError,
-            Option<Self::OutputFullDependency<'vir>>,
-        ),
-    > {
+    ) -> EncodeFullResult<'vir, Self> {
         vir::with_vcx(|vcx| {
             let out = deps.require_ref::<DomainEnc>(*ty).unwrap();
             let snapshot = out.domain.apply(vcx, []);

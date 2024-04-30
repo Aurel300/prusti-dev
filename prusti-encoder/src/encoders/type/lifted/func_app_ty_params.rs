@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use prusti_rustc_interface::middle::ty::{GenericArgsRef, Ty, TyKind};
-use task_encoder::TaskEncoder;
+use task_encoder::{TaskEncoder, EncodeFullResult};
 
 use super::{
     generic::LiftedGeneric,
@@ -31,16 +31,7 @@ impl TaskEncoder for LiftedFuncAppTyParamsEnc {
     fn do_encode_full<'tcx: 'vir, 'vir>(
         task_key: &Self::TaskKey<'tcx>,
         deps: &mut task_encoder::TaskEncoderDependencies<'vir>,
-    ) -> Result<
-        (
-            Self::OutputFullLocal<'vir>,
-            Self::OutputFullDependency<'vir>,
-        ),
-        (
-            Self::EncodingError,
-            Option<Self::OutputFullDependency<'vir>>,
-        ),
-    > {
+    ) -> EncodeFullResult<'vir, Self> {
         deps.emit_output_ref::<Self>(*task_key, ());
         vir::with_vcx(|vcx| {
             let (monomorphize, substs) = task_key;

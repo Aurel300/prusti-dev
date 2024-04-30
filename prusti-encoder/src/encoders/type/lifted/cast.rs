@@ -1,5 +1,5 @@
 use prusti_rustc_interface::middle::ty;
-use task_encoder::{TaskEncoder, TaskEncoderDependencies, TaskEncoderError};
+use task_encoder::{TaskEncoder, TaskEncoderDependencies, TaskEncoderError, EncodeFullResult};
 use vir::{FunctionIdent, MethodIdent, StmtGen, UnknownArity, VirCtxt};
 
 use super::{
@@ -213,16 +213,7 @@ impl TaskEncoder for CastToEnc<CastTypePure> {
     fn do_encode_full<'tcx: 'vir, 'vir>(
         task_key: &Self::TaskKey<'tcx>,
         deps: &mut TaskEncoderDependencies<'vir>,
-    ) -> Result<
-        (
-            Self::OutputFullLocal<'vir>,
-            Self::OutputFullDependency<'vir>,
-        ),
-        (
-            Self::EncodingError,
-            Option<Self::OutputFullDependency<'vir>>,
-        ),
-    > {
+    ) -> EncodeFullResult<'vir, Self> {
         let output_ref = Self::encode_cast(*task_key, deps);
         deps.emit_output_ref::<Self>(*task_key, output_ref);
         Ok(((), ()))
@@ -243,16 +234,7 @@ impl TaskEncoder for CastToEnc<CastTypeImpure> {
     fn do_encode_full<'tcx: 'vir, 'vir>(
         task_key: &Self::TaskKey<'tcx>,
         deps: &mut TaskEncoderDependencies<'vir>,
-    ) -> Result<
-        (
-            Self::OutputFullLocal<'vir>,
-            Self::OutputFullDependency<'vir>,
-        ),
-        (
-            Self::EncodingError,
-            Option<Self::OutputFullDependency<'vir>>,
-        ),
-    > {
+    ) -> EncodeFullResult<'vir, Self> {
         let output_ref = Self::encode_cast(*task_key, deps);
         deps.emit_output_ref::<Self>(*task_key, output_ref);
         Ok(((), ()))

@@ -1,5 +1,5 @@
 use prusti_rustc_interface::middle::ty;
-use task_encoder::{OutputRefAny, TaskEncoder};
+use task_encoder::{OutputRefAny, TaskEncoder, EncodeFullResult};
 use vir::with_vcx;
 
 use crate::encoders::GenericEnc;
@@ -47,16 +47,7 @@ impl TaskEncoder for LiftedGenericEnc {
     fn do_encode_full<'tcx: 'vir, 'vir>(
         task_key: &Self::TaskKey<'tcx>,
         deps: &mut task_encoder::TaskEncoderDependencies<'vir>,
-    ) -> Result<
-        (
-            Self::OutputFullLocal<'vir>,
-            Self::OutputFullDependency<'vir>,
-        ),
-        (
-            Self::EncodingError,
-            Option<Self::OutputFullDependency<'vir>>,
-        ),
-    > {
+    ) -> EncodeFullResult<'vir, Self> {
         with_vcx(|vcx| {
             let output_ref = vcx.mk_local_decl(
                 task_key.name.as_str(),

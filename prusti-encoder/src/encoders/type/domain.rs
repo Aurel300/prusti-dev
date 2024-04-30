@@ -798,7 +798,7 @@ struct LiftedRustTyData<'vir> {
 
 impl <'vir> FieldTy<'vir> {
     fn from_ty<'tcx: 'vir>(vcx: &'vir vir::VirCtxt<'tcx>, deps: &mut TaskEncoderDependencies, ty: ty::Ty<'tcx>) -> FieldTy<'vir> {
-        let vir_ty = deps.require_local::<RustTySnapshotsEnc>(ty)
+        let vir_ty = deps.require_ref::<RustTySnapshotsEnc>(ty)
             .unwrap()
             .generic_snapshot
             .snapshot;

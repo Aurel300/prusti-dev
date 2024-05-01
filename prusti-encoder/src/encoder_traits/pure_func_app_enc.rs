@@ -5,7 +5,7 @@ use prusti_rustc_interface::{
     },
     span::def_id::DefId,
 };
-use task_encoder::TaskEncoderDependencies;
+use task_encoder::{TaskEncoder, TaskEncoderDependencies};
 
 use crate::encoders::{
     lifted::{
@@ -16,7 +16,7 @@ use crate::encoders::{
 /// Encoders (such as [`crate::encoders::MirPureEnc`],
 /// [`crate::encoders::MirImpureEnc`]) implement this trait to encode
 /// applications of Rust functions annotated as pure.
-pub trait PureFuncAppEnc<'tcx: 'vir, 'vir> {
+pub trait PureFuncAppEnc<'tcx: 'vir, 'vir, E: TaskEncoder + 'vir + ?Sized> {
     /// Extra arguments required for the encoder to encode an argument to the
     /// function (in mir this is an `Operand`)
     type EncodeOperandArgs;
@@ -36,7 +36,7 @@ pub trait PureFuncAppEnc<'tcx: 'vir, 'vir> {
 
     /// Task encoder dependencies are required for encoding Viper casts between
     /// generic and concrete types.
-    fn deps(&mut self) -> &mut TaskEncoderDependencies<'vir>;
+    fn deps(&mut self) -> &mut TaskEncoderDependencies<'vir, E>;
 
     /// The data source that can provide local declarations, necesary for determining
     /// the function type

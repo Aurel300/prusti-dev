@@ -53,7 +53,7 @@ impl TaskEncoder for GenericEnc {
     #[allow(non_snake_case)]
     fn do_encode_full<'tcx: 'vir, 'vir>(
         task_key: &Self::TaskKey<'tcx>,
-        deps: &mut TaskEncoderDependencies<'vir>,
+        deps: &mut TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self> {
         let ref_to_pred =
             PredicateIdent::new(ViperIdent::new("p_Param"), BinaryArity::new(&[&TypeData::Ref, &TYP_DOMAIN]));
@@ -89,7 +89,7 @@ impl TaskEncoder for GenericEnc {
         };
 
         #[allow(clippy::unit_arg)]
-        deps.emit_output_ref::<Self>(
+        deps.emit_output_ref(
             *task_key,
             output_ref
         );

@@ -81,9 +81,9 @@ impl TaskEncoder for AggregateSnapArgsCastEnc {
 
     fn do_encode_full<'tcx: 'vir, 'vir>(
         task_key: &Self::TaskKey<'tcx>,
-        deps: &mut task_encoder::TaskEncoderDependencies<'vir>,
+        deps: &mut task_encoder::TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self> {
-        deps.emit_output_ref::<AggregateSnapArgsCastEnc>(task_key.clone(), ());
+        deps.emit_output_ref(task_key.clone(), ());
         vir::with_vcx(|vcx| {
             let cast_functions: Vec<Option<PureCast<'vir>>> =
                 match task_key.aggregate_type {

@@ -69,6 +69,7 @@ impl<'vir, T> task_encoder::OutputRefAny for RustTyGenericCastEncOutput<'vir, T>
 
 impl<T: CastType + 'static> RustTyCastersEnc<T>
 where
+    Self: TaskEncoder,
     CastersEnc<T>: for<'vir, 'tcx> TaskEncoder<
         TaskDescription<'tcx> = MostGenericTy<'tcx>,
         OutputRef<'vir> = Casters<'vir, T>,
@@ -77,7 +78,7 @@ where
 {
     fn encode<'tcx: 'vir, 'vir>(
         task_key: &ty::Ty<'tcx>,
-        deps: &mut task_encoder::TaskEncoderDependencies<'vir>,
+        deps: &mut task_encoder::TaskEncoderDependencies<'vir, Self>,
     ) -> RustTyGenericCastEncOutput<'vir, Casters<'vir, T>> {
         with_vcx(|vcx| {
             let (generic_ty, args) = extract_type_params(vcx.tcx(), *task_key);
@@ -114,9 +115,9 @@ impl TaskEncoder for RustTyCastersEnc<CastTypePure> {
 
     fn do_encode_full<'tcx: 'vir, 'vir>(
         task_key: &Self::TaskKey<'tcx>,
-        deps: &mut task_encoder::TaskEncoderDependencies<'vir>,
+        deps: &mut task_encoder::TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self> {
-        deps.emit_output_ref::<Self>(*task_key, ());
+        deps.emit_output_ref(*task_key, ());
         Ok((Self::encode(task_key, deps), ()))
     }
 }
@@ -138,9 +139,9 @@ impl TaskEncoder for RustTyCastersEnc<CastTypeImpure> {
 
     fn do_encode_full<'tcx: 'vir, 'vir>(
         task_key: &Self::TaskKey<'tcx>,
-        deps: &mut task_encoder::TaskEncoderDependencies<'vir>,
+        deps: &mut task_encoder::TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self> {
-        deps.emit_output_ref::<Self>(*task_key, ());
+        deps.emit_output_ref(*task_key, ());
         Ok((Self::encode(task_key, deps), ()))
     }
 }

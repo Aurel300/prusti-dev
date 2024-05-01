@@ -35,12 +35,12 @@ impl TaskEncoder for SnapshotEnc {
 
     fn do_encode_full<'tcx: 'vir, 'vir>(
         ty: &Self::TaskKey<'tcx>,
-        deps: &mut TaskEncoderDependencies<'vir>,
+        deps: &mut TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self> {
         vir::with_vcx(|vcx| {
             let out = deps.require_ref::<DomainEnc>(*ty).unwrap();
             let snapshot = out.domain.apply(vcx, []);
-            deps.emit_output_ref::<Self>(
+            deps.emit_output_ref(
                 *ty,
                 SnapshotEncOutputRef {
                     snapshot,

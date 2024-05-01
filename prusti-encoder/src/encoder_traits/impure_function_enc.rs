@@ -40,7 +40,7 @@ where
 
     fn encode<'vir, 'tcx: 'vir>(
         task_key: Self::TaskKey<'tcx>,
-        deps: &mut TaskEncoderDependencies<'vir>,
+        deps: &mut TaskEncoderDependencies<'vir, Self>,
     ) -> ImpureFunctionEncOutput<'vir> {
         let def_id = Self::get_def_id(&task_key);
         let caller_def_id = Self::get_caller_def_id(&task_key);
@@ -78,7 +78,7 @@ where
             args.extend(param_ty_decls.iter().map(|decl| decl.ty));
             let args = UnknownArity::new(vcx.alloc_slice(&args));
             let method_ref = MethodIdent::new(method_name, args);
-            deps.emit_output_ref::<Self>(task_key, ImpureFunctionEncOutputRef { method_ref });
+            deps.emit_output_ref(task_key, ImpureFunctionEncOutputRef { method_ref });
 
             // Do not encode the method body if it is external, trusted or just
             // a call stub.

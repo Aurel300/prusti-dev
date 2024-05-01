@@ -46,14 +46,14 @@ impl TaskEncoder for LiftedGenericEnc {
 
     fn do_encode_full<'tcx: 'vir, 'vir>(
         task_key: &Self::TaskKey<'tcx>,
-        deps: &mut task_encoder::TaskEncoderDependencies<'vir>,
+        deps: &mut task_encoder::TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self> {
         with_vcx(|vcx| {
             let output_ref = vcx.mk_local_decl(
-                task_key.name.as_str(),
+                vcx.alloc_str(task_key.name.as_str()),
                 deps.require_ref::<GenericEnc>(()).unwrap().type_snapshot,
             );
-            deps.emit_output_ref::<Self>(*task_key, LiftedGeneric(output_ref));
+            deps.emit_output_ref(*task_key, LiftedGeneric(output_ref));
             Ok(((), ()))
         })
     }

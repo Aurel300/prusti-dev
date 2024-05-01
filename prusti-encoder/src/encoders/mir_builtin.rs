@@ -54,7 +54,7 @@ impl TaskEncoder for MirBuiltinEnc {
 
     fn do_encode_full<'tcx: 'vir, 'vir>(
         task_key: &Self::TaskKey<'tcx>,
-        deps: &mut TaskEncoderDependencies<'vir>,
+        deps: &mut TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self> {
         vir::with_vcx(|vcx| {
             match *task_key {
@@ -89,7 +89,7 @@ fn int_name<'tcx>(ty: ty::Ty<'tcx>) -> &'static str {
 impl MirBuiltinEnc {
     fn handle_un_op<'vir, 'tcx>(
         vcx: &'vir vir::VirCtxt<'tcx>,
-        deps: &mut TaskEncoderDependencies<'vir>,
+        deps: &mut TaskEncoderDependencies<'vir, Self>,
         key: <Self as TaskEncoder>::TaskKey<'tcx>,
         op: mir::UnOp,
         ty: ty::Ty<'tcx>,
@@ -102,7 +102,7 @@ impl MirBuiltinEnc {
         let name = vir::vir_format_identifier!(vcx, "mir_unop_{op:?}_{}", int_name(ty));
         let arity = UnknownArity::new(vcx.alloc_slice(&[e_ty.snapshot]));
         let function = FunctionIdent::new(name, arity, e_ty.snapshot);
-        deps.emit_output_ref::<Self>(key, MirBuiltinEncOutputRef {
+        deps.emit_output_ref(key, MirBuiltinEncOutputRef {
             function,
         });
 
@@ -137,7 +137,7 @@ impl MirBuiltinEnc {
 
     fn handle_bin_op<'vir, 'tcx>(
         vcx: &'vir vir::VirCtxt<'tcx>,
-        deps: &mut TaskEncoderDependencies<'vir>,
+        deps: &mut TaskEncoderDependencies<'vir, Self>,
         key: <Self as TaskEncoder>::TaskKey<'tcx>,
         res_ty: ty::Ty<'tcx>,
         op: mir::BinOp,
@@ -164,7 +164,7 @@ impl MirBuiltinEnc {
         let name = vir::vir_format_identifier!(vcx, "mir_binop_{op:?}_{}_{}", int_name(l_ty), int_name(r_ty));
         let arity = UnknownArity::new(vcx.alloc_slice(&[e_l_ty.snapshot, e_r_ty.snapshot]));
         let function = FunctionIdent::new(name, arity, e_res_ty.snapshot);
-        deps.emit_output_ref::<Self>(key, MirBuiltinEncOutputRef {
+        deps.emit_output_ref(key, MirBuiltinEncOutputRef {
             function,
         });
         let lhs = prim_l_ty.snap_to_prim.apply(vcx,
@@ -265,7 +265,7 @@ impl MirBuiltinEnc {
 
     fn handle_checked_bin_op<'vir, 'tcx>(
         vcx: &'vir vir::VirCtxt<'tcx>,
-        deps: &mut TaskEncoderDependencies<'vir>,
+        deps: &mut TaskEncoderDependencies<'vir, Self>,
         key: <Self as TaskEncoder>::TaskKey<'tcx>,
         res_ty: ty::Ty<'tcx>,
         op: mir::BinOp,
@@ -298,7 +298,7 @@ impl MirBuiltinEnc {
             .unwrap()
             .generic_snapshot;
         let function = FunctionIdent::new(name, arity, e_res_ty.snapshot);
-        deps.emit_output_ref::<Self>(key, MirBuiltinEncOutputRef { function });
+        deps.emit_output_ref(key, MirBuiltinEncOutputRef { function });
 
         let e_res_ty = deps
             .require_local::<RustTySnapshotsEnc>(res_ty)

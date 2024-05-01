@@ -2,7 +2,7 @@ use prusti_rustc_interface::{
     middle::{mir, ty::{GenericArgs, Ty}},
     span::def_id::DefId,
 };
-use task_encoder::{TaskEncoder, TaskEncoderDependencies, EncodeFullResult};
+use task_encoder::{TaskEncoder, TaskEncoderDependencies};
 use vir::{CallableIdent, ExprGen, FunctionIdent, Reify, UnknownArity, ViperIdent};
 
 use crate::encoders::{
@@ -46,7 +46,7 @@ where
     /// `U`
     fn mk_type_assertion<'vir, 'tcx: 'vir, Curr, Next>(
         vcx: &'vir vir::VirCtxt<'tcx>,
-        deps: &mut TaskEncoderDependencies<'vir>,
+        deps: &mut TaskEncoderDependencies<'vir, Self>,
         arg: ExprGen<'vir, Curr, Next>, // Snapshot encoded argument
         ty: Ty<'tcx>,
     ) -> Option<ExprGen<'vir, Curr, Next>> {
@@ -80,7 +80,7 @@ where
 
     fn encode<'vir, 'tcx: 'vir>(
         task_key: Self::TaskKey<'tcx>,
-        deps: &mut TaskEncoderDependencies<'vir>,
+        deps: &mut TaskEncoderDependencies<'vir, Self>,
     ) -> MirFunctionEncOutput<'vir> {
         let def_id = Self::get_def_id(&task_key);
         let caller_def_id = Self::get_caller_def_id(&task_key);
@@ -107,7 +107,7 @@ where
             let ident_args = UnknownArity::new(vcx.alloc_slice(&ident_args));
             let return_type = local_defs.locals[mir::RETURN_PLACE].ty;
             let function_ref = FunctionIdent::new(function_ident, ident_args, return_type.snapshot);
-            deps.emit_output_ref::<Self>(task_key, MirFunctionEncOutputRef { function_ref });
+            deps.emit_output_ref(task_key, MirFunctionEncOutputRef { function_ref });
 
             let spec = deps
                 .require_local::<MirSpecEnc>((def_id, substs, None, true))

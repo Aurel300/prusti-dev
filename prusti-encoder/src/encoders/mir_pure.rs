@@ -94,9 +94,9 @@ impl TaskEncoder for MirPureEnc {
 
     fn do_encode_full<'tcx: 'vir, 'vir>(
         task_key: &Self::TaskKey<'tcx>,
-        deps: &mut TaskEncoderDependencies<'vir>,
+        deps: &mut TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self> {
-        deps.emit_output_ref::<Self>(*task_key, ());
+        deps.emit_output_ref(*task_key, ());
 
         let (_, kind, def_id, substs, caller_def_id) = *task_key;
 
@@ -177,13 +177,13 @@ struct Enc<'tcx, 'vir: 'enc, 'enc>
     def_id: DefId,
     body: &'enc mir::Body<'tcx>,
     rev_doms: rev_doms::ReverseDominators,
-    deps: &'enc mut TaskEncoderDependencies<'vir>,
+    deps: &'enc mut TaskEncoderDependencies<'vir, MirPureEnc>,
     visited: IndexVec<mir::BasicBlock, bool>,
     version_ctr: IndexVec<mir::Local, usize>,
     phi_ctr: usize,
 }
 
-impl <'tcx: 'vir, 'vir, 'enc> PureFuncAppEnc<'tcx, 'vir> for Enc<'tcx, 'vir, 'enc> {
+impl <'tcx: 'vir, 'vir, 'enc> PureFuncAppEnc<'tcx, 'vir, MirPureEnc> for Enc<'tcx, 'vir, 'enc> {
     fn vcx(&self) -> &'vir vir::VirCtxt<'tcx> {
         self.vcx
     }
@@ -196,7 +196,7 @@ impl <'tcx: 'vir, 'vir, 'enc> PureFuncAppEnc<'tcx, 'vir> for Enc<'tcx, 'vir, 'en
 
     type LocalDeclsSrc = Body<'tcx>;
 
-    fn deps(&mut self) -> &mut TaskEncoderDependencies<'vir> {
+    fn deps(&mut self) -> &mut TaskEncoderDependencies<'vir, MirPureEnc> {
         self.deps
     }
 
@@ -225,7 +225,7 @@ impl<'tcx, 'vir: 'enc, 'enc> Enc<'tcx, 'vir, 'enc>
         encoding_depth: usize,
         def_id: DefId,
         body: &'enc mir::Body<'tcx>,
-        deps: &'enc mut TaskEncoderDependencies<'vir>,
+        deps: &'enc mut TaskEncoderDependencies<'vir, MirPureEnc>,
     ) -> Self {
         assert!(!body.basic_blocks.is_cfg_cyclic(), "MIR pure encoding does not support loops");
         let rev_doms = rev_doms::ReverseDominators::new(&body.basic_blocks);

@@ -1,7 +1,7 @@
 #![feature(associated_type_defaults)]
 
 use hashlink::LinkedHashMap;
-use std::cell::RefCell;
+use std::{cell::RefCell, marker::PhantomData};
 
 pub trait OutputRefAny {}
 impl OutputRefAny for () {}
@@ -23,7 +23,7 @@ pub enum TaskEncoderCacheState<'vir, E: TaskEncoder + 'vir + ?Sized> {
     /// TODO: can still collect errors?
     Encoded {
         output_ref: <E as TaskEncoder>::OutputRef<'vir>,
-        deps: TaskEncoderDependencies<'vir>,
+        deps: TaskEncoderDependencies<'vir, E>,
         output_local: <E as TaskEncoder>::OutputFullLocal<'vir>,
         output_dep: <E as TaskEncoder>::OutputFullDependency<'vir>,
     },
@@ -41,7 +41,7 @@ pub enum TaskEncoderCacheState<'vir, E: TaskEncoder + 'vir + ?Sized> {
     /// to encode its signature, to be included in dependents' programs.
     ErrorEncode {
         output_ref: <E as TaskEncoder>::OutputRef<'vir>,
-        deps: TaskEncoderDependencies<'vir>,
+        deps: TaskEncoderDependencies<'vir, E>,
         error: TaskEncoderError<E>,
         output_dep: Option<<E as TaskEncoder>::OutputFullDependency<'vir>>,
     },
@@ -79,13 +79,13 @@ impl<'vir, E: TaskEncoder> TaskEncoderOutput<'vir, E> {
 */
 
 /// The result of the actual encoder implementation (`do_encode_full`).
-pub type EncodeFullResult<'vir, E: TaskEncoder + ?Sized> = Result<(
+pub type EncodeFullResult<'vir, E: TaskEncoder + 'vir + ?Sized> = Result<(
     E::OutputFullLocal<'vir>,
     E::OutputFullDependency<'vir>,
 ), EncodeFullError<'vir, E>>;
 
 /// An unsuccessful result occurring in `do_encode_full`.
-pub enum EncodeFullError<'vir, E: TaskEncoder + ?Sized> {
+pub enum EncodeFullError<'vir, E: TaskEncoder + 'vir + ?Sized> {
     /// Indicates that the current task has already been encoded. This can
     /// occur when there are cyclic dependencies between multiple encoders.
     /// This error is specifically returned when one encoder depends on
@@ -132,43 +132,43 @@ impl<E: TaskEncoder + ?Sized> Clone for TaskEncoderError<E> {
     }
 }
 
-#[derive(Default)]
-pub struct TaskEncoderDependencies<'a> {
-    pub deps_local: Vec<&'a dyn OutputRefAny>,
-    pub deps_dep: Vec<&'a dyn OutputRefAny>,
+pub struct TaskEncoderDependencies<'vir, E: TaskEncoder + 'vir + ?Sized> {
+    _marker: PhantomData<E>,
+    pub deps_local: Vec<&'vir dyn OutputRefAny>,
+    pub deps_dep: Vec<&'vir dyn OutputRefAny>,
 }
-impl<'a> TaskEncoderDependencies<'a> {
-    pub fn require_ref<'vir, 'tcx: 'vir, E: TaskEncoder>(
+impl<'vir, E: TaskEncoder + 'vir + ?Sized> TaskEncoderDependencies<'vir, E> {
+    pub fn require_ref<'tcx: 'vir, EOther: TaskEncoder>(
         &mut self,
-        task: <E as TaskEncoder>::TaskDescription<'tcx>,
+        task: <EOther as TaskEncoder>::TaskDescription<'tcx>,
     ) -> Result<
-        <E as TaskEncoder>::OutputRef<'vir>,
-        TaskEncoderError<E>,
+        <EOther as TaskEncoder>::OutputRef<'vir>,
+        TaskEncoderError<EOther>,
     > {
-        E::encode_ref(task)
+        EOther::encode_ref(task)
     }
 
-    pub fn require_local<'vir, 'tcx: 'vir, E: TaskEncoder + 'vir>(
+    pub fn require_local<'tcx: 'vir, EOther: TaskEncoder + 'vir>(
         &mut self,
-        task: <E as TaskEncoder>::TaskDescription<'tcx>,
+        task: <EOther as TaskEncoder>::TaskDescription<'tcx>,
     ) -> Result<
-        <E as TaskEncoder>::OutputFullLocal<'vir>,
-        TaskEncoderError<E>,
+        <EOther as TaskEncoder>::OutputFullLocal<'vir>,
+        TaskEncoderError<EOther>,
     > {
-        E::encode(task).map(|(_output_ref, output_local, _output_dep)| output_local)
+        EOther::encode(task).map(|(_output_ref, output_local, _output_dep)| output_local)
     }
 
-    pub fn require_dep<'vir, 'tcx: 'vir, E: TaskEncoder + 'vir>(
+    pub fn require_dep<'tcx: 'vir, EOther: TaskEncoder + 'vir>(
         &mut self,
-        task: <E as TaskEncoder>::TaskDescription<'tcx>,
+        task: <EOther as TaskEncoder>::TaskDescription<'tcx>,
     ) -> Result<
-        <E as TaskEncoder>::OutputFullDependency<'vir>,
-        TaskEncoderError<E>,
+        <EOther as TaskEncoder>::OutputFullDependency<'vir>,
+        TaskEncoderError<EOther>,
     > {
-        E::encode(task).map(|(_output_ref, _output_local, output_dep)| output_dep)
+        EOther::encode(task).map(|(_output_ref, _output_local, output_dep)| output_dep)
     }
 
-    pub fn emit_output_ref<'vir, 'tcx: 'vir, E: TaskEncoder + 'vir>(
+    pub fn emit_output_ref<'tcx: 'vir>(
         &mut self,
         task_key: E::TaskKey<'tcx>,
         output_ref: E::OutputRef<'vir>,
@@ -200,12 +200,14 @@ pub trait TaskEncoder {
     /// Fully encoded output for this task. When encoding items which can be
     /// dependencies (such as methods), this output should only be emitted in
     /// one Viper program.
-    type OutputFullLocal<'vir>: Clone;
+    type OutputFullLocal<'vir>: Clone
+        where Self: 'vir;
 
     /// Fully encoded output for this task for dependents. When encoding items
     /// which can be dependencies (such as methods), this output should be
     /// emitted in each Viper program that depends on this task.
-    type OutputFullDependency<'vir>: Clone = ();
+    type OutputFullDependency<'vir>: Clone = ()
+        where Self: 'vir;
 
     type EnqueueingError: Clone + std::fmt::Debug = ();
     type EncodingError: Clone + std::fmt::Debug;
@@ -327,7 +329,11 @@ pub trait TaskEncoder {
             return in_cache;
         }
 
-        let mut deps = TaskEncoderDependencies::default();
+        let mut deps = TaskEncoderDependencies {
+            _marker: PhantomData,
+            deps_local: vec![],
+            deps_dep: vec![],
+        };
         let encode_result = Self::do_encode_full(&task_key, &mut deps);
 
         let output_ref = Self::with_cache(|cache| match cache.borrow().get(&task_key) {
@@ -475,7 +481,7 @@ pub trait TaskEncoder {
 */
     fn do_encode_full<'tcx: 'vir, 'vir>(
         task_key: &Self::TaskKey<'tcx>,
-        deps: &mut TaskEncoderDependencies<'vir>,
+        deps: &mut TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self>;
 
     fn all_outputs<'vir>() -> Vec<Self::OutputFullLocal<'vir>>

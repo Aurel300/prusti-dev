@@ -38,12 +38,12 @@ impl TaskEncoder for RustTySnapshotsEnc {
 
     fn do_encode_full<'tcx: 'vir, 'vir>(
         task_key: &Self::TaskKey<'tcx>,
-        deps: &mut task_encoder::TaskEncoderDependencies<'vir>,
+        deps: &mut task_encoder::TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self> {
         with_vcx(|vcx| {
             let (generic_ty, args) = extract_type_params(vcx.tcx(), *task_key);
             let generic_snapshot = deps.require_ref::<SnapshotEnc>(generic_ty).unwrap();
-            deps.emit_output_ref::<RustTySnapshotsEnc>(
+            deps.emit_output_ref(
                 *task_key,
                 RustTySnapshotsEncOutputRef { generic_snapshot },
             );

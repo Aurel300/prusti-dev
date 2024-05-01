@@ -87,7 +87,7 @@ impl TaskEncoder for MirImpureEnc {
 
     fn do_encode_full<'tcx: 'vir, 'vir>(
         task_key: &Self::TaskKey<'tcx>,
-        deps: &mut TaskEncoderDependencies<'vir>,
+        deps: &mut TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self> {
         let monomorphize = Self::monomorphize();
         let output_ref = if monomorphize {
@@ -95,7 +95,7 @@ impl TaskEncoder for MirImpureEnc {
         } else {
             deps.require_ref::<MirPolyImpureEnc>(task_key.def_id).unwrap()
         };
-        deps.emit_output_ref::<Self>(*task_key, output_ref);
+        deps.emit_output_ref(*task_key, output_ref);
         let output: ImpureFunctionEncOutput<'_> = if monomorphize {
             deps.require_local::<MirMonoImpureEnc>(*task_key).unwrap()
         } else {
@@ -105,13 +105,13 @@ impl TaskEncoder for MirImpureEnc {
     }
 }
 
-pub struct ImpureEncVisitor<'tcx, 'vir, 'enc>
+pub struct ImpureEncVisitor<'tcx, 'vir, 'enc, E: TaskEncoder>
     where 'vir: 'enc
 {
     pub vcx: &'vir vir::VirCtxt<'tcx>,
     // Are we monomorphizing functions?
     pub monomorphize: bool,
-    pub deps: &'enc mut TaskEncoderDependencies<'vir>,
+    pub deps: &'enc mut TaskEncoderDependencies<'vir, E>,
     pub def_id: DefId,
     pub local_decls: &'enc mir::LocalDecls<'tcx>,
     //ssa_analysis: SsaAnalysis,
@@ -129,7 +129,7 @@ pub struct ImpureEncVisitor<'tcx, 'vir, 'enc>
     pub encoded_blocks: Vec<vir::CfgBlock<'vir>>, // TODO: use IndexVec ?
 }
 
-impl<'tcx: 'vir, 'vir> PureFuncAppEnc<'tcx, 'vir> for ImpureEncVisitor<'tcx, 'vir, '_> {
+impl<'tcx: 'vir, 'vir, E: TaskEncoder> PureFuncAppEnc<'tcx, 'vir, E> for ImpureEncVisitor<'tcx, 'vir, '_, E> {
     type EncodeOperandArgs = ();
     type Curr = !;
     type Next = !;
@@ -138,7 +138,7 @@ impl<'tcx: 'vir, 'vir> PureFuncAppEnc<'tcx, 'vir> for ImpureEncVisitor<'tcx, 'vi
         self.vcx
     }
 
-    fn deps(&mut self) -> &mut TaskEncoderDependencies<'vir> {
+    fn deps(&mut self) -> &mut TaskEncoderDependencies<'vir, E> {
         self.deps
     }
 
@@ -180,7 +180,7 @@ impl<'vir> EncodePlaceResult<'vir> {
     }
 }
 
-impl<'tcx, 'vir, 'enc> ImpureEncVisitor<'tcx, 'vir, 'enc> {
+impl<'tcx, 'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'tcx, 'vir, 'enc, E> {
     fn stmt(&mut self, stmt: vir::Stmt<'vir>) {
         self.current_stmts
             .as_mut()
@@ -486,7 +486,7 @@ impl<'tcx, 'vir, 'enc> ImpureEncVisitor<'tcx, 'vir, 'enc> {
     }
 }
 
-impl<'tcx, 'vir, 'enc> mir::visit::Visitor<'tcx> for ImpureEncVisitor<'tcx, 'vir, 'enc> {
+impl<'tcx, 'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'tcx> for ImpureEncVisitor<'tcx, 'vir, 'enc, E> {
     // fn visit_body(&mut self, body: &mir::Body<'tcx>) {
     //     println!("visiting body!");
     // }

@@ -55,7 +55,7 @@ impl TaskEncoder for TyConstructorEnc {
 
     fn do_encode_full<'tcx: 'vir, 'vir>(
         task_key: &Self::TaskKey<'tcx>,
-        deps: &mut task_encoder::TaskEncoderDependencies<'vir>,
+        deps: &mut task_encoder::TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self> {
         let generic_ref = deps.require_ref::<GenericEnc>(()).unwrap();
         let mut functions = vec![];
@@ -102,7 +102,7 @@ impl TaskEncoder for TyConstructorEnc {
                     )
                 })
                 .collect::<Vec<_>>();
-            deps.emit_output_ref::<Self>(
+            deps.emit_output_ref(
                 *task_key,
                 TyConstructorEncOutputRef {
                     ty_constructor: type_function_ident,

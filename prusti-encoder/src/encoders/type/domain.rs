@@ -138,7 +138,7 @@ impl TaskEncoder for DomainEnc {
 
     fn do_encode_full<'tcx: 'vir, 'vir>(
         task_key: &Self::TaskKey<'tcx>,
-        deps: &mut TaskEncoderDependencies<'vir>,
+        deps: &mut TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self> {
         vir::with_vcx(|vcx| {
             let base_name = task_key.get_vir_base_name(vcx);
@@ -152,7 +152,7 @@ impl TaskEncoder for DomainEnc {
                     };
 
                     let mut enc = DomainEncData::new(vcx, task_key, vec![], deps);
-                    enc.deps.emit_output_ref::<Self>(*task_key, enc.output_ref(base_name));
+                    enc.deps.emit_output_ref(*task_key, enc.output_ref(base_name));
                     let specifics = enc.mk_prim_specifics(
                         task_key.ty(),
                         prim_type
@@ -167,7 +167,7 @@ impl TaskEncoder for DomainEnc {
                             .map(|ty| deps.require_local::<LiftedTyEnc<EncodeGenericsAsParamTy>>(ty).unwrap().expect_generic())
                             .collect();
                     let mut enc = DomainEncData::new(vcx, task_key, generics, deps);
-                    enc.deps.emit_output_ref::<Self>(*task_key, enc.output_ref(base_name));
+                    enc.deps.emit_output_ref(*task_key, enc.output_ref(base_name));
                     match adt.adt_kind() {
                         ty::AdtKind::Struct => {
                             let fields = if !adt.is_box() {
@@ -223,28 +223,28 @@ impl TaskEncoder for DomainEnc {
                         .map(|ty| deps.require_local::<LiftedTyEnc<EncodeGenericsAsParamTy>>(ty).unwrap().expect_generic())
                         .collect();
                     let mut enc = DomainEncData::new(vcx, task_key, generics, deps);
-                    enc.deps.emit_output_ref::<Self>(*task_key, enc.output_ref(base_name));
+                    enc.deps.emit_output_ref(*task_key, enc.output_ref(base_name));
                     let field_tys = params.iter().map(|ty| FieldTy::from_ty(vcx, enc.deps, ty)).collect();
                     let specifics = enc.mk_struct_specifics(field_tys);
                     Ok((Some(enc.finalize(task_key)), specifics))
                 }
                 TyKind::Never => {
                     let mut enc = DomainEncData::new(vcx, task_key, vec![], deps);
-                    enc.deps.emit_output_ref::<Self>(*task_key, enc.output_ref(base_name));
+                    enc.deps.emit_output_ref(*task_key, enc.output_ref(base_name));
                     let specifics = enc.mk_enum_specifics(None);
                     Ok((Some(enc.finalize(task_key)), specifics))
                 }
                 &TyKind::Ref(_, inner, _) => {
                     let generics = vec![deps.require_local::<LiftedTyEnc<EncodeGenericsAsParamTy>>(inner).unwrap().expect_generic()];
                     let mut enc = DomainEncData::new(vcx, task_key, generics, deps);
-                    enc.deps.emit_output_ref::<Self>(*task_key, enc.output_ref(base_name));
+                    enc.deps.emit_output_ref(*task_key, enc.output_ref(base_name));
                     let field_tys = vec![FieldTy::from_ty(vcx, enc.deps, inner)];
                     let specifics = enc.mk_struct_specifics(field_tys);
                     Ok((Some(enc.finalize(task_key)), specifics))
                 }
                 &TyKind::Param(_) => {
                     let out = deps.require_ref::<GenericEnc>(()).unwrap();
-                    deps.emit_output_ref::<Self>(
+                    deps.emit_output_ref(
                         *task_key,
                         DomainEncOutputRef {
                             base_name,
@@ -258,7 +258,7 @@ impl TaskEncoder for DomainEnc {
                 &TyKind::Str => {
                     let mut enc = DomainEncData::new(vcx, task_key, vec![], deps);
                     let base_name = String::from("String");
-                    enc.deps.emit_output_ref::<Self>(*task_key, enc.output_ref(base_name));
+                    enc.deps.emit_output_ref(*task_key, enc.output_ref(base_name));
                     let specifics = enc.mk_struct_specifics(vec![]);
                     Ok((Some(enc.finalize(task_key)), specifics))
                 }
@@ -287,7 +287,7 @@ struct DomainEncData<'vir, 'tcx, 'enc> {
     axioms: Vec<vir::DomainAxiom<'vir>>,
     functions: Vec<vir::DomainFunction<'vir>>,
     generic_enc: GenericEncOutputRef<'vir>,
-    deps: &'enc mut TaskEncoderDependencies<'vir>,
+    deps: &'enc mut TaskEncoderDependencies<'vir, DomainEnc>,
 }
 impl<'vir, 'tcx: 'vir, 'enc> DomainEncData<'vir, 'tcx, 'enc> {
     // Creation
@@ -295,7 +295,7 @@ impl<'vir, 'tcx: 'vir, 'enc> DomainEncData<'vir, 'tcx, 'enc> {
         vcx: &'vir vir::VirCtxt<'tcx>,
         ty: &MostGenericTy<'tcx>,
         generics: Vec<ParamTy>,
-        deps: &'enc mut TaskEncoderDependencies<'vir>,
+        deps: &'enc mut TaskEncoderDependencies<'vir, DomainEnc>,
     ) -> Self {
         let domain = ty.get_vir_domain_ident(vcx);
         let self_ty = domain.apply(vcx, []);
@@ -792,7 +792,7 @@ struct LiftedRustTyData<'vir> {
 }
 
 impl <'vir> FieldTy<'vir> {
-    fn from_ty<'tcx: 'vir>(vcx: &'vir vir::VirCtxt<'tcx>, deps: &mut TaskEncoderDependencies, ty: ty::Ty<'tcx>) -> FieldTy<'vir> {
+    fn from_ty<'tcx: 'vir>(vcx: &'vir vir::VirCtxt<'tcx>, deps: &mut TaskEncoderDependencies<'vir, DomainEnc>, ty: ty::Ty<'tcx>) -> FieldTy<'vir> {
         let vir_ty = deps.require_ref::<RustTySnapshotsEnc>(ty)
             .unwrap()
             .generic_snapshot

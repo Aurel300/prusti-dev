@@ -46,7 +46,7 @@ impl TaskEncoder for ConstEnc {
         let (const_, encoding_depth, def_id) = *task_key;
         let res = match const_ {
             mir::ConstantKind::Val(val, ty) => {
-                let kind = deps.require_local::<RustTySnapshotsEnc>(ty).unwrap().generic_snapshot.specifics;
+                let kind = deps.require_local::<RustTySnapshotsEnc>(ty)?.generic_snapshot.specifics;
                 match val {
                     ConstValue::Scalar(Scalar::Int(int)) => {
                         let prim = kind.expect_primitive();
@@ -79,12 +79,11 @@ impl TaskEncoder for ConstEnc {
                         let ref_ty = kind.expect_structlike();
                         let str_ty = ty.peel_refs();
                         let str_snap = deps
-                            .require_local::<RustTySnapshotsEnc>(str_ty)
-                            .unwrap()
+                            .require_local::<RustTySnapshotsEnc>(str_ty)?
                             .generic_snapshot
                             .specifics
                             .expect_structlike();
-                        let cast = deps.require_local::<RustTyCastersEnc<CastTypePure>>(str_ty).unwrap();
+                        let cast = deps.require_local::<RustTyCastersEnc<CastTypePure>>(str_ty)?;
                         vir::with_vcx(|vcx| {
                             // first, we create a string snapshot
                             let snap = str_snap.field_snaps_to_snap.apply(vcx, &[]);
@@ -107,10 +106,10 @@ impl TaskEncoder for ConstEnc {
                     kind: PureKind::Constant(uneval.promoted.unwrap()),
                     caller_def_id: Some(def_id)
                 };
-                let expr = deps.require_local::<MirPureEnc>(task).unwrap().expr;
+                let expr = deps.require_local::<MirPureEnc>(task)?.expr;
                 use vir::Reify;
-                expr.reify(vcx, (uneval.def, &[]))
-            }),
+                Ok(expr.reify(vcx, (uneval.def, &[])))
+            })?,
             mir::ConstantKind::Ty(_) => todo!("ConstantKind::Ty"),
         };
         Ok((res, ()))

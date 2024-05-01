@@ -42,17 +42,16 @@ impl TaskEncoder for RustTySnapshotsEnc {
     ) -> EncodeFullResult<'vir, Self> {
         with_vcx(|vcx| {
             let (generic_ty, args) = extract_type_params(vcx.tcx(), *task_key);
-            let generic_snapshot = deps.require_ref::<SnapshotEnc>(generic_ty).unwrap();
+            let generic_snapshot = deps.require_ref::<SnapshotEnc>(generic_ty)?;
             deps.emit_output_ref(
                 *task_key,
                 RustTySnapshotsEncOutputRef { generic_snapshot },
             );
             for arg in args {
-                deps.require_ref::<RustTySnapshotsEnc>(arg).unwrap();
+                deps.require_ref::<RustTySnapshotsEnc>(arg)?;
             }
             let generic_snapshot = deps
-                .require_local::<SnapshotEnc>(generic_ty)
-                .unwrap();
+                .require_local::<SnapshotEnc>(generic_ty)?;
             Ok((RustTySnapshotsEncOutput { generic_snapshot }, ()))
         })
     }

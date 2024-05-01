@@ -109,13 +109,12 @@ impl TaskEncoder for CastFunctionsEnc {
             return Ok((&[], ()));
         }
         vir::with_vcx(|vcx| {
-            let domain_ref = deps.require_ref::<DomainEnc>(*ty).unwrap();
-            let generic_ref = deps.require_ref::<GenericEnc>(()).unwrap();
+            let domain_ref = deps.require_ref::<DomainEnc>(*ty)?;
+            let generic_ref = deps.require_ref::<GenericEnc>(())?;
             let self_ty = domain_ref.domain.apply(vcx, []);
             let base_name = &domain_ref.base_name;
             let ty_constructor = deps
-                .require_ref::<TyConstructorEnc>(*ty)
-                .unwrap()
+                .require_ref::<TyConstructorEnc>(*ty)?
                 .ty_constructor;
 
             let make_generic_arg_tys = [self_ty];

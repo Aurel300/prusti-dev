@@ -91,15 +91,15 @@ impl TaskEncoder for MirImpureEnc {
     ) -> EncodeFullResult<'vir, Self> {
         let monomorphize = Self::monomorphize();
         let output_ref = if monomorphize {
-            deps.require_ref::<MirMonoImpureEnc>(*task_key).unwrap()
+            deps.require_ref::<MirMonoImpureEnc>(*task_key)?
         } else {
-            deps.require_ref::<MirPolyImpureEnc>(task_key.def_id).unwrap()
+            deps.require_ref::<MirPolyImpureEnc>(task_key.def_id)?
         };
         deps.emit_output_ref(*task_key, output_ref);
         let output: ImpureFunctionEncOutput<'_> = if monomorphize {
-            deps.require_local::<MirMonoImpureEnc>(*task_key).unwrap()
+            deps.require_local::<MirMonoImpureEnc>(*task_key)?
         } else {
-            deps.require_local::<MirPolyImpureEnc>(task_key.def_id).unwrap()
+            deps.require_local::<MirPolyImpureEnc>(task_key.def_id)?
         };
         Ok((output, ()))
     }

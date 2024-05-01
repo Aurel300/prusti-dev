@@ -70,6 +70,7 @@ impl TaskEncoder for MirMonoImpureEnc {
         task_key: &Self::TaskKey<'tcx>,
         deps: &mut TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self> {
-        Ok((<Self as ImpureFunctionEnc>::encode(*task_key, deps), ()))
+        <Self as ImpureFunctionEnc>::encode(*task_key, deps)
+            .map(|r| (r, ()))
     }
 }

@@ -202,8 +202,8 @@ impl TaskEncoder for PredicateEnc {
         task_key: &Self::TaskKey<'tcx>,
         deps: &mut TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self> {
-        let snap = deps.require_local::<SnapshotEnc>(*task_key).unwrap();
-        let generic_output_ref = deps.require_ref::<GenericEnc>(()).unwrap();
+        let snap = deps.require_local::<SnapshotEnc>(*task_key)?;
+        let generic_output_ref = deps.require_ref::<GenericEnc>(())?;
         let mut enc = vir::with_vcx(|vcx| {
             PredicateEncValues::new(vcx, &snap.base_name, snap.snapshot, snap.generics)
         });
@@ -231,7 +231,7 @@ impl TaskEncoder for PredicateEnc {
                         generics: &[],
                     },
                 );
-                let dep = deps.require_local::<GenericEnc>(()).unwrap();
+                let dep = deps.require_local::<GenericEnc>(())?;
                 vir::with_vcx(|vcx| {
                     let method_assign = mk_method_assign(
                         vcx,
@@ -356,8 +356,7 @@ impl TaskEncoder for PredicateEnc {
 
                 let lifted_ty = deps.require_local::<LiftedTyEnc<EncodeGenericsAsLifted>>(inner).unwrap();
                 let inner = deps
-                    .require_ref::<RustTyPredicatesEnc>(inner)
-                    .unwrap()
+                    .require_ref::<RustTyPredicatesEnc>(inner)?
                     .generic_predicate;
                 Ok((enc.mk_ref(inner, lifted_ty, specifics), ()))
             }

@@ -131,8 +131,7 @@ impl TaskEncoder for LiftedTyEnc<EncodeGenericsAsLifted> {
         deps.emit_output_ref(*task_key, ());
         with_vcx(|vcx| {
             let result = deps
-                .require_local::<LiftedTyEnc<EncodeGenericsAsParamTy>>(*task_key)
-                .unwrap();
+                .require_local::<LiftedTyEnc<EncodeGenericsAsParamTy>>(*task_key)?;
             let result = result.map(vcx, &mut |g| {
                 deps.require_ref::<LiftedGenericEnc>(g).unwrap()
             });
@@ -169,8 +168,7 @@ impl TaskEncoder for LiftedTyEnc<EncodeGenericsAsParamTy> {
             }
             let (ty_constructor, args) = extract_type_params(vcx.tcx(), *task_key);
             let ty_constructor = deps
-                .require_ref::<TyConstructorEnc>(ty_constructor)
-                .unwrap()
+                .require_ref::<TyConstructorEnc>(ty_constructor)?
                 .ty_constructor;
             let args = args
                 .into_iter()

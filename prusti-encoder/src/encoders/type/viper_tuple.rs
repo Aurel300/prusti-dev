@@ -56,7 +56,7 @@ impl TaskEncoder for ViperTupleEnc {
         if *task_key == 1 {
             Ok((ViperTupleEncOutput { tuple: None }, ()))
         } else {
-            let ret = deps.require_dep::<DomainEnc>(MostGenericTy::tuple(*task_key)).unwrap();
+            let ret = deps.require_dep::<DomainEnc>(MostGenericTy::tuple(*task_key))?;
             Ok((ViperTupleEncOutput { tuple: Some(ret.expect_structlike()) }, ()))
         }
     }

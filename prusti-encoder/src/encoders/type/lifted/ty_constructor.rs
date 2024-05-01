@@ -57,7 +57,7 @@ impl TaskEncoder for TyConstructorEnc {
         task_key: &Self::TaskKey<'tcx>,
         deps: &mut task_encoder::TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self> {
-        let generic_ref = deps.require_ref::<GenericEnc>(()).unwrap();
+        let generic_ref = deps.require_ref::<GenericEnc>(())?;
         let mut functions = vec![];
         let mut axioms = vec![];
         vir::with_vcx(|vcx| {

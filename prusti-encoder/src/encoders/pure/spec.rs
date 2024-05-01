@@ -47,11 +47,9 @@ impl TaskEncoder for MirSpecEnc {
                 def_id,
                 substs,
                 caller_def_id,
-            ))
-            .unwrap();
+            ))?;
         let specs = deps
-            .require_local::<crate::encoders::SpecEnc>(crate::encoders::SpecEncTask { def_id })
-            .unwrap();
+            .require_local::<crate::encoders::SpecEnc>(crate::encoders::SpecEncTask { def_id })?;
 
         vir::with_vcx(|vcx| {
             let local_iter = (1..=local_defs.arg_count).map(mir::Local::from);
@@ -79,8 +77,7 @@ impl TaskEncoder for MirSpecEnc {
             };
 
             let to_bool = deps
-                .require_ref::<RustTyPredicatesEnc>(vcx.tcx().types.bool)
-                .unwrap()
+                .require_ref::<RustTyPredicatesEnc>(vcx.tcx().types.bool)?
                 .generic_predicate
                 .expect_prim()
                 .snap_to_prim;

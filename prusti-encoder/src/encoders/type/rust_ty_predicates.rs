@@ -95,10 +95,9 @@ impl TaskEncoder for RustTyPredicatesEnc {
     ) -> EncodeFullResult<'vir, Self> {
         with_vcx(|vcx| {
             let (generic_ty, args) = extract_type_params(vcx.tcx(), *task_key);
-            let generic_predicate = deps.require_ref::<PredicateEnc>(generic_ty).unwrap();
+            let generic_predicate = deps.require_ref::<PredicateEnc>(generic_ty)?;
             let ty = deps
-                .require_local::<LiftedTyEnc<EncodeGenericsAsLifted>>(*task_key)
-                .unwrap();
+                .require_local::<LiftedTyEnc<EncodeGenericsAsLifted>>(*task_key)?;
             deps.emit_output_ref(
                 *task_key,
                 RustTyPredicatesEncOutputRef {
@@ -107,7 +106,7 @@ impl TaskEncoder for RustTyPredicatesEnc {
                 },
             );
             for arg in args {
-                deps.require_ref::<RustTyPredicatesEnc>(arg).unwrap();
+                deps.require_ref::<RustTyPredicatesEnc>(arg)?;
             }
             Ok(((), ()))
         })

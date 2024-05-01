@@ -178,7 +178,7 @@ impl TaskEncoder for DomainEnc {
                                 // extern spec in the future)
                                 vec![
                                     FieldTy {
-                                        ty: enc.deps.require_ref::<GenericEnc>(()).unwrap().param_snapshot,
+                                        ty: enc.deps.require_ref::<GenericEnc>(())?.param_snapshot,
                                         rust_ty_data: None
                                     }
                                 ]
@@ -201,8 +201,7 @@ impl TaskEncoder for DomainEnc {
                                     .any(|v| matches!(v.discr, ty::VariantDiscr::Explicit(_)));
                                 let discr_ty = adt.repr().discr_type().to_ty(vcx.tcx());
                                 let discr_ty = enc.deps
-                                    .require_local::<RustTySnapshotsEnc>(discr_ty)
-                                    .unwrap()
+                                    .require_local::<RustTySnapshotsEnc>(discr_ty)?
                                     .generic_snapshot;
                                 Some(VariantData {
                                     discr_ty: discr_ty.snapshot,
@@ -235,7 +234,7 @@ impl TaskEncoder for DomainEnc {
                     Ok((Some(enc.finalize(task_key)), specifics))
                 }
                 &TyKind::Ref(_, inner, _) => {
-                    let generics = vec![deps.require_local::<LiftedTyEnc<EncodeGenericsAsParamTy>>(inner).unwrap().expect_generic()];
+                    let generics = vec![deps.require_local::<LiftedTyEnc<EncodeGenericsAsParamTy>>(inner)?.expect_generic()];
                     let mut enc = DomainEncData::new(vcx, task_key, generics, deps);
                     enc.deps.emit_output_ref(*task_key, enc.output_ref(base_name));
                     let field_tys = vec![FieldTy::from_ty(vcx, enc.deps, inner)];
@@ -243,7 +242,7 @@ impl TaskEncoder for DomainEnc {
                     Ok((Some(enc.finalize(task_key)), specifics))
                 }
                 &TyKind::Param(_) => {
-                    let out = deps.require_ref::<GenericEnc>(()).unwrap();
+                    let out = deps.require_ref::<GenericEnc>(())?;
                     deps.emit_output_ref(
                         *task_key,
                         DomainEncOutputRef {

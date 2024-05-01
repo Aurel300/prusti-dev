@@ -98,6 +98,20 @@ pub enum EncodeFullError<'vir, E: TaskEncoder + 'vir + ?Sized> {
 
     /// An actual error occurred during encoding.
     EncodingError(<E as TaskEncoder>::EncodingError, Option<E::OutputFullDependency<'vir>>),
+
+    DependencyError,
+}
+
+// Manual implementation, since neither `E` nor `E::OutputFullDependency` are
+// required to be `Debug`.
+impl<'vir, E: TaskEncoder + 'vir + ?Sized> std::fmt::Debug for EncodeFullError<'vir, E> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::AlreadyEncoded => write!(f, "AlreadyEncoded"),
+            Self::EncodingError(err, _output_dep) => f.debug_tuple("EncodingError").field(err)/*.field(output_dep)*/.finish(),
+            Self::DependencyError => write!(f, "DependencyError"),
+        }
+    }
 }
 
 pub enum TaskEncoderError<E: TaskEncoder + ?Sized> {
@@ -143,9 +157,10 @@ impl<'vir, E: TaskEncoder + 'vir + ?Sized> TaskEncoderDependencies<'vir, E> {
         task: <EOther as TaskEncoder>::TaskDescription<'tcx>,
     ) -> Result<
         <EOther as TaskEncoder>::OutputRef<'vir>,
-        TaskEncoderError<EOther>,
+        EncodeFullError<'vir, E>,
     > {
         EOther::encode_ref(task)
+            .map_err(|_| EncodeFullError::DependencyError)
     }
 
     pub fn require_local<'tcx: 'vir, EOther: TaskEncoder + 'vir>(
@@ -153,9 +168,11 @@ impl<'vir, E: TaskEncoder + 'vir + ?Sized> TaskEncoderDependencies<'vir, E> {
         task: <EOther as TaskEncoder>::TaskDescription<'tcx>,
     ) -> Result<
         <EOther as TaskEncoder>::OutputFullLocal<'vir>,
-        TaskEncoderError<EOther>,
+        EncodeFullError<'vir, E>,
     > {
-        EOther::encode(task).map(|(_output_ref, output_local, _output_dep)| output_local)
+        EOther::encode(task)
+            .map(|(_output_ref, output_local, _output_dep)| output_local)
+            .map_err(|_| EncodeFullError::DependencyError)
     }
 
     pub fn require_dep<'tcx: 'vir, EOther: TaskEncoder + 'vir>(
@@ -163,9 +180,11 @@ impl<'vir, E: TaskEncoder + 'vir + ?Sized> TaskEncoderDependencies<'vir, E> {
         task: <EOther as TaskEncoder>::TaskDescription<'tcx>,
     ) -> Result<
         <EOther as TaskEncoder>::OutputFullDependency<'vir>,
-        TaskEncoderError<EOther>,
+        EncodeFullError<'vir, E>,
     > {
-        EOther::encode(task).map(|(_output_ref, _output_local, output_dep)| output_dep)
+        EOther::encode(task)
+            .map(|(_output_ref, _output_local, output_dep)| output_dep)
+            .map_err(|_| EncodeFullError::DependencyError)
     }
 
     pub fn emit_output_ref<'tcx: 'vir>(
@@ -356,6 +375,7 @@ pub trait TaskEncoder {
                 ))
             }
             Err(EncodeFullError::AlreadyEncoded) => todo!(),
+            Err(EncodeFullError::DependencyError) => todo!(),
             Err(EncodeFullError::EncodingError(err, maybe_output_dep)) => {
                 Self::with_cache(|cache| cache.borrow_mut().insert(task_key, TaskEncoderCacheState::ErrorEncode {
                     output_ref: output_ref.clone(),

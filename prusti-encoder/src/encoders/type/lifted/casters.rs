@@ -221,8 +221,8 @@ impl TaskEncoder for CastersEnc<CastTypePure> {
         *task
     }
 
-    fn do_encode_full<'tcx: 'vir, 'vir>(
-        ty: &Self::TaskKey<'tcx>,
+    fn do_encode_full<'vir>(
+        ty: &Self::TaskKey<'vir>,
         deps: &mut TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self> {
         if ty.is_generic() {
@@ -365,8 +365,8 @@ impl TaskEncoder for CastersEnc<CastTypeImpure> {
         *task
     }
 
-    fn do_encode_full<'tcx: 'vir, 'vir>(
-        ty: &Self::TaskKey<'tcx>,
+    fn do_encode_full<'vir>(
+        ty: &Self::TaskKey<'vir>,
         deps: &mut TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self> {
         if ty.is_generic() {

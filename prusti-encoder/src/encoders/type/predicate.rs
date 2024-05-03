@@ -198,8 +198,8 @@ impl TaskEncoder for PredicateEnc {
         *task
     }
 
-    fn do_encode_full<'tcx: 'vir, 'vir>(
-        task_key: &Self::TaskKey<'tcx>,
+    fn do_encode_full<'vir>(
+        task_key: &Self::TaskKey<'vir>,
         deps: &mut TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self> {
         let snap = deps.require_local::<SnapshotEnc>(*task_key)?;

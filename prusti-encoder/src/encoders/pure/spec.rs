@@ -35,8 +35,8 @@ impl TaskEncoder for MirSpecEnc {
         *task
     }
 
-    fn do_encode_full<'tcx: 'vir, 'vir>(
-        task_key: &Self::TaskKey<'tcx>,
+    fn do_encode_full<'vir>(
+        task_key: &Self::TaskKey<'vir>,
         deps: &mut TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self> {
         let (def_id, substs, caller_def_id, pure) = *task_key;

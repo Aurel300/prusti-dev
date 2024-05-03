@@ -26,8 +26,8 @@ use super::{lifted::{casters::CastTypePure, rust_ty_cast::RustTyCastersEnc}, rus
 impl TaskEncoder for ConstEnc {
     task_encoder::encoder_cache!(ConstEnc);
 
-    type TaskDescription<'tcx> = (
-        mir::ConstantKind<'tcx>,
+    type TaskDescription<'vir> = (
+        mir::ConstantKind<'vir>,
         usize, // current encoding depth
         DefId, // DefId of the current function
     );
@@ -38,8 +38,8 @@ impl TaskEncoder for ConstEnc {
         *task
     }
 
-    fn do_encode_full<'tcx: 'vir, 'vir>(
-        task_key: &Self::TaskKey<'tcx>,
+    fn do_encode_full<'vir>(
+        task_key: &Self::TaskKey<'vir>,
         deps: &mut TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self> {
         deps.emit_output_ref(*task_key, ());

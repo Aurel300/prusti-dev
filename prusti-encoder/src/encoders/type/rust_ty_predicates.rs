@@ -89,8 +89,8 @@ impl TaskEncoder for RustTyPredicatesEnc {
     type OutputRef<'vir> = RustTyPredicatesEncOutputRef<'vir>;
     type OutputFullLocal<'vir> = ();
 
-    fn do_encode_full<'tcx: 'vir, 'vir>(
-        task_key: &Self::TaskKey<'tcx>,
+    fn do_encode_full<'vir>(
+        task_key: &Self::TaskKey<'vir>,
         deps: &mut TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self> {
         with_vcx(|vcx| {

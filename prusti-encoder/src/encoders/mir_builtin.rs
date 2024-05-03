@@ -52,8 +52,8 @@ impl TaskEncoder for MirBuiltinEnc {
         task.clone()
     }
 
-    fn do_encode_full<'tcx: 'vir, 'vir>(
-        task_key: &Self::TaskKey<'tcx>,
+    fn do_encode_full<'vir>(
+        task_key: &Self::TaskKey<'vir>,
         deps: &mut TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self> {
         vir::with_vcx(|vcx| {
@@ -87,12 +87,12 @@ fn int_name<'tcx>(ty: ty::Ty<'tcx>) -> &'static str {
 }
 
 impl MirBuiltinEnc {
-    fn handle_un_op<'vir, 'tcx>(
-        vcx: &'vir vir::VirCtxt<'tcx>,
+    fn handle_un_op<'vir>(
+        vcx: &'vir vir::VirCtxt<'vir>,
         deps: &mut TaskEncoderDependencies<'vir, Self>,
-        key: <Self as TaskEncoder>::TaskKey<'tcx>,
+        key: <Self as TaskEncoder>::TaskKey<'vir>,
         op: mir::UnOp,
-        ty: ty::Ty<'tcx>,
+        ty: ty::Ty<'vir>,
     ) -> vir::Function<'vir> {
         let e_ty = deps
             .require_local::<RustTySnapshotsEnc>(ty)
@@ -135,14 +135,14 @@ impl MirBuiltinEnc {
         )
     }
 
-    fn handle_bin_op<'vir, 'tcx>(
-        vcx: &'vir vir::VirCtxt<'tcx>,
+    fn handle_bin_op<'vir>(
+        vcx: &'vir vir::VirCtxt<'vir>,
         deps: &mut TaskEncoderDependencies<'vir, Self>,
-        key: <Self as TaskEncoder>::TaskKey<'tcx>,
-        res_ty: ty::Ty<'tcx>,
+        key: <Self as TaskEncoder>::TaskKey<'vir>,
+        res_ty: ty::Ty<'vir>,
         op: mir::BinOp,
-        l_ty: ty::Ty<'tcx>,
-        r_ty: ty::Ty<'tcx>,
+        l_ty: ty::Ty<'vir>,
+        r_ty: ty::Ty<'vir>,
     ) -> vir::Function<'vir> {
         use mir::BinOp::*;
         let e_l_ty = deps
@@ -263,14 +263,14 @@ impl MirBuiltinEnc {
         )
     }
 
-    fn handle_checked_bin_op<'vir, 'tcx>(
-        vcx: &'vir vir::VirCtxt<'tcx>,
+    fn handle_checked_bin_op<'vir>(
+        vcx: &'vir vir::VirCtxt<'vir>,
         deps: &mut TaskEncoderDependencies<'vir, Self>,
-        key: <Self as TaskEncoder>::TaskKey<'tcx>,
-        res_ty: ty::Ty<'tcx>,
+        key: <Self as TaskEncoder>::TaskKey<'vir>,
+        res_ty: ty::Ty<'vir>,
         op: mir::BinOp,
-        l_ty: ty::Ty<'tcx>,
-        r_ty: ty::Ty<'tcx>,
+        l_ty: ty::Ty<'vir>,
+        r_ty: ty::Ty<'vir>,
     ) -> vir::Function<'vir> {
         // `op` can only be `Add`, `Sub` or `Mul`
         assert!(matches!(

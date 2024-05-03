@@ -31,9 +31,9 @@ pub struct LocalDef<'vir> {
 impl TaskEncoder for MirLocalDefEnc {
     task_encoder::encoder_cache!(MirLocalDefEnc);
 
-    type TaskDescription<'tcx> = (
+    type TaskDescription<'vir> = (
         DefId, // ID of the function
-        ty::GenericArgsRef<'tcx>, // ? this should be the "signature", after applying the env/substs
+        ty::GenericArgsRef<'vir>, // ? this should be the "signature", after applying the env/substs
         Option<DefId>, // ID of the caller function, if any
     );
 
@@ -45,15 +45,15 @@ impl TaskEncoder for MirLocalDefEnc {
         *task
     }
 
-    fn do_encode_full<'tcx: 'vir, 'vir>(
-        task_key: &Self::TaskKey<'tcx>,
+    fn do_encode_full<'vir>(
+        task_key: &Self::TaskKey<'vir>,
         deps: &mut TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self> {
         let (def_id, substs, caller_def_id) = *task_key;
         deps.emit_output_ref(*task_key, ());
 
-        fn mk_local_def<'vir, 'tcx>(
-            vcx: &'vir vir::VirCtxt<'tcx>,
+        fn mk_local_def<'vir>(
+            vcx: &'vir vir::VirCtxt<'vir>,
             name: &'vir str,
             ty: RustTyPredicatesEncOutputRef<'vir>,
         ) -> LocalDef<'vir> {

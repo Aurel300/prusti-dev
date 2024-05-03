@@ -159,14 +159,14 @@ pub struct CastToEnc<T>(std::marker::PhantomData<T>);
 impl<T: CastType + 'static> CastToEnc<T>
 where
     Self: TaskEncoder,
-    RustTyCastersEnc<T>: for<'tcx, 'vir> TaskEncoder<
-        TaskDescription<'tcx> = ty::Ty<'tcx>,
+    RustTyCastersEnc<T>: for<'vir> TaskEncoder<
+        TaskDescription<'vir> = ty::Ty<'vir>,
         OutputFullLocal<'vir> = RustTyGenericCastEncOutput<'vir, Casters<'vir, T>>,
     >,
     TaskEncoderError<RustTyCastersEnc<T>>: Sized,
 {
-    fn encode_cast<'tcx: 'vir, 'vir>(
-        task_key: CastArgs<'tcx>,
+    fn encode_cast<'vir>(
+        task_key: CastArgs<'vir>,
         deps: &mut TaskEncoderDependencies<'vir, Self>,
     ) -> GenericCastOutputRef<'vir, T::CastApplicator<'vir>> {
         let expected_is_param = matches!(task_key.expected.kind(), ty::Param(_));
@@ -211,8 +211,8 @@ impl TaskEncoder for CastToEnc<CastTypePure> {
         *task
     }
 
-    fn do_encode_full<'tcx: 'vir, 'vir>(
-        task_key: &Self::TaskKey<'tcx>,
+    fn do_encode_full<'vir>(
+        task_key: &Self::TaskKey<'vir>,
         deps: &mut TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self> {
         let output_ref = Self::encode_cast(*task_key, deps);
@@ -232,8 +232,8 @@ impl TaskEncoder for CastToEnc<CastTypeImpure> {
         *task
     }
 
-    fn do_encode_full<'tcx: 'vir, 'vir>(
-        task_key: &Self::TaskKey<'tcx>,
+    fn do_encode_full<'vir>(
+        task_key: &Self::TaskKey<'vir>,
         deps: &mut TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self> {
         let output_ref = Self::encode_cast(*task_key, deps);

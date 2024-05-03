@@ -34,21 +34,20 @@ where
 
     /// Generates the identifier for the function; for a monomorphic encoding,
     /// this should be a name including (mangled) type arguments
-    fn mk_function_ident<'vir, 'tcx>(
-        vcx: &'vir vir::VirCtxt<'tcx>,
-        task_key: &Self::TaskKey<'tcx>,
+    fn mk_function_ident<'vir>(
+        vcx: &'vir vir::VirCtxt<'vir>,
+        task_key: &Self::TaskKey<'vir>,
     ) -> ViperIdent<'vir>;
-
 
     /// Adds an assertion connecting the type of an argument (or return) of the
     /// function with the appropriate type based on the param, e.g. in f<T,
     /// U>(u: U) -> T, this would be called to require that the type of `u` be
     /// `U`
-    fn mk_type_assertion<'vir, 'tcx: 'vir, Curr, Next>(
-        vcx: &'vir vir::VirCtxt<'tcx>,
+    fn mk_type_assertion<'vir, Curr, Next>(
+        vcx: &'vir vir::VirCtxt<'vir>,
         deps: &mut TaskEncoderDependencies<'vir, Self>,
         arg: ExprGen<'vir, Curr, Next>, // Snapshot encoded argument
-        ty: Ty<'tcx>,
+        ty: Ty<'vir>,
     ) -> Option<ExprGen<'vir, Curr, Next>> {
         let lifted_ty = deps
             .require_local::<LiftedTyEnc<EncodeGenericsAsLifted>>(ty)
@@ -78,8 +77,8 @@ where
         }
     }
 
-    fn encode<'vir, 'tcx: 'vir>(
-        task_key: Self::TaskKey<'tcx>,
+    fn encode<'vir>(
+        task_key: Self::TaskKey<'vir>,
         deps: &mut TaskEncoderDependencies<'vir, Self>,
     ) -> MirFunctionEncOutput<'vir> {
         let def_id = Self::get_def_id(&task_key);

@@ -39,7 +39,7 @@ const SNAPSHOT_PARAM_DOMAIN: TypeData<'static> = TypeData::Domain("s_Param", &[]
 impl TaskEncoder for GenericEnc {
     task_encoder::encoder_cache!(GenericEnc);
 
-    type TaskDescription<'tcx> = (); // ?
+    type TaskDescription<'vir> = (); // ?
 
     type OutputRef<'vir> = GenericEncOutputRef<'vir>;
     type OutputFullLocal<'vir> = GenericEncOutput<'vir>;
@@ -51,8 +51,8 @@ impl TaskEncoder for GenericEnc {
     }
 
     #[allow(non_snake_case)]
-    fn do_encode_full<'tcx: 'vir, 'vir>(
-        task_key: &Self::TaskKey<'tcx>,
+    fn do_encode_full<'vir>(
+        task_key: &Self::TaskKey<'vir>,
         deps: &mut TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self> {
         let ref_to_pred =

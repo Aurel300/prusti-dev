@@ -33,8 +33,8 @@ impl TaskEncoder for SnapshotEnc {
         *task
     }
 
-    fn do_encode_full<'tcx: 'vir, 'vir>(
-        ty: &Self::TaskKey<'tcx>,
+    fn do_encode_full<'vir>(
+        ty: &Self::TaskKey<'vir>,
         deps: &mut TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self> {
         vir::with_vcx(|vcx| {

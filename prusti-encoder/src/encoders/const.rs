@@ -42,7 +42,7 @@ impl TaskEncoder for ConstEnc {
         task_key: &Self::TaskKey<'vir>,
         deps: &mut TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self> {
-        deps.emit_output_ref(*task_key, ());
+        deps.emit_output_ref(*task_key, ())?;
         let (const_, encoding_depth, def_id) = *task_key;
         let res = match const_ {
             mir::ConstantKind::Val(val, ty) => {

@@ -117,7 +117,7 @@ impl TaskEncoder for RustTyCastersEnc<CastTypePure> {
         task_key: &Self::TaskKey<'vir>,
         deps: &mut task_encoder::TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self> {
-        deps.emit_output_ref(*task_key, ());
+        deps.emit_output_ref(*task_key, ())?;
         Ok((Self::encode(task_key, deps), ()))
     }
 }
@@ -141,7 +141,7 @@ impl TaskEncoder for RustTyCastersEnc<CastTypeImpure> {
         task_key: &Self::TaskKey<'vir>,
         deps: &mut task_encoder::TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self> {
-        deps.emit_output_ref(*task_key, ());
+        deps.emit_output_ref(*task_key, ())?;
         Ok((Self::encode(task_key, deps), ()))
     }
 }

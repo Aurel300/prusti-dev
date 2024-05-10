@@ -79,7 +79,7 @@ where
             args.extend(param_ty_decls.iter().map(|decl| decl.ty));
             let args = UnknownArity::new(vcx.alloc_slice(&args));
             let method_ref = MethodIdent::new(method_name, args);
-            deps.emit_output_ref(task_key, ImpureFunctionEncOutputRef { method_ref });
+            deps.emit_output_ref(task_key, ImpureFunctionEncOutputRef { method_ref })?;
 
             // Do not encode the method body if it is external, trusted or just
             // a call stub.

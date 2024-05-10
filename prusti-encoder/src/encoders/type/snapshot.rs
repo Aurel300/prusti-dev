@@ -45,7 +45,7 @@ impl TaskEncoder for SnapshotEnc {
                 SnapshotEncOutputRef {
                     snapshot,
                 },
-            );
+            )?;
             let specifics = deps.require_dep::<DomainEnc>(*ty)?;
             let generics = vcx.alloc_slice(
                 &ty.generics()

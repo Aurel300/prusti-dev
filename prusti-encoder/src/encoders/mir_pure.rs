@@ -96,7 +96,7 @@ impl TaskEncoder for MirPureEnc {
         task_key: &Self::TaskKey<'vir>,
         deps: &mut TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self> {
-        deps.emit_output_ref(*task_key, ());
+        deps.emit_output_ref(*task_key, ())?;
 
         let (_, kind, def_id, substs, caller_def_id) = *task_key;
 

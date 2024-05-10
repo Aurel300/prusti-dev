@@ -108,7 +108,7 @@ impl TaskEncoder for TyConstructorEnc {
                     ty_constructor: type_function_ident,
                     ty_param_accessors: vcx.alloc_slice(&ty_accessor_functions),
                 },
-            );
+            )?;
 
             let axiom_qvars = vcx.alloc_slice(&ty_arg_decls);
             let axiom_triggers = vcx.alloc_slice(

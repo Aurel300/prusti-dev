@@ -5,9 +5,7 @@ use prusti_rustc_interface::{
 };
 use rustc_middle::ty::ParamTy;
 use task_encoder::{
-    TaskEncoder,
-    TaskEncoderDependencies,
-    EncodeFullResult,
+    EncodeFullError, EncodeFullResult, TaskEncoder, TaskEncoderDependencies
 };
 use vir::{
     BinaryArity, CallableIdent, DomainParamData, FunctionIdent, NullaryArityAny, ToKnownArity, UnaryArity, UnknownArity
@@ -152,7 +150,7 @@ impl TaskEncoder for DomainEnc {
                     };
 
                     let mut enc = DomainEncData::new(vcx, task_key, vec![], deps);
-                    enc.deps.emit_output_ref(*task_key, enc.output_ref(base_name));
+                    enc.deps.emit_output_ref(*task_key, enc.output_ref(base_name))?;
                     let specifics = enc.mk_prim_specifics(
                         task_key.ty(),
                         prim_type
@@ -167,12 +165,12 @@ impl TaskEncoder for DomainEnc {
                             .map(|ty| deps.require_local::<LiftedTyEnc<EncodeGenericsAsParamTy>>(ty).unwrap().expect_generic())
                             .collect();
                     let mut enc = DomainEncData::new(vcx, task_key, generics, deps);
-                    enc.deps.emit_output_ref(*task_key, enc.output_ref(base_name));
+                    enc.deps.emit_output_ref(*task_key, enc.output_ref(base_name))?;
                     match adt.adt_kind() {
                         ty::AdtKind::Struct => {
                             let fields = if !adt.is_box() {
                                 let variant = adt.non_enum_variant();
-                                enc.mk_field_tys(variant, params)
+                                enc.mk_field_tys(variant, params)?
                             } else {
                                 // Box special case (this should be replaced by an
                                 // extern spec in the future)
@@ -189,9 +187,9 @@ impl TaskEncoder for DomainEnc {
                         ty::AdtKind::Enum => {
                             let variants: Vec<_> = adt.discriminants(vcx.tcx()).map(|(v, d)| {
                                 let variant = adt.variant(v);
-                                let field_tys = enc.mk_field_tys(variant, params);
-                                (variant.name, v, field_tys, d)
-                            }).collect();
+                                let field_tys = enc.mk_field_tys(variant, params)?;
+                                Ok((variant.name, v, field_tys, d))
+                            }).collect::<Result<Vec<_>, _>>()?;
                             let variants = if variants.is_empty() {
                                 None
                             } else {
@@ -222,22 +220,24 @@ impl TaskEncoder for DomainEnc {
                         .map(|ty| deps.require_local::<LiftedTyEnc<EncodeGenericsAsParamTy>>(ty).unwrap().expect_generic())
                         .collect();
                     let mut enc = DomainEncData::new(vcx, task_key, generics, deps);
-                    enc.deps.emit_output_ref(*task_key, enc.output_ref(base_name));
-                    let field_tys = params.iter().map(|ty| FieldTy::from_ty(vcx, enc.deps, ty)).collect();
+                    enc.deps.emit_output_ref(*task_key, enc.output_ref(base_name))?;
+                    let field_tys = params.iter()
+                        .map(|ty| FieldTy::from_ty(vcx, enc.deps, ty))
+                        .collect::<Result<Vec<_>, _>>()?;
                     let specifics = enc.mk_struct_specifics(field_tys);
                     Ok((Some(enc.finalize(task_key)), specifics))
                 }
                 TyKind::Never => {
                     let mut enc = DomainEncData::new(vcx, task_key, vec![], deps);
-                    enc.deps.emit_output_ref(*task_key, enc.output_ref(base_name));
+                    enc.deps.emit_output_ref(*task_key, enc.output_ref(base_name))?;
                     let specifics = enc.mk_enum_specifics(None);
                     Ok((Some(enc.finalize(task_key)), specifics))
                 }
                 &TyKind::Ref(_, inner, _) => {
                     let generics = vec![deps.require_local::<LiftedTyEnc<EncodeGenericsAsParamTy>>(inner)?.expect_generic()];
                     let mut enc = DomainEncData::new(vcx, task_key, generics, deps);
-                    enc.deps.emit_output_ref(*task_key, enc.output_ref(base_name));
-                    let field_tys = vec![FieldTy::from_ty(vcx, enc.deps, inner)];
+                    enc.deps.emit_output_ref(*task_key, enc.output_ref(base_name))?;
+                    let field_tys = vec![FieldTy::from_ty(vcx, enc.deps, inner)?];
                     let specifics = enc.mk_struct_specifics(field_tys);
                     Ok((Some(enc.finalize(task_key)), specifics))
                 }
@@ -251,13 +251,13 @@ impl TaskEncoder for DomainEnc {
                             ty_param_accessors: &[],
                             typeof_function: out.param_type_function,
                         },
-                    );
+                    )?;
                     Ok((None, DomainEncSpecifics::Param))
                 }
                 &TyKind::Str => {
                     let mut enc = DomainEncData::new(vcx, task_key, vec![], deps);
                     let base_name = String::from("String");
-                    enc.deps.emit_output_ref(*task_key, enc.output_ref(base_name));
+                    enc.deps.emit_output_ref(*task_key, enc.output_ref(base_name))?;
                     let specifics = enc.mk_struct_specifics(vec![]);
                     Ok((Some(enc.finalize(task_key)), specifics))
                 }
@@ -345,13 +345,16 @@ impl<'vir, 'enc> DomainEncData<'vir, 'enc> {
         &mut self,
         variant: &ty::VariantDef,
         params: ty::GenericArgsRef<'vir>,
-    ) -> Vec<FieldTy<'vir>> {
+    ) -> Result<
+        Vec<FieldTy<'vir>>,
+        EncodeFullError<'vir, DomainEnc>,
+    > {
         variant
             .fields
             .iter()
             .map(|f| f.ty(self.vcx.tcx(), params))
             .map(|ty| FieldTy::from_ty(self.vcx, self.deps, ty))
-            .collect()
+            .collect::<Result<Vec<_>, _>>()
     }
 
     // Creating specifics
@@ -791,17 +794,18 @@ struct LiftedRustTyData<'vir> {
 }
 
 impl <'vir> FieldTy<'vir> {
-    fn from_ty(vcx: &'vir vir::VirCtxt<'vir>, deps: &mut TaskEncoderDependencies<'vir, DomainEnc>, ty: ty::Ty<'vir>) -> FieldTy<'vir> {
-        let vir_ty = deps.require_ref::<RustTySnapshotsEnc>(ty)
-            .unwrap()
+    fn from_ty(vcx: &'vir vir::VirCtxt<'vir>, deps: &mut TaskEncoderDependencies<'vir, DomainEnc>, ty: ty::Ty<'vir>) -> Result<
+        FieldTy<'vir>,
+        EncodeFullError<'vir, DomainEnc>,
+    > {
+        let vir_ty = deps.require_ref::<RustTySnapshotsEnc>(ty)?
             .generic_snapshot
             .snapshot;
         let typeof_function =
             deps.require_ref::<DomainEnc>(
                 extract_type_params(vcx.tcx(), ty).0
-            ).unwrap().typeof_function;
-        let lifted_ty = deps.require_local::<LiftedTyEnc<EncodeGenericsAsParamTy>>(ty)
-            .unwrap();
-        FieldTy {ty: vir_ty, rust_ty_data: Some(LiftedRustTyData {lifted_ty, typeof_function})}
+            )?.typeof_function;
+        let lifted_ty = deps.require_local::<LiftedTyEnc<EncodeGenericsAsParamTy>>(ty)?;
+        Ok(FieldTy { ty: vir_ty, rust_ty_data: Some(LiftedRustTyData { lifted_ty, typeof_function }) })
     }
 }

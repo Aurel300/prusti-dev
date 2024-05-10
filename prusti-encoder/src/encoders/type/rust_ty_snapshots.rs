@@ -46,7 +46,7 @@ impl TaskEncoder for RustTySnapshotsEnc {
             deps.emit_output_ref(
                 *task_key,
                 RustTySnapshotsEncOutputRef { generic_snapshot },
-            );
+            )?;
             for arg in args {
                 deps.require_ref::<RustTySnapshotsEnc>(arg)?;
             }

@@ -92,7 +92,7 @@ impl TaskEncoder for GenericEnc {
         deps.emit_output_ref(
             *task_key,
             output_ref
-        );
+        )?;
 
         let typ = FunctionIdent::new(
             ViperIdent::new("typ"),

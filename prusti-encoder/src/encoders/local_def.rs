@@ -50,7 +50,7 @@ impl TaskEncoder for MirLocalDefEnc {
         deps: &mut TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self> {
         let (def_id, substs, caller_def_id) = *task_key;
-        deps.emit_output_ref(*task_key, ());
+        deps.emit_output_ref(*task_key, ())?;
 
         fn mk_local_def<'vir>(
             vcx: &'vir vir::VirCtxt<'vir>,

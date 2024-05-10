@@ -52,7 +52,7 @@ impl TaskEncoder for ViperTupleEnc {
         task_key: &Self::TaskKey<'vir>,
         deps: &mut TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self> {
-        deps.emit_output_ref(*task_key, ());
+        deps.emit_output_ref(*task_key, ())?;
         if *task_key == 1 {
             Ok((ViperTupleEncOutput { tuple: None }, ()))
         } else {

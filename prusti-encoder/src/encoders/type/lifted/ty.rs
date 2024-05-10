@@ -128,7 +128,7 @@ impl TaskEncoder for LiftedTyEnc<EncodeGenericsAsLifted> {
         task_key: &Self::TaskKey<'vir>,
         deps: &mut task_encoder::TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self> {
-        deps.emit_output_ref(*task_key, ());
+        deps.emit_output_ref(*task_key, ())?;
         with_vcx(|vcx| {
             let result = deps
                 .require_local::<LiftedTyEnc<EncodeGenericsAsParamTy>>(*task_key)?;
@@ -161,7 +161,7 @@ impl TaskEncoder for LiftedTyEnc<EncodeGenericsAsParamTy> {
         task_key: &Self::TaskKey<'vir>,
         deps: &mut task_encoder::TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self> {
-        deps.emit_output_ref(*task_key, ());
+        deps.emit_output_ref(*task_key, ())?;
         with_vcx(|vcx| {
             if let TyKind::Param(p) = task_key.kind() {
                 return Ok((LiftedTy::Generic(*p), ()));

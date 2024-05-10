@@ -40,7 +40,7 @@ impl TaskEncoder for MirSpecEnc {
         deps: &mut TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self> {
         let (def_id, substs, caller_def_id, pure) = *task_key;
-        deps.emit_output_ref(*task_key, ());
+        deps.emit_output_ref(*task_key, ())?;
 
         let local_defs = deps
             .require_local::<crate::encoders::local_def::MirLocalDefEnc>((

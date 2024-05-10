@@ -104,7 +104,7 @@ impl TaskEncoder for RustTyPredicatesEnc {
                     generic_predicate,
                     ty,
                 },
-            );
+            )?;
             for arg in args {
                 deps.require_ref::<RustTyPredicatesEnc>(arg)?;
             }

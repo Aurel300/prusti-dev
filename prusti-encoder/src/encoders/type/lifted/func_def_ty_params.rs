@@ -29,7 +29,7 @@ impl TaskEncoder for LiftedTyParamsEnc {
         task_key: &Self::TaskKey<'vir>,
         deps: &mut task_encoder::TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self> {
-        deps.emit_output_ref(*task_key, ());
+        deps.emit_output_ref(*task_key, ())?;
         vir::with_vcx(|vcx| {
             let ty_args = task_key
                 .iter()

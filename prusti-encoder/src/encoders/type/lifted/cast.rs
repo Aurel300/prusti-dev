@@ -216,7 +216,7 @@ impl TaskEncoder for CastToEnc<CastTypePure> {
         deps: &mut TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self> {
         let output_ref = Self::encode_cast(*task_key, deps);
-        deps.emit_output_ref(*task_key, output_ref);
+        deps.emit_output_ref(*task_key, output_ref)?;
         Ok(((), ()))
     }
 }
@@ -237,7 +237,7 @@ impl TaskEncoder for CastToEnc<CastTypeImpure> {
         deps: &mut TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self> {
         let output_ref = Self::encode_cast(*task_key, deps);
-        deps.emit_output_ref(*task_key, output_ref);
+        deps.emit_output_ref(*task_key, output_ref)?;
         Ok(((), ()))
     }
 }

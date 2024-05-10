@@ -53,7 +53,7 @@ impl TaskEncoder for LiftedGenericEnc {
                 vcx.alloc_str(task_key.name.as_str()),
                 deps.require_ref::<GenericEnc>(())?.type_snapshot,
             );
-            deps.emit_output_ref(*task_key, LiftedGeneric(output_ref));
+            deps.emit_output_ref(*task_key, LiftedGeneric(output_ref))?;
             Ok(((), ()))
         })
     }

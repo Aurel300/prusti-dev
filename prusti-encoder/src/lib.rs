@@ -107,7 +107,7 @@ pub fn test_entrypoint<'tcx>(
                 }).unwrap_or_default();
 
                 if procedures.map_or(true, |procs| procs.contains(&def_id)) && !(is_trusted && is_pure) {
-                    let res = MirPolyImpureEnc::encode(def_id);
+                    let res = MirPolyImpureEnc::encode(def_id, false);
                     assert!(res.is_ok());
                 }
             }

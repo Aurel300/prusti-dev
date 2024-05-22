@@ -1,3 +1,4 @@
+use prusti_interface::specs::specifications::find_trait_method_substs;
 use prusti_rustc_interface::{
     middle::{mir, ty},
     span::def_id::DefId,
@@ -81,6 +82,11 @@ impl TaskEncoder for MirSpecEnc {
                 .generic_predicate
                 .expect_prim()
                 .snap_to_prim;
+
+            let substs =
+                find_trait_method_substs(vcx.tcx(), def_id, substs)
+                .map(|s| s.1)
+                .unwrap_or(substs);
 
             let pres = specs
                 .pres

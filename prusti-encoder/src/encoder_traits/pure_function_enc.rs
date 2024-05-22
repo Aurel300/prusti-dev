@@ -1,3 +1,4 @@
+use prusti_interface::specs::specifications::SpecQuery;
 use prusti_rustc_interface::{
     middle::{mir, ty::{GenericArgs, Ty}},
     span::def_id::DefId,
@@ -81,14 +82,17 @@ where
         task_key: Self::TaskKey<'vir>,
         deps: &mut TaskEncoderDependencies<'vir, Self>,
     ) -> MirFunctionEncOutput<'vir> {
-        let def_id = Self::get_def_id(&task_key);
-        let caller_def_id = Self::get_caller_def_id(&task_key);
-        let trusted = crate::encoders::with_proc_spec(def_id, |def_spec| {
-            def_spec.trusted.extract_inherit().unwrap_or_default()
-        })
-        .unwrap_or_default();
         vir::with_vcx(|vcx| {
+            let def_id = Self::get_def_id(&task_key);
+            let caller_def_id = Self::get_caller_def_id(&task_key);
             let substs = Self::get_substs(vcx, &task_key);
+            let trusted = crate::encoders::with_proc_spec(
+                SpecQuery::GetProcKind(def_id, substs),
+                |def_spec| {
+                    def_spec.trusted.extract_inherit().unwrap_or_default()
+                },
+            )
+            .unwrap_or_default();
             let local_defs = deps
                 .require_local::<MirLocalDefEnc>((def_id, substs, caller_def_id))
                 .unwrap();

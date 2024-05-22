@@ -9,9 +9,10 @@ extern crate rustc_type_ir;
 
 mod encoders;
 mod encoder_traits;
+mod trait_support;
 pub mod request;
 
-use prusti_interface::environment::EnvBody;
+use prusti_interface::{environment::EnvBody, specs::specifications::SpecQuery};
 use prusti_rustc_interface::{
     middle::ty,
     hir,
@@ -29,8 +30,7 @@ pub fn test_entrypoint<'tcx>(
     def_spec: prusti_interface::specs::typed::DefSpecificationMap,
 ) -> request::RequestWithContext {
 
-    crate::encoders::init_def_spec(def_spec);
-    vir::init_vcx(vir::VirCtxt::new(tcx, body));
+    vir::init_vcx(vir::VirCtxt::new(tcx, body, def_spec));
 
     // TODO: this should be a "crate" encoder, which will deps.require all the methods in the crate
 
@@ -45,7 +45,9 @@ pub fn test_entrypoint<'tcx>(
                     continue;
                 }
 
-                let (is_pure, is_trusted) = crate::encoders::with_proc_spec(def_id, |proc_spec| {
+                let (is_pure, is_trusted) = crate::encoders::with_proc_spec(
+                    SpecQuery::GetProcKind(def_id, ty::List::identity_for_item(tcx, def_id)),
+                    |proc_spec| {
                         let is_pure = proc_spec.kind.is_pure().unwrap_or_default();
                         let is_trusted = proc_spec.trusted.extract_inherit().unwrap_or_default();
                         (is_pure, is_trusted)

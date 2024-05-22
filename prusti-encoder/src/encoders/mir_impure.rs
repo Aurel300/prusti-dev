@@ -2,6 +2,7 @@ use mir_state_analysis::{
     free_pcs::{CapabilityKind, FreePcsAnalysis, FreePcsBasicBlock, FreePcsLocation, RepackOp},
     utils::Place,
 };
+use prusti_interface::specs::specifications::SpecQuery;
 use prusti_rustc_interface::{
     abi,
     middle::{
@@ -816,8 +817,9 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                 ..
             } => {
                 let (func_def_id, caller_substs) = self.get_def_id_and_caller_substs(func);
-                let is_pure = crate::encoders::with_proc_spec(func_def_id, |spec|
-                    spec.kind.is_pure().unwrap_or_default()
+                let is_pure = crate::encoders::with_proc_spec(
+                    SpecQuery::GetProcKind(func_def_id, caller_substs),
+                    |spec| spec.kind.is_pure().unwrap_or_default()
                 ).unwrap_or_default();
 
                 let dest = self.encode_place(Place::from(*destination)).expr;

@@ -1,3 +1,4 @@
+use prusti_interface::specs::specifications::SpecQuery;
 use prusti_rustc_interface::{
     abi,
     index::IndexVec,
@@ -483,8 +484,9 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                     // A fn call in pure can only be one of two kinds: a
                     // call to another pure function, or a call to a prusti
                     // builtin function.
-                    let is_pure = crate::encoders::with_proc_spec(def_id, |def_spec|
-                        def_spec.kind.is_pure().unwrap_or_default()
+                    let is_pure = crate::encoders::with_proc_spec(
+                        SpecQuery::GetProcKind(def_id, arg_tys),
+                        |def_spec| def_spec.kind.is_pure().unwrap_or_default()
                     ).unwrap_or_default();
                     if is_pure {
                         let sig = self.vcx().tcx().fn_sig(def_id);

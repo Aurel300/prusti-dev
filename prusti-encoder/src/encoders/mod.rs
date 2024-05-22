@@ -43,7 +43,7 @@ pub use spec::{
     SpecEncOutput,
     SpecEncTask,
 };
-pub(super) use spec::{init_def_spec, with_proc_spec};
+pub(super) use spec::with_proc_spec;
 pub use snapshot::SnapshotEnc;
 pub use predicate::{
     PredicateEnc,

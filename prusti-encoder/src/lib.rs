@@ -141,7 +141,7 @@ pub fn test_entrypoint<'tcx>(
         program_methods.push(output.method_assign);
     }
 
-    std::fs::write("local-testing/simple.vpr", viper_code).unwrap();
+    // std::fs::write("local-testing/simple.vpr", viper_code).unwrap();
 
     let program = vir::with_vcx(|vcx| vcx.mk_program(
         vcx.alloc_slice(&program_fields),

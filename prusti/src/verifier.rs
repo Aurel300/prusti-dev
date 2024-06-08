@@ -55,7 +55,7 @@ pub fn verify(env: Environment<'_>, def_spec: typed::DefSpecificationMap) {
 
         let results = prusti_server::verify_programs(vec![program]);
         println!("verification results: {results:?}");
-        if !results.iter().all(|(_, r)| matches!(r, viper::VerificationResult::Success)) {
+        if !results.iter().all(|(_, r)| matches!(r.kind, viper::VerificationResultKind::Success)) {
             // TODO: This will be unnecessary if diagnostic errors are emitted
             // earlier, it's useful for now to ensure that Prusti returns an
             // error code when verification fails

@@ -14,7 +14,7 @@ use prusti_utils::{
 };
 use std::{fs::create_dir_all, path::PathBuf};
 use viper::{
-    smt_manager::SmtManager, Cache, VerificationBackend, VerificationContext, VerificationResult,
+    smt_manager::SmtManager, Cache, VerificationBackend, VerificationContext, VerificationResult, VerificationResultKind
 };
 
 #[tracing::instrument(level = "debug", skip_all, fields(program = %request.program.get_name()))]
@@ -116,10 +116,19 @@ pub fn process_verification_request<'v, 't: 'v>(
     };
 
     stopwatch.start_next("backend verification");
-    let result = backend.verify(request.program);
+    // let result = backend.verify(request.program);
+    let mut result = VerificationResult {
+        item_name: request.program.get_name().to_string(),
+        kind: VerificationResultKind::Success,
+        cached: false,
+        time_ms: 0,
+    };
+    // result.kind = backend.verify(request.program, sender.clone());
+    result.kind = backend.verify(request.program);
+    result.time_ms = stopwatch.finish().as_millis();
 
     // Don't cache Java exceptions, which might be due to misconfigured paths.
-    if config::enable_cache() && !matches!(result, VerificationResult::JavaException(_)) {
+    if config::enable_cache() && !matches!(result.kind, VerificationResultKind::JavaException(_)) {
         info!(
             "Storing new cached result {:?} for program {}",
             &result,

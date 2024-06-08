@@ -11,7 +11,7 @@ use crate::{
     silicon_counterexample::SiliconCounterexample,
     smt_manager::SmtManager,
     verification_backend::VerificationBackend,
-    verification_result::{VerificationError, VerificationResult}, ConsistencyError,
+    verification_result::{VerificationError, VerificationResultKind}, ConsistencyError,
 };
 use jni::{errors::Result, objects::JObject, JNIEnv};
 use log::{debug, error, info};
@@ -184,7 +184,7 @@ impl<'a> Verifier<'a> {
     }
 
     #[tracing::instrument(name = "viper::verify", level = "debug", skip_all)]
-    pub fn verify(&mut self, program: Program) -> VerificationResult {
+    pub fn verify(&mut self, program: Program) -> VerificationResultKind {
         let ast_utils = self.ast_utils;
         ast_utils.with_local_frame(16, || {
             debug!(
@@ -196,7 +196,7 @@ impl<'a> Verifier<'a> {
                 let consistency_errors = match self.ast_utils.check_consistency(program) {
                     Ok(errors) => errors,
                     Err(java_exception) => {
-                        return VerificationResult::JavaException(java_exception);
+                        return VerificationResultKind::JavaException(java_exception);
                     }
                 };
             );
@@ -209,7 +209,7 @@ impl<'a> Verifier<'a> {
                     "The provided Viper program has {} consistency errors.",
                     consistency_errors.len()
                 );
-                return VerificationResult::ConsistencyErrors(
+                return VerificationResultKind::ConsistencyErrors(
                     consistency_errors
                         .into_iter()
                         .map(|e| {
@@ -399,9 +399,9 @@ impl<'a> Verifier<'a> {
                     ))
                 }
 
-                VerificationResult::Failure(errors)
+                VerificationResultKind::Failure(errors)
             } else {
-                VerificationResult::Success
+                VerificationResultKind::Success
             }
         })
     }

@@ -4,7 +4,7 @@ use prusti_server::{
     spawn_server_thread, tokio::runtime::Builder, PrustiClient, VerificationRequest,
     ViperBackendConfig,
 };
-use viper::VerificationResult;
+use viper::VerificationResultKind;
 
 lazy_static! {
     // only start the jvm & server once
@@ -21,7 +21,7 @@ fn consistency_error() {
     });
 
     match result {
-        VerificationResult::ConsistencyErrors(errors) => assert_eq!(errors.len(), 1),
+        VerificationResultKind::ConsistencyErrors(errors) => assert_eq!(errors.len(), 1),
         other => panic!("consistency errors not identified, instead found {other:?}"),
     }
 }
@@ -31,12 +31,12 @@ fn empty_program() {
     let result = process_program(|_| ());
 
     match result {
-        VerificationResult::Success => {}
+        VerificationResultKind::Success => {}
         other => panic!("empty program not verified successfully, instead found {other:?}"),
     }
 }
 
-fn process_program<F>(configure: F) -> VerificationResult
+fn process_program<F>(configure: F) -> VerificationResultKind
 where
     F: FnOnce(&mut Program),
 {

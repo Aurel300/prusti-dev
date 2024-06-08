@@ -3,14 +3,14 @@ use prusti_utils::{
     config,
     Stopwatch,
 };
-use viper::{VerificationContext, VerificationResult};
+use viper::{VerificationContext, VerificationResultKind};
 
 pub enum Backend<'a> {
     Viper(viper::Verifier<'a>, &'a VerificationContext<'a>),
 }
 
 impl<'a> Backend<'a> {
-    pub fn verify(&mut self, program: vir::ProgramRef) -> VerificationResult {
+    pub fn verify(&mut self, program: vir::ProgramRef) -> VerificationResultKind {
         match self {
             Backend::Viper(viper, context) => {
                 let mut stopwatch =

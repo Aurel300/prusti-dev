@@ -10,18 +10,22 @@ use prusti_interface::{
 use prusti_rustc_interface::errors::MultiSpan;
 
 #[tracing::instrument(name = "prusti::verify", level = "debug", skip(env))]
-pub fn verify(env: Environment<'_>, def_spec: typed::DefSpecificationMap) {
+pub fn verify<'tcx>(
+    env: Environment<'tcx>,
+    def_spec: typed::DefSpecificationMap,
+    verification_task: VerificationTask<'tcx>,
+) {
     if env.diagnostic.has_errors() {
         warn!("The compiler reported an error, so the program will not be verified.");
     } else {
         debug!("Prepare verification task...");
-        // TODO: can we replace `get_annotated_procedures` with information
-        // that is already in `def_spec`?
-        let (annotated_procedures, types) = env.get_annotated_procedures_and_types();
-        let verification_task = VerificationTask {
-            procedures: annotated_procedures,
-            types,
-        };
+        // // TODO: can we replace `get_annotated_procedures` with information
+        // // that is already in `def_spec`?
+        // let (annotated_procedures, types) = env.get_annotated_procedures_and_types();
+        // let verification_task = VerificationTask {
+        //     procedures: annotated_procedures,
+        //     types,
+        // };
         debug!("Verification task: {:?}", &verification_task);
 
         user::message(format!(
@@ -53,9 +57,9 @@ pub fn verify(env: Environment<'_>, def_spec: typed::DefSpecificationMap) {
         );
         let program = request.program;
 
-        let results = prusti_server::verify_programs(vec![program]);
-        println!("verification results: {results:?}");
-        if !results.iter().all(|(_, r)| matches!(r.kind, viper::VerificationResultKind::Success)) {
+        let result = prusti_server::verify_programs(&env.diagnostic, vec![program]);
+        println!("verification result: {result:?}");
+        if !matches!(result, VerificationResult::Success) {
             // TODO: This will be unnecessary if diagnostic errors are emitted
             // earlier, it's useful for now to ensure that Prusti returns an
             // error code when verification fails

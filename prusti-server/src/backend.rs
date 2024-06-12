@@ -1,18 +1,32 @@
-use crate::dump_viper_program;
+use crate::{dump_viper_program, ServerMessage};
+use log::{debug, info};
 use prusti_utils::{
     config,
     Stopwatch,
 };
-use viper::{VerificationContext, VerificationResultKind};
+use std::{
+    sync::{mpsc, Arc},
+    thread, time,
+};
+use viper::{jni_utils::JniUtils, VerificationContext, VerificationResultKind, Viper};
+use viper_sys::wrappers::{java, viper::*};
 
 pub enum Backend<'a> {
-    Viper(viper::Verifier<'a>, &'a VerificationContext<'a>),
+    Viper(
+        viper::Verifier<'a>,
+        &'a VerificationContext<'a>,
+        &'a Arc<Viper>,
+    ),
 }
 
 impl<'a> Backend<'a> {
-    pub fn verify(&mut self, program: vir::ProgramRef) -> VerificationResultKind {
+    pub fn verify(
+        &mut self,
+        program: vir::ProgramRef,
+        sender: mpsc::Sender<ServerMessage>,
+    ) -> VerificationResultKind {
         match self {
-            Backend::Viper(viper, context) => {
+            Backend::Viper(ref mut verifier, context, viper_arc) => {
                 let mut stopwatch =
                     Stopwatch::start("prusti-server backend", "construction of JVM objects");
 
@@ -36,7 +50,8 @@ impl<'a> Backend<'a> {
                     }
 
                     stopwatch.start_next("viper verification");
-                    viper.verify(viper_program)
+
+                    verifier.verify(viper_program)
                 })
             }
         }

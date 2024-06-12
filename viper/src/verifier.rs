@@ -42,7 +42,7 @@ impl<'a> Verifier<'a> {
         let frontend_wrapper = silver::frontend::SilFrontend::with(env);
 
         let frontend_instance = jni.unwrap_result(env.with_local_frame(16, || {
-            let reporter = if let Some(real_report_path) = report_path {
+            let pass_through_reporter = if let Some(real_report_path) = report_path {
                 jni.unwrap_result(silver::reporter::CSVReporter::with(env).new(
                     jni.new_string("csv_reporter"),
                     jni.new_string(real_report_path.to_str().unwrap()),
@@ -50,6 +50,11 @@ impl<'a> Verifier<'a> {
             } else {
                 jni.unwrap_result(silver::reporter::NoopReporter_object::with(env).singleton())
             };
+
+            let reporter = jni.unwrap_result(
+                silver::reporter::PollingReporter::with(env)
+                    .new(jni.new_string("polling_reporter"), pass_through_reporter),
+            );
 
             let debug_info = jni.new_seq(&[]);
 
@@ -404,6 +409,10 @@ impl<'a> Verifier<'a> {
                 VerificationResultKind::Success
             }
         })
+    }
+
+    pub fn verifier_instance(&self) -> &JObject<'a> {
+        &self.verifier_instance
     }
 }
 

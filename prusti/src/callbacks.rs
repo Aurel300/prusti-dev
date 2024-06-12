@@ -1,9 +1,14 @@
-use crate::verifier::verify;
+use crate::{
+    ide_helper::fake_error::fake_error,
+    verifier::verify,
+};
 use mir_state_analysis::test_free_pcs;
 use prusti_utils::config;
 use prusti_interface::{
+    data::VerificationTask,
     environment::{mir_storage, Environment},
     specs::{self, cross_crate::CrossCrateSpecs, is_spec_fn},
+    PrustiError,
 };
 use prusti_rustc_interface::{
     borrowck::consumers,
@@ -22,6 +27,7 @@ use prusti_rustc_interface::{
         ty::TyCtxt,
     },
     session::{EarlyErrorHandler, Session},
+    span::DUMMY_SP,
 };
 
 #[derive(Default)]
@@ -161,20 +167,46 @@ impl prusti_rustc_interface::driver::Callbacks for PrustiCompilerCalls {
                 }
             }
             CrossCrateSpecs::import_export_cross_crate(&mut env, &mut def_spec);
-            if !config::no_verify() {
-                /*
-                if config::test_free_pcs() {
-                    for proc_id in env.get_annotated_procedures_and_types().0.iter() {
-                        let name = env.name.get_unique_item_name(*proc_id);
-                        println!("Calculating FPCS for: {name}");
+            // if !config::no_verify() {
+            //     /*
+            //     if config::test_free_pcs() {
+            //         for proc_id in env.get_annotated_procedures_and_types().0.iter() {
+            //             let name = env.name.get_unique_item_name(*proc_id);
+            //             println!("Calculating FPCS for: {name}");
 
-                        let current_procedure = env.get_procedure(*proc_id);
-                        let mir = current_procedure.get_mir_rc();
-                        test_free_pcs(&mir, tcx);
-                    }
-                } else {*/
-                    verify(env, def_spec);
-                //}
+            //             let current_procedure = env.get_procedure(*proc_id);
+            //             let mir = current_procedure.get_mir_rc();
+            //             test_free_pcs(&mir, tcx);
+            //         }
+            //     } else {*/
+            //         verify(env, def_spec);
+            //     //}
+            // }
+            
+            // TODO: can we replace `get_annotated_procedures` with information
+            // that is already in `def_spec`?
+            let (annotated_procedures, types) = env.get_annotated_procedures_and_types();
+
+            // if config::show_ide_info() && !config::no_verify() {
+            //     let compiler_info =
+            //         compiler_info::IdeInfo::collect(&env, &annotated_procedures, &def_spec);
+            //     let out = serde_json::to_string(&compiler_info).unwrap();
+            //     PrustiError::message(format!("compilerInfo{out}"), DUMMY_SP.into())
+            //         .emit(&env.diagnostic);
+            // }
+            // as long as we have to throw a fake error we need to check this
+            let is_primary_package = std::env::var("CARGO_PRIMARY_PACKAGE").is_ok();
+
+            // collect and output Information used by IDE:
+            if !config::no_verify() {
+                let verification_task = VerificationTask {
+                    procedures: annotated_procedures,
+                    types,
+                };
+                verify(env, def_spec, verification_task);
+            } else if !config::no_verify() && is_primary_package {
+                // add a fake error, reason explained in issue #1261
+                fake_error(&env);
             }
         });
 

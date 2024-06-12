@@ -4,25 +4,148 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-use crate::{Backend, VerificationRequest, ViperBackendConfig};
-use log::info;
+use crate::{Backend, ServerMessage, VerificationRequest, ViperBackendConfig};
+use futures::{lock, stream::Stream};
+use log::{debug, info};
 use once_cell::sync::Lazy;
 use prusti_utils::{
     config,
     report::log::{report, to_legal_file_name},
     Stopwatch,
 };
-use std::{fs::create_dir_all, path::PathBuf};
-use viper::{
-    smt_manager::SmtManager, Cache, VerificationBackend, VerificationContext, VerificationResult, VerificationResultKind
+use std::{
+    fs::create_dir_all,
+    path::PathBuf,
+    sync::{self, mpsc, Arc},
+    thread,
 };
+use viper::{
+    smt_manager::SmtManager, Cache, PersistentCache, VerificationBackend, VerificationContext,
+    VerificationResult, VerificationResultKind, Viper,
+};
+
+enum ServerRequest {
+    Verification(VerificationRequest),
+    SaveCache,
+}
+
+struct ThreadJoin {
+    handle: Option<thread::JoinHandle<()>>,
+}
+
+// we join the thread after dropping the sender for the ServerRequests, so
+// that the verification thread actually terminates
+impl Drop for ThreadJoin {
+    fn drop(&mut self) {
+        self.handle.take().unwrap().join().unwrap();
+    }
+}
+
+pub struct VerificationRequestProcessing {
+    mtx_rx_servermsg: lock::Mutex<mpsc::Receiver<ServerMessage>>,
+    mtx_tx_verreq: sync::Mutex<mpsc::Sender<ServerRequest>>,
+    // mtx_tx_verreq has to be dropped before thread_join
+    #[allow(dead_code)]
+    thread_join: ThreadJoin,
+}
+
+impl Default for VerificationRequestProcessing {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// A structure that lives for all the requests and has a single thread working on all the
+/// requests sequentially.
+/// On reception of a verification request, we send it through a channel to the already running
+/// thread.
+impl VerificationRequestProcessing {
+    pub fn new() -> Self {
+        let (tx_servermsg, rx_servermsg) = mpsc::channel();
+        let (tx_verreq, rx_verreq) = mpsc::channel();
+        let mtx_rx_servermsg = lock::Mutex::new(rx_servermsg);
+        let mtx_tx_verreq = sync::Mutex::new(tx_verreq);
+
+        let handle = thread::spawn(move || verification_thread(rx_verreq, tx_servermsg));
+        Self {
+            mtx_rx_servermsg,
+            mtx_tx_verreq,
+            thread_join: ThreadJoin {
+                handle: Some(handle),
+            },
+        }
+    }
+
+    pub fn verify(&self, request: VerificationRequest) -> impl Stream<Item = ServerMessage> + '_ {
+        self.mtx_tx_verreq
+            .lock()
+            .unwrap()
+            .send(ServerRequest::Verification(request))
+            .unwrap();
+        // return a stream that has as last non-None message the ServerMessage::Termination
+        futures::stream::unfold(false, move |done: bool| async move {
+            if done {
+                return None;
+            }
+            let msg = self.mtx_rx_servermsg.lock().await.recv().unwrap();
+            let mut done = false;
+            if let ServerMessage::Termination(_) = msg {
+                done = true;
+            }
+            Some((msg, done))
+        })
+    }
+
+    pub fn save_cache(&self) {
+        self.mtx_tx_verreq
+            .lock()
+            .unwrap()
+            .send(ServerRequest::SaveCache)
+            .unwrap();
+    }
+}
+
+fn verification_thread(
+    rx_verreq: mpsc::Receiver<ServerRequest>,
+    tx_servermsg: mpsc::Sender<ServerMessage>,
+) {
+    debug!("Verification thread started.");
+    // The vcx is thread local, so we need to initialize it anew for this thread
+    vir::init_vcx(vir::VirCtxt::new_without_tcx());
+    let viper = Lazy::new(|| {
+        Arc::new(Viper::new_with_args(
+            &config::viper_home(),
+            config::extra_jvm_args(),
+        ))
+    });
+    let viper_thread = Lazy::new(|| viper.attach_current_thread());
+    let mut cache = PersistentCache::load_cache(config::cache_path());
+
+    while let Ok(request) = rx_verreq.recv() {
+        match request {
+            ServerRequest::Verification(verification_request) => process_verification_request(
+                &viper,
+                &viper_thread,
+                &mut cache,
+                &tx_servermsg,
+                verification_request,
+            ),
+            ServerRequest::SaveCache => cache.save(),
+        }
+    }
+    debug!("Verification thread finished.");
+}
 
 #[tracing::instrument(level = "debug", skip_all, fields(program = %request.program.get_name()))]
 pub fn process_verification_request<'v, 't: 'v>(
+    viper_arc: &Lazy<Arc<Viper>, impl Fn() -> Arc<Viper>>,
     verification_context: &'v Lazy<VerificationContext<'t>, impl Fn() -> VerificationContext<'t>>,
-    request: VerificationRequest,
     cache: impl Cache,
-) -> viper::VerificationResult {
+    sender: &mpsc::Sender<ServerMessage>,
+    mut request: VerificationRequest,
+) {
+    // TODO: if I'm not mistaken, this currently triggers the creation of the JVM on every request,
+    // so this should be changed once there are actually backends that not use a JVM
     /*
     let ast_utils = verification_context.new_ast_utils();
 
@@ -79,12 +202,18 @@ pub fn process_verification_request<'v, 't: 'v>(
                 let _ = build_or_dump_viper_program();
             });
         }
-        return viper::VerificationResult::Success;
+        // return viper::VerificationResult::Success;
+        sender
+            .send(ServerMessage::Termination(
+                VerificationResult::dummy_success(),
+            ))
+            .unwrap();
+        return;
     }
 */
     // Early return in case of cache hit
     if config::enable_cache() {
-        if let Some(result) = cache.get(hash) {
+        if let Some(mut result) = cache.get(hash) {
             info!(
                 "Using cached result {:?} for program {}",
                 &result,
@@ -96,7 +225,9 @@ pub fn process_verification_request<'v, 't: 'v>(
                 });
             }
             normalization_info.denormalize_result(&mut result);*/
-            return result;
+            result.cached = true;
+            sender.send(ServerMessage::Termination(result)).unwrap();
+            return;
         }
     };
 
@@ -112,19 +243,18 @@ pub fn process_verification_request<'v, 't: 'v>(
                 request.backend_config,
             ),
             verification_context,
+            Lazy::force(viper_arc),
         ),
     };
 
-    stopwatch.start_next("backend verification");
-    // let result = backend.verify(request.program);
     let mut result = VerificationResult {
         item_name: request.program.get_name().to_string(),
         kind: VerificationResultKind::Success,
         cached: false,
         time_ms: 0,
     };
-    // result.kind = backend.verify(request.program, sender.clone());
-    result.kind = backend.verify(request.program);
+    stopwatch.start_next("backend verification");
+    result.kind = backend.verify(request.program, sender.clone());
     result.time_ms = stopwatch.finish().as_millis();
 
     // Don't cache Java exceptions, which might be due to misconfigured paths.
@@ -137,8 +267,8 @@ pub fn process_verification_request<'v, 't: 'v>(
         cache.insert(hash, result.clone());
     }
 
-    /*normalization_info.denormalize_result(&mut result);*/
-    result
+    /*normalization_info.denormalize_result(&mut result.kind);*/
+    sender.send(ServerMessage::Termination(result)).unwrap();
 }
 
 pub fn dump_viper_program(

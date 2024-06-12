@@ -10,11 +10,13 @@
 mod ast_factory;
 mod ast_utils;
 pub mod errors;
-mod jni_utils;
+// used by prusti-server
+pub mod jni_utils;
 #[macro_use]
 pub mod utils;
 mod cache;
-mod java_exception;
+// used by prusti-server
+pub mod java_exception;
 pub mod silicon_counterexample;
 pub mod smt_manager;
 mod verification_backend;

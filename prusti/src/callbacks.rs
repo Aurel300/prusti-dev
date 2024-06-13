@@ -29,6 +29,7 @@ use prusti_rustc_interface::{
     session::{EarlyErrorHandler, Session},
     span::DUMMY_SP,
 };
+use ::log::debug;
 
 #[derive(Default)]
 pub struct PrustiCompilerCalls;
@@ -199,11 +200,32 @@ impl prusti_rustc_interface::driver::Callbacks for PrustiCompilerCalls {
 
             // collect and output Information used by IDE:
             if !config::no_verify() && !config::skip_verification() {
-                let verification_task = VerificationTask {
-                    procedures: annotated_procedures,
-                    types,
-                };
-                verify(env, def_spec, verification_task);
+                if let Some(target_def_path) = config::verify_only_defpath() {
+                    // if we do selective verification, then definitely only
+                    // for methods of the primary package. Check needed because
+                    // of the fake_error, otherwise verification stops early
+                    // with local dependencies
+                    if is_primary_package {
+                        let procedures = annotated_procedures
+                            .into_iter()
+                            .filter(|x| env.name.get_unique_item_name(*x) == target_def_path)
+                            .collect();
+                        debug!("selected procedures: {:?}", procedures);
+                        let selective_task = VerificationTask { procedures, types };
+                        // fake_error because otherwise a verification-success
+                        // (for a single method for example) will cause this result
+                        // to be cached by compiler at the moment
+                        verify(env, def_spec, selective_task);
+                        // FIXME: problematic because env is moved above
+                        // fake_error(&env); 
+                    }
+                } else {
+                    let verification_task = VerificationTask {
+                        procedures: annotated_procedures,
+                        types,
+                    };
+                    verify(env, def_spec, verification_task);
+                }
             } else if config::skip_verification() && !config::no_verify() && is_primary_package {
                 // add a fake error, reason explained in issue #1261
                 fake_error(&env);

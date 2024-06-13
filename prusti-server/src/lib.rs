@@ -188,7 +188,6 @@ fn handle_termination_message(
                 DUMMY_SP.into(),
             )
             .emit(env_diagnostic);
-            // .emit(&self.env.diagnostic);
             *overall_result = VerificationResult::Failure;
         }
     }

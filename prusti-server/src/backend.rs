@@ -51,9 +51,71 @@ impl<'a> Backend<'a> {
 
                     stopwatch.start_next("viper verification");
 
-                    verifier.verify(viper_program)
+                    if config::report_viper_messages() {
+                        verify_and_poll_msgs(verifier, context, viper_arc, viper_program, sender)
+                    } else {
+                        verifier.verify(viper_program)
+                    }
                 })
             }
         }
+    }
+}
+
+fn verify_and_poll_msgs(
+    verifier: &mut viper::Verifier,
+    verification_context: &viper::VerificationContext,
+    viper_arc: &Arc<Viper>,
+    viper_program: viper::Program,
+    sender: mpsc::Sender<ServerMessage>,
+) -> VerificationResultKind {
+    let mut kind = VerificationResultKind::Success;
+
+    // get the reporter global reference outside of the thread scope because it needs to
+    // be dropped by thread attached to the jvm. This is also why we pass it as reference
+    // and not per value
+    let env = &verification_context.env();
+    let jni = JniUtils::new(env);
+    let verifier_wrapper = silver::verifier::Verifier::with(env);
+    let reporter = jni.unwrap_result(verifier_wrapper.call_reporter(*verifier.verifier_instance()));
+    let rep_glob_ref = env.new_global_ref(reporter).unwrap();
+
+    debug!("Starting viper message polling thread");
+
+    // start thread for polling messages
+    thread::scope(|scope| {
+        let polling_thread = scope.spawn(|| polling_function(viper_arc, &rep_glob_ref, sender));
+        kind = verifier.verify(viper_program);
+        polling_thread.join().unwrap();
+    });
+    debug!("Viper message polling thread terminated");
+    kind
+}
+
+fn polling_function(
+    viper_arc: &Arc<Viper>,
+    rep_glob_ref: &jni::objects::GlobalRef,
+    sender: mpsc::Sender<ServerMessage>,
+) {
+    let verification_context = viper_arc.attach_current_thread();
+    let env = verification_context.env();
+    let jni = JniUtils::new(env);
+    let reporter_instance = rep_glob_ref.as_obj();
+    let reporter_wrapper = silver::reporter::PollingReporter::with(env);
+    loop {
+        while reporter_wrapper
+            .call_hasNewMessage(reporter_instance)
+            .unwrap()
+        {
+            let msg = reporter_wrapper
+                .call_getNewMessage(reporter_instance)
+                .unwrap();
+            debug!("Polling thread received {}", jni.class_name(msg).as_str());
+            match jni.class_name(msg).as_str() {
+                "viper.silver.reporter.VerificationTerminationMessage" => return,
+                _ => (),
+            }
+        }
+        thread::sleep(time::Duration::from_millis(10));
     }
 }

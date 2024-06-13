@@ -56,13 +56,16 @@
 | [`PRINT_HASH`](#print_hash) | `bool` | `false` | A |
 | [`PRINT_TYPECKD_SPECS`](#print_typeckd_specs) | `bool` | `false` | A |
 | [`QUIET`](#quiet) | `bool` | `false` | A* |
+| [`REPORT_VIPER_MESSAGES`](#report_viper_messages) | `bool` | `false` | A |
 | [`SERVER_ADDRESS`](#server_address) | `Option<String>` | `None` | A |
 | [`SERVER_MAX_CONCURRENCY`](#server_max_concurrency) | `Option<usize>` | `None` | A |
 | [`SERVER_MAX_STORED_VERIFIERS`](#server_max_stored_verifiers) | `Option<usize>` | `None` | A |
+| [`SHOW_IDE_INFO`](#show_ide_info) | `bool` | `false` | A |
 | [`SIMPLIFY_ENCODING`](#simplify_encoding) | `bool` | `true` | A |
 | [`SKIP_UNSUPPORTED_FEATURES`](#skip_unsupported_features) | `bool` | `false` | A |
+| [`SKIP_VERIFICATION`](#skip_verification) | `bool` | `false` | A |
 | [`SMT_QI_BOUND_GLOBAL`](#smt_qi_bound_global) | `Option<u64>` | `None` | A |
-[`SMT_QI_BOUND_GLOBAL_KIND`](#smt_qi_bound_global_kind) | `Option<u64>` | `None` | A |
+| [`SMT_QI_BOUND_GLOBAL_KIND`](#smt_qi_bound_global_kind) | `Option<u64>` | `None` | A |
 | [`SMT_QI_BOUND_TRACE`](#smt_qi_bound_trace) | `Option<u64>` | `None` | A |
 | [`SMT_QI_BOUND_TRACE_KIND`](#smt_qi_bound_trace_kind) | `Option<u64>` | `None` | A |
 | [`SMT_QI_IGNORE_BUILTIN`](#smt_qi_ignore_builtin) | `bool` | `true` | A |
@@ -76,6 +79,7 @@
 | [`USE_SMT_WRAPPER`](#use_smt_wrapper) | `bool` | `false` | A |
 | [`VERIFICATION_DEADLINE`](#verification_deadline) | `Option<u64>` | `None` | A |
 | [`VERIFY_ONLY_BASIC_BLOCK_PATH`](#verify_only_basic_block_path) | `Vec<String>` | `vec![]` | A |
+| [`VERIFY_ONLY_DEFPATH`](#verify_only_defpath) | `Option<String>` | `None` | A |
 | [`VERIFY_ONLY_PREAMBLE`](#verify_only_preamble) | `bool` | `false` | A |
 | [`VIPER_BACKEND`](#viper_backend) | `String` | `"Silicon"` | A |
 | [`VIPER_HOME`](#viper_home) | `Option<String>` | `None` | A |
@@ -357,6 +361,14 @@ When enabled, user messages are not printed. Otherwise, messages output into `st
 
 > **Note:** `cargo prusti` sets this flag with `DEFAULT_PRUSTI_QUIET=true`.
 
+## `REPORT_VIPER_MESSAGES`
+
+When enabled for both server and client, certain supported Viper messages will be reported to the user.
+
+## `VERIFY_ONLY_DEFPATH`
+
+When set to the defpath of a local method, prusti will only verify the specified method. A fake error will be generated to avoid caching of a success.
+
 ## `SERVER_ADDRESS`
 
 When set to an address and port (e.g. `"127.0.0.1:2468"`), Prusti will connect to the given server and use it for its verification backend.
@@ -373,6 +385,10 @@ Maximum amount of instantiated Viper verifiers the server will keep around for r
 
 > **Note:** This does _not_ limit how many verification requests the server handles concurrently, only the size of what is essentially its verifier cache.
 
+## `SHOW_IDE_INFO`
+
+When enabled, we emit various json data structures containing information about the program, its encoding, and the results of the verification. This flag intended for prusti-assistant (IDE).
+
 ## `SIMPLIFY_ENCODING`
 
 When enabled, the encoded program is simplified before it is passed to the Viper backend.
@@ -380,6 +396,10 @@ When enabled, the encoded program is simplified before it is passed to the Viper
 ## `SKIP_UNSUPPORTED_FEATURES`
 
 When enabled, features not supported by Prusti will be reported as warnings rather than errors.
+
+## `SKIP_VERIFICATION`
+
+When enabled, verification will be skipped. Opposed to `NO_VERIFY`, this flag will cause fake errors to stop the compiler from caching the result. 
 
 ## `SMT_QI_BOUND_GLOBAL`
 
@@ -467,6 +487,10 @@ Prusti panics if it fails to meet this deadline. This flag is intended to be use
 Verify only the single execution path goes through the given basic blocks. All basic blocks not on this execution path are replaced with `assume false`. Must be enabled using the [`ENABLE_VERIFY_ONLY_BASIC_BLOCK_PATH`](#enable_verify_only_basic_block_path) flag.
 
 > **Note:** This option is only for debugging Prusti.
+
+## `VERIFY_ONLY_DEFPATH`
+
+When set to the defpath of a local method, prusti will only verify the specified method. A fake error will be generated to avoid caching of a success.
 
 ## `VERIFY_ONLY_PREAMBLE`
 

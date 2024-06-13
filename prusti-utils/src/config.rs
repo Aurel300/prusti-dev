@@ -103,6 +103,7 @@ lazy_static::lazy_static! {
         settings.set_default("quiet", false).unwrap();
         settings.set_default("assert_timeout", 10_000).unwrap();
         settings.set_default("smt_qi_eager_threshold", 1000).unwrap();
+        settings.set_default("report_viper_messages", false).unwrap();
         settings.set_default("use_more_complete_exhale", true).unwrap();
         settings.set_default("skip_unsupported_features", false).unwrap();
         settings.set_default("internal_errors_as_warnings", false).unwrap();
@@ -173,6 +174,7 @@ lazy_static::lazy_static! {
        // Flags specifically for Prusti-Assistant:
         settings.set_default("show_ide_info", false).unwrap();
         settings.set_default("skip_verification", false).unwrap();
+        settings.set_default::<Option<String>>("verify_only_defpath", None).unwrap();
 
         // Get the list of all allowed flags.
         let mut allowed_keys = get_keys(&settings);
@@ -504,6 +506,12 @@ pub fn assert_timeout() -> u64 {
 /// Set `qi.eager_threshold` value to the given one.
 pub fn smt_qi_eager_threshold() -> u64 {
     read_setting("smt_qi_eager_threshold")
+}
+
+/// Whether to report the messages produced by the viper backend (e.g. quantifier instantiations,
+/// quantifier triggers)
+pub fn report_viper_messages() -> bool {
+    read_setting("report_viper_messages")
 }
 
 /// Maximum time (in milliseconds) for the verifier to spend on checks.
@@ -1047,4 +1055,10 @@ pub fn show_ide_info() -> bool {
 /// of issue #1261
 pub fn skip_verification() -> bool {
     read_setting("skip_verification")
+}
+
+/// Used for selective verification, can be passed a String containing
+/// the DefPath of the method to be verified
+pub fn verify_only_defpath() -> Option<String> {
+    read_setting("verify_only_defpath")
 }

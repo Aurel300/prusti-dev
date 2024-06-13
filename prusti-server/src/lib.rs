@@ -7,7 +7,6 @@
 #![warn(clippy::disallowed_types)]
 #![feature(rustc_private)]
 
-// use log::info;
 use ::log::{debug, error, info};
 use crate::{
     spawn_server_thread, PrustiClient, ServerMessage, VerificationRequest,
@@ -25,6 +24,7 @@ use prusti_rustc_interface::{
     errors::MultiSpan,
 };
 use viper::{self, PersistentCache, Viper};
+use ide::{encoding_info::EncodingInfo, ide_verification_result::IdeVerificationResult};
 use once_cell::sync::Lazy;
 
 mod client;
@@ -33,6 +33,7 @@ mod server;
 mod server_message;
 mod verification_request;
 mod backend;
+pub mod ide;
 
 pub use backend::*;
 pub use client::*;
@@ -67,6 +68,10 @@ pub fn verify_programs(
         };
         (program_name, request)
     });
+
+    if config::show_ide_info() {
+        emit_contract_spans(env_diagnostic);
+    }
 
     let mut stopwatch = Stopwatch::start("prusti-server", "verifying Viper program");
     // runtime used either for client connecting to server sequentially
@@ -109,18 +114,39 @@ async fn handle_stream(
         }
     }
 
+    // if we are in an ide, we already emit the errors asynchronously, otherwise we wait for
+    // all of them because we want the errors to be reported sortedly
+    if !config::show_ide_info() {
+        prusti_errors.sort();
+
+        for prusti_error in prusti_errors {
+            debug!("Prusti error: {:?}", prusti_error);
+            prusti_error.emit(env_diagnostic);
+        }
+    }
+
     overall_result
 }
 
 fn handle_termination_message(
     env_diagnostic: &EnvDiagnostic<'_>,
-    // &self,
     program_name: String,
     result: viper::VerificationResult,
     prusti_errors: &mut Vec<PrustiError>,
     overall_result: &mut VerificationResult
 ) {
     debug!("Received termination message with result {result:?} in verification of {program_name}");
+    if config::show_ide_info() {
+        PrustiError::message(
+            format!(
+                "ideVerificationResult{}",
+                serde_json::to_string(&IdeVerificationResult::from(&result))
+                    .unwrap()
+            ),
+            DUMMY_SP.into(),
+        )
+        .emit(env_diagnostic);
+    }
     match result.kind {
         // nothing to do
         viper::VerificationResultKind::Success => (),
@@ -141,9 +167,9 @@ fn handle_termination_message(
                     program_name.clone(),
                     verification_error
                 );
-                // temporary error emition, delete when verification errors can be backtranslated again
+                // FIXME: temporary error emition, delete when the above is implemented again
                 env_diagnostic.span_err_with_help_and_notes(
-                    MultiSpan::new(),
+                    MultiSpan::from_span(DUMMY_SP.into()),
                     &format!(
                         "Verification error in {}: {:?}",
                         program_name.clone(),
@@ -196,4 +222,16 @@ fn verify_requests_local<'a>(
         }
     };
     verification_stream.flatten()
+}
+
+pub fn emit_contract_spans(env_diagnostic: &EnvDiagnostic<'_>) {
+    let encoding_info = EncodingInfo {
+        // call_contract_spans: self.encoder.spans_of_call_contracts.borrow().to_vec(),
+        call_contract_spans: "call contract spans not implemented".to_string(),
+    };
+    PrustiError::message(
+        format!("encodingInfo{}", encoding_info.to_json_string()),
+        DUMMY_SP.into(),
+    )
+    .emit(env_diagnostic);
 }

@@ -170,6 +170,10 @@ lazy_static::lazy_static! {
         settings.set_default::<Vec<String>>("verify_only_basic_block_path", vec![]).unwrap();
         settings.set_default::<Vec<String>>("delete_basic_blocks", vec![]).unwrap();
 
+       // Flags specifically for Prusti-Assistant:
+        settings.set_default("show_ide_info", false).unwrap();
+        settings.set_default("skip_verification", false).unwrap();
+
         // Get the list of all allowed flags.
         let mut allowed_keys = get_keys(&settings);
         allowed_keys.insert("server_max_stored_verifiers".to_string());
@@ -1028,4 +1032,19 @@ pub fn enable_type_invariants() -> bool {
 
 pub fn test_free_pcs() -> bool {
     read_setting("test_free_pcs")
+}
+
+/// When enabled, prusti should return various Data structures that are
+/// used by prusti-assistant, such as a list of method calls,
+/// a list of all procedures to be verified, etc.
+pub fn show_ide_info() -> bool {
+    read_setting("show_ide_info")
+}
+
+/// When enabled, verification is skipped. Similar to no_verify but needed
+/// because no_verify is also set automatically for dependencies, independent
+/// of whether the user passed this flag. In general only required because
+/// of issue #1261
+pub fn skip_verification() -> bool {
+    read_setting("skip_verification")
 }

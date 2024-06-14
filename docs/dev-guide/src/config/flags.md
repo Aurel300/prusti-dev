@@ -57,6 +57,7 @@
 | [`PRINT_TYPECKD_SPECS`](#print_typeckd_specs) | `bool` | `false` | A |
 | [`QUIET`](#quiet) | `bool` | `false` | A* |
 | [`REPORT_VIPER_MESSAGES`](#report_viper_messages) | `bool` | `false` | A |
+| [`REPORT_BLOCK_MESSAGES`](#report_block_messages) | `bool` | `false` | A |
 | [`SERVER_ADDRESS`](#server_address) | `Option<String>` | `None` | A |
 | [`SERVER_MAX_CONCURRENCY`](#server_max_concurrency) | `Option<usize>` | `None` | A |
 | [`SERVER_MAX_STORED_VERIFIERS`](#server_max_stored_verifiers) | `Option<usize>` | `None` | A |
@@ -364,6 +365,10 @@ When enabled, user messages are not printed. Otherwise, messages output into `st
 ## `REPORT_VIPER_MESSAGES`
 
 When enabled for both server and client, certain supported Viper messages will be reported to the user.
+
+## `REPORT_BLOCK_MESSAGES`
+
+When enabled for both server and client, messages for individual basic blocks will be reported to the user. Does nothing if [`REPORT_VIPER_MESSAGES`](#report_viper_messages) is not enabled. Intended for usage with the Prusti Assistant (IDE). 
 
 ## `VERIFY_ONLY_DEFPATH`
 

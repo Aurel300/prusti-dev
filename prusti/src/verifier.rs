@@ -52,7 +52,7 @@ pub fn verify<'tcx>(
         //   which is constructed further inside `prusti_server`)
         let request = prusti_encoder::test_entrypoint(
             env.tcx(),
-            env.body,
+            env.body, // FIXME: currently needing env by value because of this line
             def_spec,
         );
         let program = request.program;

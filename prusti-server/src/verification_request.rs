@@ -66,6 +66,10 @@ impl ViperBackendConfig {
                     verifier_args.push("--checkTimeout".to_string());
                     verifier_args.push(check_timeout.to_string());
                 }
+
+                if config::report_block_messages() && config::report_viper_messages() {
+                    verifier_args.push("--generateBlockMessages".to_string());
+                }
             }
             VerificationBackend::Carbon => {
                 verifier_args.extend(vec!["--disableAllocEncoding".to_string()]);

@@ -171,6 +171,17 @@ fn main() {
             //     method!("quantifier"),
             //     method!("instantiations"),
             // ]),
+            java_class!("viper.silver.reporter.BlockReachedMessage", vec![
+                method!("methodName"),
+                method!("label"),
+                method!("pathId"),
+            ]),
+            java_class!("viper.silver.reporter.PathProcessedMessage", vec![
+                method!("methodName"),
+                method!("label"),
+                method!("pathId"),
+                method!("verificationResultKind"),
+            ]),
             java_class!("viper.silver.verifier.Verifier", vec![
                 method!("name"),
                 method!("buildVersion"),

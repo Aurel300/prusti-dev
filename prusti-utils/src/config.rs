@@ -175,6 +175,7 @@ lazy_static::lazy_static! {
         settings.set_default("show_ide_info", false).unwrap();
         settings.set_default("skip_verification", false).unwrap();
         settings.set_default::<Option<String>>("verify_only_defpath", None).unwrap();
+        settings.set_default("report_block_messages", false).unwrap();
 
         // Get the list of all allowed flags.
         let mut allowed_keys = get_keys(&settings);
@@ -795,6 +796,12 @@ fn read_smt_wrapper_dependent_option(name: &'static str) -> Option<u64> {
         );
     }
     value
+}
+
+/// Whether to report the messages produced by the viper backend about CFG block being processed
+/// (primarily for IDE display)
+pub fn report_block_messages() -> bool {
+    read_setting("report_block_messages")
 }
 
 /// Whether the built-in quantifiers should be ignored when comparing bounds.

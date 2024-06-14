@@ -111,6 +111,17 @@ async fn handle_stream(
     while let Some((program_name, server_msg)) = verification_messages.next().await {
         match server_msg {
             ServerMessage::Termination(result) => handle_termination_message(env_diagnostic, program_name, result, &mut prusti_errors, &mut overall_result),
+            ServerMessage::BlockReached {
+                viper_method,
+                vir_label,
+                path_id,
+            } => handle_block_processing_message(env_diagnostic, program_name, viper_method, vir_label, path_id, None),
+            ServerMessage::PathProcessed {
+                viper_method,
+                vir_label,
+                path_id,
+                result,
+            } => handle_block_processing_message(env_diagnostic, program_name, viper_method, vir_label, path_id, Some(result)),
         }
     }
 
@@ -190,6 +201,44 @@ fn handle_termination_message(
             .emit(env_diagnostic);
             *overall_result = VerificationResult::Failure;
         }
+    }
+}
+
+// TODO: probably in some other util module
+fn viper_method_to_rust_method(_viper_method: &String, program_name: &String) -> Option<String> {
+    Some(program_name.clone())
+}
+
+// TODO
+fn vir_label_to_pos(_vir_label: &String) -> Option<MultiSpan> {
+    Some(MultiSpan::from_span(DUMMY_SP.into()))
+}
+
+fn handle_block_processing_message(
+    env_diagnostic: &EnvDiagnostic<'_>,
+    program_name: String,
+    viper_method: String,
+    vir_label: String,
+    path_id: i32,
+    result: Option<String>,
+) {
+    if config::report_viper_messages() && config::report_block_messages() {
+        let processed = result != None;
+        debug!("Received {}: {{ method: {viper_method} ({program_name}) message, vir_label: {vir_label}, path_id: {path_id} }}",
+                if processed {"path processed"} else {"block reached"});
+        if let Some(method_name) = viper_method_to_rust_method(&viper_method, & program_name) { 
+            if let Some(span) = vir_label_to_pos(&vir_label) {
+                PrustiError::message(
+                    format!("{}{}",
+                        if processed {"pathProcessedMessage"} else {"blockReachedMessage"},
+                        if processed {json!({"method": method_name, "path_id": path_id, "result": result.unwrap()})}
+                        // FIXME: outputting vir_label only because it makes the messages different, otherwise the errors get merged.
+                        // should be removed once backtranslation of labels is implemented so the resulting spans are different.
+                        else         {json!({"method": method_name, "path_id": path_id, "label": vir_label})},
+                    ), span.clone()
+                ).emit(env_diagnostic);
+            } else { error!("Could not map vir label {vir_label} to a position in verification of method {method_name} in {program_name}") }
+        } else { error!("Could not map viper method {viper_method} to a Rust method in verification of {program_name}") }
     }
 }
 

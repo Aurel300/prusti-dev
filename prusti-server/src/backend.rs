@@ -113,6 +113,39 @@ fn polling_function(
             debug!("Polling thread received {}", jni.class_name(msg).as_str());
             match jni.class_name(msg).as_str() {
                 "viper.silver.reporter.VerificationTerminationMessage" => return,
+                "viper.silver.reporter.BlockReachedMessage" => {
+                    let msg_wrapper = silver::reporter::BlockReachedMessage::with(env);
+                    let method_name = 
+                        jni.get_string(jni.unwrap_result(msg_wrapper.call_methodName(msg)));
+                    let label = 
+                        jni.get_string(jni.unwrap_result(msg_wrapper.call_label(msg)));
+                    let path_id = jni.unwrap_result(msg_wrapper.call_pathId(msg));
+                    sender
+                      .send(ServerMessage::BlockReached {
+                          viper_method: method_name,
+                          vir_label: label,
+                          path_id: path_id,
+                        })
+                        .unwrap();
+                },
+                "viper.silver.reporter.PathProcessedMessage" => {
+                    let msg_wrapper = silver::reporter::PathProcessedMessage::with(env);
+                    let method_name = 
+                        jni.get_string(jni.unwrap_result(msg_wrapper.call_methodName(msg)));
+                    let label = 
+                        jni.get_string(jni.unwrap_result(msg_wrapper.call_label(msg)));
+                    let path_id = jni.unwrap_result(msg_wrapper.call_pathId(msg));
+                    let result = 
+                        jni.get_string(jni.unwrap_result(msg_wrapper.call_verificationResultKind(msg)));
+                    sender
+                      .send(ServerMessage::PathProcessed {
+                          viper_method: method_name,
+                          vir_label: label,
+                          path_id: path_id,
+                          result: result,
+                        })
+                        .unwrap();
+                },
                 _ => (),
             }
         }

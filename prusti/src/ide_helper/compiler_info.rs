@@ -1,4 +1,4 @@
-use super::call_finder;
+use super::{call_finder, query_signature};
 use prusti_interface::{environment::Environment, specs::typed};
 use prusti_rustc_interface::{
     hir::def_id::DefId,
@@ -13,6 +13,7 @@ use serde::Serialize;
 pub struct IdeInfo {
     procedure_defs: Vec<ProcDef>,
     function_calls: Vec<ProcDef>,
+    queried_source: Option<String>,
 }
 
 impl IdeInfo {
@@ -33,10 +34,11 @@ impl IdeInfo {
             .collect::<Vec<_>>();
 
         // For declaring external specifications:
-        // let queried_source = query_signature::collect_queried_signature(env.tcx(), &function_calls);
+        let queried_source = query_signature::collect_queried_signature(env.tcx(), &function_calls);
         Self {
             procedure_defs,
             function_calls,
+            queried_source,
         }
     }
 }

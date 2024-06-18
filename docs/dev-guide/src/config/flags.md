@@ -55,6 +55,7 @@
 | [`PRINT_DESUGARED_SPECS`](#print_desugared_specs) | `bool` | `false` | A |
 | [`PRINT_HASH`](#print_hash) | `bool` | `false` | A |
 | [`PRINT_TYPECKD_SPECS`](#print_typeckd_specs) | `bool` | `false` | A |
+| [`QUERY_METHOD_SIGNATURE`](#query_method_signature) | `Option<String>` | `None` | A |
 | [`QUIET`](#quiet) | `bool` | `false` | A* |
 | [`REPORT_VIPER_MESSAGES`](#report_viper_messages) | `bool` | `false` | A |
 | [`REPORT_BLOCK_MESSAGES`](#report_block_messages) | `bool` | `false` | A |
@@ -355,6 +356,10 @@ When enabled, prints the hash of a verification request (the hash is used for ca
 ## `PRINT_TYPECKD_SPECS`
 
 When enabled, prints the type-checked specifications.
+
+## `QUERY_METHOD_SIGNATURE`
+
+When set to a defpath, prusti will generate a template for an external specification for this method. The result is part of the CompilerInfo and will only be emitted if the `SHOW_IDE_INFO` flag is enabled too.
 
 ## `QUIET`
 

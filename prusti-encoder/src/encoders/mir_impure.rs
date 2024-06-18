@@ -2,6 +2,7 @@ use mir_state_analysis::{
     free_pcs::{CapabilityKind, FreePcsAnalysis, FreePcsBasicBlock, FreePcsLocation, RepackOp},
     utils::Place,
 };
+use prusti_interface::PrustiError;
 use prusti_rustc_interface::{
     target::abi,
     middle::{
@@ -740,6 +741,7 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
             // TODO: also add bb and location for better debugging?
             vir::vir_format!(self.vcx, "{:?}", terminator.kind),
         ));
+        let span = terminator.source_info.span;
 
         self.fpcs_repacks_location(location, |loc| &loc.repacks_start);
         // TODO: move this to after getting operands, before assignment
@@ -872,7 +874,7 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                     let method_in = args.iter().map(|arg| self.encode_operand(&arg.node)).collect::<Vec<_>>();
 
 
-                   for ((fn_arg_ty, arg), arg_ex) in fn_arg_tys.iter().zip(args.iter()).zip(method_in.iter()) {
+                    for ((fn_arg_ty, arg), arg_ex) in fn_arg_tys.iter().zip(args.iter()).zip(method_in.iter()) {
                         let local_decls = self.local_decls_src();
                         let tcx = self.vcx().tcx();
                         let arg_ty = arg.node.ty(local_decls, tcx);
@@ -903,10 +905,14 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
 
                     method_args.extend(encoded_ty_args);
 
-                    self.stmt(
-                        self.vcx
-                            .alloc(func_out.method_ref.apply(self.vcx, &method_args)),
-                    );
+                    self.vcx().with_span(span, |vcx| {
+                        vcx.handle_error("call.precondition:assertion.false", move || {
+                            Some(vec![PrustiError::verification("precondition might not hold", span.into())])
+                        });
+                        self.stmt(self.vcx.alloc(vir::StmtGenData::new(
+                            self.vcx.alloc(func_out.method_ref.apply(self.vcx, &method_args)),
+                        )));
+                    });
                     let expected_ty = destination.ty(self.local_decls_src(), self.vcx.tcx()).ty;
                     let fn_result_ty = sig.output().skip_binder();
                     let result_cast = self

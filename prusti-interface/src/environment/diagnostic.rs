@@ -4,6 +4,7 @@ use prusti_rustc_interface::{
 };
 use std::cell::RefCell;
 
+#[derive(Clone)]
 pub struct EnvDiagnostic<'tcx> {
     tcx: TyCtxt<'tcx>,
     warn_buffer: RefCell<Vec<prusti_rustc_interface::errors::Diagnostic>>,

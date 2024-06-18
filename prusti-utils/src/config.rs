@@ -174,7 +174,7 @@ lazy_static::lazy_static! {
        // Flags specifically for Prusti-Assistant:
         settings.set_default("show_ide_info", false).unwrap();
         settings.set_default("skip_verification", false).unwrap();
-        settings.set_default::<Option<String>>("verify_only_defpath", None).unwrap();
+        settings.set_default::<Vec<String>>("verify_only_defpath", vec![]).unwrap();
         settings.set_default("report_block_messages", false).unwrap();
 
         // Get the list of all allowed flags.
@@ -1066,6 +1066,6 @@ pub fn skip_verification() -> bool {
 
 /// Used for selective verification, can be passed a String containing
 /// the DefPath of the method to be verified
-pub fn verify_only_defpath() -> Option<String> {
+pub fn verify_only_defpath() -> Vec<String> {
     read_setting("verify_only_defpath")
 }

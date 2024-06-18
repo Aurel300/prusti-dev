@@ -15,6 +15,7 @@ use prusti_interface::environment::EnvBody;
 use prusti_rustc_interface::{
     middle::ty,
     hir,
+    hir::def_id::DefId,
 };
 use task_encoder::TaskEncoder;
 
@@ -24,13 +25,13 @@ pub fn test_entrypoint<'tcx>(
     tcx: ty::TyCtxt<'tcx>,
     body: EnvBody<'tcx>,
     def_spec: prusti_interface::specs::typed::DefSpecificationMap,
+    procedures: &Vec<DefId>,
 ) -> request::RequestWithContext {
 
     crate::encoders::init_def_spec(def_spec);
     vir::init_vcx(vir::VirCtxt::new(tcx, body));
 
     // TODO: this should be a "crate" encoder, which will deps.require all the methods in the crate
-
     for def_id in tcx.hir().body_owners() {
         tracing::debug!("test_entrypoint item: {def_id:?}");
         let kind = tcx.def_kind(def_id);
@@ -47,8 +48,8 @@ pub fn test_entrypoint<'tcx>(
                         let is_trusted = proc_spec.trusted.extract_inherit().unwrap_or_default();
                         (is_pure, is_trusted)
                 }).unwrap_or_default();
-
-                if !(is_trusted && is_pure) {
+                
+                if procedures.contains(&def_id) && !(is_trusted && is_pure) {
                     let substs = ty::GenericArgs::identity_for_item(tcx, def_id);
                     let res = crate::encoders::MirImpureEnc::encode((def_id, substs, None));
                     assert!(res.is_ok());

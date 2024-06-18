@@ -54,6 +54,7 @@ pub fn verify<'tcx>(
             env.tcx(),
             env.body, // FIXME: currently needing env by value because of this line
             def_spec,
+            &verification_task.procedures,
         );
         let program = request.program;
 

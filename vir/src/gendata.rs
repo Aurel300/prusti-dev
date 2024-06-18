@@ -277,7 +277,24 @@ pub struct MethodCallGenData<'vir, Curr, Next> {
 }
 
 #[derive(VirHash, VirReify, VirSerde)]
-pub enum StmtGenData<'vir, Curr, Next> {
+pub struct StmtGenData<'vir, Curr, Next> {
+    pub kind: StmtKindGen<'vir, Curr, Next>,
+    // #[vir(reify_pass)] pub debug_info: DebugInfo<'vir>,
+    #[vir(reify_pass)] pub span: Option<&'vir VirSpan<'vir>>,
+}
+
+impl <'vir, Curr: 'vir, Next: 'vir> StmtGenData<'vir, Curr, Next> {
+    pub fn new(kind: StmtKindGen<'vir, Curr, Next>) -> Self {
+        with_vcx(|vcx| Self {
+            kind,
+            // debug_info: DebugInfo::new(vcx),
+            span: vcx.top_span(),
+        })
+    }
+}
+
+#[derive(VirHash, VirReify, VirSerde)]
+pub enum StmtKindGenData<'vir, Curr, Next> {
     LocalDecl(
         #[vir(reify_pass, is_ref)] LocalDecl<'vir>,
         Option<ExprGen<'vir, Curr, Next>>,

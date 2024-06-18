@@ -9,7 +9,8 @@ macro_rules! const_expr {
     ($expr_kind:expr) => {
         &ExprGenData {
             kind: $expr_kind,
-            debug_info: DEBUGINFO_NONE
+            debug_info: DEBUGINFO_NONE,
+            span: None,
         }
     };
 }

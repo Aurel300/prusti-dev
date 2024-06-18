@@ -1,5 +1,5 @@
 use rustc_hash::FxHashMap;
-use viper::{self, AstFactory};
+use viper::{self, AstFactory, Position};
 
 pub fn program_to_viper<'vir, 'v>(program: vir::Program<'vir>, ast: &'vir AstFactory<'v>) -> viper::Program<'vir> {
     let mut domains: FxHashMap<_, _> = Default::default();
@@ -46,6 +46,23 @@ pub trait ToViper<'vir, 'v> {
     type Output;
 
     fn to_viper(&self, ctx: &ToViperContext<'vir, 'v>) -> Self::Output;
+
+    fn to_viper_with_pos(&self, ctx: &ToViperContext<'vir, 'v>, _pos: Position) -> Self::Output {
+        self.to_viper(ctx)
+    }
+
+    fn to_viper_with_span(&self, ctx: &ToViperContext<'vir, 'v>, span: Option<&'vir vir::VirSpan<'vir>>) -> Self::Output {
+        if let Some(span) = span {
+            // TODO: virtual_position seems more appropriate (no need to store
+            //   columns and lines which we don't use anyway), but it is not
+            //   a HasIdentifier implementation; should be changed in silver
+            // let pos = ctx.ast.virtual_position(format!("{}", span.id));
+            let pos = ctx.ast.identifier_position(0, 0, format!("{}", span.id));
+            self.to_viper_with_pos(ctx, pos)
+        } else {
+            self.to_viper(ctx)
+        }
+    }
 }
 
 /// Conversion of one VIR node into a vector of Viper AST nodes.
@@ -110,6 +127,26 @@ impl<'vir, 'v> ToViper<'vir, 'v> for vir::BinOp<'vir> {
             vir::BinOpKind::Div => ctx.ast.div(lhs, rhs),
             vir::BinOpKind::Mod => ctx.ast.mul(lhs, rhs),
             vir::BinOpKind::Implies => ctx.ast.implies(lhs, rhs),
+        }
+    }
+    fn to_viper_with_pos(&self, ctx: &ToViperContext<'vir, 'v>, pos: Position) -> Self::Output {
+        let lhs = self.lhs.to_viper(ctx);
+        let rhs = self.rhs.to_viper(ctx);
+        match self.kind {
+            vir::BinOpKind::CmpEq => ctx.ast.eq_cmp_with_pos(lhs, rhs, pos),
+            vir::BinOpKind::CmpNe => ctx.ast.ne_cmp_with_pos(lhs, rhs, pos),
+            vir::BinOpKind::CmpGt => ctx.ast.gt_cmp_with_pos(lhs, rhs, pos),
+            vir::BinOpKind::CmpLt => ctx.ast.lt_cmp_with_pos(lhs, rhs, pos),
+            vir::BinOpKind::CmpGe => ctx.ast.ge_cmp_with_pos(lhs, rhs, pos),
+            vir::BinOpKind::CmpLe => ctx.ast.le_cmp_with_pos(lhs, rhs, pos),
+            vir::BinOpKind::And => ctx.ast.and_with_pos(lhs, rhs, pos),
+            vir::BinOpKind::Or => ctx.ast.or_with_pos(lhs, rhs, pos),
+            vir::BinOpKind::Add => ctx.ast.add_with_pos(lhs, rhs, pos),
+            vir::BinOpKind::Sub => ctx.ast.sub_with_pos(lhs, rhs, pos),
+            vir::BinOpKind::Mul => ctx.ast.mul_with_pos(lhs, rhs, pos),
+            vir::BinOpKind::Div => ctx.ast.div_with_pos(lhs, rhs, pos),
+            vir::BinOpKind::Mod => ctx.ast.mul_with_pos(lhs, rhs, pos),
+            vir::BinOpKind::Implies => ctx.ast.implies_with_pos(lhs, rhs, pos),
         }
     }
 }
@@ -203,27 +240,27 @@ impl<'vir, 'v> ToViper<'vir, 'v> for vir::Expr<'vir> {
     type Output = viper::Expr<'v>;
     fn to_viper(&self, ctx: &ToViperContext<'vir, 'v>) -> Self::Output {
         match self.kind {
-            vir::ExprKindData::AccField(v) => v.to_viper(ctx),
-            vir::ExprKindData::BinOp(v) => v.to_viper(ctx),
-            vir::ExprKindData::Const(v) => v.to_viper(ctx),
+            vir::ExprKindData::AccField(v) => v.to_viper_with_span(ctx, self.span),
+            vir::ExprKindData::BinOp(v) => v.to_viper_with_span(ctx, self.span),
+            vir::ExprKindData::Const(v) => v.to_viper_with_span(ctx, self.span),
             vir::ExprKindData::Field(recv, field) => ctx.ast.field_access(
                 recv.to_viper(ctx),
                 field.to_viper(ctx),
                 // TODO: position
             ),
-            vir::ExprKindData::Forall(v) => v.to_viper(ctx),
-            vir::ExprKindData::FuncApp(v) => v.to_viper(ctx),
-            vir::ExprKindData::Let(v) => v.to_viper(ctx),
-            vir::ExprKindData::Local(v) => v.to_viper(ctx),
+            vir::ExprKindData::Forall(v) => v.to_viper_with_span(ctx, self.span),
+            vir::ExprKindData::FuncApp(v) => v.to_viper_with_span(ctx, self.span),
+            vir::ExprKindData::Let(v) => v.to_viper_with_span(ctx, self.span),
+            vir::ExprKindData::Local(v) => v.to_viper_with_span(ctx, self.span),
             vir::ExprKindData::Old(v) => ctx.ast.old(v.to_viper(ctx)), // TODO: position
-            vir::ExprKindData::PredicateApp(v) => v.to_viper(ctx),
+            vir::ExprKindData::PredicateApp(v) => v.to_viper_with_span(ctx, self.span),
             vir::ExprKindData::Result(ty) => ctx.ast.result_with_pos(
                 ty.to_viper(ctx),
                 ctx.ast.no_position(), // TODO: position
             ),
-            vir::ExprKindData::Ternary(v) => v.to_viper(ctx),
-            vir::ExprKindData::Unfolding(v) => v.to_viper(ctx),
-            vir::ExprKindData::UnOp(v) => v.to_viper(ctx),
+            vir::ExprKindData::Ternary(v) => v.to_viper_with_span(ctx, self.span),
+            vir::ExprKindData::Unfolding(v) => v.to_viper_with_span(ctx, self.span),
+            vir::ExprKindData::UnOp(v) => v.to_viper_with_span(ctx, self.span),
 
             //vir::ExprKindData::Lazy(&'vir str, Box<dyn for <'a> Fn(&'vir crate::VirCtxt<'a>, Curr) -> Next + 'vir>),
             //vir::ExprKindData::Todo(&'vir str) => unreachable!(),
@@ -273,6 +310,25 @@ impl<'vir, 'v> ToViper<'vir, 'v> for vir::FuncApp<'vir> {
                 &self.args.iter().map(|v| v.to_viper(ctx)).collect::<Vec<_>>(),
                 self.result_ty.to_viper(ctx),
                 ctx.ast.no_position(), // TODO: position
+            )
+        }
+    }
+    fn to_viper_with_pos(&self, ctx: &ToViperContext<'vir, 'v>, pos: Position) -> Self::Output {
+        if let Some((domain, _)) = ctx.domain_functions.get(self.target) {
+            ctx.ast.domain_func_app2(
+                self.target,
+                &self.args.iter().map(|v| v.to_viper(ctx)).collect::<Vec<_>>(),
+                &[],
+                self.result_ty.to_viper(ctx),
+                domain.name,
+                pos,
+            )
+        } else {
+            ctx.ast.func_app(
+                self.target,
+                &self.args.iter().map(|v| v.to_viper(ctx)).collect::<Vec<_>>(),
+                self.result_ty.to_viper(ctx),
+                pos,
             )
         }
     }

@@ -74,9 +74,30 @@ pub fn verify<'tcx>(
 
         let program = request.program;
 
-        let result = prusti_server::verify_programs(&env.diagnostic, vec![program]);
+        let mut results = prusti_server::verify_programs(vec![program]);
+        assert_eq!(results.len(), 1); // TODO: eventually verify separate methods as separate programs again?
+
+        let result = results.pop().unwrap().1;
         println!("verification result: {result:?}");
-        if !matches!(result, VerificationResult::Success) {
+
+        let success = match result {
+            viper::VerificationResult::Success => true,
+            viper::VerificationResult::JavaException(_e) => false,
+            viper::VerificationResult::ConsistencyErrors(_e) => false,
+            viper::VerificationResult::Failure(errors) => {
+                errors
+                    .into_iter()
+                    .flat_map(|error| prusti_encoder::backtranslate_error(
+                            &error.full_id,
+                            error.offending_pos_id.unwrap().parse::<usize>().unwrap(),
+                        )
+                        .expect("verification error could not be backtranslated")
+                        .into_iter())
+                    .for_each(|prusti_error| prusti_error.emit(&env.diagnostic));
+                false
+            }
+        };
+        if !success {
             // TODO: This will be unnecessary if diagnostic errors are emitted
             // earlier, it's useful for now to ensure that Prusti returns an
             // error code when verification fails
@@ -87,7 +108,6 @@ pub fn verify<'tcx>(
                 &[],
             );
         }
-        // TODO: backtranslate verification results
 
         //let verification_result =
         //    if verification_task.procedures.is_empty() && verification_task.types.is_empty() {

@@ -4,6 +4,7 @@ use crate::data::*;
 use crate::debug_info::DebugInfo;
 use crate::genrefs::*;
 use crate::refs::*;
+use crate::spans::VirSpan;
 use crate::with_vcx;
 
 use vir_proc_macro::*;
@@ -117,14 +118,16 @@ impl<A, B: GenRow> GenRow for fn(A) -> B {
 pub struct ExprGenData<'vir, Curr: 'vir, Next: 'vir> {
     pub kind: ExprKindGen<'vir, Curr, Next>,
     #[vir(reify_pass)] pub debug_info: DebugInfo<'vir>,
+    #[vir(reify_pass)] pub span: Option<&'vir VirSpan<'vir>>,
 }
 
 impl <'vir, Curr: 'vir, Next: 'vir> ExprGenData<'vir, Curr, Next> {
     pub fn new(kind: ExprKindGen<'vir, Curr, Next>) -> Self {
-        Self {
+        with_vcx(|vcx| Self {
             kind,
-            debug_info: with_vcx(DebugInfo::new),
-        }
+            debug_info: DebugInfo::new(vcx),
+            span: vcx.top_span(),
+        })
     }
 }
 

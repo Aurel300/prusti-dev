@@ -11,8 +11,8 @@ mod encoders;
 mod encoder_traits;
 pub mod request;
 
-use prusti_interface::environment::EnvBody;
-use prusti_interface::environment::EnvQuery;
+
+use prusti_interface::{environment::{EnvBody, EnvQuery}, PrustiError};
 use prusti_rustc_interface::{
     middle::ty,
     hir,
@@ -237,4 +237,11 @@ pub fn test_entrypoint<'tcx>(
     request::RequestWithContext {
         program: program.to_ref(),
     }
+}
+
+pub fn backtranslate_error(error_kind: &str, offending_pos_id: usize) -> Option<Vec<PrustiError>> {
+    vir::with_vcx(|vcx| vcx.backtranslate(
+        error_kind,
+        offending_pos_id,
+    ))
 }

@@ -132,6 +132,9 @@ impl<'vir> Debug for DomainFunctionData<'vir> {
 impl<'vir, Curr, Next> Debug for ExprGenData<'vir, Curr, Next> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         // TODO: Position, etc
+        if let Some(span) = self.span {
+            write!(f, "/*p:{}*/", span.id)?;
+        }
         self.kind.fmt(f)
     }
 }

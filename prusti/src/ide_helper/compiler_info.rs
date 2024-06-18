@@ -1,3 +1,4 @@
+use super::call_finder;
 use prusti_interface::{environment::Environment, specs::typed};
 use prusti_rustc_interface::{
     hir::def_id::DefId,
@@ -11,6 +12,7 @@ use serde::Serialize;
 #[derive(Serialize)]
 pub struct IdeInfo {
     procedure_defs: Vec<ProcDef>,
+    function_calls: Vec<ProcDef>,
 }
 
 impl IdeInfo {
@@ -21,11 +23,20 @@ impl IdeInfo {
     ) -> Self {
         let procedure_defs = collect_procedures(env, procedures, def_spec);
         let source_map = env.tcx().sess.source_map();
+        let function_calls = collect_fncalls(env)
+            .into_iter()
+            .map(|(name, defid, sp)| ProcDef {
+                name,
+                defid,
+                span: VscSpan::from_span(&sp, source_map),
+            })
+            .collect::<Vec<_>>();
 
         // For declaring external specifications:
         // let queried_source = query_signature::collect_queried_signature(env.tcx(), &function_calls);
         Self {
             procedure_defs,
+            function_calls,
         }
     }
 }
@@ -90,3 +101,13 @@ fn collect_procedures(
     procs
 }
 
+/// collect all the function calls, so the extension can query external_spec
+/// templates for it
+fn collect_fncalls(env: &Environment<'_>) -> Vec<(String, DefId, Span)> {
+    let mut fnvisitor = call_finder::CallSpanFinder::new(env);
+    env.tcx()
+        .hir()
+        .visit_all_item_likes_in_crate(&mut fnvisitor);
+
+    fnvisitor.called_functions
+}

@@ -169,7 +169,7 @@ impl<'vir, 'v> ToViper<'vir, 'v> for vir::BinOp<'vir> {
             vir::BinOpKind::Sub => ctx.ast.sub_with_pos(lhs, rhs, pos),
             vir::BinOpKind::Mul => ctx.ast.mul_with_pos(lhs, rhs, pos),
             vir::BinOpKind::Div => ctx.ast.div_with_pos(lhs, rhs, pos),
-            vir::BinOpKind::Mod => ctx.ast.mul_with_pos(lhs, rhs, pos),
+            vir::BinOpKind::Mod => ctx.ast.mod_with_pos(lhs, rhs, pos),
             vir::BinOpKind::Implies => ctx.ast.implies_with_pos(lhs, rhs, pos),
         }
     }
@@ -603,7 +603,7 @@ impl<'vir, 'v> ToViperVec<'vir, 'v> for vir::TerminatorStmt<'vir> {
             vir::TerminatorStmtGenData::Dummy(v) => vec.push(ctx.ast.seqn(
                 &[
                     ctx.ast.comment(v),
-                    ctx.ast.inhale(
+                    ctx.ast.assert(
                         ctx.ast.false_lit_with_pos(pos),
                         pos,
                     ),

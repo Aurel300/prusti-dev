@@ -872,6 +872,12 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                                 .require_ref::<CastToEnc<CastTypePure>>(cast_args)
                                 .unwrap()
                                 .apply_cast_if_necessary(self.vcx, proj_app)
+                        } else if let TyKind::Tuple(_) = tykind {
+                            self
+                                .deps
+                                .require_local::<RustTyCastersEnc<CastTypePure>>(ty)
+                                .unwrap()
+                                .cast_to_concrete_if_possible(self.vcx, proj_app)
                         } else {
                             proj_app
                         };

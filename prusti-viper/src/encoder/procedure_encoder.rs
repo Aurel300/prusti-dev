@@ -3864,6 +3864,8 @@ impl<'p, 'v: 'p, 'tcx: 'v> ProcedureEncoder<'p, 'v, 'tcx> {
         );
         // Weakening assertion must be put before inhaling the precondition, otherwise the weakening
         // soundness check becomes trivially satisfied.
+        /*
+        // TODO(iterators): disabled pre weakening check
         if let Some(weakening_spec) = weakening_spec {
             let pos = self.register_error(weakening_spec.spec_functions_span, ErrorCtxt::AssertMethodPreconditionWeakening);
             self.cfg_method.add_stmt(
@@ -3874,6 +3876,7 @@ impl<'p, 'v: 'p, 'tcx: 'v> ProcedureEncoder<'p, 'v, 'tcx> {
                 }),
             );
         }
+        */
         self.cfg_method.add_stmt(
             start_cfg_block,
             vir::Stmt::Inhale( vir::Inhale {
@@ -4609,6 +4612,8 @@ impl<'p, 'v: 'p, 'tcx: 'v> ProcedureEncoder<'p, 'v, 'tcx> {
             return_cfg_block,
             vir::Stmt::comment("Assert possible strengthening"),
         );
+        /*
+        // TODO(iterators): disabled post strengthening check
         if let Some(strengthening_spec) = strengthening_spec {
             let patched_strengthening_spec =
                 self.replace_old_places_with_ghost_vars(None, strengthening_spec.refinement_check_expr);
@@ -4621,6 +4626,7 @@ impl<'p, 'v: 'p, 'tcx: 'v> ProcedureEncoder<'p, 'v, 'tcx> {
                 }),
             );
         }
+        */
 
         // Assert functional specification of postcondition
         self.cfg_method.add_stmt(

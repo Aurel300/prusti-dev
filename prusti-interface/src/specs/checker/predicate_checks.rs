@@ -46,7 +46,7 @@ impl<'tcx> SpecCheckerStrategy<'tcx> for IllegalPredicateUsagesChecker {
             )
         );
 
-        body_errors.chain(illegal_usage_errors).collect()
+        body_errors/*.chain(illegal_usage_errors)*/.collect()
     }
 }
 

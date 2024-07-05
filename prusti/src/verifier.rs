@@ -4,16 +4,25 @@ use log::{debug, warn};
 use prusti_utils::{config, report::user};
 use prusti_interface::{
     data::{VerificationResult, VerificationTask},
-    environment::Environment,
+    environment::{Environment, EnvDiagnostic},
     specs::typed,
+    PrustiError,
 };
-use prusti_rustc_interface::errors::MultiSpan;
+use prusti_rustc_interface::{
+    errors::MultiSpan,
+    span::DUMMY_SP,
+    data_structures::fx::FxHashMap,
+    hir::def_id::DefId,
+};
+use prusti_server::ide::encoding_info::{SpanOfCallContracts, EncodingInfo};
+use crate::ide_helper::compiler_info::ProcDef;
 
 #[tracing::instrument(name = "prusti::verify", level = "debug", skip(env))]
 pub fn verify<'tcx>(
     env: Environment<'tcx>,
     def_spec: typed::DefSpecificationMap,
     verification_task: VerificationTask<'tcx>,
+    mut contract_spans_map: FxHashMap<DefId, SpanOfCallContracts>,
 ) {
     if env.diagnostic.has_errors() {
         warn!("The compiler reported an error, so the program will not be verified.");
@@ -52,10 +61,17 @@ pub fn verify<'tcx>(
         //   which is constructed further inside `prusti_server`)
         let request = prusti_encoder::test_entrypoint(
             env.tcx(),
-            env.body, // FIXME: currently needing env by value because of this line
+            env.body,
+            env.query,
             def_spec,
             &verification_task.procedures,
+            &mut contract_spans_map,
         );
+
+        if config::show_ide_info() {
+            emit_contract_spans(&env.diagnostic, contract_spans_map);
+        }
+
         let program = request.program;
 
         let result = prusti_server::verify_programs(&env.diagnostic, vec![program]);
@@ -112,4 +128,24 @@ pub fn verify<'tcx>(
         //    }
         //};
     }
+}
+
+pub fn emit_contract_spans(
+    env_diagnostic: &EnvDiagnostic<'_>,
+    contract_spans_map: FxHashMap<DefId, SpanOfCallContracts>,
+) {
+    let mut contract_spans: Vec<SpanOfCallContracts> = contract_spans_map
+        .into_values()
+        .collect();
+    contract_spans.retain(|cs| !cs.contracts_spans.is_empty());
+    // sort, so the order does not randomly change between runs
+    contract_spans
+        .sort_by(|a,b| a.defpath.cmp(&b.defpath));
+
+    let encoding_info = EncodingInfo { call_contract_spans: contract_spans };
+    PrustiError::message(
+        format!("encodingInfo{}", encoding_info.to_json_string()),
+        DUMMY_SP.into(),
+    )
+    .emit(env_diagnostic);
 }

@@ -12,26 +12,34 @@ mod encoder_traits;
 pub mod request;
 
 use prusti_interface::environment::EnvBody;
+use prusti_interface::environment::EnvQuery;
 use prusti_rustc_interface::{
     middle::ty,
     hir,
     hir::def_id::DefId,
+    span::Span,
+    data_structures::fx::FxHashMap,
 };
+use prusti_utils::config;
 use task_encoder::TaskEncoder;
+use prusti_server::ide::encoding_info::SpanOfCallContracts;
 
 use crate::encoders::lifted::ty_constructor::TyConstructorEnc;
 
 pub fn test_entrypoint<'tcx>(
     tcx: ty::TyCtxt<'tcx>,
     body: EnvBody<'tcx>,
+    query: EnvQuery<'tcx>,
     def_spec: prusti_interface::specs::typed::DefSpecificationMap,
     procedures: &Vec<DefId>,
+    contract_spans_map: &mut FxHashMap<DefId, SpanOfCallContracts>,
 ) -> request::RequestWithContext {
 
     crate::encoders::init_def_spec(def_spec);
     vir::init_vcx(vir::VirCtxt::new(tcx, body));
 
     // TODO: this should be a "crate" encoder, which will deps.require all the methods in the crate
+    let source_map = tcx.sess.source_map();
     for def_id in tcx.hir().body_owners() {
         tracing::debug!("test_entrypoint item: {def_id:?}");
         let kind = tcx.def_kind(def_id);
@@ -46,9 +54,53 @@ pub fn test_entrypoint<'tcx>(
                 let (is_pure, is_trusted) = crate::encoders::with_proc_spec(def_id, |proc_spec| {
                         let is_pure = proc_spec.kind.is_pure().unwrap_or_default();
                         let is_trusted = proc_spec.trusted.extract_inherit().unwrap_or_default();
+
+                        if config::show_ide_info() {
+                            // TODO: only handles inherent spec items
+                            contract_spans_map
+                                .entry(def_id)
+                                .and_modify(|contract_spans| {
+                                    let mut spans: Vec<Span> = Vec::new();
+                                    // the `get` method has a comment about how it is a bad API, but does it matter
+                                    // if we know if the result is inkerent, inherited or refined here?
+                                    // if let Some((_, pre_def_ids)) = proc_spec.pres.get() {
+                                    if let Some(pre_def_ids) = proc_spec.pres.expect_empty_or_inherent() {
+                                        let mut pre_spans = pre_def_ids
+                                            .iter()
+                                            .map(|pre_def_id| query.get_def_span(pre_def_id))
+                                            .collect::<Vec<Span>>();
+                                        spans.append(&mut pre_spans);
+                                    }
+                                    if let Some(post_def_ids) = proc_spec.posts.expect_empty_or_inherent() {
+                                        let mut post_spans = post_def_ids
+                                            .iter()
+                                            .map(|pre_def_id| query.get_def_span(pre_def_id))
+                                            .collect::<Vec<Span>>();
+                                        spans.append(&mut post_spans);
+                                    }
+                                    if let Some(pledges) = proc_spec.pledges.expect_empty_or_inherent() {
+                                        let mut pledge_spans = pledges
+                                            .iter()
+                                            .map(|pledge| {
+                                                let rhs = query.get_def_span(pledge.rhs);
+                                                if let Some(lhs) = pledge.lhs { query.get_def_span(lhs).to(rhs) }
+                                                else { rhs }
+                                            }).collect::<Vec<Span>>();
+                                        spans.append(&mut pledge_spans);
+                                    }
+                                    if let Some(Some(purity_def_id)) = proc_spec.purity.expect_empty_or_inherent() {
+                                        spans.push(query.get_def_span(purity_def_id));
+                                    }
+                                    if let Some(Some(terminates_def_id)) = proc_spec.terminates.expect_empty_or_inherent() {
+                                        spans.push(query.get_def_span(terminates_def_id.to_def_id()));
+                                    }
+                                    contract_spans.set_contract_spans(spans, source_map);
+                                });
+                        }
+
                         (is_pure, is_trusted)
                 }).unwrap_or_default();
-                
+
                 if procedures.contains(&def_id) && !(is_trusted && is_pure) {
                     let substs = ty::GenericArgs::identity_for_item(tcx, def_id);
                     let res = crate::encoders::MirImpureEnc::encode((def_id, substs, None));

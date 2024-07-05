@@ -1871,6 +1871,8 @@ dependencies = [
  "mir-state-analysis",
  "prusti-interface",
  "prusti-rustc-interface",
+ "prusti-server",
+ "prusti-utils",
  "task-encoder",
  "tracing 0.1.0",
  "vir",

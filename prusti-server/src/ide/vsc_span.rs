@@ -2,7 +2,7 @@ use prusti_rustc_interface::span::{source_map::SourceMap, Span};
 use serde::Serialize;
 
 /// a representation of spans that is more usable with VSCode.
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Clone, Debug)]
 pub struct VscSpan {
     column_end: usize,
     column_start: usize,

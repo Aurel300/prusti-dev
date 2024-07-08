@@ -90,7 +90,8 @@ impl<'tcx> MostGenericTy<'tcx> {
             | TyKind::Int(_)
             | TyKind::Never
             | TyKind::Param(_)
-            | TyKind::Uint(_) => Vec::new(),
+            | TyKind::Uint(_)
+            | TyKind::Str => Vec::new(),
             other => todo!("generics for {:?}", other),
         }
     }

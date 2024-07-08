@@ -189,11 +189,6 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             .push(stmt);
     }
 
-    fn unreachable(&mut self) -> vir::TerminatorStmt<'vir> {
-        self.stmt(self.vcx.mk_exhale_stmt(self.vcx.mk_bool::<false>()));
-        self.vcx.mk_assume_false_stmt()
-    }
-
     /*
     fn project_fields(
         &mut self,
@@ -906,8 +901,12 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                     method_args.extend(encoded_ty_args);
 
                     self.vcx().with_span(span, |vcx| {
-                        vcx.handle_error("call.precondition:assertion.false", move || {
-                            Some(vec![PrustiError::verification("precondition might not hold", span.into())])
+                        vcx.handle_error("call.precondition:assertion.false", move |reason_span_opt| {
+                            let mut error = PrustiError::verification("precondition might not hold", span.into());
+                            if let Some(reason_span) = reason_span_opt {
+                                error.add_note_mut("the failing precondition is here", Some(reason_span.into()));
+                            }
+                            Some(vec![error])
                         });
                         self.stmt(self.vcx.alloc(vir::StmtGenData::new(
                             self.vcx.alloc(func_out.method_ref.apply(self.vcx, &method_args)),
@@ -934,7 +933,16 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                                 .alloc(vir::CfgBlockLabelData::BasicBlock(target.as_usize())),
                         )
                     })
-                    .unwrap_or_else(|| self.unreachable())
+                    .unwrap_or_else(|| {
+                        // TODO: detect panic causes, adjust message accordingly
+                        self.vcx().with_span(span, |vcx| {
+                            vcx.handle_error("exhale.failed:assertion.false", move |_| {
+                                Some(vec![PrustiError::verification("unreachable statement might be reached", span.into())])
+                            });
+                            self.stmt(self.vcx.mk_exhale_stmt(self.vcx.mk_bool::<false>()));
+                            self.vcx.mk_assume_false_stmt()
+                        })
+                    })
             }
             mir::TerminatorKind::Assert {
                 cond,
@@ -975,7 +983,15 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                     &[],
                 )]), otherwise, &[])
             }
-            mir::TerminatorKind::Unreachable => self.unreachable(),
+            mir::TerminatorKind::Unreachable => {
+                self.vcx().with_span(span, |vcx| {
+                    vcx.handle_error("exhale.failed:assertion.false", move |_| {
+                        Some(vec![PrustiError::verification("unreachable statement might be reached", span.into())])
+                    });
+                    self.stmt(self.vcx.mk_exhale_stmt(self.vcx.mk_bool::<false>()));
+                    self.vcx.mk_assume_false_stmt()
+                })
+            }
 
             mir::TerminatorKind::Drop { target, .. } => {
                 self.vcx.mk_goto_stmt(

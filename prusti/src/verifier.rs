@@ -69,6 +69,7 @@ pub fn verify(env: Environment<'_>, def_spec: typed::DefSpecificationMap) {
                     .flat_map(|error| prusti_encoder::backtranslate_error(
                             &error.full_id,
                             error.offending_pos_id.unwrap().parse::<usize>().unwrap(),
+                            error.reason_pos_id.and_then(|id| id.parse::<usize>().ok()),
                         )
                         .expect("verification error could not be backtranslated")
                         .into_iter())

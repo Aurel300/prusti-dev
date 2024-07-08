@@ -102,7 +102,10 @@ impl TaskEncoder for MirSpecEnc {
                         .unwrap()
                         .expr;
                     let expr = expr.reify(vcx, (*spec_def_id, pre_args));
-                    to_bool.apply(vcx, [expr])
+                    let span = vcx.tcx().def_span(spec_def_id);
+                    vcx.with_span(span, |vcx| {
+                        to_bool.apply(vcx, [expr])
+                    })
                 })
                 .collect::<Vec<vir::Expr<'_>>>();
 
@@ -122,7 +125,7 @@ impl TaskEncoder for MirSpecEnc {
                 .map(|spec_def_id| {
                     let span = vcx.tcx().def_span(spec_def_id);
                     vcx.with_span(span, |vcx| {
-                        vcx.handle_error("postcondition.violated:assertion.false", move || {
+                        vcx.handle_error("postcondition.violated:assertion.false", move |_| {
                             Some(vec![PrustiError::verification("postcondition might not hold", span.into())])
                         });
                         let expr = deps

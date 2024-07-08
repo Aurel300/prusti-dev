@@ -184,9 +184,14 @@ pub fn test_entrypoint<'tcx>(
     }
 }
 
-pub fn backtranslate_error(error_kind: &str, offending_pos_id: usize) -> Option<Vec<PrustiError>> {
+pub fn backtranslate_error(
+    error_kind: &str,
+    offending_pos_id: usize,
+    reason_pos_id: Option<usize>,
+) -> Option<Vec<PrustiError>> {
     vir::with_vcx(|vcx| vcx.backtranslate(
         error_kind,
         offending_pos_id,
+        reason_pos_id,
     ))
 }

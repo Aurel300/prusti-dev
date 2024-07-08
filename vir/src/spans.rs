@@ -5,7 +5,7 @@ use crate::VirCtxt;
 
 pub struct VirSpanHandler<'vir> {
     error_kind: &'static str,
-    handler: Box<dyn Fn() -> Option<Vec<PrustiError>> + 'vir>,
+    handler: Box<dyn Fn(Option<Span>) -> Option<Vec<PrustiError>> + 'vir>,
     next: Option<Box<VirSpanHandler<'vir>>>,
 }
 
@@ -93,7 +93,7 @@ impl<'tcx> VirCtxt<'tcx> {
     pub fn handle_error(
         &'tcx self,
         error_kind: &'static str,
-        handler: impl Fn() -> Option<Vec<PrustiError>> + 'tcx,
+        handler: impl Fn(Option<Span>) -> Option<Vec<PrustiError>> + 'tcx,
     ) {
         let top_span_id = self.top_span().unwrap().id;
         let mut manager = self.spans.borrow_mut();
@@ -111,14 +111,22 @@ impl<'tcx> VirCtxt<'tcx> {
     }
 
     /// Attempt to backtranslate the given error at the given position.
-    pub fn backtranslate(&'tcx self, error_kind: &str, pos: usize) -> Option<Vec<PrustiError>> {
+    pub fn backtranslate(
+        &'tcx self,
+        error_kind: &str,
+        offending_pos_id: usize,
+        reason_pos_id: Option<usize>,
+     ) -> Option<Vec<PrustiError>> {
         let manager = self.spans.borrow();
-        let mut span_opt = manager.all.get(pos);
+        let reason_span_opt = reason_pos_id
+            .and_then(|id| manager.all.get(id))
+            .map(|vir_span| vir_span.span);
+        let mut span_opt = manager.all.get(offending_pos_id);
         while let Some(span) = span_opt {
             let mut handler_opt = manager.handlers.get(&span.id);
             while let Some(handler) = handler_opt {
                 if handler.error_kind == error_kind {
-                    if let Some(errors) = (handler.handler)() {
+                    if let Some(errors) = (handler.handler)(reason_span_opt) {
                         return Some(errors);
                     }
                 }

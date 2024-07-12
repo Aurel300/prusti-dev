@@ -174,7 +174,7 @@ lazy_static::lazy_static! {
        // Flags specifically for Prusti-Assistant:
         settings.set_default("show_ide_info", false).unwrap();
         settings.set_default("skip_verification", false).unwrap();
-        settings.set_default::<Vec<String>>("verify_only_defpath", vec![]).unwrap();
+        settings.set_default::<Option<String>>("verify_only_defpaths", None).unwrap();
         settings.set_default::<Option<String>>("query_method_signature", None).unwrap();
         settings.set_default("report_block_messages", false).unwrap();
 
@@ -1067,8 +1067,24 @@ pub fn skip_verification() -> bool {
 
 /// Used for selective verification, can be passed a String containing
 /// the DefPath of the method to be verified
-pub fn verify_only_defpath() -> Vec<String> {
-    read_setting("verify_only_defpath")
+pub fn verify_only_defpaths() -> Vec<String> {
+    if let Some(input) = read_setting::<Option<String>>("verify_only_defpaths") {
+        if input.starts_with('[') || input.ends_with(']') {
+            panic!("verify_only_defpaths: invalid format. Make sure to enclose the list in brackets (`[]`). Was `{input}` but expected form `[\"<METHOD_DEFPATH1>\",\"<METHOD_DEFPATH2>\",...]`")
+        }
+        let trimmed = &input[1..input.len()-1];
+        let parts: Vec<&str> = trimmed.split(',').collect();
+        parts.into_iter()
+            .filter(|s| !s.is_empty())
+            .map(|s| 
+                if s.len() >= 2 && s.starts_with('\"') && s.ends_with('\"') {
+                    s[1..s.len()-1].to_string()
+                } else {
+                    panic!("verify_only_defpaths: invalid format. Make sure to use double quotes (`\"`) for each element. Element was `{s}` but expected \"<METHOD_DEFPATH>\"")
+                }
+            )
+            .collect()
+    } else {vec![]}
 }
 
 /// A flag that can be used to ask the compiler for the declaration /

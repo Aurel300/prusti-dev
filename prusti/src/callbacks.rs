@@ -203,7 +203,8 @@ impl prusti_rustc_interface::driver::Callbacks for PrustiCompilerCalls {
 
             // collect and output Information used by IDE:
             if !config::no_verify() && !config::skip_verification() {
-                let target_def_paths = config::verify_only_defpath();
+                let target_def_paths = config::verify_only_defpaths();
+                debug!("Received def paths: {:?}. Package is primary: {}", target_def_paths, is_primary_package);
                 if !target_def_paths.is_empty() {
                     // if we do selective verification, then definitely only
                     // for methods of the primary package. Check needed because
@@ -214,7 +215,6 @@ impl prusti_rustc_interface::driver::Callbacks for PrustiCompilerCalls {
                             .into_iter()
                             .filter(|x| target_def_paths.contains(&env.name.get_unique_item_name(*x)))
                             .collect();
-                        debug!("selected procedures: {:?}", procedures);
                         let selective_task = VerificationTask { procedures, types };
                         // fake_error because otherwise a verification-success
                         // (for a single method for example) will cause this result

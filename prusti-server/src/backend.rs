@@ -22,37 +22,18 @@ pub enum Backend<'a> {
 impl<'a> Backend<'a> {
     pub fn verify(
         &mut self,
-        program: vir::ProgramRef,
+        viper_program: viper::Program,
         sender: mpsc::Sender<ServerMessage>,
     ) -> VerificationResultKind {
         match self {
-            Backend::Viper(ref mut verifier, context, viper_arc) => {
-                let mut stopwatch =
-                    Stopwatch::start("prusti-server backend", "construction of JVM objects");
+            Backend::Viper(ref mut verifier, viper_thread, viper_arc) => {
 
-                let ast_utils = context.new_ast_utils();
+                let mut stopwatch = Stopwatch::start("prusti-server backend", "viper verification");
+                let ast_utils = viper_thread.new_ast_utils();
 
                 ast_utils.with_local_frame(16, || {
-                    let ast_factory = context.new_ast_factory();
-
-                    let viper_program = vir::with_vcx(|vcx| {
-                        let program = vcx.get_program(program);
-                        prusti_viper::program_to_viper(program, &ast_factory)
-                    });
-
-                    if config::dump_viper_program() {
-                        stopwatch.start_next("dumping viper program");
-                        dump_viper_program(
-                            &ast_utils,
-                            viper_program,
-                            &program.get_name_with_check_mode(),
-                        );
-                    }
-
-                    stopwatch.start_next("viper verification");
-
                     if config::report_viper_messages() {
-                        verify_and_poll_msgs(verifier, context, viper_arc, viper_program, sender)
+                        verify_and_poll_msgs(verifier, viper_thread, viper_arc, viper_program, sender)
                     } else {
                         verifier.verify(viper_program)
                     }

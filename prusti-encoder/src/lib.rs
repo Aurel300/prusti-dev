@@ -31,7 +31,9 @@ pub fn test_entrypoint<'tcx>(
     body: EnvBody<'tcx>,
     query: EnvQuery<'tcx>,
     def_spec: prusti_interface::specs::typed::DefSpecificationMap,
-    procedures: &Vec<DefId>,
+    // this is None if the verification is not selective - all procedures should be encoded.
+    // if the verification is selective, only the procedures in this vector should be encoded with body
+    procedures: Option<&Vec<DefId>>,
     contract_spans_map: &mut FxHashMap<DefId, SpanOfCallContracts>,
 ) -> request::RequestWithContext {
 
@@ -101,7 +103,7 @@ pub fn test_entrypoint<'tcx>(
                         (is_pure, is_trusted)
                 }).unwrap_or_default();
 
-                if procedures.contains(&def_id) && !(is_trusted && is_pure) {
+                if procedures.map_or(true, |procs| procs.contains(&def_id)) && !(is_trusted && is_pure) {
                     let substs = ty::GenericArgs::identity_for_item(tcx, def_id);
                     let res = crate::encoders::MirImpureEnc::encode((def_id, substs, None));
                     assert!(res.is_ok());

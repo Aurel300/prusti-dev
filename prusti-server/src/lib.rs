@@ -14,7 +14,7 @@ use crate::{
 };
 use prusti_utils::{config, Stopwatch};
 use prusti_interface::{
-    data::{VerificationResult, VerificationTask},
+    data::VerificationResult,
     environment::EnvDiagnostic,
     specs::typed,
     PrustiError,
@@ -68,10 +68,6 @@ pub fn verify_programs(
         };
         (program_name, request)
     });
-
-    if config::show_ide_info() {
-        emit_contract_spans(env_diagnostic);
-    }
 
     let mut stopwatch = Stopwatch::start("prusti-server", "verifying Viper program");
     // runtime used either for client connecting to server sequentially
@@ -270,16 +266,4 @@ fn verify_requests_local<'a>(
         }
     };
     verification_stream.flatten()
-}
-
-pub fn emit_contract_spans(env_diagnostic: &EnvDiagnostic<'_>) {
-    let encoding_info = EncodingInfo {
-        // call_contract_spans: self.encoder.spans_of_call_contracts.borrow().to_vec(),
-        call_contract_spans: "call contract spans not implemented".to_string(),
-    };
-    PrustiError::message(
-        format!("encodingInfo{}", encoding_info.to_json_string()),
-        DUMMY_SP.into(),
-    )
-    .emit(env_diagnostic);
 }

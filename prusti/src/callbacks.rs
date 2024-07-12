@@ -215,7 +215,11 @@ impl prusti_rustc_interface::driver::Callbacks for PrustiCompilerCalls {
                             .into_iter()
                             .filter(|x| target_def_paths.contains(&env.name.get_unique_item_name(*x)))
                             .collect();
-                        let selective_task = VerificationTask { procedures, types };
+                        let selective_task = VerificationTask {
+                            procedures,
+                            types,
+                            selective: true
+                        };
                         // fake_error because otherwise a verification-success
                         // (for a single method for example) will cause this result
                         // to be cached by compiler at the moment
@@ -227,6 +231,7 @@ impl prusti_rustc_interface::driver::Callbacks for PrustiCompilerCalls {
                     let verification_task = VerificationTask {
                         procedures: annotated_procedures,
                         types,
+                        selective: false,
                     };
                     verify(env, def_spec, verification_task, call_spans_map);
                 }

@@ -1069,7 +1069,7 @@ pub fn skip_verification() -> bool {
 /// the DefPath of the method to be verified
 pub fn verify_only_defpaths() -> Vec<String> {
     if let Some(input) = read_setting::<Option<String>>("verify_only_defpaths") {
-        if input.starts_with('[') || input.ends_with(']') {
+        if !input.starts_with('[') || !input.ends_with(']') {
             panic!("verify_only_defpaths: invalid format. Make sure to enclose the list in brackets (`[]`). Was `{input}` but expected form `[\"<METHOD_DEFPATH1>\",\"<METHOD_DEFPATH2>\",...]`")
         }
         let trimmed = &input[1..input.len()-1];

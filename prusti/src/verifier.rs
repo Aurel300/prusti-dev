@@ -64,7 +64,7 @@ pub fn verify<'tcx>(
             env.body,
             env.query,
             def_spec,
-            &verification_task.procedures,
+            if verification_task.selective { Some(&verification_task.procedures) } else { None },
             &mut contract_spans_map,
         );
 

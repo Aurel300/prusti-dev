@@ -14,7 +14,7 @@ use prusti_rustc_interface::{
     data_structures::fx::FxHashMap,
     hir::def_id::DefId,
 };
-use prusti_server::ide::encoding_info::{SpanOfCallContracts, EncodingInfo};
+use prusti_encoder::ide::encoding_info::{SpanOfCallContracts, EncodingInfo};
 use crate::ide_helper::compiler_info::ProcDef;
 
 #[tracing::instrument(name = "prusti::verify", level = "debug", skip(env))]
@@ -74,31 +74,11 @@ pub fn verify<'tcx>(
 
         let program = request.program;
 
-        let mut results = prusti_server::verify_programs(vec![program]);
-        assert_eq!(results.len(), 1); // TODO: eventually verify separate methods as separate programs again?
+        let mut result = prusti_server::verify_programs(&env.diagnostic, vec![program]);
 
-        let result = results.pop().unwrap().1;
         println!("verification result: {result:?}");
 
-        let success = match result {
-            viper::VerificationResult::Success => true,
-            viper::VerificationResult::JavaException(_e) => false,
-            viper::VerificationResult::ConsistencyErrors(_e) => false,
-            viper::VerificationResult::Failure(errors) => {
-                errors
-                    .into_iter()
-                    .flat_map(|error| prusti_encoder::backtranslate_error(
-                            &error.full_id,
-                            error.offending_pos_id.unwrap().parse::<usize>().unwrap(),
-                            error.reason_pos_id.and_then(|id| id.parse::<usize>().ok()),
-                        )
-                        .expect("verification error could not be backtranslated")
-                        .into_iter())
-                    .for_each(|prusti_error| prusti_error.emit(&env.diagnostic));
-                false
-            }
-        };
-        if !success {
+        if matches!(result, VerificationResult::Failure) {
             // TODO: This will be unnecessary if diagnostic errors are emitted
             // earlier, it's useful for now to ensure that Prusti returns an
             // error code when verification fails

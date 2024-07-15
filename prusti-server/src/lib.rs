@@ -24,7 +24,7 @@ use prusti_rustc_interface::{
     errors::MultiSpan,
 };
 use viper::{self, PersistentCache, Viper};
-use ide::{encoding_info::EncodingInfo, ide_verification_result::IdeVerificationResult};
+use crate::ide::ide_verification_result::IdeVerificationResult;
 use once_cell::sync::Lazy;
 
 mod client;
@@ -168,24 +168,34 @@ fn handle_termination_message(
             *overall_result = VerificationResult::Failure;
         }
         viper::VerificationResultKind::Failure(errors) => {
-            for verification_error in errors {
-                debug!(
-                    "Verification error in {}: {:?}",
-                    program_name.clone(),
-                    verification_error
-                );
-                // FIXME: temporary error emition, delete when the above is implemented again
-                env_diagnostic.span_err_with_help_and_notes(
-                    MultiSpan::from_span(DUMMY_SP.into()),
-                    &format!(
-                        "Verification error in {}: {:?}",
-                        program_name.clone(),
-                        verification_error
-                    ),
-                    &None,
-                    &[],
-                );
-            }
+            errors
+                .into_iter()
+                .flat_map(|error| prusti_encoder::backtranslate_error(
+                        &error.full_id,
+                        error.offending_pos_id.unwrap().parse::<usize>().unwrap(),
+                        error.reason_pos_id.and_then(|id| id.parse::<usize>().ok()),
+                    )
+                    .expect("verification error could not be backtranslated")
+                    .into_iter())
+                .for_each(|prusti_error| prusti_error.emit(env_diagnostic));
+            // for verification_error in errors {
+            //     debug!(
+            //         "Verification error in {}: {:?}",
+            //         program_name.clone(),
+            //         verification_error
+            //     );
+            //     // FIXME: temporary error emition, delete when the above is implemented again
+            //     env_diagnostic.span_err_with_help_and_notes(
+            //         MultiSpan::from_span(DUMMY_SP.into()),
+            //         &format!(
+            //             "Verification error in {}: {:?}",
+            //             program_name.clone(),
+            //             verification_error
+            //         ),
+            //         &None,
+            //         &[],
+            //     );
+            // }
             *overall_result = VerificationResult::Failure;
         }
         viper::VerificationResultKind::JavaException(exception) => {

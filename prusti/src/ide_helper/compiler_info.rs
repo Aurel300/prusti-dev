@@ -5,7 +5,7 @@ use prusti_rustc_interface::{
     span::{source_map::SourceMap, Span},
     data_structures::fx::FxHashMap,
 };
-use prusti_server::ide::{vsc_span::VscSpan, encoding_info::SpanOfCallContracts};
+use prusti_encoder::ide::{vsc_span::VscSpan, encoding_info::SpanOfCallContracts};
 use serde::Serialize;
 
 /// This struct will be passed to prusti-assistant containing information

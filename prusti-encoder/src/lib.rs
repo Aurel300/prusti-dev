@@ -10,6 +10,7 @@ extern crate rustc_type_ir;
 mod encoders;
 mod encoder_traits;
 pub mod request;
+pub mod ide;
 
 
 use prusti_interface::{environment::{EnvBody, EnvQuery}, PrustiError};
@@ -22,12 +23,12 @@ use prusti_rustc_interface::{
 };
 use prusti_utils::config;
 use task_encoder::TaskEncoder;
-use prusti_server::ide::encoding_info::SpanOfCallContracts;
 
 use crate::encoders::{lifted::{
     casters::{CastTypeImpure, CastTypePure, CastersEnc},
     ty_constructor::TyConstructorEnc
 }, MirPolyImpureEnc};
+use crate::ide::encoding_info::SpanOfCallContracts;
 
 pub fn test_entrypoint<'tcx>(
     tcx: ty::TyCtxt<'tcx>,

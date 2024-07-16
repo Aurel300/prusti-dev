@@ -70,8 +70,10 @@
 | [`SMT_QI_BOUND_GLOBAL_KIND`](#smt_qi_bound_global_kind) | `Option<u64>` | `None` | A |
 | [`SMT_QI_BOUND_TRACE`](#smt_qi_bound_trace) | `Option<u64>` | `None` | A |
 | [`SMT_QI_BOUND_TRACE_KIND`](#smt_qi_bound_trace_kind) | `Option<u64>` | `None` | A |
-| [`SMT_QI_IGNORE_BUILTIN`](#smt_qi_ignore_builtin) | `bool` | `true` | A |
 | [`SMT_QI_EAGER_THRESHOLD`](#smt_qi_eager_threshold) | `u64` | `1000` | A |
+| [`SMT_QI_IGNORE_BUILTIN`](#smt_qi_ignore_builtin) | `bool` | `true` | A |
+| [`SMT_QI_PROFILE`](#smt_qi_profile) | `Option<bool>` | `None` | A |
+| [`SMT_QI_PROFILE_FREQ`](#smt_qi_profile_freq) | `Option<u64>` | `None` | A |
 | [`SMT_SOLVER_PATH`](#smt_solver_path) | `Option<String>` | `env::var("Z3_EXE")` | A |
 | [`SMT_SOLVER_WRAPPER_PATH`](#smt_solver_wrapper_path) | `Option<String>` | `None` | A |
 | [`SMT_UNIQUE_TRIGGERS_BOUND`](#smt_unique_triggers_bound) | `Option<u64>` | `None` | A |
@@ -437,16 +439,24 @@ If not `None`, checks that the number of quantifier instantiations in each trace
 
 > **Note:** Requires `USE_SMT_WRAPPER` to be `true`.
 
-## `SMT_QI_IGNORE_BUILTIN`
-
-When enabled, ignores the built-in quantifiers in SMT quantifier instantiation bounds checking.
-
 ## `SMT_QI_EAGER_THRESHOLD`
 
 A threshold controlling how many times Z3 should instantiate a single quantifier. This option controls a tradeoff between performance and completeness:
 
 * Setting it to a too small value, may lead to spurious verification errors and unstable verification.
 + Setting it to a too large value, may significantly impact performance.
+
+## `SMT_QI_IGNORE_BUILTIN`
+
+When enabled, ignores the built-in quantifiers in SMT quantifier instantiation bounds checking.
+
+## `SMT_QI_PROFILE`
+
+When enabled, the Z3 backend periodically (and on finish) reports the number of quantifier instantiations to Viper.
+
+## `SMT_QI_PROFILE_FREQ`
+
+Frequency of the quantifier instantiation reporting of Z3 (every X instantiations, a report is issued).
 
 ## `SMT_SOLVER_PATH`
 

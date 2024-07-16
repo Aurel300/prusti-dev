@@ -163,14 +163,14 @@ fn main() {
                 method!("hasNewMessage"),
                 method!("getNewMessage"),
             ]),
-            // java_class!("viper.silver.reporter.QuantifierChosenTriggersMessage", vec![
-            //     method!("quantifier"),
-            //     method!("triggers_string"),
-            // ]),
-            // java_class!("viper.silver.reporter.QuantifierInstantiationsMessage", vec![
-            //     method!("quantifier"),
-            //     method!("instantiations"),
-            // ]),
+            java_class!("viper.silver.reporter.QuantifierChosenTriggersMessage", vec![
+                method!("quantifier"),
+                method!("triggers_string"),
+            ]),
+            java_class!("viper.silver.reporter.QuantifierInstantiationsMessage", vec![
+                method!("quantifier"),
+                method!("instantiations"),
+            ]),
             java_class!("viper.silver.reporter.BlockReachedMessage", vec![
                 method!("methodName"),
                 method!("label"),

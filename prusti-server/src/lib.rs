@@ -25,7 +25,6 @@ use prusti_rustc_interface::{
 };
 use viper::{self, PersistentCache, Viper};
 use crate::ide::ide_verification_result::IdeVerificationResult;
-use once_cell::sync::Lazy;
 
 mod client;
 mod process_verification;
@@ -100,6 +99,12 @@ async fn handle_stream(
     verification_messages: impl Stream<Item = (String, ServerMessage)>,
 ) -> VerificationResult {
     let mut overall_result = VerificationResult::Success;
+    // we want quantifier_pos_ID + program_name + q_name as identifier because there are
+    // different q_names for the same ID and each program reports independent results
+    // key: (pos_id, program_name), key to result: q_name result: num_instantiations
+    let mut quantifier_instantiations: FxHashMap<(u64, String), FxHashMap<String, u64>> =
+        FxHashMap::default();
+
     let mut prusti_errors: Vec<_> = vec![];
 
     pin_mut!(verification_messages);
@@ -107,6 +112,16 @@ async fn handle_stream(
     while let Some((program_name, server_msg)) = verification_messages.next().await {
         match server_msg {
             ServerMessage::Termination(result) => handle_termination_message(env_diagnostic, program_name, result, &mut prusti_errors, &mut overall_result),
+            ServerMessage::QuantifierInstantiation {
+                q_name,
+                insts,
+                pos_id,
+            } => handle_quantifier_instantiation_message(env_diagnostic, program_name, q_name, insts, pos_id, &mut quantifier_instantiations),
+            ServerMessage::QuantifierChosenTriggers {
+                viper_quant,
+                triggers,
+                pos_id,
+            } => handle_quantifier_chosen_triggers_message(env_diagnostic, program_name, viper_quant, triggers, pos_id),
             ServerMessage::BlockReached {
                 viper_method,
                 vir_label,
@@ -171,12 +186,12 @@ fn handle_termination_message(
             errors
                 .into_iter()
                 .flat_map(|error| prusti_encoder::backtranslate_error(
-                        &error.full_id,
-                        error.offending_pos_id.unwrap().parse::<usize>().unwrap(),
-                        error.reason_pos_id.and_then(|id| id.parse::<usize>().ok()),
-                    )
-                    .expect("verification error could not be backtranslated")
-                    .into_iter())
+                    &error.full_id,
+                    error.offending_pos_id.unwrap().parse::<usize>().unwrap(),
+                    error.reason_pos_id.and_then(|id| id.parse::<usize>().ok()),
+                )
+                .expect("verification error could not be backtranslated")
+                .into_iter())
                 .for_each(|prusti_error| prusti_error.emit(env_diagnostic));
             // for verification_error in errors {
             //     debug!(
@@ -184,18 +199,6 @@ fn handle_termination_message(
             //         program_name.clone(),
             //         verification_error
             //     );
-            //     // FIXME: temporary error emition, delete when the above is implemented again
-            //     env_diagnostic.span_err_with_help_and_notes(
-            //         MultiSpan::from_span(DUMMY_SP.into()),
-            //         &format!(
-            //             "Verification error in {}: {:?}",
-            //             program_name.clone(),
-            //             verification_error
-            //         ),
-            //         &None,
-            //         &[],
-            //     );
-            // }
             *overall_result = VerificationResult::Failure;
         }
         viper::VerificationResultKind::JavaException(exception) => {
@@ -210,7 +213,71 @@ fn handle_termination_message(
     }
 }
 
-// TODO: probably in some other util module
+fn handle_quantifier_instantiation_message(
+    env_diagnostic: &EnvDiagnostic<'_>,
+    program_name: String,
+    q_name: String,
+    insts: u64,
+    pos_id: u64,
+    quantifier_instantiations: &mut FxHashMap<(u64, String), FxHashMap<String, u64>>
+) {
+    if config::report_viper_messages() {
+        debug!("Received #{insts} quantifier instantiations of {q_name} for position id {pos_id} in verification of {program_name}");
+        // match self.encoder.error_manager().position_manager().get_span_from_id(pos_id) {
+        //     Some(span) => {
+        //         let key = (pos_id, program_name.clone());
+        //         if !quantifier_instantiations.contains_key(&key) {
+        //             quantifier_instantiations.insert(key.clone(), FxHashMap::default());
+        //         }
+        //         let map = quantifier_instantiations.get_mut(&key).unwrap();
+        //         // for some reason, the aux quantifiers by the same z3 instance (same uniqueId
+        //         // in silicon) can have different amount of instantiations.
+        //         // e.g. we receive a message with 100 instantiations for a certain quantifier
+        //         // and afterwards a message with 20 instantiations for the same one.
+        //         // All verifying the same viper program and by the same z3 instance.
+        //         // Since I don see a better way to take this into account than taking the
+        //         // maximum, that is exactly what we do here.
+        //         let old_inst = map.get(&q_name).unwrap_or(&0);
+        //         map.insert(q_name, std::cmp::max(insts, *old_inst));
+        //         let mut n: u64 = 0;
+        //         for (q_name, insts) in map.iter() {
+        //             debug!("Key: {q_name}, Value: {insts}");
+        //             n += *insts;
+        //         }
+        //         PrustiError::message(
+        //             format!("quantifierInstantiationsMessage{}",
+        //                 json!({"instantiations": n, "method": program_name}),
+        //             ), span.clone()
+        //         ).emit(env_diagnostic);
+        //     },
+        //     None => error!("#{insts} quantifier instantiations of {q_name} for unknown position id {pos_id} in verification of {program_name}"),
+        // }
+    }
+}
+
+fn handle_quantifier_chosen_triggers_message(
+    env_diagnostic: &EnvDiagnostic<'_>,
+    program_name: String,
+    viper_quant: String,
+    triggers: String,
+    pos_id: u64
+) {
+    if config::report_viper_messages() && pos_id != 0 {
+        debug!("Received quantifier triggers {triggers} for quantifier {viper_quant} for position id {pos_id} in verification of {program_name}");
+        // match self.encoder.error_manager().position_manager().get_span_from_id(pos_id) {
+        //     Some(span) => {
+        //         PrustiError::message(
+        //             format!("quantifierChosenTriggersMessage{}",
+        //                 json!({"viper_quant": viper_quant, "triggers": triggers}),
+        //             ), span.clone()
+        //         ).emit(&self.env.diagnostic);
+        //     },
+        //     None => error!("Invalid position id {pos_id} for viper quantifier {viper_quant} in verification of {program_name}"),
+        // }
+    }
+}
+
+// TODO: may or may not need program name translation
 fn viper_method_to_rust_method(_viper_method: &String, program_name: &String) -> Option<String> {
     Some(program_name.clone())
 }

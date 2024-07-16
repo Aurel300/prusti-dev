@@ -14,22 +14,22 @@ pub enum ServerMessage {
     /// has terminated.
     Termination(VerificationResult),
 
-    // /// A message created by the Viper backend with Z3 about
-    // /// the number of instantiations of the named quantifier.
-    // QuantifierInstantiation {
-    //     q_name: String,
-    //     insts: u64,
-    //     pos_id: u64,
-    // },
+    /// A message created by the Viper backend with Z3 about
+    /// the number of instantiations of the named quantifier.
+    QuantifierInstantiation {
+        q_name: String,
+        insts: u64,
+        pos_id: u64,
+    },
 
-    // /// Also created by the Viper backend. The viper_quant is the expression the
-    // /// quantifier was translated to in silver syntax while the triggers are the
-    // /// triggers provided or automatically derived for this quantifier.
-    // QuantifierChosenTriggers {
-    //     viper_quant: String,
-    //     triggers: String,
-    //     pos_id: u64,
-    // },
+    /// Also created by the Viper backend. The viper_quant is the expression the
+    /// quantifier was translated to in silver syntax while the triggers are the
+    /// triggers provided or automatically derived for this quantifier.
+    QuantifierChosenTriggers {
+        viper_quant: String,
+        triggers: String,
+        pos_id: u64,
+    },
 
     /// Contains a path id, label and viper method name corresponding to a symbolic
     /// execution path through the program being verified, the VIR label of the cfg

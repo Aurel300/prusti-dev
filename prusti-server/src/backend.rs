@@ -112,6 +112,72 @@ fn polling_function(
                 .unwrap();
             debug!("Polling thread received {}", jni.class_name(msg).as_str());
             match jni.class_name(msg).as_str() {
+                "viper.silver.reporter.QuantifierInstantiationsMessage" => {
+                    let msg_wrapper = silver::reporter::QuantifierInstantiationsMessage::with(env);
+                    let q_name =
+                        jni.get_string(jni.unwrap_result(msg_wrapper.call_quantifier(msg)));
+                    let q_inst = jni.unwrap_result(msg_wrapper.call_instantiations(msg));
+                    debug!("QuantifierInstantiationsMessage: {} {}", q_name, q_inst);
+                    // also matches the "-aux" and "_precondition" quantifiers generated
+                    // we encoded the position id in the line and column number since this is not used by
+                    // prusti either way
+                    if q_name.starts_with("prog.l") {
+                        let no_pref = q_name.strip_prefix("prog.l").unwrap();
+                        let stripped = no_pref
+                            .strip_suffix("-aux")
+                            .or(no_pref.strip_suffix("_precondition"))
+                            .unwrap_or(no_pref);
+                        let parsed = stripped.parse::<u64>();
+                        match parsed {
+                            Ok(pos_id) => {
+                                sender
+                                    .send(ServerMessage::QuantifierInstantiation {
+                                        q_name,
+                                        insts: u64::try_from(q_inst).unwrap(),
+                                        pos_id,
+                                    })
+                                    .unwrap();
+                            }
+                            _ => info!("Unexpected quantifier name {}", q_name),
+                        }
+                    }
+                },
+                "viper.silver.reporter.QuantifierChosenTriggersMessage" => {
+                    let obj_wrapper = java::lang::Object::with(env);
+                    let positioned_wrapper = silver::ast::Positioned::with(env);
+                    let msg_wrapper = silver::reporter::QuantifierChosenTriggersMessage::with(env);
+
+                    let viper_quant = jni.unwrap_result(msg_wrapper.call_quantifier(msg));
+                    let viper_quant_str =
+                        jni.get_string(jni.unwrap_result(obj_wrapper.call_toString(viper_quant)));
+                    debug!("quantifier chosen trigger quant: {viper_quant_str}");
+                    // we encoded the position id in the line and column number since this is not used by
+                    // prusti either way
+                    let pos = jni.unwrap_result(positioned_wrapper.call_pos(viper_quant));
+                    let pos_string =
+                        jni.get_string(jni.unwrap_result(obj_wrapper.call_toString(pos)));
+                    debug!("quantifier chosen trigger pos: {pos_string}");
+                    // TODO: the PR unconditionally does `pos_string.rfind('.').unwrap()` which crashes when there is no position.
+                    // Is that intended?
+                    if let Some(pos_id_index) = pos_string.rfind('.') {
+                        // let pos_id_index = pos_string.rfind('.').unwrap();
+                        let pos_id = pos_string[pos_id_index + 1..].parse::<u64>().unwrap();
+
+                        let viper_triggers =
+                            jni.get_string(jni.unwrap_result(msg_wrapper.call_triggers__string(msg)));
+                        debug!(
+                            "QuantifierChosenTriggersMessage: {} {} {}",
+                            viper_quant_str, viper_triggers, pos_id
+                        );
+                        sender
+                            .send(ServerMessage::QuantifierChosenTriggers {
+                                viper_quant: viper_quant_str,
+                                triggers: viper_triggers,
+                                pos_id,
+                            })
+                            .unwrap();
+                    }
+                },
                 "viper.silver.reporter.VerificationTerminationMessage" => return,
                 "viper.silver.reporter.BlockReachedMessage" => {
                     let msg_wrapper = silver::reporter::BlockReachedMessage::with(env);

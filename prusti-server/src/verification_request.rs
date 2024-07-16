@@ -58,14 +58,14 @@ impl ViperBackendConfig {
                     config::counterexample()
                 );
 
-                // if let Some(smt_qi_profile) = config::smt_qi_profile() {
-                //     prover_args = format!("{prover_args} smt.qi.profile={smt_qi_profile}");
-                // }
-                // if let Some(smt_qi_profile_freq) = config::smt_qi_profile_freq() {
-                //     prover_args =
-                //         format!("{prover_args} smt.qi.profile_freq={smt_qi_profile_freq}");
-                // }
-                
+                if let Some(smt_qi_profile) = config::smt_qi_profile() {
+                    prover_args = format!("{prover_args} smt.qi.profile={smt_qi_profile}");
+                }
+                if let Some(smt_qi_profile_freq) = config::smt_qi_profile_freq() {
+                    prover_args =
+                        format!("{prover_args} smt.qi.profile_freq={smt_qi_profile_freq}");
+                }
+
                 verifier_args.push(prover_args);
 
                 verifier_args.extend(vec!["--logLevel".to_string(), "ERROR".to_string()]);

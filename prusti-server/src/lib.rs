@@ -23,7 +23,7 @@ use prusti_rustc_interface::{
     span::DUMMY_SP,
     errors::MultiSpan,
 };
-use viper::{self, PersistentCache, Viper};
+use viper::{self, Cache, PersistentCache};
 use ide::{encoding_info::EncodingInfo, ide_verification_result::IdeVerificationResult};
 use once_cell::sync::Lazy;
 
@@ -49,6 +49,7 @@ use rustc_hash::FxHashMap;
 use serde_json::json;
 use async_stream::stream;
 use futures_util::{pin_mut, Stream, StreamExt};
+use std::sync::{self, Arc};
 
 /// Verify a list of programs.
 /// Returns a list of (program_name, verification_result) tuples.
@@ -67,11 +68,7 @@ pub fn verify_programs(
             backend_config: ViperBackendConfig::new(backend),
         };
         (program_name, request)
-    });
-
-    if config::show_ide_info() {
-        emit_contract_spans(env_diagnostic);
-    }
+    }).collect();
 
     let mut stopwatch = Stopwatch::start("prusti-server", "verifying Viper program");
     // runtime used either for client connecting to server sequentially
@@ -87,11 +84,14 @@ pub fn verify_programs(
         
     let overall_result = rt.block_on(async {
         if let Some(server_address) = config::server_address() {
-            let verification_messages = verify_requests_server(verification_requests.collect(), server_address);
+            let verification_messages = verify_requests_server(verification_requests, server_address);
             handle_stream(env_diagnostic, verification_messages).await
         } else {
-            let vrp = VerificationRequestProcessing::new();
-            let verification_messages = verify_requests_local(verification_requests.collect(), &vrp);
+            let cache = Lazy::new(move || 
+                Arc::new(sync::Mutex::new(PersistentCache::load_cache(config::cache_path())))
+            );
+            let vrp = Lazy::new(VerificationRequestProcessing::new);
+            let verification_messages = verify_requests_local(verification_requests, &cache, &vrp);
             handle_stream(env_diagnostic, verification_messages).await
         }
     });
@@ -262,24 +262,67 @@ fn verify_requests_server(
 
 fn verify_requests_local<'a>(
     verification_requests: Vec<(String, VerificationRequest)>,
-    vrp: &'a VerificationRequestProcessing,
+    cache: &'a Lazy<Arc<sync::Mutex<PersistentCache>>, impl FnOnce() -> Arc<sync::Mutex<PersistentCache>>>,
+    vrp: &'a Lazy<VerificationRequestProcessing, impl FnMut() -> VerificationRequestProcessing + 'a>,
 ) -> impl Stream<Item = (String, ServerMessage)> + 'a {
     let verification_stream = stream! {
         for (program_name, request) in verification_requests {
-            yield vrp.verify(request).map(move |msg| (program_name.clone(), msg));
+            let program_name_clone = program_name.clone();
+            let request_hash = request.get_hash();
+            if config::enable_cache() {
+                if let Some(result) = fetch_from_cache(cache, request_hash, &program_name) {
+                    yield futures::stream::once(async move {
+                        (program_name.clone(), ServerMessage::Termination(result))
+                    }).left_stream();
+                }
+            }
+            yield vrp.verify(request).map(move |msg| {
+                if let ServerMessage::Termination(result) = &msg {
+                    if config::enable_cache() && !matches!(result.kind, viper::VerificationResultKind::JavaException(_)) {
+                        store_to_cache(cache, request_hash, &program_name_clone, &result);
+                    }
+                }
+                (program_name_clone.clone(), msg)
+            }).right_stream();
         }
     };
     verification_stream.flatten()
 }
 
-pub fn emit_contract_spans(env_diagnostic: &EnvDiagnostic<'_>) {
-    let encoding_info = EncodingInfo {
-        // call_contract_spans: self.encoder.spans_of_call_contracts.borrow().to_vec(),
-        call_contract_spans: "call contract spans not implemented".to_string(),
-    };
-    PrustiError::message(
-        format!("encodingInfo{}", encoding_info.to_json_string()),
-        DUMMY_SP.into(),
-    )
-    .emit(env_diagnostic);
+pub(crate) fn fetch_from_cache(
+    cache: &Lazy<Arc<sync::Mutex<PersistentCache>>, impl FnOnce() -> Arc<sync::Mutex<PersistentCache>>>,
+    hash: u64,
+    program_name: &str,
+) -> Option<viper::VerificationResult> {
+    if let Some(mut result) = (&mut *cache.lock().unwrap()).get(hash) {
+        info!(
+            "Using cached result {:?} for program {}",
+            &result,
+            program_name
+        );
+        /*if config::dump_viper_program() {
+            ast_utils.with_local_frame(16, || {
+                let _ = build_or_dump_viper_program();
+            });
+        }
+        normalization_info.denormalize_result(&mut result);*/
+        result.cached = true;
+        Some(result)
+    } else {
+        None
+    }
+}
+
+pub(crate) fn store_to_cache(
+    cache: &Lazy<Arc<sync::Mutex<PersistentCache>>, impl FnOnce() -> Arc<sync::Mutex<PersistentCache>>>,
+    hash: u64,
+    program_name: &str,
+    result: &viper::VerificationResult,
+) {
+    info!(
+        "Storing new cached result {:?} for program {}",
+        result,
+        program_name
+    );
+    (&mut *cache.lock().unwrap()).insert(hash, result.clone());
 }

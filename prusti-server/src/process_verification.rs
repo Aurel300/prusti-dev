@@ -37,8 +37,6 @@ pub struct VerificationRequestProcessing {
     // mtx_tx_verreq has to be dropped before thread_join
     #[allow(dead_code)]
     thread_join: ThreadJoin,
-    // the cache is used across different threads
-    mtx_cache_arc: Arc<sync::Mutex<PersistentCache>>,
 }
 
 impl Default for VerificationRequestProcessing {
@@ -57,17 +55,14 @@ impl VerificationRequestProcessing {
         let (tx_verreq, rx_verreq) = mpsc::channel();
         let mtx_rx_servermsg = lock::Mutex::new(rx_servermsg);
         let mtx_tx_verreq = sync::Mutex::new(tx_verreq);
-        let cache = PersistentCache::load_cache(config::cache_path());
-        let mtx_cache_arc = Arc::new(sync::Mutex::new(cache));
 
-        let handle = thread::spawn(move || verification_thread(rx_verreq, tx_servermsg, mtx_cache_arc));
+        let handle = thread::spawn(move || verification_thread(rx_verreq, tx_servermsg));
         Self {
             mtx_rx_servermsg,
             mtx_tx_verreq,
             thread_join: ThreadJoin {
                 handle: Some(handle),
             },
-            mtx_cache_arc,
         }
     }
 
@@ -79,69 +74,33 @@ impl VerificationRequestProcessing {
             request.program.get_name(),
         );
 
-        // Early return in case of cache hit
-        // let mut cache = PersistentCache::load_cache(config::cache_path());
-        if config::enable_cache() {
-            if let Some(mut result) = (&mut *self.mtx_cache_arc.lock().unwrap()).get(hash) {
-                info!(
-                    "Using cached result {:?} for program {}",
-                    &result,
-                    request.program.get_name()
-                );
-                /*if config::dump_viper_program() {
-                    ast_utils.with_local_frame(16, || {
-                        let _ = build_or_dump_viper_program();
-                    });
-                }
-                normalization_info.denormalize_result(&mut result);*/
-                result.cached = true;
-                return Either::Left(
-                    futures::stream::once(async {ServerMessage::Termination(result)})
-                );
-            }
-        };
-
         request.send_request(&self.mtx_tx_verreq);
 
-        // return a stream that has as last non-None message the ServerMessage::Termination
-        Either::Right(
-            futures::stream::unfold(false, move |done: bool| async move {
-                if done {
-                    return None;
-                }
-                let msg = self.mtx_rx_servermsg.lock().await.recv().unwrap();
-                let mut done = false;
-                if let ServerMessage::Termination(_) = msg {
-                    done = true;
-                }
-                Some((msg, done))
-            })
-        )
-    }
-
-    pub fn save_cache(&self) {
-        self.mtx_tx_verreq
-            .lock()
-            .unwrap()
-            .send(ServerRequest::SaveCache)
-            .unwrap();
+        futures::stream::unfold(false, move |done: bool| async move {
+            if done {
+                return None;
+            }
+            let msg = self.mtx_rx_servermsg.lock().await.recv().unwrap();
+            let mut done = false;
+            if let ServerMessage::Termination(_) = msg {
+                done = true;
+            }
+            Some((msg, done))
+        })
     }
 }
 
 fn verification_thread(
     rx_verreq: mpsc::Receiver<ServerRequest>,
     tx_servermsg: mpsc::Sender<ServerMessage>,
-    mtx_cache_arc: Arc<sync::Mutex<PersistentCache>>,
 ) {
     debug!("Verification thread started.");
 
     while let Ok(request) = rx_verreq.recv() {
         match request {
             ServerRequest::Verification(verification_request) => verification_request.execute(
-                mtx_cache_arc,
                 &tx_servermsg,
             ),
-            ServerRequest::SaveCache => mtx_cache_arc.lock().unwrap().save(),
         }
     }
     debug!("Verification thread finished.");

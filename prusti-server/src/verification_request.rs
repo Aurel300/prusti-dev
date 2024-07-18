@@ -19,18 +19,20 @@ use std::{
     path::PathBuf,
 };
 
+/// Server requests that are sent between client and server
+/// These are oblivious to the backend being used for verification
+/// and could potentially be something other than verification.
 pub(crate) enum ServerRequest {
     Verification(ServerVerificationRequest),
-    SaveCache,
 }
 
-pub struct ServerVerificationRequest {
-    // hash of the original VerificationRequest to store in the cache
-    hash: u64,
+/// Server requests that are sent between threads of the verifying process.
+pub(crate) struct ServerVerificationRequest {
     kind: ServerVerificationRequestKind,
 }
 
-pub enum ServerVerificationRequestKind {
+/// Specifies the kind of backend to be used for verification and carries necessary data.
+enum ServerVerificationRequestKind {
     // viper program, program name, backend config
     JVMViperRequest(jni::objects::GlobalRef, Arc<Viper>, String, ViperBackendConfig),
 }
@@ -38,7 +40,6 @@ pub enum ServerVerificationRequestKind {
 impl ServerVerificationRequest {
     pub fn execute<'v, 't: 'v>(
         &self,
-        mtx_cache_arc: Arc<sync::Mutex<PersistentCache>>,
         sender: &mpsc::Sender<ServerMessage>,
     ) {
         let mut stopwatch = Stopwatch::start("prusti-server", "verifier startup");
@@ -49,34 +50,26 @@ impl ServerVerificationRequest {
             time_ms: 0,
         };
 
-        match self.kind {
+        match &self.kind {
             ServerVerificationRequestKind::JVMViperRequest(viper_program_ref, viper_arc, program_name, backend_config) => {
                 let verification_context = viper_arc.attach_current_thread();
-                let backend = match backend_config.backend {
+                let mut backend = match backend_config.backend {
                     VerificationBackend::Carbon | VerificationBackend::Silicon => Backend::Viper(
                         new_viper_verifier(
                             &program_name,
                             &verification_context,
-                            backend_config,
+                            backend_config.clone(),
                         ),
                         &verification_context,
                         &viper_arc,
                     ),
                 };
                 stopwatch.start_next("backend verification");
-                result.item_name = program_name;
-                result.kind = backend.verify(viper_program_ref.as_obj(), sender.clone());
+                result.item_name = program_name.clone();
+                result.kind = backend.verify(viper::Program::new(viper_program_ref.as_obj()), sender.clone());
+                drop(viper_program_ref);
                 result.time_ms = stopwatch.finish().as_millis();
             }
-        }
-
-        // Don't cache Java exceptions, which might be due to misconfigured paths.
-        if config::enable_cache() && !matches!(result.kind, VerificationResultKind::JavaException(_)) {
-            info!(
-                "Storing new cached result {:?}",
-                &result,
-            );
-            (&mut *mtx_cache_arc.lock().unwrap()).insert(self.hash, result.clone());
         }
 
         /*normalization_info.denormalize_result(&mut result.kind);*/
@@ -95,6 +88,8 @@ impl<'vir> VerificationRequest {
         self.program.get_hash()
     }
 
+    /// Builds a more specific request based on the backend configuration and sends it.
+    /// This includes the vir-viper translation if the Viper backend is used.
     pub(crate) fn send_request(
         &self,
         mtx_tx_verreq: &sync::Mutex<mpsc::Sender<ServerRequest>>,
@@ -116,6 +111,8 @@ impl<'vir> VerificationRequest {
                 let mut stopwatch =
                     Stopwatch::start("prusti-server backend", "construction of JVM objects");
 
+                // TODO: this panics when run over a server and two different requests are sent
+                // because it tries to construct the same JVM twice.
                 let viper_arc = Arc::new(
                     Viper::new_with_args(&config::viper_home(), config::extra_jvm_args())
                 );
@@ -146,14 +143,11 @@ impl<'vir> VerificationRequest {
 
                     let kind = ServerVerificationRequestKind::JVMViperRequest(
                         viper_program_ref,
-                        viper_arc,
+                        viper_arc.clone(),
                         self.program.get_name().to_string(),
-                        self.backend_config,
+                        self.backend_config.clone(),
                     );
-                    ServerVerificationRequest {
-                        hash: self.get_hash(),
-                        kind,
-                    }
+                    ServerVerificationRequest { kind }
                 })
             },
         }

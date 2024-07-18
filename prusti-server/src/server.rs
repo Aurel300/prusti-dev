@@ -4,18 +4,19 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-use crate::VerificationRequestProcessing;
+use crate::{VerificationRequestProcessing, ServerMessage, VerificationRequest};
 use futures_util::{pin_mut, SinkExt, StreamExt};
 use log::info;
 use once_cell::sync::Lazy;
 use std::{
     net::{Ipv4Addr, SocketAddr},
-    sync::mpsc,
+    sync::{self, mpsc, Arc},
     thread,
 };
 use tokio::runtime::Builder;
-use viper::{PersistentCache, Viper};
+use viper::{Cache, PersistentCache, Viper, VerificationResultKind};
 use warp::Filter;
+use prusti_utils::config;
 
 #[derive(Debug)]
 struct BincodeReject(bincode::Error);
@@ -47,7 +48,9 @@ pub fn spawn_server_thread() -> SocketAddr {
 // It has to have a static lifetime because warp websockets need their closures to have a static
 // lifetime and we need to access this object in them.
 static VERIFICATION_REQUEST_PROCESSING: Lazy<VerificationRequestProcessing> =
-    Lazy::new(VerificationRequestProcessing::new);
+    Lazy::new(|| VerificationRequestProcessing::new());
+static CACHE: Lazy<Arc<sync::Mutex<PersistentCache>>> =
+    Lazy::new(|| Arc::new(sync::Mutex::new(PersistentCache::load_cache(config::cache_path()))));
 
 fn listen_on_port_with_address_callback<F>(port: u16, address_callback: F) -> !
 where
@@ -68,13 +71,34 @@ where
             ws.on_upgrade(|websocket| async {
                 let (mut ws_send, mut ws_recv) = websocket.split();
                 let req_msg = ws_recv.next().await.unwrap().unwrap();
-                let verification_request = req_msg
+                let verification_request: VerificationRequest = req_msg
                     .to_str()
                     .and_then(|s: &str| serde_json::from_str(s).unwrap())
                     .unwrap();
-                let stream = VERIFICATION_REQUEST_PROCESSING.verify(verification_request);
+
+                let request_hash = verification_request.get_hash();
+                let program_name = verification_request.program.get_name().to_string();
+                // return early in case of a cache hit
+                let stream = if config::enable_cache() {
+                    match crate::fetch_from_cache(&CACHE, request_hash, &program_name) {
+                        Some(result) => 
+                            futures::stream::once(async move {
+                                ServerMessage::Termination(result)
+                            })
+                            .left_stream(),
+                        None => VERIFICATION_REQUEST_PROCESSING.verify(verification_request).right_stream()
+                    }
+                } else {
+                    VERIFICATION_REQUEST_PROCESSING.verify(verification_request).right_stream()
+                };
                 pin_mut!(stream);
+
                 while let Some(server_msg) = stream.next().await {
+                    if let ServerMessage::Termination(result) = &server_msg {
+                        if config::enable_cache() && !matches!(result.kind, VerificationResultKind::JavaException(_)) {
+                            crate::store_to_cache(&CACHE, request_hash, &program_name, &result);
+                        }
+                    };
                     ws_send
                         .send(warp::filters::ws::Message::text(
                             serde_json::to_string(&server_msg).unwrap(),
@@ -95,10 +119,30 @@ where
             ws.on_upgrade(|websocket| async {
                 let (mut ws_send, mut ws_recv) = websocket.split();
                 let req_msg = ws_recv.next().await.unwrap().unwrap();
-                let verification_request = bincode::deserialize(req_msg.as_bytes()).unwrap();
-                let stream = VERIFICATION_REQUEST_PROCESSING.verify(verification_request);
+                let verification_request: VerificationRequest = bincode::deserialize(req_msg.as_bytes()).unwrap();
+                let request_hash = verification_request.get_hash();
+                let program_name = verification_request.program.get_name().to_string();
+                // return early in case of a cache hit
+                let stream = if config::enable_cache() {
+                    match crate::fetch_from_cache(&CACHE, request_hash, &program_name) {
+                        Some(result) => 
+                            futures::stream::once(async move {
+                                ServerMessage::Termination(result)
+                            })
+                            .left_stream(),
+                        None => VERIFICATION_REQUEST_PROCESSING.verify(verification_request).right_stream()
+                    }
+                } else {
+                    VERIFICATION_REQUEST_PROCESSING.verify(verification_request).right_stream()
+                };
                 pin_mut!(stream);
+
                 while let Some(server_msg) = stream.next().await {
+                    if let ServerMessage::Termination(result) = &server_msg {
+                        if config::enable_cache() && !matches!(result.kind, VerificationResultKind::JavaException(_)) {
+                            crate::store_to_cache(&CACHE, request_hash, &program_name, &result);
+                        }
+                    };
                     ws_send
                         .send(warp::filters::ws::Message::binary(
                             bincode::serialize(&server_msg).unwrap(),
@@ -116,7 +160,7 @@ where
         .and(warp::path("save"))
         .and(warp::path::end())
         .map(move || {
-            VERIFICATION_REQUEST_PROCESSING.save_cache();
+            CACHE.lock().unwrap().save();
             warp::reply::html("Saved")
         });
 

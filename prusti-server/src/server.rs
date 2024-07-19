@@ -14,7 +14,7 @@ use std::{
     thread,
 };
 use tokio::runtime::Builder;
-use viper::{Cache, PersistentCache, Viper, VerificationResultKind};
+use viper::{Cache, PersistentCache, VerificationResultKind};
 use warp::Filter;
 use prusti_utils::config;
 

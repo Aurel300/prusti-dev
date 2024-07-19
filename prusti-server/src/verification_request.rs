@@ -5,16 +5,15 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 use log::{debug, info};
-use viper::{self, VerificationBackend, Program, AstUtils, Viper, VerificationContext, VerificationResultKind, smt_manager::SmtManager, VerificationResult, PersistentCache, Cache};
+use viper::{self, VerificationBackend, Viper, VerificationResultKind, smt_manager::SmtManager, VerificationResult};
 use prusti_utils::{
     config,
     Stopwatch,
     report::log::{report, to_legal_file_name},
 };
 use crate::{ServerMessage, Backend};
-use once_cell::sync::Lazy;
 use std::{
-    sync::{self, mpsc, Arc, OnceLock},
+    sync::{self, mpsc, OnceLock},
     fs::create_dir_all,
     path::PathBuf,
 };
@@ -198,7 +197,7 @@ impl ViperBackendConfig {
                 ]);
                 // model.partial changes the default case of functions in counterexamples
                 // to #unspecified
-                let mut prover_args = format!(
+                let prover_args = format!(
                     "smt.qi.eager_threshold={} model.partial={}",
                     config::smt_qi_eager_threshold(),
                     config::counterexample()

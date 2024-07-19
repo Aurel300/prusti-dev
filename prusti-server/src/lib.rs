@@ -9,14 +9,13 @@
 
 use ::log::{debug, error, info};
 use crate::{
-    spawn_server_thread, PrustiClient, ServerMessage, VerificationRequest,
+    PrustiClient, ServerMessage, VerificationRequest,
     VerificationRequestProcessing, ViperBackendConfig,
 };
 use prusti_utils::{config, Stopwatch};
 use prusti_interface::{
-    data::{VerificationResult, VerificationTask},
+    data::VerificationResult,
     environment::EnvDiagnostic,
-    specs::typed,
     PrustiError,
 };
 use prusti_rustc_interface::{
@@ -24,8 +23,7 @@ use prusti_rustc_interface::{
     errors::MultiSpan,
 };
 use viper::{self, Cache, PersistentCache};
-use ide::{encoding_info::EncodingInfo, ide_verification_result::IdeVerificationResult};
-use once_cell::sync::Lazy;
+use ide::ide_verification_result::IdeVerificationResult;
 
 mod client;
 mod process_verification;
@@ -35,21 +33,21 @@ mod verification_request;
 mod backend;
 pub mod ide;
 
-pub use backend::*;
-pub use client::*;
-pub use process_verification::*;
+pub(crate) use backend::*;
+pub(crate) use client::*;
+pub(crate) use process_verification::*;
 pub use server::*;
-pub use server_message::*;
-pub use verification_request::*;
+pub(crate) use server_message::*;
+pub(crate) use verification_request::*;
 
 // Futures returned by `Client` need to be executed in a compatible tokio runtime.
 pub use tokio;
 use tokio::runtime::Builder;
-use rustc_hash::FxHashMap;
 use serde_json::json;
 use async_stream::stream;
 use futures_util::{pin_mut, Stream, StreamExt};
 use std::sync::{self, Arc};
+use once_cell::sync::Lazy;
 
 /// Verify a list of programs.
 /// Returns a list of (program_name, verification_result) tuples.
@@ -70,7 +68,7 @@ pub fn verify_programs(
         (program_name, request)
     }).collect();
 
-    let mut stopwatch = Stopwatch::start("prusti-server", "verifying Viper program");
+    let stopwatch = Stopwatch::start("prusti-server", "verifying Viper program");
     // runtime used either for client connecting to server sequentially
     // or to sequentially verify the requests -> single thread is sufficient
     // why single thread if everything is asynchronous? VerificationRequestProcessing in
@@ -178,17 +176,19 @@ fn handle_termination_message(
                     program_name.clone(),
                     verification_error
                 );
-                // FIXME: temporary error emition, delete when the above is implemented again
-                env_diagnostic.span_err_with_help_and_notes(
+                // FIXME: dummy span until backtranslation is implemented again
+                let prusti_error = PrustiError::verification(
+                    format!("{:?}", verification_error),
                     MultiSpan::from_span(DUMMY_SP.into()),
-                    &format!(
-                        "Verification error in {}: {:?}",
-                        program_name.clone(),
-                        verification_error
-                    ),
-                    &None,
-                    &[],
                 );
+                debug!("Prusti error: {:?}", prusti_error);
+                if prusti_error.is_disabled() {
+                    prusti_error.cancel();
+                } else if config::show_ide_info() {
+                    prusti_error.emit(env_diagnostic);
+                } else {
+                    prusti_errors.push(prusti_error);
+                }
             }
             *overall_result = VerificationResult::Failure;
         }

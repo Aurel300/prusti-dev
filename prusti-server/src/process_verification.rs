@@ -5,19 +5,12 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 use crate::{ServerMessage, VerificationRequest, ServerRequest};
-use futures::{lock, stream::Stream, future::Either};
+use futures::{lock, stream::Stream};
 use log::{debug, info};
-use prusti_utils::{
-    config,
-};
 use std::{
-    sync::{self, mpsc, Arc},
+    sync::{self, mpsc},
     thread,
 };
-use viper::{
-    Cache, PersistentCache,
-};
-use async_stream::stream;
 
 struct ThreadJoin {
     handle: Option<thread::JoinHandle<()>>,

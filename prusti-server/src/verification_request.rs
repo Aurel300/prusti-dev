@@ -44,8 +44,9 @@ enum ServerVerificationRequestKind {
 }
 
 impl ServerVerificationRequest {
+    /// Process and consume the request
     pub fn process<'v, 't: 'v>(
-        &self,
+        self,
         sender: &mpsc::Sender<ServerMessage>,
     ) {
         let mut stopwatch = Stopwatch::start("prusti-server", "verifier startup");
@@ -56,7 +57,7 @@ impl ServerVerificationRequest {
             time_ms: 0,
         };
 
-        match &self.kind {
+        match self.kind {
             ServerVerificationRequestKind::JVMViperRequest(viper_program_ref, program_name, backend_config) => {
                 let viper = VIPER.get().expect("ServerVerificationRequest: Viper was not instantiated before processing a request");
                 let verification_context = viper.attach_current_thread();
@@ -68,12 +69,12 @@ impl ServerVerificationRequest {
                             backend_config.clone(),
                         ),
                         &verification_context,
+                        viper_program_ref,
                     ),
                 };
                 stopwatch.start_next("backend verification");
                 result.item_name = program_name.clone();
-                result.kind = backend.verify(viper::Program::new(viper_program_ref.as_obj()), sender.clone());
-                drop(viper_program_ref);
+                result.kind = backend.verify(sender.clone());
                 result.time_ms = stopwatch.finish().as_millis();
             }
         }

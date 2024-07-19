@@ -15,22 +15,23 @@ pub enum Backend<'a> {
     Viper(
         viper::Verifier<'a>,
         &'a VerificationContext<'a>,
+        jni::objects::GlobalRef,
     ),
 }
 
 impl<'a> Backend<'a> {
     pub fn verify(
         &mut self,
-        viper_program: viper::Program,
         sender: mpsc::Sender<ServerMessage>,
     ) -> VerificationResultKind {
         match self {
-            Backend::Viper(ref mut verifier, viper_thread) => {
+            Backend::Viper(ref mut verifier, viper_thread, viper_program_ref) => {
 
                 let mut stopwatch = Stopwatch::start("prusti-server backend", "viper verification");
                 let ast_utils = viper_thread.new_ast_utils();
 
                 ast_utils.with_local_frame(16, || {
+                    let viper_program = viper::Program::new(viper_program_ref.as_obj());
                     if config::report_viper_messages() {
                       verify_and_poll_msgs(verifier, viper_thread, viper_program, sender)
                     } else {

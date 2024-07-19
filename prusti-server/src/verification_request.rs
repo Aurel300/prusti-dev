@@ -14,10 +14,16 @@ use prusti_utils::{
 use crate::{ServerMessage, Backend};
 use once_cell::sync::Lazy;
 use std::{
-    sync::{self, mpsc, Arc},
+    sync::{self, mpsc, Arc, OnceLock},
     fs::create_dir_all,
     path::PathBuf,
 };
+
+/// The JVM object should only instantiated once, so it is stored in a
+/// global reference, shareable between threads and execution of different
+/// requests when running the server. No Mutex is used because
+/// the value should only ever be used through non mutable references.
+pub(crate) static VIPER: OnceLock<Viper> = OnceLock::new();
 
 /// Server requests that are sent between client and server
 /// These are oblivious to the backend being used for verification
@@ -34,11 +40,11 @@ pub(crate) struct ServerVerificationRequest {
 /// Specifies the kind of backend to be used for verification and carries necessary data.
 enum ServerVerificationRequestKind {
     // viper program, program name, backend config
-    JVMViperRequest(jni::objects::GlobalRef, Arc<Viper>, String, ViperBackendConfig),
+    JVMViperRequest(jni::objects::GlobalRef, String, ViperBackendConfig),
 }
 
 impl ServerVerificationRequest {
-    pub fn execute<'v, 't: 'v>(
+    pub fn process<'v, 't: 'v>(
         &self,
         sender: &mpsc::Sender<ServerMessage>,
     ) {
@@ -51,8 +57,9 @@ impl ServerVerificationRequest {
         };
 
         match &self.kind {
-            ServerVerificationRequestKind::JVMViperRequest(viper_program_ref, viper_arc, program_name, backend_config) => {
-                let verification_context = viper_arc.attach_current_thread();
+            ServerVerificationRequestKind::JVMViperRequest(viper_program_ref, program_name, backend_config) => {
+                let viper = VIPER.get().expect("ServerVerificationRequest: Viper was not instantiated before processing a request");
+                let verification_context = viper.attach_current_thread();
                 let mut backend = match backend_config.backend {
                     VerificationBackend::Carbon | VerificationBackend::Silicon => Backend::Viper(
                         new_viper_verifier(
@@ -61,7 +68,6 @@ impl ServerVerificationRequest {
                             backend_config.clone(),
                         ),
                         &verification_context,
-                        &viper_arc,
                     ),
                 };
                 stopwatch.start_next("backend verification");
@@ -90,7 +96,7 @@ impl<'vir> VerificationRequest {
 
     /// Builds a more specific request based on the backend configuration and sends it.
     /// This includes the vir-viper translation if the Viper backend is used.
-    pub(crate) fn send_request(
+    pub(crate) fn send(
         &self,
         mtx_tx_verreq: &sync::Mutex<mpsc::Sender<ServerRequest>>,
     ) {
@@ -103,20 +109,14 @@ impl<'vir> VerificationRequest {
             .unwrap();
     }
 
-    fn build_request(
-            &self,
-    ) -> ServerVerificationRequest {
+    fn build_request(&self) -> ServerVerificationRequest {
         match self.backend_config.backend {
             VerificationBackend::Carbon | VerificationBackend::Silicon => {
                 let mut stopwatch =
                     Stopwatch::start("prusti-server backend", "construction of JVM objects");
 
-                // TODO: this panics when run over a server and two different requests are sent
-                // because it tries to construct the same JVM twice.
-                let viper_arc = Arc::new(
-                    Viper::new_with_args(&config::viper_home(), config::extra_jvm_args())
-                );
-                let context = viper_arc.attach_current_thread();
+                let viper = VIPER.get_or_init(|| Viper::new_with_args(&config::viper_home(), config::extra_jvm_args()));
+                let context = viper.attach_current_thread();
                 let ast_utils = context.new_ast_utils();
 
                 ast_utils.with_local_frame(16, || {
@@ -143,7 +143,6 @@ impl<'vir> VerificationRequest {
 
                     let kind = ServerVerificationRequestKind::JVMViperRequest(
                         viper_program_ref,
-                        viper_arc.clone(),
                         self.program.get_name().to_string(),
                         self.backend_config.clone(),
                     );

@@ -74,7 +74,7 @@ impl VerificationRequestProcessing {
             request.program.get_name(),
         );
 
-        request.send_request(&self.mtx_tx_verreq);
+        request.send(&self.mtx_tx_verreq);
 
         futures::stream::unfold(false, move |done: bool| async move {
             if done {
@@ -98,7 +98,7 @@ fn verification_thread(
 
     while let Ok(request) = rx_verreq.recv() {
         match request {
-            ServerRequest::Verification(verification_request) => verification_request.execute(
+            ServerRequest::Verification(verification_request) => verification_request.process(
                 &tx_servermsg,
             ),
         }

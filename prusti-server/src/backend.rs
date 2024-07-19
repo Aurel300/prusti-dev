@@ -1,4 +1,4 @@
-use crate::{dump_viper_program, ServerMessage};
+use crate::{dump_viper_program, ServerMessage, VIPER};
 use log::{debug, info};
 use prusti_utils::{
     config,
@@ -15,7 +15,6 @@ pub enum Backend<'a> {
     Viper(
         viper::Verifier<'a>,
         &'a VerificationContext<'a>,
-        &'a Arc<Viper>,
     ),
 }
 
@@ -26,14 +25,14 @@ impl<'a> Backend<'a> {
         sender: mpsc::Sender<ServerMessage>,
     ) -> VerificationResultKind {
         match self {
-            Backend::Viper(ref mut verifier, viper_thread, viper_arc) => {
+            Backend::Viper(ref mut verifier, viper_thread) => {
 
                 let mut stopwatch = Stopwatch::start("prusti-server backend", "viper verification");
                 let ast_utils = viper_thread.new_ast_utils();
 
                 ast_utils.with_local_frame(16, || {
                     if config::report_viper_messages() {
-                        verify_and_poll_msgs(verifier, viper_thread, viper_arc, viper_program, sender)
+                      verify_and_poll_msgs(verifier, viper_thread, viper_program, sender)
                     } else {
                         verifier.verify(viper_program)
                     }
@@ -46,7 +45,6 @@ impl<'a> Backend<'a> {
 fn verify_and_poll_msgs(
     verifier: &mut viper::Verifier,
     verification_context: &viper::VerificationContext,
-    viper_arc: &Arc<Viper>,
     viper_program: viper::Program,
     sender: mpsc::Sender<ServerMessage>,
 ) -> VerificationResultKind {
@@ -65,7 +63,7 @@ fn verify_and_poll_msgs(
 
     // start thread for polling messages
     thread::scope(|scope| {
-        let polling_thread = scope.spawn(|| polling_function(viper_arc, &rep_glob_ref, sender));
+        let polling_thread = scope.spawn(|| polling_function(&rep_glob_ref, sender));
         kind = verifier.verify(viper_program);
         polling_thread.join().unwrap();
     });
@@ -74,11 +72,10 @@ fn verify_and_poll_msgs(
 }
 
 fn polling_function(
-    viper_arc: &Arc<Viper>,
     rep_glob_ref: &jni::objects::GlobalRef,
     sender: mpsc::Sender<ServerMessage>,
 ) {
-    let verification_context = viper_arc.attach_current_thread();
+    let verification_context = VIPER.get().expect("Viper was not instantiated before polling").attach_current_thread();
     let env = verification_context.env();
     let jni = JniUtils::new(env);
     let reporter_instance = rep_glob_ref.as_obj();

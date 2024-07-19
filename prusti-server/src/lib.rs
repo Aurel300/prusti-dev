@@ -270,7 +270,12 @@ fn verify_requests_local<'a>(
             let program_name_clone = program_name.clone();
             let request_hash = request.get_hash();
             if config::enable_cache() {
-                if let Some(result) = fetch_from_cache(cache, request_hash, &program_name) {
+                if let Some(result) = Lazy::force(cache).get(request_hash) {
+                    info!(
+                        "Using cached result {:?} for program {}",
+                        &result,
+                        &program_name
+                    );
                     yield futures::stream::once(async move {
                         (program_name.clone(), ServerMessage::Termination(result))
                     }).left_stream();
@@ -279,7 +284,12 @@ fn verify_requests_local<'a>(
             yield vrp.verify(request).map(move |msg| {
                 if let ServerMessage::Termination(result) = &msg {
                     if config::enable_cache() && !matches!(result.kind, viper::VerificationResultKind::JavaException(_)) {
-                        store_to_cache(cache, request_hash, &program_name_clone, &result);
+                        info!(
+                            "Storing new cached result {:?} for program {}",
+                            &result,
+                            &program_name_clone
+                        );
+                        cache.insert(request_hash, result.clone());
                     }
                 }
                 (program_name_clone.clone(), msg)
@@ -287,42 +297,4 @@ fn verify_requests_local<'a>(
         }
     };
     verification_stream.flatten()
-}
-
-pub(crate) fn fetch_from_cache(
-    cache: &Lazy<Arc<sync::Mutex<PersistentCache>>, impl FnOnce() -> Arc<sync::Mutex<PersistentCache>>>,
-    hash: u64,
-    program_name: &str,
-) -> Option<viper::VerificationResult> {
-    if let Some(mut result) = (&mut *cache.lock().unwrap()).get(hash) {
-        info!(
-            "Using cached result {:?} for program {}",
-            &result,
-            program_name
-        );
-        /*if config::dump_viper_program() {
-            ast_utils.with_local_frame(16, || {
-                let _ = build_or_dump_viper_program();
-            });
-        }
-        normalization_info.denormalize_result(&mut result);*/
-        result.cached = true;
-        Some(result)
-    } else {
-        None
-    }
-}
-
-pub(crate) fn store_to_cache(
-    cache: &Lazy<Arc<sync::Mutex<PersistentCache>>, impl FnOnce() -> Arc<sync::Mutex<PersistentCache>>>,
-    hash: u64,
-    program_name: &str,
-    result: &viper::VerificationResult,
-) {
-    info!(
-        "Storing new cached result {:?} for program {}",
-        result,
-        program_name
-    );
-    (&mut *cache.lock().unwrap()).insert(hash, result.clone());
 }

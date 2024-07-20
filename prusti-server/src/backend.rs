@@ -74,7 +74,11 @@ fn polling_function(
     rep_glob_ref: &jni::objects::GlobalRef,
     sender: mpsc::Sender<ServerMessage>,
 ) {
-    let verification_context = VIPER.get().expect("Viper was not instantiated before polling").attach_current_thread();
+    debug!("attach polling thread to JVM.");
+    let verification_context = VIPER
+        .get()
+        .expect("Viper was not instantiated before polling")
+        .attach_current_thread();
     let env = verification_context.env();
     let jni = JniUtils::new(env);
     let reporter_instance = rep_glob_ref.as_obj();

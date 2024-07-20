@@ -113,12 +113,14 @@ impl<'vir> VerificationRequest {
         match self.backend_config.backend {
             VerificationBackend::Carbon | VerificationBackend::Silicon => {
                 let mut stopwatch =
-                    Stopwatch::start("prusti-server backend", "construction of JVM objects");
-
-                let viper = VIPER.get_or_init(|| Viper::new_with_args(&config::viper_home(), config::extra_jvm_args()));
+                    Stopwatch::start("prusti-server backend", "JVM startup");
+                let viper = VIPER
+                    .get_or_init(|| Viper::new_with_args(&config::viper_home(), config::extra_jvm_args()));
+                stopwatch.start_next("attach current thread to the JVM");
                 let context = viper.attach_current_thread();
                 let ast_utils = context.new_ast_utils();
 
+                stopwatch.start_next("construction of JVM objects");
                 ast_utils.with_local_frame(16, || {
                     let ast_factory = context.new_ast_factory();
 

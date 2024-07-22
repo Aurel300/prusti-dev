@@ -136,4 +136,15 @@ impl<'tcx> VirCtxt<'tcx> {
         }
         None
     }
+
+    /// Attempt to backtranslate a position id to a rust span
+    pub fn get_span_from_id(
+        &'tcx self,
+        pos_id: usize
+    ) -> Option<Span> {
+        let manager = self.spans.borrow();
+        manager.all
+            .get(pos_id)
+            .map(|vir_span| vir_span.span)
+    }
 }

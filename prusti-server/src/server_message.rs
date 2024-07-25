@@ -19,7 +19,7 @@ pub enum ServerMessage {
     QuantifierInstantiation {
         q_name: String,
         insts: u64,
-        pos_id: u64,
+        pos_id: usize,
     },
 
     /// Also created by the Viper backend. The viper_quant is the expression the
@@ -28,7 +28,7 @@ pub enum ServerMessage {
     QuantifierChosenTriggers {
         viper_quant: String,
         triggers: String,
-        pos_id: u64,
+        pos_id: usize,
     },
 
     /// Contains a path id, label and viper method name corresponding to a symbolic

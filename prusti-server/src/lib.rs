@@ -104,7 +104,7 @@ async fn handle_stream(
     // we want quantifier_pos_ID + program_name + q_name as identifier because there are
     // different q_names for the same ID and each program reports independent results
     // key: (pos_id, program_name), key to result: q_name result: num_instantiations
-    let mut quantifier_instantiations: FxHashMap<(u64, String), FxHashMap<String, u64>> =
+    let mut quantifier_instantiations: FxHashMap<(usize, String), FxHashMap<String, u64>> =
         FxHashMap::default();
 
     let mut prusti_errors: Vec<_> = vec![];
@@ -208,6 +208,57 @@ fn handle_termination_message(
                     }
                 });
 
+            // // annotate with counterexample, if requested
+            // if config::counterexample() {
+            //     if config::unsafe_core_proof() {
+            //         if let Some(silicon_counterexample) =
+            //             &verification_error.counterexample
+            //         {
+            //             let error_manager = self.encoder.error_manager();
+            //             if let Some(def_id) = error_manager
+            //                 .get_def_id(&verification_error)
+            //             {
+            //                 let counterexample = counterexample_translation_refactored::backtranslate(
+            //                     &self.encoder,
+            //                     error_manager.position_manager(),
+            //                     def_id,
+            //                     silicon_counterexample,
+            //                 );
+            //                 prusti_error =
+            //                     counterexample.annotate_error(prusti_error);
+            //             } else {
+            //                 prusti_error = prusti_error.add_note(
+            //                     format!(
+            //                         "the verifier produced a counterexample for {program_name}, but it could not be mapped to source code"
+            //                     ),
+            //                     None,
+            //                 );
+            //             }
+            //         }
+            //     } else if let Some(silicon_counterexample) =
+            //         &verification_error.counterexample
+            //     {
+            //         if let Some(def_id) = self.encoder.error_manager()
+            //             .get_def_id(&verification_error)
+            //         {
+            //             let counterexample =
+            //                 counterexample_translation::backtranslate(
+            //                     &self.encoder,
+            //                     def_id,
+            //                     silicon_counterexample,
+            //                 );
+            //             prusti_error =
+            //                 counterexample.annotate_error(prusti_error);
+            //         } else {
+            //             prusti_error = prusti_error.add_note(
+            //                 format!(
+            //                     "the verifier produced a counterexample for {program_name}, but it could not be mapped to source code"
+            //                 ),
+            //                 None,
+            //             );
+            //         }
+            //     }
+            // }
             *overall_result = VerificationResult::Failure;
         }
         viper::VerificationResultKind::JavaException(exception) => {
@@ -227,8 +278,8 @@ fn handle_quantifier_instantiation_message(
     program_name: String,
     q_name: String,
     insts: u64,
-    pos_id: u64,
-    quantifier_instantiations: &mut FxHashMap<(u64, String), FxHashMap<String, u64>>
+    pos_id: usize,
+    quantifier_instantiations: &mut FxHashMap<(usize, String), FxHashMap<String, u64>>
 ) {
     if config::report_viper_messages() {
         debug!("Received #{insts} quantifier instantiations of {q_name} for position id {pos_id} in verification of {program_name}");
@@ -273,7 +324,7 @@ fn handle_quantifier_chosen_triggers_message(
     program_name: String,
     viper_quant: String,
     triggers: String,
-    pos_id: u64
+    pos_id: usize
 ) {
     if config::report_viper_messages() && pos_id != 0 {
         debug!("Received quantifier triggers {triggers} for quantifier {viper_quant} for position id {pos_id} in verification of {program_name}");

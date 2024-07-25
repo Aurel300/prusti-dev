@@ -127,7 +127,7 @@ fn polling_function(
                             .strip_suffix("-aux")
                             .or(no_pref.strip_suffix("_precondition"))
                             .unwrap_or(no_pref);
-                        let parsed = stripped.parse::<u64>();
+                        let parsed = stripped.parse::<usize>();
                         match parsed {
                             Ok(pos_id) => {
                                 sender
@@ -161,7 +161,7 @@ fn polling_function(
                     // Is that intended?
                     if let Some(pos_id_index) = pos_string.rfind('.') {
                         // let pos_id_index = pos_string.rfind('.').unwrap();
-                        let pos_id = pos_string[pos_id_index + 1..].parse::<u64>().unwrap();
+                        let pos_id = pos_string[pos_id_index + 1..].parse::<usize>().unwrap();
 
                         let viper_triggers =
                             jni.get_string(jni.unwrap_result(msg_wrapper.call_triggers__string(msg)));

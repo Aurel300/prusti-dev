@@ -62,16 +62,45 @@ where
         vir::init_vcx(vir::VirCtxt::new_without_tcx());
         data
     }
+    
+    fn handle_json_websocket_message(msg: warp::ws::Message) -> VerificationRequest {
+        msg
+            .to_str()
+            .and_then(|s: &str| serde_json::from_str(s).unwrap())
+            .unwrap()
+    }
+    fn make_json_websocket_message(msg: &ServerMessage) -> warp::ws::Message {
+        warp::filters::ws::Message::text(serde_json::to_string(&msg).unwrap())
+    }
+
+    fn handle_bincode_websocket_message(msg: warp::ws::Message) -> VerificationRequest {
+        bincode::deserialize(msg.as_bytes()).unwrap()
+    }
+    fn make_bincode_websocket_message(msg: &ServerMessage) -> warp::ws::Message {
+        warp::filters::ws::Message::binary(bincode::serialize(&msg).unwrap())
+    }
 
     let json_verify = warp::path!("json" / "verify")
         .and(warp::filters::ws::ws())
         .map(init_vcx)
-        .map(move |ws: warp::filters::ws::Ws| WsJsonMessageHandler::on_upgrade(ws));
+        .map(move |ws: warp::filters::ws::Ws|
+            on_upgrade(
+                ws,
+                handle_json_websocket_message,
+                make_json_websocket_message
+            )
+        );
 
     let bincode_verify = warp::path!("bincode" / "verify")
         .and(warp::filters::ws::ws())
         .map(init_vcx)
-        .map(move |ws: warp::filters::ws::Ws| WsBincodeMessageHandler::on_upgrade(ws));
+        .map(move |ws: warp::filters::ws::Ws|
+            on_upgrade(
+                ws,
+                handle_bincode_websocket_message,
+                make_bincode_websocket_message
+            )
+        );
 
     let save_cache = warp::post()
         .and(warp::path("save"))
@@ -111,83 +140,64 @@ where
     unreachable!("The server unexpectedly stopped.");
 }
 
-trait WsMessageHandler {
-    fn handle_websocket_message(msg: warp::ws::Message) -> VerificationRequest;
-    fn make_websocket_message(msg: &ServerMessage) -> warp::ws::Message;
-    fn on_upgrade(ws: warp::filters::ws::Ws) -> Box<dyn warp::Reply> {
-        Box::new(ws.on_upgrade(move |websocket| async move {
-            let (mut ws_send, mut ws_recv) = websocket.split();
-            let req_msg = ws_recv.next().await.unwrap().unwrap();
-            let verification_request = Self::handle_websocket_message(req_msg);
-            let request_hash = verification_request.get_hash();
-            let program_name = verification_request.program.get_name().to_string();
-            // return early in case of a cache hit
-            let stream = if config::enable_cache() {
-                match Lazy::force(&CACHE).get(request_hash) {
-                    Some(mut result) => {
+fn on_upgrade<F, G>(
+    ws: warp::ws::Ws,
+    handle_websocket_message: F,
+    make_websocket_message: G,
+) -> impl warp::Reply
+where
+    F: Fn(warp::ws::Message) -> VerificationRequest + Send + Sync + 'static,
+    G: Fn(&ServerMessage) -> warp::ws::Message + Send + Sync + 'static,
+{
+    ws.on_upgrade(move |websocket| async move {
+        let (mut ws_send, mut ws_recv) = websocket.split();
+        let req_msg = ws_recv.next().await.unwrap().unwrap();
+        let verification_request = handle_websocket_message(req_msg);
+        let request_hash = verification_request.get_hash();
+        let program_name = verification_request.program.get_name().to_string();
+        // return early in case of a cache hit
+        let stream = if config::enable_cache() {
+            match Lazy::force(&CACHE).get(request_hash) {
+                Some(mut result) => {
+                    info!(
+                        "Using cached result {:?} for program {}",
+                        &result,
+                        &program_name
+                    );
+                    result.cached = true;
+                    futures::stream::once(async move {
+                        ServerMessage::Termination(result)
+                    })
+                    .left_stream()
+                },
+                None => VERIFICATION_REQUEST_PROCESSING.verify(verification_request).right_stream()
+            }
+        } else {
+            VERIFICATION_REQUEST_PROCESSING.verify(verification_request).right_stream()
+        };
+        pin_mut!(stream);
+
+        while let Some(server_msg) = stream.next().await {
+            if let ServerMessage::Termination(result) = &server_msg {
+                if config::enable_cache() && !matches!(result.kind, VerificationResultKind::JavaException(_)) {
+                    if !result.cached {
                         info!(
-                            "Using cached result {:?} for program {}",
+                            "Storing new cached result {:?} for program {}",
                             &result,
                             &program_name
                         );
-                        result.cached = true;
-                        futures::stream::once(async move {
-                            ServerMessage::Termination(result)
-                        })
-                        .left_stream()
-                    },
-                    None => VERIFICATION_REQUEST_PROCESSING.verify(verification_request).right_stream()
-                }
-            } else {
-                VERIFICATION_REQUEST_PROCESSING.verify(verification_request).right_stream()
-            };
-            pin_mut!(stream);
-
-            while let Some(server_msg) = stream.next().await {
-                if let ServerMessage::Termination(result) = &server_msg {
-                    if config::enable_cache() && !matches!(result.kind, VerificationResultKind::JavaException(_)) {
-                      if !result.cached {
-                          info!(
-                              "Storing new cached result {:?} for program {}",
-                              &result,
-                              &program_name
-                          );
-                          CACHE.insert(request_hash, result.clone());
-                      }
+                        CACHE.insert(request_hash, result.clone());
                     }
-                };
-                let msg = Self::make_websocket_message(&server_msg);
-                ws_send
-                    .send(msg)
-                    .await
-                    .unwrap();
-            }
-            ws_send.close().await.unwrap();
-            // receive the client close to complete the handshake
-            ws_recv.next().await.unwrap().unwrap();
-        }))
-    }
-}
-
-struct WsJsonMessageHandler;
-impl WsMessageHandler for WsJsonMessageHandler {
-    fn handle_websocket_message(msg: warp::ws::Message) -> VerificationRequest {
-        msg
-            .to_str()
-            .and_then(|s: &str| serde_json::from_str(s).unwrap())
-            .unwrap()
-    }
-    fn make_websocket_message(msg: &ServerMessage) -> warp::ws::Message {
-        warp::filters::ws::Message::text(serde_json::to_string(&msg).unwrap())
-    }
-}
-
-struct WsBincodeMessageHandler;
-impl WsMessageHandler for WsBincodeMessageHandler {
-    fn handle_websocket_message(msg: warp::ws::Message) -> VerificationRequest {
-        bincode::deserialize(msg.as_bytes()).unwrap()
-    }
-    fn make_websocket_message(msg: &ServerMessage) -> warp::ws::Message {
-        warp::filters::ws::Message::binary(bincode::serialize(&msg).unwrap())
-    }
+                }
+            };
+            let msg = make_websocket_message(&server_msg);
+            ws_send
+                .send(msg)
+                .await
+                .unwrap();
+        }
+        ws_send.close().await.unwrap();
+        // receive the client close to complete the handshake
+        ws_recv.next().await.unwrap().unwrap();
+    })
 }

@@ -16,9 +16,8 @@ mir-ssa-analysis = { path = "../mir-ssa-analysis" }
 mir-state-analysis = { path = "../mir-state-analysis" }
 task-encoder = { path = "../task-encoder" }
 vir = { path = "../vir" }
+ide = { path = "../ide" }
 tracing = { path = "../tracing" }
-serde = { version = "1.0", features = ["derive"] }
-serde_json = { version = "1.0" }
 
 [package.metadata.rust-analyzer]
 # This crate uses #[feature(rustc_private)]

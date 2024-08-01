@@ -1,5 +1,5 @@
 use serde::Serialize;
-use viper::VerificationResult;
+// use viper::VerificationResult;
 
 /// Generated for each verification item, containing information
 /// about the result of the verification. This information will be emitted
@@ -8,22 +8,23 @@ use viper::VerificationResult;
 #[derive(Serialize)]
 pub struct IdeVerificationResult {
     /// the name / defpath of the method
-    item_name: String,
+    pub item_name: String,
     /// whether the verification of that method was successful
-    success: bool,
+    pub success: bool,
     /// how long the verification took
-    time_ms: u128,
+    pub time_ms: u128,
     /// whether this result was cached or is fresh
-    cached: bool,
+    pub cached: bool,
 }
 
-impl From<&VerificationResult> for IdeVerificationResult {
-    fn from(res: &VerificationResult) -> Self {
-        Self {
-            item_name: res.item_name.clone(),
-            success: res.is_success(),
-            time_ms: res.time_ms,
-            cached: res.cached,
-        }
-    }
-}
+
+// impl From<&VerificationResult> for IdeVerificationResult {
+//     fn from(res: &VerificationResult) -> Self {
+//         Self {
+//             item_name: res.item_name.clone(),
+//             success: res.is_success(),
+//             time_ms: res.time_ms,
+//             cached: res.cached,
+//         }
+//     }
+// }

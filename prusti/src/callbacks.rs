@@ -1,7 +1,5 @@
-use crate::{
-    ide_helper::{compiler_info, fake_error::fake_error},
-    verifier::verify,
-};
+use crate::verifier::verify;
+use ide::{IdeInfo, fake_error};
 use mir_state_analysis::test_free_pcs;
 use prusti_utils::config;
 use prusti_interface::{

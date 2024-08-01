@@ -14,8 +14,6 @@ use prusti_rustc_interface::{
     data_structures::fx::FxHashMap,
     hir::def_id::DefId,
 };
-use prusti_encoder::ide::encoding_info::{SpanOfCallContracts, EncodingInfo};
-use crate::ide_helper::compiler_info::ProcDef;
 
 #[tracing::instrument(name = "prusti::verify", level = "debug", skip(env))]
 pub fn verify<'tcx>(
@@ -74,7 +72,7 @@ pub fn verify<'tcx>(
 
         let program = request.program;
 
-        let mut result = prusti_server::verify_programs(&env.diagnostic, vec![program]);
+        let result = prusti_server::verify_programs(&env.diagnostic, vec![program]);
 
         println!("verification result: {result:?}");
 

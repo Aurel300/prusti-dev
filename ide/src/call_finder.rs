@@ -14,7 +14,6 @@ pub struct CallSpanFinder<'tcx> {
     pub env_query: EnvQuery<'tcx>,
     pub tcx: TyCtxt<'tcx>,
     pub called_functions: Vec<(String, DefId, Span)>,
-    pub called_functions_local: Vec<(String, DefId, Span)>,
 }
 
 impl<'tcx> CallSpanFinder<'tcx> {
@@ -22,7 +21,6 @@ impl<'tcx> CallSpanFinder<'tcx> {
         Self {
             env_query: env.query,
             called_functions: Vec::new(),
-            called_functions_local: Vec::new(),
             tcx: env.tcx(),
         }
     }
@@ -61,11 +59,10 @@ impl<'tcx> Visitor<'tcx> for CallSpanFinder<'tcx> {
                     let tyck_res = self.tcx.typeck(e1.hir_id.owner.def_id);
                     let res = tyck_res.qpath_res(qself, e1.hir_id);
                     if let prusti_rustc_interface::hir::def::Res::Def(_, def_id) = res {
-                        let defpath = self.tcx.def_path_str(def_id);
-                        let called_functions = 
-                            if def_id.as_local().is_none() {&mut self.called_functions} 
-                            else {&mut self.called_functions_local};
-                        called_functions.push((defpath, def_id, expr.span));
+                        if def_id.as_local().is_none() {
+                            let defpath = self.tcx.def_path_str(def_id);
+                            self.called_functions.push((defpath, def_id, expr.span));
+                        }
                     }
                 }
             }
@@ -74,18 +71,18 @@ impl<'tcx> Visitor<'tcx> for CallSpanFinder<'tcx> {
                 if let Ok((method_def_id, resolved_def_id)) = resolve_res {
                     let defpath_unresolved = self.tcx.def_path_str(method_def_id);
                     let defpath_resolved = self.tcx.def_path_str(resolved_def_id);
-                    let called_functions = 
-                        if method_def_id.as_local().is_none() {&mut self.called_functions} 
-                        else {&mut self.called_functions_local};
-                    if defpath_unresolved == defpath_resolved {
-                        called_functions
-                            .push((defpath_resolved, resolved_def_id, sp));
-                    } else {
-                        // in this case we want both
-                        called_functions
-                            .push((defpath_resolved, resolved_def_id, sp));
-                        called_functions
-                            .push((defpath_unresolved, method_def_id, sp));
+
+                    if method_def_id.as_local().is_none() {
+                        if defpath_unresolved == defpath_resolved {
+                            self.called_functions
+                                .push((defpath_resolved, resolved_def_id, sp));
+                        } else {
+                            // in this case we want both
+                            self.called_functions
+                                .push((defpath_resolved, resolved_def_id, sp));
+                            self.called_functions
+                                .push((defpath_unresolved, method_def_id, sp));
+                        }
                     }
                 }
             }
@@ -95,29 +92,29 @@ impl<'tcx> Visitor<'tcx> for CallSpanFinder<'tcx> {
                 if let Ok((method_def_id, resolved_def_id)) = resolve_res {
                     let defpath_unresolved = self.tcx.def_path_str(method_def_id);
                     let defpath_resolved = self.tcx.def_path_str(resolved_def_id);
-                    let called_functions = 
-                        if method_def_id.as_local().is_none() {&mut self.called_functions} 
-                        else {&mut self.called_functions_local};
-                    if defpath_unresolved == defpath_resolved {
-                        called_functions.push((
-                            defpath_resolved,
-                            resolved_def_id,
-                            expr.span,
-                        ));
-                    } else {
-                        // For binary operations this will be the operation
-                        // from the standard libary and the "overriding" method
 
-                        called_functions.push((
-                            defpath_resolved,
-                            resolved_def_id,
-                            expr.span,
-                        ));
-                        called_functions.push((
-                            defpath_unresolved,
-                            method_def_id,
-                            expr.span,
-                        ));
+                    if method_def_id.as_local().is_none() {
+                        if defpath_unresolved == defpath_resolved {
+                            self.called_functions.push((
+                                defpath_resolved,
+                                resolved_def_id,
+                                expr.span,
+                            ));
+                        } else {
+                            // For binary operations this will be the operation
+                            // from the standard libary and the "overriding" method
+
+                            self.called_functions.push((
+                                defpath_resolved,
+                                resolved_def_id,
+                                expr.span,
+                            ));
+                            self.called_functions.push((
+                                defpath_unresolved,
+                                method_def_id,
+                                expr.span,
+                            ));
+                        }
                     }
                 }
             }

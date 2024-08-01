@@ -19,6 +19,7 @@ doctest = false
 [dependencies]
 log = { version = "0.4", features = ["release_max_level_info"] }
 vir = { path = "../vir" }
+ide = { path = "../ide" }
 viper = { path = "../viper" }
 prusti-encoder = { path = "../prusti-encoder" }
 prusti-interface = { path = "../prusti-interface" }

@@ -1215,6 +1215,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "ide"
+version = "0.3.0"
+dependencies = [
+ "prusti-interface",
+ "prusti-rustc-interface",
+ "prusti-utils",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "idna"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1837,6 +1848,7 @@ version = "0.3.0"
 dependencies = [
  "chrono",
  "env_logger",
+ "ide",
  "lazy_static",
  "log",
  "mir-state-analysis",
@@ -1868,13 +1880,12 @@ name = "prusti-encoder"
 version = "0.1.0"
 dependencies = [
  "cfg-if",
+ "ide",
  "mir-ssa-analysis",
  "mir-state-analysis",
  "prusti-interface",
  "prusti-rustc-interface",
  "prusti-utils",
- "serde",
- "serde_json",
  "task-encoder",
  "tracing 0.1.0",
  "vir",
@@ -1922,6 +1933,7 @@ dependencies = [
  "env_logger",
  "futures",
  "futures-util",
+ "ide",
  "jni",
  "lazy_static",
  "log",

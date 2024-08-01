@@ -10,7 +10,6 @@ extern crate rustc_type_ir;
 mod encoders;
 mod encoder_traits;
 pub mod request;
-pub mod ide;
 
 
 use prusti_interface::{environment::{EnvBody, EnvQuery}, PrustiError};

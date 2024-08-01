@@ -8,10 +8,6 @@
 #![feature(rustc_private)]
 
 use ::log::{debug, error, info};
-use crate::{
-    spawn_server_thread, PrustiClient, ServerMessage, VerificationRequest,
-    VerificationRequestProcessing, ViperBackendConfig,
-};
 use prusti_utils::{config, Stopwatch};
 use prusti_interface::{
     data::VerificationResult,
@@ -24,7 +20,15 @@ use prusti_rustc_interface::{
     errors::MultiSpan,
 };
 use viper::{self, PersistentCache, Viper};
-use crate::ide::ide_verification_result::IdeVerificationResult;
+use ide::IdeVerificationResult;
+use crate::{
+    server::spawn_server_thread,
+    PrustiClient,
+    ServerMessage,
+    VerificationRequest,
+    ViperBackendConfig,
+    VerificationRequestProcessing,
+};
 
 mod client;
 mod process_verification;
@@ -32,14 +36,13 @@ mod server;
 mod server_message;
 mod verification_request;
 mod backend;
-pub mod ide;
 
-pub use backend::*;
-pub use client::*;
-pub use process_verification::*;
-pub use server::*;
-pub use server_message::*;
-pub use verification_request::*;
+pub use server::start_server_on_port;
+pub(crate) use backend::*;
+pub(crate) use client::*;
+pub(crate) use process_verification::*;
+pub(crate) use server_message::*;
+pub(crate) use verification_request::*;
 
 // Futures returned by `Client` need to be executed in a compatible tokio runtime.
 pub use tokio;
@@ -167,8 +170,12 @@ fn handle_termination_message(
         PrustiError::message(
             format!(
                 "ideVerificationResult{}",
-                serde_json::to_string(&IdeVerificationResult::from(&result))
-                    .unwrap()
+                serde_json::to_string(&IdeVerificationResult {
+                    item_name: result.item_name.clone(),
+                    success: result.is_success(),
+                    cached: result.cached,
+                    time_ms: result.time_ms,
+                }).unwrap()
             ),
             DUMMY_SP.into(),
         )

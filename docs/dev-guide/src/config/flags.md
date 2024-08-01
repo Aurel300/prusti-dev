@@ -83,7 +83,7 @@
 | [`USE_SMT_WRAPPER`](#use_smt_wrapper) | `bool` | `false` | A |
 | [`VERIFICATION_DEADLINE`](#verification_deadline) | `Option<u64>` | `None` | A |
 | [`VERIFY_ONLY_BASIC_BLOCK_PATH`](#verify_only_basic_block_path) | `Vec<String>` | `vec![]` | A |
-| [`VERIFY_ONLY_DEFPATH`](#verify_only_defpath) | `Option<String>` | `None` | A |
+| [`VERIFY_ONLY_DEFPATH`](#verify_only_defpath) | `Vec<String>` | `vec![]` | A |
 | [`VERIFY_ONLY_PREAMBLE`](#verify_only_preamble) | `bool` | `false` | A |
 | [`VIPER_BACKEND`](#viper_backend) | `String` | `"Silicon"` | A |
 | [`VIPER_HOME`](#viper_home) | `Option<String>` | `None` | A |
@@ -510,9 +510,11 @@ Verify only the single execution path goes through the given basic blocks. All b
 
 > **Note:** This option is only for debugging Prusti.
 
-## `VERIFY_ONLY_DEFPATH`
+## `VERIFY_ONLY_DEFPATHS`
 
 When set to the defpath of a local method, prusti will only verify the specified method. A fake error will be generated to avoid caching of a success.
+
+> **Note:** When passing this flag through environment variables, it should be a string of space-separated defpaths.
 
 ## `VERIFY_ONLY_PREAMBLE`
 

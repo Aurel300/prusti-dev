@@ -83,7 +83,9 @@ where
 
             // Do not encode the method body if it is external, trusted or just
             // a call stub.
-            let local_def_id = def_id.as_local().filter(|_| !trusted);
+            // Also do not encode if we are doing selective verification and the
+            // current method is not selected.
+            let local_def_id = def_id.as_local().filter(|_| !trusted && crate::selected(&def_id));
             let blocks = if let Some(local_def_id) = local_def_id {
                 let body = vcx
                     .body_mut()

@@ -1,7 +1,12 @@
 use std::collections::HashMap;
-use prusti_interface::PrustiError;
-use prusti_rustc_interface::span::Span;
+use prusti_interface::{PrustiError, environment::EnvDiagnostic};
+use prusti_rustc_interface::span::{
+    Span,
+    DUMMY_SP,
+    source_map::SourceMap
+};
 use crate::VirCtxt;
+use ide::{SpanOfCallContracts, EncodingInfo};
 
 pub struct VirSpanHandler<'vir> {
     error_kind: &'static str,
@@ -63,6 +68,8 @@ pub struct VirSpanManager<'vir> {
     stack: Vec<&'vir crate::spans::VirSpan<'vir>>,
 
     handlers: HashMap<usize, VirSpanHandler<'vir>>,
+
+    call_contract_spans: Vec<SpanOfCallContracts>,
 }
 
 impl<'tcx> VirCtxt<'tcx> {
@@ -146,5 +153,44 @@ impl<'tcx> VirCtxt<'tcx> {
         manager.all
             .get(pos_id)
             .map(|vir_span| vir_span.span)
+    }
+
+    pub fn push_call_contract_span(
+        &'tcx self,
+        defpath: String,
+        call_spans: Vec<Span>,
+        contracts_spans: Vec<Span>,
+        source_map: &SourceMap
+    ) {
+        let span_of_call_contracts = SpanOfCallContracts::new(
+            defpath,
+            call_spans,
+            contracts_spans,
+            source_map,
+        );
+        let mut manager = self.spans.borrow_mut();
+        manager.call_contract_spans.push(span_of_call_contracts);
+    }
+
+    pub fn emit_contract_spans(
+        &'tcx self,
+        env_diagnostic: &EnvDiagnostic<'_>,
+    ) {
+        let mut call_contract_spans = self
+            .spans
+            .borrow()
+            .call_contract_spans
+            .clone();
+        call_contract_spans.retain(|cs| !cs.contracts_spans.is_empty());
+        // sort, so the is deterministic
+        call_contract_spans
+            .sort_by(|a,b| a.defpath.cmp(&b.defpath));
+
+        let encoding_info = EncodingInfo { call_contract_spans };
+        PrustiError::message(
+            format!("encodingInfo{}", encoding_info.to_json_string()),
+            DUMMY_SP.into(),
+        )
+        .emit(env_diagnostic);
     }
 }

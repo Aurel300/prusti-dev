@@ -3040,10 +3040,12 @@ dependencies = [
  "bincode",
  "bumpalo",
  "cfg-if",
+ "ide",
  "prusti-interface",
  "prusti-rustc-interface",
  "sealed",
  "serde",
+ "serde_json",
  "vir-proc-macro",
 ]
 

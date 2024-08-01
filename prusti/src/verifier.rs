@@ -4,23 +4,16 @@ use log::{debug, warn};
 use prusti_utils::{config, report::user};
 use prusti_interface::{
     data::{VerificationResult, VerificationTask},
-    environment::{Environment, EnvDiagnostic},
+    environment::Environment,
     specs::typed,
-    PrustiError,
 };
-use prusti_rustc_interface::{
-    errors::MultiSpan,
-    span::DUMMY_SP,
-    data_structures::fx::FxHashMap,
-    hir::def_id::DefId,
-};
+use prusti_rustc_interface::errors::MultiSpan;
 
 #[tracing::instrument(name = "prusti::verify", level = "debug", skip(env))]
 pub fn verify<'tcx>(
     env: Environment<'tcx>,
     def_spec: typed::DefSpecificationMap,
     verification_task: VerificationTask<'tcx>,
-    mut contract_spans_map: FxHashMap<DefId, SpanOfCallContracts>,
 ) {
     if env.diagnostic.has_errors() {
         warn!("The compiler reported an error, so the program will not be verified.");
@@ -36,7 +29,8 @@ pub fn verify<'tcx>(
         debug!("Verification task: {:?}", &verification_task);
 
         user::message(format!(
-            "Verification of {} items...",
+            "{}erification of {} items...",
+            if verification_task.selective { "Selective v" } else { "V" },
             verification_task.procedures.len()
         ));
 
@@ -62,13 +56,9 @@ pub fn verify<'tcx>(
             env.body,
             env.query,
             def_spec,
-            if verification_task.selective { Some(&verification_task.procedures) } else { None },
-            &mut contract_spans_map,
+            if verification_task.selective { Some(verification_task.procedures) } else { None },
+            &env.diagnostic,
         );
-
-        if config::show_ide_info() {
-            emit_contract_spans(&env.diagnostic, contract_spans_map);
-        }
 
         let program = request.program;
 
@@ -127,24 +117,4 @@ pub fn verify<'tcx>(
         //    }
         //};
     }
-}
-
-pub fn emit_contract_spans(
-    env_diagnostic: &EnvDiagnostic<'_>,
-    contract_spans_map: FxHashMap<DefId, SpanOfCallContracts>,
-) {
-    let mut contract_spans: Vec<SpanOfCallContracts> = contract_spans_map
-        .into_values()
-        .collect();
-    contract_spans.retain(|cs| !cs.contracts_spans.is_empty());
-    // sort, so the order does not randomly change between runs
-    contract_spans
-        .sort_by(|a,b| a.defpath.cmp(&b.defpath));
-
-    let encoding_info = EncodingInfo { call_contract_spans: contract_spans };
-    PrustiError::message(
-        format!("encodingInfo{}", encoding_info.to_json_string()),
-        DUMMY_SP.into(),
-    )
-    .emit(env_diagnostic);
 }

@@ -10,7 +10,7 @@ use prusti_interface::{
 };
 use prusti_rustc_interface::{
     borrowck::consumers,
-    data_structures::{steal::Steal, fx::FxHashMap},
+    data_structures::steal::Steal,
     driver::Compilation,
     index::IndexVec,
     interface::{interface::Compiler, Config, Queries},
@@ -27,7 +27,7 @@ use prusti_rustc_interface::{
     session::{EarlyErrorHandler, Session},
     span::DUMMY_SP,
 };
-use ::log::debug;
+use ::log::{debug, info};
 
 #[derive(Default)]
 pub struct PrustiCompilerCalls;
@@ -186,15 +186,12 @@ impl prusti_rustc_interface::driver::Callbacks for PrustiCompilerCalls {
             // that is already in `def_spec`?
             let (annotated_procedures, types) = env.get_annotated_procedures_and_types();
 
-            let mut call_spans_map = FxHashMap::default();
             if config::show_ide_info() && !config::no_verify() {
-                let mut compiler_info =
-                    compiler_info::IdeInfo::collect(&env, &annotated_procedures, &def_spec);
+                let compiler_info =
+                    IdeInfo::collect(&env, &annotated_procedures, &def_spec);
                 let out = serde_json::to_string(&compiler_info).unwrap();
                 PrustiError::message(format!("compilerInfo{out}"), DUMMY_SP.into())
                     .emit(&env.diagnostic);
-                // TODO: might only need local ones if we can assume that external calls have no contract spans
-                call_spans_map = compiler_info.get_call_spans_map();
             }
             // as long as we have to throw a fake error we need to check this
             let is_primary_package = std::env::var("CARGO_PRIMARY_PACKAGE").is_ok();
@@ -209,21 +206,25 @@ impl prusti_rustc_interface::driver::Callbacks for PrustiCompilerCalls {
                     // of the fake_error, otherwise verification stops early
                     // with local dependencies
                     if is_primary_package {
+                        let env_diagnostic = env.diagnostic.clone();
                         let procedures = annotated_procedures
                             .into_iter()
                             .filter(|x| target_def_paths.contains(&env.name.get_unique_item_name(*x)))
-                            .collect();
-                        let selective_task = VerificationTask {
-                            procedures,
-                            types,
-                            selective: true
-                        };
-                        // fake_error because otherwise a verification-success
-                        // (for a single method for example) will cause this result
-                        // to be cached by compiler at the moment
-                        let env_diagnostic = env.diagnostic.clone();
-                        verify(env, def_spec, selective_task, call_spans_map);
-                        fake_error(&env_diagnostic); 
+                            .collect::<Vec<_>>();
+                        if !procedures.is_empty() {
+                            let selective_task = VerificationTask {
+                                procedures,
+                                types,
+                                selective: true
+                            };
+                            // fake_error because otherwise a verification-success
+                            // (for a single method for example) will cause this result
+                            // to be cached by compiler at the moment
+                            verify(env, def_spec, selective_task);
+                        } else {
+                            info!("Passed selective defpaths were empty or had no matching procedures - skipping verification.");
+                        }
+                        fake_error(&env_diagnostic);
                     }
                 } else {
                     let verification_task = VerificationTask {
@@ -231,7 +232,7 @@ impl prusti_rustc_interface::driver::Callbacks for PrustiCompilerCalls {
                         types,
                         selective: false,
                     };
-                    verify(env, def_spec, verification_task, call_spans_map);
+                    verify(env, def_spec, verification_task);
                 }
             } else if config::skip_verification() && !config::no_verify() && is_primary_package {
                 // add a fake error, reason explained in issue #1261

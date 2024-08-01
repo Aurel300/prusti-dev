@@ -49,7 +49,8 @@ use crate::{
             func_app_ty_params::LiftedFuncAppTyParamsEnc
         },
         FunctionCallTaskDescription, MirBuiltinEnc
-    }
+    },
+    Span,
 };
 
 use super::{
@@ -63,6 +64,7 @@ use super::{
     MirMonoImpureEnc,
     MirPolyImpureEnc
 };
+use prusti_utils::config;
 
 const ENCODE_REACH_BB: bool = false;
 
@@ -813,9 +815,55 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                 ..
             } => {
                 let (func_def_id, caller_substs) = self.get_def_id_and_caller_substs(func);
-                let is_pure = crate::encoders::with_proc_spec(func_def_id, |spec|
+                let is_pure = crate::encoders::with_proc_spec(func_def_id, |spec| {
+                    // FIXME: WIP. only handling inherent specs for now
+                    if config::show_ide_info() {
+                        let mut spans: Vec<Span> = Vec::new();
+                        let tcx = self.vcx().tcx();
+                        if let Some(pre_def_ids) = spec.pres.expect_empty_or_inherent() {
+                            let mut pre_spans = pre_def_ids
+                                .iter()
+                                .map(|pre_def_id| tcx.def_span(pre_def_id))
+                                .collect::<Vec<Span>>();
+                            spans.append(&mut pre_spans);
+                        }
+                        if let Some(post_def_ids) = spec.posts.expect_empty_or_inherent() {
+                            let mut post_spans = post_def_ids
+                                .iter()
+                                .map(|pre_def_id| tcx.def_span(pre_def_id))
+                                .collect::<Vec<Span>>();
+                            spans.append(&mut post_spans);
+                        }
+                        if let Some(pledges) = spec.pledges.expect_empty_or_inherent() {
+                            let mut pledge_spans = pledges
+                                .iter()
+                                .map(|pledge| {
+                                    let rhs = tcx.def_span(pledge.rhs);
+                                    if let Some(lhs) = pledge.lhs { tcx.def_span(lhs).to(rhs) }
+                                    else { rhs }
+                                }).collect::<Vec<Span>>();
+                            spans.append(&mut pledge_spans);
+                        }
+                        // FIXME: not detecting the pure annotation in local-testing/generics/mono.rs
+                        if let Some(Some(purity_def_id)) = spec.purity.expect_empty_or_inherent() {
+                            spans.push(tcx.def_span(purity_def_id));
+                        }
+                        if let Some(Some(terminates_def_id)) = spec.terminates.expect_empty_or_inherent() {
+                            spans.push(tcx.def_span(terminates_def_id.to_def_id()));
+                        }
+                        let krate = tcx.crate_name(func_def_id.krate);
+                        let defpath = tcx.def_path_str(func_def_id);
+                        let unique_item_name = format!("{}::{}", krate, defpath);
+                        self.vcx().push_call_contract_span(
+                            unique_item_name,
+                            vec![span.clone()],
+                            spans,
+                            tcx.sess.source_map(),
+                        )
+                    }
+
                     spec.kind.is_pure().unwrap_or_default()
-                ).unwrap_or_default();
+                }).unwrap_or_default();
 
                 let dest = self.encode_place(Place::from(*destination)).expr;
 

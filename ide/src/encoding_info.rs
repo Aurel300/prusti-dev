@@ -9,7 +9,7 @@ pub struct SpanOfCallContracts {
     /// the defpath of the method that is called
     pub defpath: String,
     /// the spans where this method is called
-    pub call_spans: Vec<VscSpan>,
+    pub call_span: VscSpan,
     /// the spans of all the specifications of the called method
     pub contracts_spans: Vec<VscSpan>,
 }
@@ -17,35 +17,20 @@ pub struct SpanOfCallContracts {
 impl SpanOfCallContracts {
     pub fn new(
         defpath: String,
-        call_spans: Vec<Span>,
+        call_span: Span,
         contracts_spans: Vec<Span>,
         source_map: &SourceMap
     ) -> Self {
-        let call_spans = call_spans
-            .iter()
-            .map(|sp| VscSpan::from_span(sp, source_map))
-            .collect::<Vec<VscSpan>>();
+        let call_span =  VscSpan::from_span(&call_span, source_map);
         let contracts_spans = contracts_spans
             .iter()
             .map(|sp| VscSpan::from_span(sp, source_map))
             .collect::<Vec<VscSpan>>();
         Self {
             defpath,
-            call_spans,
+            call_span,
             contracts_spans,
         }
-    }
-
-    pub fn set_contract_spans(&mut self, spans: Vec<Span>, source_map: &SourceMap) {
-        self.contracts_spans = spans
-            .iter()
-            .map(|sp| VscSpan::from_span(sp, source_map))
-            .collect::<Vec<VscSpan>>();
-    }
-
-    pub fn push_call_span(&mut self, span: &Span, source_map: &SourceMap) {
-        let vsc_span = VscSpan::from_span(span, source_map);
-        self.call_spans.push(vsc_span);
     }
 }
 

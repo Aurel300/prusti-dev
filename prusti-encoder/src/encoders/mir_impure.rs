@@ -856,7 +856,7 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                         let unique_item_name = format!("{}::{}", krate, defpath);
                         self.vcx().push_call_contract_span(
                             unique_item_name,
-                            vec![span.clone()],
+                            span.clone(),
                             spans,
                             tcx.sess.source_map(),
                         )

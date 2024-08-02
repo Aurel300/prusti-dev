@@ -188,13 +188,13 @@ impl<'tcx> VirCtxt<'tcx> {
     pub fn push_call_contract_span(
         &'tcx self,
         defpath: String,
-        call_spans: Vec<Span>,
+        call_span: Span,
         contracts_spans: Vec<Span>,
         source_map: &SourceMap
     ) {
         let span_of_call_contracts = SpanOfCallContracts::new(
             defpath,
-            call_spans,
+            call_span,
             contracts_spans,
             source_map,
         );
@@ -211,7 +211,6 @@ impl<'tcx> VirCtxt<'tcx> {
             .borrow()
             .call_contract_spans
             .clone();
-        call_contract_spans.retain(|cs| !cs.contracts_spans.is_empty());
         // sort, so the is deterministic
         call_contract_spans
             .sort_by(|a,b| a.defpath.cmp(&b.defpath));

@@ -350,14 +350,26 @@ fn handle_quantifier_chosen_triggers_message(
     }
 }
 
-// TODO: may or may not need program name translation
-fn viper_method_to_rust_method(_viper_method: &String, program_name: &String) -> Option<String> {
-    Some(program_name.clone())
+// Counter part to (private) `vir::viper_ident::sanitize_str`
+fn desanitize_string(s: &str) -> String {
+    s
+        .replace("$lt$", "<")
+        .replace("$gt$", ">")
+        .replace("$space$", " ")
+        .replace("$comma$", ",")
+        .replace("$colon$", ":")
 }
 
-// TODO
-fn vir_label_to_pos(_vir_label: &String) -> Option<MultiSpan> {
-    Some(MultiSpan::from_span(DUMMY_SP.into()))
+fn viper_method_to_rust_method(viper_method: &str, crate_name: &str) -> Option<String> {
+    if viper_method.starts_with("m_") {
+        Some(format!(
+            "{}::{}",
+            crate_name,
+            desanitize_string(&viper_method[2..])
+        ))
+    } else {
+        None
+    }
 }
 
 fn handle_block_processing_message(
@@ -370,10 +382,11 @@ fn handle_block_processing_message(
 ) {
     if config::report_viper_messages() && config::report_block_messages() {
         let processed = result != None;
-        debug!("Received {}: {{ method: {viper_method} ({program_name}) message, vir_label: {vir_label}, path_id: {path_id} }}",
+        debug!("Received {} message: {{ method: {viper_method} ({program_name}) message, vir_label: {vir_label}, path_id: {path_id} }}",
                 if processed {"path processed"} else {"block reached"});
-        if let Some(method_name) = viper_method_to_rust_method(&viper_method, & program_name) {
-            if let Some(span) = vir_label_to_pos(&vir_label) {
+        let location = vir::with_vcx(|vcx| vcx.get_span_and_crate_name(&vir_label));
+        if let Some((span, krate)) = location {
+            if let Some(method_name) = viper_method_to_rust_method(&viper_method, &krate) {
                 PrustiError::message(
                     format!("{}{}",
                         if processed {"pathProcessedMessage"} else {"blockReachedMessage"},
@@ -381,10 +394,10 @@ fn handle_block_processing_message(
                         // FIXME: outputting vir_label only because it makes the messages different, otherwise the errors get merged.
                         // should be removed once backtranslation of labels is implemented so the resulting spans are different.
                         else         {json!({"method": method_name, "path_id": path_id, "label": vir_label})},
-                    ), span.clone()
+                    ), span.clone().into()
                 ).emit(env_diagnostic);
-            } else { error!("Could not map vir label {vir_label} to a position in verification of method {method_name} in {program_name}") }
-        } else { error!("Could not map viper method {viper_method} to a Rust method in verification of {program_name}") }
+            } else { error!("Could not map viper method {viper_method} to a Rust method in verification of {program_name}") }
+        } else { error!("Could not map vir label {vir_label} to a position in {program_name}") }
     }
 }
 

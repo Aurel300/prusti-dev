@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use prusti_interface::{PrustiError, environment::EnvDiagnostic};
+use prusti_rustc_interface::hir::def_id::LOCAL_CRATE;
 use prusti_rustc_interface::span::{
     Span,
     DUMMY_SP,
@@ -69,7 +70,10 @@ pub struct VirSpanManager<'vir> {
 
     handlers: HashMap<usize, VirSpanHandler<'vir>>,
 
+    /// Vector of objects holding for each method call the spans of any 
+    /// associated contracts. Intended for consuption by Prusti-Assistant.
     call_contract_spans: Vec<SpanOfCallContracts>,
+
 }
 
 impl<'tcx> VirCtxt<'tcx> {
@@ -153,6 +157,32 @@ impl<'tcx> VirCtxt<'tcx> {
         manager.all
             .get(pos_id)
             .map(|vir_span| vir_span.span)
+    }
+
+    // TODO
+    pub fn get_span_from_label(
+        &'tcx self,
+        _label: &str
+    ) -> Option<Span> {
+        Some(DUMMY_SP.into())
+    }
+
+    pub fn get_crate_name(
+        &'tcx self,
+    ) -> String {
+        self
+            .tcx()
+            .crate_name(LOCAL_CRATE)
+            .to_string()
+    }
+
+    pub fn get_span_and_crate_name(
+        &'tcx self,
+        vir_label: &String
+    ) -> Option<(Span, String)> {
+        if let Some(span) = self.get_span_from_label(vir_label) {
+            Some((span, self.get_crate_name()))
+        } else { None }
     }
 
     pub fn push_call_contract_span(

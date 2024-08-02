@@ -88,6 +88,14 @@ impl<'tcx> EnvQuery<'tcx> {
         self.tcx.def_span(def_id.into_param())
     }
 
+    /// Get the span including the body of the given definition.
+    pub fn get_def_with_body_span(self, def_id: impl IntoParam<DefId>) -> Option<Span> {
+        if let Some(local_def_id) = def_id.into_param().as_local() {
+            let hir_id = self.as_hir_id(local_def_id);
+            Some(self.tcx.hir().span_with_body(hir_id))
+        } else { None }
+    }
+
     /// Returns true iff `def_id` has an MIR body which we may want to access
     pub fn has_body(self, def_id: impl IntoParam<DefId>) -> bool {
         let id = def_id.into_param();

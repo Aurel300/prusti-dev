@@ -87,6 +87,9 @@ where
             // current method is not selected.
             let local_def_id = def_id.as_local().filter(|_| !trusted && crate::selected(&def_id));
             let blocks = if let Some(local_def_id) = local_def_id {
+                // Store identifiers for backtranslation, move this if other ones should also be included
+                vcx.insert_viper_identifier(method_name.to_str().to_string(), &def_id);
+
                 let body = vcx
                     .body_mut()
                     .get_impure_fn_body(local_def_id, substs, caller_def_id);

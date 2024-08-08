@@ -116,28 +116,74 @@ async fn handle_stream(
 
     while let Some((program_name, server_msg)) = verification_messages.next().await {
         match server_msg {
-            ServerMessage::Termination(result) => handle_termination_message(env_diagnostic, program_name, result, &mut prusti_errors, &mut overall_result),
+            ServerMessage::Termination(result) => handle_termination_message(
+                env_diagnostic,
+                program_name,
+                result,
+                &mut prusti_errors,
+                &mut overall_result
+            ),
+            ServerMessage::MethodTermination {
+                viper_method_name,
+                result,
+                verification_time,
+             } => handle_method_termination_message(
+                env_diagnostic,
+                program_name,
+                viper_method_name,
+                result,
+                verification_time,
+                &mut prusti_errors,
+                &mut overall_result
+            ),
             ServerMessage::QuantifierInstantiation {
                 q_name,
                 insts,
                 pos_id,
-            } => handle_quantifier_instantiation_message(env_diagnostic, program_name, q_name, insts, pos_id, &mut quantifier_instantiations),
+            } => handle_quantifier_instantiation_message(
+                env_diagnostic,
+                program_name,
+                q_name,
+                insts,
+                pos_id,
+                &mut quantifier_instantiations
+            ),
             ServerMessage::QuantifierChosenTriggers {
                 viper_quant,
                 triggers,
                 pos_id,
-            } => handle_quantifier_chosen_triggers_message(env_diagnostic, program_name, viper_quant, triggers, pos_id),
+            } => handle_quantifier_chosen_triggers_message(
+                env_diagnostic,
+                program_name,
+                viper_quant,
+                triggers,
+                pos_id
+            ),
             ServerMessage::BlockReached {
                 viper_method,
                 vir_label,
                 path_id,
-            } => handle_block_processing_message(env_diagnostic, program_name, viper_method, vir_label, path_id, None),
+            } => handle_block_processing_message(
+                env_diagnostic,
+                program_name,
+                viper_method,
+                vir_label,
+                path_id,
+                None
+            ),
             ServerMessage::PathProcessed {
                 viper_method,
                 vir_label,
                 path_id,
                 result,
-            } => handle_block_processing_message(env_diagnostic, program_name, viper_method, vir_label, path_id, Some(result)),
+            } => handle_block_processing_message(
+                env_diagnostic,
+                program_name,
+                viper_method,
+                vir_label,
+                path_id,
+                Some(result)
+            ),
         }
     }
 
@@ -158,29 +204,13 @@ async fn handle_stream(
     overall_result
 }
 
-fn handle_termination_message(
+fn handle_result(
     env_diagnostic: &EnvDiagnostic<'_>,
     program_name: String,
     result: viper::VerificationResult,
     prusti_errors: &mut Vec<PrustiError>,
     overall_result: &mut VerificationResult
 ) {
-    debug!("Received termination message with result {result:?} in verification of {program_name}");
-    if config::show_ide_info() {
-        PrustiError::message(
-            format!(
-                "ideVerificationResult{}",
-                serde_json::to_string(&IdeVerificationResult {
-                    item_name: result.item_name.clone(),
-                    success: result.is_success(),
-                    cached: result.cached,
-                    time_ms: result.time_ms,
-                }).unwrap()
-            ),
-            DUMMY_SP.into(),
-        )
-        .emit(env_diagnostic);
-    }
     match result.kind {
         // nothing to do
         viper::VerificationResultKind::Success => (),
@@ -280,6 +310,72 @@ fn handle_termination_message(
     }
 }
 
+fn handle_method_termination_message(
+    env_diagnostic: &EnvDiagnostic<'_>,
+    _program_name: String,
+    viper_method_name: String,
+    result_kind: viper::VerificationResultKind,
+    verification_time: u128,
+    prusti_errors: &mut Vec<PrustiError>,
+    overall_result: &mut VerificationResult
+) {
+    debug!("Received method termination message with result {result_kind:?} in verification of {viper_method_name}");
+    if let Some(rust_method) = vir::with_vcx(|vcx| vcx.viper_to_rust_identifier(&viper_method_name)) {
+        let result = viper::VerificationResult {
+            item_name: rust_method,
+            kind: result_kind,
+            cached: false,
+            time_ms: verification_time,
+        };
+
+        if config::show_ide_info() {
+            PrustiError::message(
+                format!(
+                    "ideVerificationResult{}",
+                    serde_json::to_string(&IdeVerificationResult {
+                        item_name: result.item_name.clone(),
+                        success: result.is_success(),
+                        cached: result.cached,
+                        time_ms: result.time_ms,
+                    }).unwrap()
+                ),
+                DUMMY_SP.into(),
+            )
+            .emit(env_diagnostic);
+        }
+
+        handle_result(env_diagnostic, result.item_name.clone(), result, prusti_errors, overall_result);
+    } else {
+        debug!("Could not map method identifier to def id: {viper_method_name}");
+    }
+}
+
+fn handle_termination_message(
+    env_diagnostic: &EnvDiagnostic<'_>,
+    program_name: String,
+    result: viper::VerificationResult,
+    prusti_errors: &mut Vec<PrustiError>,
+    overall_result: &mut VerificationResult
+) {
+    debug!("Received termination message with result {result:?} in verification of {program_name}");
+    if config::show_ide_info() {
+        PrustiError::message(
+            format!(
+                "ideVerificationResult{}",
+                serde_json::to_string(&IdeVerificationResult {
+                    item_name: result.item_name.clone(),
+                    success: result.is_success(),
+                    cached: result.cached,
+                    time_ms: result.time_ms,
+                }).unwrap()
+            ),
+            DUMMY_SP.into(),
+        )
+        .emit(env_diagnostic);
+    }
+    handle_result(env_diagnostic, program_name, result, prusti_errors, overall_result);
+}
+
 fn handle_quantifier_instantiation_message(
     env_diagnostic: &EnvDiagnostic<'_>,
     program_name: String,
@@ -350,28 +446,6 @@ fn handle_quantifier_chosen_triggers_message(
     }
 }
 
-// Counter part to (private) `vir::viper_ident::sanitize_str`
-fn desanitize_string(s: &str) -> String {
-    s
-        .replace("$lt$", "<")
-        .replace("$gt$", ">")
-        .replace("$space$", " ")
-        .replace("$comma$", ",")
-        .replace("$colon$", ":")
-}
-
-fn viper_method_to_rust_method(viper_method: &str, crate_name: &str) -> Option<String> {
-    if viper_method.starts_with("m_") {
-        Some(format!(
-            "{}::{}",
-            crate_name,
-            desanitize_string(&viper_method[2..])
-        ))
-    } else {
-        None
-    }
-}
-
 fn handle_block_processing_message(
     env_diagnostic: &EnvDiagnostic<'_>,
     program_name: String,
@@ -383,21 +457,33 @@ fn handle_block_processing_message(
     if config::report_viper_messages() && config::report_block_messages() {
         let processed = result != None;
         debug!("Received {} message: {{ method: {viper_method} ({program_name}) message, vir_label: {vir_label}, path_id: {path_id} }}",
-                if processed {"path processed"} else {"block reached"});
-        let location = vir::with_vcx(|vcx| vcx.get_span_and_crate_name(&vir_label));
-        if let Some((span, krate)) = location {
-            if let Some(method_name) = viper_method_to_rust_method(&viper_method, &krate) {
-                PrustiError::message(
-                    format!("{}{}",
-                        if processed {"pathProcessedMessage"} else {"blockReachedMessage"},
-                        if processed {json!({"method": method_name, "path_id": path_id, "result": result.unwrap()})}
-                        // FIXME: outputting vir_label only because it makes the messages different, otherwise the errors get merged.
-                        // should be removed once backtranslation of labels is implemented so the resulting spans are different.
-                        else         {json!({"method": method_name, "path_id": path_id, "label": vir_label})},
-                    ), span.clone().into()
-                ).emit(env_diagnostic);
-            } else { error!("Could not map viper method {viper_method} to a Rust method in verification of {program_name}") }
-        } else { error!("Could not map vir label {vir_label} to a position in {program_name}") }
+        if processed {"path processed"} else {"block reached"}
+        );
+        if vir_label == "start" { return }
+        vir::with_vcx(|vcx| {
+            if let Some(def_id) = vcx.get_viper_identifier(&viper_method) {
+                let rust_method = vcx.get_unique_item_name(&def_id);
+                if vir_label == "end" {
+                    PrustiError::message(
+                        format!("{}{}",
+                            "pathProcessedMessage",
+                            json!({"method": rust_method, "path_id": path_id})
+                        ), DUMMY_SP.into()
+                    ).emit(env_diagnostic);
+                } else {
+                    let key = (def_id, vir_label);
+                    if let Some(span) = vcx.get_block_span(&key) {
+                        PrustiError::message(
+                            format!("{}{}",
+                                if processed {"pathProcessedMessage"} else {"blockReachedMessage"},
+                                if processed {json!({"method": rust_method, "path_id": path_id, "result": result.unwrap()})}
+                                else         {json!({"method": rust_method, "path_id": path_id})},
+                            ), span.clone().into()
+                        ).emit(env_diagnostic);
+                    } else { error!("Could not map vir label {} to a position in {rust_method}", key.1) }
+                }
+            } else { error!("Could not map method identifier to def id: {viper_method}") }
+        })
     }
 }
 

@@ -541,6 +541,25 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
         self.super_basic_block_data(block, data);
         let stmts = self.current_stmts.take().unwrap();
         let terminator = self.current_terminator.take().unwrap();
+
+        if prusti_utils::config::report_block_messages() {
+            let stmt_count = data.statements.len();
+            if stmt_count > 0 {
+                let terminator_span = data
+                    .terminator
+                    .as_ref()
+                    .unwrap()
+                    .source_info
+                    .span;
+                let block_span = data
+                    .statements
+                    .iter()
+                    .fold(terminator_span, |acc, stmt| acc.to(stmt.source_info.span));
+                let label = format!("bb_{}", block.as_usize());
+                self.vcx.insert_block_span((self.def_id, label), block_span);
+            }
+        }
+
         self.encoded_blocks.push(
             self.vcx.mk_cfg_block(
                 self.vcx.alloc(vir::CfgBlockLabelData::BasicBlock(block.as_usize())),

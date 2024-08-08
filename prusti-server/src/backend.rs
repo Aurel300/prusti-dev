@@ -7,6 +7,7 @@ use prusti_utils::{
 use std::{
     sync::{mpsc, Arc},
     thread, time,
+    collections::HashSet,
 };
 use viper::{jni_utils::JniUtils, VerificationContext, VerificationResultKind, Viper};
 use viper_sys::wrappers::{java, viper::*};
@@ -54,7 +55,7 @@ impl<'a> Backend<'a> {
                     if config::report_viper_messages() {
                         verify_and_poll_msgs(verifier, context, viper_arc, viper_program, sender)
                     } else {
-                        verifier.verify(viper_program)
+                        verifier.verify(viper_program, None)
                     }
                 })
             }
@@ -85,8 +86,7 @@ fn verify_and_poll_msgs(
     // start thread for polling messages
     thread::scope(|scope| {
         let polling_thread = scope.spawn(|| polling_function(viper_arc, &rep_glob_ref, sender));
-        kind = verifier.verify(viper_program);
-        polling_thread.join().unwrap();
+        kind = verifier.verify(viper_program, Some(polling_thread));
     });
     debug!("Viper message polling thread terminated");
     kind
@@ -96,12 +96,14 @@ fn polling_function(
     viper_arc: &Arc<Viper>,
     rep_glob_ref: &jni::objects::GlobalRef,
     sender: mpsc::Sender<ServerMessage>,
-) {
+) -> HashSet<i32> {
     let verification_context = viper_arc.attach_current_thread();
     let env = verification_context.env();
     let jni = JniUtils::new(env);
     let reporter_instance = rep_glob_ref.as_obj();
     let reporter_wrapper = silver::reporter::PollingReporter::with(env);
+
+    let mut error_hashes = HashSet::new();
     loop {
         while reporter_wrapper
             .call_hasNewMessage(reporter_instance)
@@ -117,7 +119,7 @@ fn polling_function(
                     let q_name =
                         jni.get_string(jni.unwrap_result(msg_wrapper.call_quantifier(msg)));
                     let q_inst = jni.unwrap_result(msg_wrapper.call_instantiations(msg));
-                    debug!("QuantifierInstantiationsMessage: {} {}", q_name, q_inst);
+                    // debug!("QuantifierInstantiationsMessage: {} {}", q_name, q_inst);
                     // also matches the "-aux" and "_precondition" quantifiers generated
                     // we encoded the position id in the line and column number since this is not used by
                     // prusti either way
@@ -150,13 +152,13 @@ fn polling_function(
                     let viper_quant = jni.unwrap_result(msg_wrapper.call_quantifier(msg));
                     let viper_quant_str =
                         jni.get_string(jni.unwrap_result(obj_wrapper.call_toString(viper_quant)));
-                    debug!("quantifier chosen trigger quant: {viper_quant_str}");
+                    // debug!("quantifier chosen trigger quant: {viper_quant_str}");
                     // we encoded the position id in the line and column number since this is not used by
                     // prusti either way
                     let pos = jni.unwrap_result(positioned_wrapper.call_pos(viper_quant));
                     let pos_string =
                         jni.get_string(jni.unwrap_result(obj_wrapper.call_toString(pos)));
-                    debug!("quantifier chosen trigger pos: {pos_string}");
+                    // debug!("quantifier chosen trigger pos: {pos_string}");
                     // TODO: the PR unconditionally does `pos_string.rfind('.').unwrap()` which crashes when there is no position.
                     // Is that intended?
                     if let Some(pos_id_index) = pos_string.rfind('.') {
@@ -178,7 +180,68 @@ fn polling_function(
                             .unwrap();
                     }
                 },
-                "viper.silver.reporter.VerificationTerminationMessage" => return,
+                "viper.silver.reporter.VerificationTerminationMessage" => return error_hashes,
+                "viper.silver.reporter.EntitySuccessMessage" => {
+                    let msg_wrapper = silver::reporter::EntitySuccessMessage::with(env);
+                    let concerning = jni.unwrap_result(msg_wrapper.call_concerning(msg));
+                    if jni.is_instance_of(concerning, "viper/silver/ast/Method") {
+                        let method_wrapper = silver::ast::Method::with(env);
+                        let method_name =
+                            jni.get_string(jni.unwrap_result(method_wrapper.call_name(concerning)));
+                        debug!("Entity success for method: {method_name} (only processed if starting with \"m_\")");
+                        // this should only match local methods and extern specs
+                        if method_name.starts_with("m_") {
+                            let verification_time = jni.unwrap_result(msg_wrapper.call_verificationTime(msg));
+                            // verification_time is a long -> i64. but we are using u128
+                            if verification_time >= 0 {
+                                let verification_time_u128 = verification_time as u64 as u128;
+                                sender
+                                    .send(ServerMessage::MethodTermination {
+                                        viper_method_name: method_name.to_string(),
+                                        result: VerificationResultKind::Success,
+                                        verification_time: verification_time_u128,
+                                    })
+                                    .unwrap();
+                            } else {
+                                debug!("EntitySuccessMessage for {} had negative verification time {}", method_name, verification_time);
+                            }
+                        }
+                    } else {
+                        debug!("Received entity was not a method");
+                    }
+                },
+                "viper.silver.reporter.EntityFailureMessage" => {
+                    let msg_wrapper = silver::reporter::EntityFailureMessage::with(env);
+                    let concerning = jni.unwrap_result(msg_wrapper.call_concerning(msg));
+                    if jni.is_instance_of(concerning, "viper/silver/ast/Method") {
+                        let method_wrapper = silver::ast::Method::with(env);
+                        let method_name =
+                            jni.get_string(jni.unwrap_result(method_wrapper.call_name(concerning)));
+                        debug!("Entity failure for method: {method_name}");
+                        // this should only match local methods and extern specs
+                        if method_name.starts_with("m_") {
+                            let verification_time = jni.unwrap_result(msg_wrapper.call_verificationTime(msg));
+                            // verification_time is a long -> i64. but we are using u128
+                            if verification_time >= 0 {
+                                    let viper_result = jni.unwrap_result(msg_wrapper.call_result(msg));
+                                    let result = viper::extract_errors(&jni, &env, viper_result, Some(&mut error_hashes));
+                                    let verification_time_u128 = verification_time as u64 as u128;
+                                    sender
+                                        .send(ServerMessage::MethodTermination {
+                                            viper_method_name: method_name.to_string(),
+                                            result,
+                                            verification_time: verification_time_u128,
+                                        })
+                                        .unwrap();
+                            } else {
+                                debug!("EntityFailureMessage for {} had negative verification time {}", method_name, verification_time);
+                            }
+                        }
+                    } else {
+                        debug!("Received entity was not a method");
+                    }
+
+                },
                 "viper.silver.reporter.BlockReachedMessage" => {
                     let msg_wrapper = silver::reporter::BlockReachedMessage::with(env);
                     let method_name = 

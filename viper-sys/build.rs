@@ -182,6 +182,17 @@ fn main() {
                 method!("pathId"),
                 method!("verificationResultKind"),
             ]),
+            java_class!("viper.silver.reporter.EntitySuccessMessage", vec![
+                method!("concerning"),
+                method!("verificationTime"),
+                // method!("cached"),
+            ]),
+            java_class!("viper.silver.reporter.EntityFailureMessage", vec![
+                method!("concerning"),
+                method!("result", "()Lviper/silver/verifier/Failure;"),
+                method!("verificationTime"),
+                // method!("cached"),
+            ]),
             java_class!("viper.silver.verifier.Verifier", vec![
                 method!("name"),
                 method!("buildVersion"),
@@ -525,6 +536,7 @@ fn main() {
             ]),
             java_class!("viper.silver.ast.Method", vec![
                 constructor!(),
+                method!("name"),
             ]),
             java_class!("viper.silver.ast.MethodCall", vec![
                 constructor!(),

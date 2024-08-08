@@ -4,7 +4,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-use viper::VerificationResult;
+use viper::{VerificationResult, VerificationResultKind};
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 /// A message from a Prusti server to a Prusti client. It may contain a result
@@ -13,6 +13,13 @@ pub enum ServerMessage {
     /// Contains the result of a verification and signals that this verification
     /// has terminated.
     Termination(VerificationResult),
+
+    /// Signals the termination of the verification of a method. Contains the result.
+    MethodTermination {
+        viper_method_name: String,
+        result: VerificationResultKind,
+        verification_time: u128,
+    },
 
     /// A message created by the Viper backend with Z3 about
     /// the number of instantiations of the named quantifier.

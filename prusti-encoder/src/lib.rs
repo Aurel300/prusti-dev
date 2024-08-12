@@ -17,7 +17,6 @@ use prusti_rustc_interface::{
     hir,
     hir::def_id::DefId,
     span::Span,
-    data_structures::fx::FxHashMap,
 };
 use prusti_utils::config;
 use task_encoder::TaskEncoder;
@@ -49,7 +48,6 @@ pub fn selected(def_id: &DefId) -> bool {
 pub fn test_entrypoint<'tcx>(
     tcx: ty::TyCtxt<'tcx>,
     body: EnvBody<'tcx>,
-    query: EnvQuery<'tcx>,
     def_spec: prusti_interface::specs::typed::DefSpecificationMap,
     // this is None if the verification is not selective - all procedures should be encoded.
     // if the verification is selective, only the procedures in this vector should be encoded with body
@@ -68,7 +66,6 @@ pub fn test_entrypoint<'tcx>(
     });
 
     // TODO: this should be a "crate" encoder, which will deps.require all the methods in the crate
-    let source_map = tcx.sess.source_map();
     for def_id in tcx.hir().body_owners() {
         tracing::debug!("test_entrypoint item: {def_id:?}");
         let kind = tcx.def_kind(def_id);

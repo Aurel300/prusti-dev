@@ -13,6 +13,4 @@ pub use compiler_info::*;
 pub use encoding_info::*;
 pub use fake_error::*;
 pub use ide_verification_result::*;
-pub(crate) use call_finder::*;
 pub(crate) use vsc_span::*;
-pub(crate) use query_signature::*;

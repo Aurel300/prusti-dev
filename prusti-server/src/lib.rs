@@ -12,14 +12,13 @@ use prusti_utils::{config, Stopwatch};
 use prusti_interface::{
     data::VerificationResult,
     environment::EnvDiagnostic,
-    specs::typed,
     PrustiError,
 };
 use prusti_rustc_interface::{
     span::DUMMY_SP,
-    errors::MultiSpan,
+    data_structures::fx::FxHashMap,
 };
-use viper::{self, PersistentCache, Viper};
+use viper::{self, PersistentCache, Cache};
 use ide::IdeVerificationResult;
 use crate::{
     server::spawn_server_thread,
@@ -47,10 +46,11 @@ pub(crate) use verification_request::*;
 // Futures returned by `Client` need to be executed in a compatible tokio runtime.
 pub use tokio;
 use tokio::runtime::Builder;
-use rustc_hash::FxHashMap;
 use serde_json::json;
 use async_stream::stream;
 use futures_util::{pin_mut, Stream, StreamExt};
+use std::sync::{self, Arc};
+use once_cell::sync::Lazy;
 
 /// Verify a list of programs.
 /// Returns a list of (program_name, verification_result) tuples.
@@ -69,9 +69,9 @@ pub fn verify_programs(
             backend_config: ViperBackendConfig::new(backend),
         };
         (program_name, request)
-    });
+    }).collect();
 
-    let mut stopwatch = Stopwatch::start("prusti-server", "verifying Viper program");
+    let stopwatch = Stopwatch::start("prusti-server", "verifying Viper program");
     // runtime used either for client connecting to server sequentially
     // or to sequentially verify the requests -> single thread is sufficient
     // why single thread if everything is asynchronous? VerificationRequestProcessing in
@@ -85,11 +85,14 @@ pub fn verify_programs(
         
     let overall_result = rt.block_on(async {
         if let Some(server_address) = config::server_address() {
-            let verification_messages = verify_requests_server(verification_requests.collect(), server_address);
+            let verification_messages = verify_requests_server(verification_requests, server_address);
             handle_stream(env_diagnostic, verification_messages).await
         } else {
-            let vrp = VerificationRequestProcessing::new();
-            let verification_messages = verify_requests_local(verification_requests.collect(), &vrp);
+            let cache = Lazy::new(move || 
+                Arc::new(sync::Mutex::new(PersistentCache::load_cache(config::cache_path())))
+            );
+            let vrp = Lazy::new(VerificationRequestProcessing::new);
+            let verification_messages = verify_requests_local(verification_requests, &cache, &vrp);
             handle_stream(env_diagnostic, verification_messages).await
         }
     });
@@ -507,11 +510,38 @@ fn verify_requests_server(
 
 fn verify_requests_local<'a>(
     verification_requests: Vec<(String, VerificationRequest)>,
-    vrp: &'a VerificationRequestProcessing,
+    cache: &'a Lazy<Arc<sync::Mutex<PersistentCache>>, impl FnOnce() -> Arc<sync::Mutex<PersistentCache>>>,
+    vrp: &'a Lazy<VerificationRequestProcessing, impl FnMut() -> VerificationRequestProcessing + 'a>,
 ) -> impl Stream<Item = (String, ServerMessage)> + 'a {
     let verification_stream = stream! {
         for (program_name, request) in verification_requests {
-            yield vrp.verify(request).map(move |msg| (program_name.clone(), msg));
+            let program_name_clone = program_name.clone();
+            let request_hash = request.get_hash();
+            if config::enable_cache() {
+                if let Some(result) = Lazy::force(cache).get(request_hash) {
+                    info!(
+                        "Using cached result {:?} for program {}",
+                        &result,
+                        &program_name
+                    );
+                    yield futures::stream::once(async move {
+                        (program_name.clone(), ServerMessage::Termination(result))
+                    }).left_stream();
+                }
+            }
+            yield vrp.verify(request).map(move |msg| {
+                if let ServerMessage::Termination(result) = &msg {
+                    if config::enable_cache() && !matches!(result.kind, viper::VerificationResultKind::JavaException(_)) {
+                        info!(
+                            "Storing new cached result {:?} for program {}",
+                            &result,
+                            &program_name_clone
+                        );
+                        cache.insert(request_hash, result.clone());
+                    }
+                }
+                (program_name_clone.clone(), msg)
+            }).right_stream();
         }
     };
     verification_stream.flatten()

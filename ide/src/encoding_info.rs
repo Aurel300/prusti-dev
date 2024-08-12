@@ -1,5 +1,5 @@
-use prusti_rustc_interface::span::{source_map::SourceMap, Span, DUMMY_SP};
-use serde::{Serialize, Serializer};
+use prusti_rustc_interface::span::{source_map::SourceMap, Span};
+use serde::Serialize;
 use crate::vsc_span::VscSpan;
 
 /// Represents the locations of specifications of a function call.

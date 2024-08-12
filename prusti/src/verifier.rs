@@ -54,7 +54,6 @@ pub fn verify<'tcx>(
         let request = prusti_encoder::test_entrypoint(
             env.tcx(),
             env.body,
-            env.query,
             def_spec,
             if verification_task.selective { Some(verification_task.procedures) } else { None },
             &env.diagnostic,

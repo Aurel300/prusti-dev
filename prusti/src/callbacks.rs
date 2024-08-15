@@ -194,7 +194,11 @@ impl prusti_rustc_interface::driver::Callbacks for PrustiCompilerCalls {
                     .emit(&env.diagnostic);
             }
             // as long as we have to throw a fake error we need to check this
-            let is_primary_package = std::env::var("CARGO_PRIMARY_PACKAGE").is_ok();
+            // note that is_single_file will still be false if this is run through x.py.
+            // it will find a manifest in prusti-launch but CARGO_PRIMARY_PACKAGE will still
+            // not be ok.
+            let is_single_file = !std::env::var("CARGO_MANIFEST_DIR").is_ok();
+            let is_primary_package =  is_single_file || std::env::var("CARGO_PRIMARY_PACKAGE").is_ok();
 
             // collect and output Information used by IDE:
             if !config::no_verify() && !config::skip_verification() {

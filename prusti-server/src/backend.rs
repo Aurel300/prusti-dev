@@ -74,7 +74,7 @@ fn verify_and_poll_msgs(
 fn polling_function(
     rep_glob_ref: &jni::objects::GlobalRef,
     sender: mpsc::Sender<ServerMessage>,
-) -> HashSet<i32> {
+) -> HashSet<u64> {
     debug!("attach polling thread to JVM.");
     let verification_context = VIPER
         .get()

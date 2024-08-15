@@ -17,8 +17,9 @@ use jni::{errors::Result, objects::JObject, JNIEnv};
 use log::{debug, error, info};
 use std::{
     path::PathBuf,
-    collections::HashSet,
+    collections::{hash_map::DefaultHasher, HashSet},
     thread::ScopedJoinHandle,
+    hash::{Hash, Hasher},
 };
 use viper_sys::wrappers::{scala, viper::*};
 
@@ -177,7 +178,7 @@ impl<'a> Verifier<'a> {
     pub fn verify(
         &mut self,
         program: Program,
-        polling_thread: Option<ScopedJoinHandle<HashSet<i32>>>,
+        polling_thread: Option<ScopedJoinHandle<HashSet<u64>>>,
     ) -> VerificationResultKind {
         let ast_utils = self.ast_utils;
         ast_utils.with_local_frame(16, || {
@@ -311,7 +312,7 @@ pub fn extract_errors(
     jni_utils: &JniUtils<'_>,
     env: &JNIEnv<'_>,
     viper_result: JObject<'_>, // viper::silicon::verification::Failure
-    mut error_hashes_opt: Option<&mut HashSet<i32>>,
+    mut error_hashes_opt: Option<&mut HashSet<u64>>,
 ) -> VerificationResultKind {
     let mut errors: Vec<VerificationError> = vec![];
 
@@ -325,19 +326,6 @@ pub fn extract_errors(
     let error_reason_wrapper = silver::verifier::ErrorReason::with(env);
 
     for viper_error in viper_errors {
-
-        // We only process errors that have not been processed yet. This mainly skips errors
-        // that occurred during the verification of user-written rust functions. Any other errors
-        // will still be processed here by the verifier for the overall result.
-        if let Some(ref mut error_hashes) = error_hashes_opt {
-            let error_hash = get_java_object_hash(env, viper_error);
-            if (error_hashes).contains(&error_hash) {
-                // debug!("already processed {error_hash}");
-                continue;
-            }
-            (error_hashes).insert(error_hash);
-            // debug!("processing {error_hash}");
-        }
 
         let is_verification_error = jni_utils
             .is_instance_of(viper_error, "viper/silver/verifier/VerificationError");
@@ -370,6 +358,71 @@ pub fn extract_errors(
                 jni_utils.to_string(viper_error)
             );
         };
+
+        let reason = jni_utils
+            .unwrap_result(verification_error_wrapper.call_reason(viper_error));
+
+        let reason_pos = jni_utils
+            .unwrap_result(error_reason_wrapper.call_pos(reason));
+
+        let reason_pos_id = extract_pos_id(jni_utils, env, reason_pos);
+        if reason_pos_id.is_none() {
+            debug!(
+                "The verifier returned an error whose reason position has no identifier: {:?}",
+                jni_utils.to_string(viper_error)
+            );
+        }
+
+        let error_full_id = jni_utils.get_string(
+            jni_utils
+                .unwrap_result(verification_error_wrapper.call_fullId(viper_error)),
+        );
+
+        let pos = jni_utils
+            .unwrap_result(verification_error_wrapper.call_pos(viper_error));
+
+        let pos_id = extract_pos_id(jni_utils, env, pos);
+        if pos_id.is_none() {
+            debug!(
+                "The verifier returned an error whose position has no identifier: {:?}",
+                jni_utils.to_string(viper_error)
+            );
+        }
+
+        let offending_node = jni_utils
+            .unwrap_result(verification_error_wrapper.call_offendingNode(viper_error));
+
+        let offending_pos = jni_utils
+            .unwrap_result(error_node_positioned_wrapper.call_pos(offending_node));
+
+        let offending_pos_id = extract_pos_id(jni_utils, env, offending_pos);
+        if offending_pos_id.is_none() {
+            debug!(
+                "The verifier returned an error whose offending node position has no identifier: {:?}",
+                jni_utils.to_string(viper_error)
+            );
+        }
+
+        // We only process errors that have not been processed yet. This mainly skips errors
+        // that occurred during the verification of user-written rust functions. Any other errors
+        // will still be processed here by the verifier for the overall result.
+        if let Some(ref mut error_hashes) = error_hashes_opt {
+            // let error_hash = jni_utils
+            //     .unwrap_result(verification_error_wrapper.call_fullId(viper_error));
+            let error_hash = hash_error(&error_full_id, &pos_id, &offending_pos_id, &reason_pos_id);
+            if (error_hashes).contains(&error_hash) {
+                debug!("already processed {error_hash}");
+                continue;
+            }
+            debug!("processing {error_hash}");
+            (error_hashes).insert(error_hash);
+        }
+        
+        let message = jni_utils
+            .to_string(jni_utils.unwrap_result(
+                verification_error_wrapper.call_readableMessage(viper_error),
+            ));
+
         let mut failure_contexts = jni_utils.seq_to_vec(jni_utils
         .unwrap_result(verification_error_wrapper.call_failureContexts(viper_error)));
 
@@ -404,55 +457,6 @@ pub fn extract_errors(
             }
         };
 
-        let reason = jni_utils
-            .unwrap_result(verification_error_wrapper.call_reason(viper_error));
-
-        let reason_pos = jni_utils
-            .unwrap_result(error_reason_wrapper.call_pos(reason));
-
-        let reason_pos_id = extract_pos_id(jni_utils, env, reason_pos);
-        if reason_pos_id.is_none() {
-            debug!(
-                "The verifier returned an error whose offending node position has no identifier: {:?}",
-                jni_utils.to_string(viper_error)
-            );
-        }
-
-        let error_full_id = jni_utils.get_string(
-            jni_utils
-                .unwrap_result(verification_error_wrapper.call_fullId(viper_error)),
-        );
-
-        let pos = jni_utils
-            .unwrap_result(verification_error_wrapper.call_pos(viper_error));
-
-        let message = jni_utils
-            .to_string(jni_utils.unwrap_result(
-                verification_error_wrapper.call_readableMessage(viper_error),
-            ));
-
-        let pos_id = extract_pos_id(jni_utils, env, pos);
-        if pos_id.is_none() {
-            debug!(
-                "The verifier returned an error whose position has no identifier: {:?}",
-                jni_utils.to_string(viper_error)
-            );
-        }
-
-        let offending_node = jni_utils
-            .unwrap_result(verification_error_wrapper.call_offendingNode(viper_error));
-
-        let offending_pos = jni_utils
-            .unwrap_result(error_node_positioned_wrapper.call_pos(offending_node));
-
-        let offending_pos_id = extract_pos_id(jni_utils, env, offending_pos);
-        if offending_pos_id.is_none() {
-            debug!(
-                "The verifier returned an error whose offending node position has no identifier: {:?}",
-                jni_utils.to_string(viper_error)
-            );
-        }
-
         errors.push(VerificationError::new(
             error_full_id,
             pos_id,
@@ -465,3 +469,17 @@ pub fn extract_errors(
 
     VerificationResultKind::Failure(errors)
 } 
+
+fn hash_error(
+    full_id: &str,
+    pos_id: &Option<String>,
+    offending_pos_id: &Option<String>,
+    reason_pos_id: &Option<String>
+) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    full_id.hash(&mut hasher);
+    pos_id.hash(&mut hasher);
+    offending_pos_id.hash(&mut hasher);
+    reason_pos_id.hash(&mut hasher);
+    hasher.finish()
+}

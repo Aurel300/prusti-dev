@@ -61,11 +61,13 @@ pub fn verify_programs(
     let verification_requests = programs.into_iter().map(|mut program| {
         let rust_program_name = program.get_rust_name().to_string();
         let program_name = program.get_name().to_string();
+        let procedures = vir::with_vcx(|vcx| vcx.get_viper_identifiers());
         // Prepend the Rust file name to the program.
         program.set_name(&format!("{rust_program_name}_{program_name}"));
         let backend = config::viper_backend().parse().unwrap();
         let request = VerificationRequest {
             program,
+            procedures,
             backend_config: ViperBackendConfig::new(backend),
         };
         (program_name, request)

@@ -87,6 +87,7 @@ impl ServerVerificationRequest {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct VerificationRequest {
     pub program: vir::ProgramRef,
+    pub procedures: HashSet<String>,
     pub backend_config: ViperBackendConfig,
 }
 
@@ -148,7 +149,7 @@ impl<'vir> VerificationRequest {
                         viper_program_ref,
                         self.program.get_name().to_string(),
                         self.backend_config.clone(),
-                        vir::with_vcx(|vir| vir.get_viper_identifiers()),
+                        self.procedures.clone(),
                     );
                     ServerVerificationRequest { kind }
                 })

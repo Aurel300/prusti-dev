@@ -144,7 +144,7 @@ fn polling_function(
                     let pos_string =
                         jni.get_string(jni.unwrap_result(obj_wrapper.call_toString(pos)));
                     // debug!("quantifier chosen trigger pos: {pos_string}");
-                    // TODO: the PR unconditionally does `pos_string.rfind('.').unwrap()` which crashes when there is no position.
+                    // TODO: the PR (https://github.com/viperproject/prusti-dev/pull/1334) unconditionally does `pos_string.rfind('.').unwrap()` which crashes when there is no position.
                     // Is that intended?
                     if let Some(pos_id_index) = pos_string.rfind('.') {
                         // let pos_id_index = pos_string.rfind('.').unwrap();

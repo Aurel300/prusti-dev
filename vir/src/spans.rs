@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use prusti_interface::{PrustiError, environment::EnvDiagnostic};
 use prusti_rustc_interface::hir::def_id::LOCAL_CRATE;
 use prusti_rustc_interface::span::{
@@ -239,6 +239,14 @@ impl<'tcx> VirCtxt<'tcx> {
     ) -> Option<DefId> {
         let manager = self.spans.borrow();
         manager.viper_identifiers.get(identifier).copied()
+    }
+
+    /// Return the set of all viper identifiers with encoded bodies
+    pub fn get_viper_identifiers(
+        &'tcx self,
+    ) -> HashSet<String> {
+        let manager = self.spans.borrow();
+        manager.viper_identifiers.keys().cloned().collect()
     }
 
     /// The unique itemname is of form `<crate name>::<defpath>`

@@ -16,6 +16,7 @@ use std::{
     sync::{self, mpsc, OnceLock},
     fs::create_dir_all,
     path::PathBuf,
+    collections::HashSet,
 };
 
 /// The JVM object should only instantiated once, so it is stored in a
@@ -39,7 +40,7 @@ pub(crate) struct ServerVerificationRequest {
 /// Specifies the kind of backend to be used for verification and carries necessary data.
 enum ServerVerificationRequestKind {
     // viper program, program name, backend config
-    JVMViperRequest(jni::objects::GlobalRef, String, ViperBackendConfig),
+    JVMViperRequest(jni::objects::GlobalRef, String, ViperBackendConfig, HashSet<String>),
 }
 
 impl ServerVerificationRequest {
@@ -57,7 +58,7 @@ impl ServerVerificationRequest {
         };
 
         match self.kind {
-            ServerVerificationRequestKind::JVMViperRequest(viper_program_ref, program_name, backend_config) => {
+            ServerVerificationRequestKind::JVMViperRequest(viper_program_ref, program_name, backend_config, procedures) => {
                 let viper = VIPER.get().expect("ServerVerificationRequest: Viper was not instantiated before processing a request");
                 let verification_context = viper.attach_current_thread();
                 let mut backend = match backend_config.backend {
@@ -73,7 +74,7 @@ impl ServerVerificationRequest {
                 };
                 stopwatch.start_next("backend verification");
                 result.item_name = program_name.clone();
-                result.kind = backend.verify(sender.clone());
+                result.kind = backend.verify(procedures, sender.clone());
                 result.time_ms = stopwatch.finish().as_millis();
             }
         }
@@ -147,6 +148,7 @@ impl<'vir> VerificationRequest {
                         viper_program_ref,
                         self.program.get_name().to_string(),
                         self.backend_config.clone(),
+                        vir::with_vcx(|vir| vir.get_viper_identifiers()),
                     );
                     ServerVerificationRequest { kind }
                 })

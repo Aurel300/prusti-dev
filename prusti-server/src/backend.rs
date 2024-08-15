@@ -23,6 +23,7 @@ pub enum Backend<'a> {
 impl<'a> Backend<'a> {
     pub fn verify(
         &mut self,
+        procedures: HashSet<String>,
         sender: mpsc::Sender<ServerMessage>,
     ) -> VerificationResultKind {
         match self {
@@ -33,7 +34,7 @@ impl<'a> Backend<'a> {
                 ast_utils.with_local_frame(16, || {
                     let viper_program = viper::Program::new(viper_program_ref.as_obj());
                     if config::report_viper_messages() {
-                        verify_and_poll_msgs(verifier, viper_thread, viper_program, sender)
+                        verify_and_poll_msgs(verifier, viper_thread, viper_program, procedures, sender)
                     } else {
                         verifier.verify(viper_program, None)
                     }
@@ -47,6 +48,7 @@ fn verify_and_poll_msgs(
     verifier: &mut viper::Verifier,
     verification_context: &viper::VerificationContext,
     viper_program: viper::Program,
+    procedures: HashSet<String>,
     sender: mpsc::Sender<ServerMessage>,
 ) -> VerificationResultKind {
     let mut kind = VerificationResultKind::Success;
@@ -64,7 +66,7 @@ fn verify_and_poll_msgs(
 
     // start thread for polling messages
     thread::scope(|scope| {
-        let polling_thread = scope.spawn(|| polling_function(&rep_glob_ref, sender));
+        let polling_thread = scope.spawn(|| polling_function(&rep_glob_ref, procedures, sender));
         kind = verifier.verify(viper_program, Some(polling_thread));
     });
     debug!("Viper message polling thread terminated");
@@ -73,6 +75,7 @@ fn verify_and_poll_msgs(
 
 fn polling_function(
     rep_glob_ref: &jni::objects::GlobalRef,
+    procedures: HashSet<String>,
     sender: mpsc::Sender<ServerMessage>,
 ) -> HashSet<u64> {
     debug!("attach polling thread to JVM.");
@@ -170,9 +173,9 @@ fn polling_function(
                         let method_wrapper = silver::ast::Method::with(env);
                         let method_name =
                             jni.get_string(jni.unwrap_result(method_wrapper.call_name(concerning)));
-                        debug!("Entity success for method: {method_name} (only processed if starting with \"m_\")");
-                        // this should only match local methods and extern specs
-                        if method_name.starts_with("m_") {
+                        debug!("Entity success for method: {method_name}");
+                        // this should only match local methods
+                        if procedures.contains(&method_name) {
                             let verification_time = jni.unwrap_result(msg_wrapper.call_verificationTime(msg));
                             // verification_time is a long -> i64. but we are using u128
                             if verification_time >= 0 {
@@ -189,7 +192,7 @@ fn polling_function(
                             }
                         }
                     } else {
-                        debug!("Received entity was not a method");
+                        debug!("Entity is not a method");
                     }
                 },
                 "viper.silver.reporter.EntityFailureMessage" => {
@@ -200,8 +203,8 @@ fn polling_function(
                         let method_name =
                             jni.get_string(jni.unwrap_result(method_wrapper.call_name(concerning)));
                         debug!("Entity failure for method: {method_name}");
-                        // this should only match local methods and extern specs
-                        if method_name.starts_with("m_") {
+                        // this should only match local methods
+                        if procedures.contains(&method_name) {
                             let verification_time = jni.unwrap_result(msg_wrapper.call_verificationTime(msg));
                             // verification_time is a long -> i64. but we are using u128
                             if verification_time >= 0 {

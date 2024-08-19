@@ -1,9 +1,23 @@
-use prusti_rustc_interface::middle::mir;
+use prusti_interface::specs::specifications::SpecQuery;
+use prusti_rustc_interface::
+    middle::{
+        mir,
+        ty::{ClauseKind, PredicateKind},
+    }
+;
 use task_encoder::{EncodeFullError, TaskEncoder, TaskEncoderDependencies};
 use vir::{MethodIdent, UnknownArity, ViperIdent};
 
-use crate::encoders::{
-    lifted::func_def_ty_params::LiftedTyParamsEnc, ImpureEncVisitor, MirImpureEnc, MirLocalDefEnc, MirSpecEnc
+use crate::{
+    encoders::{
+        lifted::{
+            func_def_ty_params::LiftedTyParamsEnc,
+            ty::{EncodeGenericsAsLifted, LiftedTyEnc},
+        },
+        ImpureEncVisitor, MirImpureEnc, MirLocalDefEnc, MirSpecEnc, TraitEnc,
+        TraitTyArgsEnc,
+    },
+    trait_support::is_function_with_body,
 };
 
 use super::function_enc::FunctionEnc;
@@ -41,21 +55,20 @@ where
     fn encode<'vir>(
         task_key: Self::TaskKey<'vir>,
         deps: &mut TaskEncoderDependencies<'vir, Self>,
-    ) -> Result<
-        ImpureFunctionEncOutput<'vir>,
-        EncodeFullError<'vir, Self>,
-    > {
-        let def_id = Self::get_def_id(&task_key);
-        let caller_def_id = Self::get_caller_def_id(&task_key);
-        let trusted = crate::encoders::with_proc_spec(def_id, |def_spec| {
-            def_spec.trusted.extract_inherit().unwrap_or_default()
-        })
-        .unwrap_or_default();
+    ) -> Result<ImpureFunctionEncOutput<'vir>, EncodeFullError<'vir, Self>> {
+        use mir::visit::Visitor;
         vir::with_vcx(|vcx| {
-            use mir::visit::Visitor;
+            let def_id = Self::get_def_id(&task_key);
+
+            let caller_def_id = Self::get_caller_def_id(&task_key);
+            let trusted = crate::encoders::with_proc_spec(
+                SpecQuery::GetProcKind(def_id, Self::get_substs(vcx, &task_key)),
+                |proc_spec| proc_spec.trusted.extract_inherit().unwrap_or_default(),
+            )
+            .unwrap_or_default();
             let substs = Self::get_substs(vcx, &task_key);
-            let local_defs = deps
-                .require_local::<MirLocalDefEnc>((def_id, substs, caller_def_id))?;
+            let local_defs =
+                deps.require_local::<MirLocalDefEnc>((def_id, substs, caller_def_id))?;
 
             // Argument count for the Viper method:
             // - one (`Ref`) for the return place;
@@ -81,9 +94,11 @@ where
             let method_ref = MethodIdent::new(method_name, args);
             deps.emit_output_ref(task_key, ImpureFunctionEncOutputRef { method_ref })?;
 
-            // Do not encode the method body if it is external, trusted or just
-            // a call stub.
-            let local_def_id = def_id.as_local().filter(|_| !trusted);
+            // Do not encode the method body if it is external, trusted, just
+            // a call stub, or a trait function without a default implementation
+            let local_def_id = def_id
+                .as_local()
+                .filter(|_| !trusted && is_function_with_body(vcx.tcx(), def_id));
             let blocks = if let Some(local_def_id) = local_def_id {
                 let body = vcx
                     .body_mut()
@@ -157,8 +172,7 @@ where
                 None
             };
 
-            let spec = deps
-                .require_local::<MirSpecEnc>((def_id, substs, None, false))?;
+            let spec = deps.require_local::<MirSpecEnc>((def_id, substs, None, false))?;
             let (spec_pres, spec_posts) = (spec.pres, spec.posts);
 
             let mut pres = Vec::with_capacity(arg_count - 1);
@@ -171,6 +185,32 @@ where
                 }
             }
             args.extend(param_ty_decls.iter());
+
+            // Add trait constraints to types
+            // e.g for a function f<T: Clone>(t: T) we want to add a constraint
+            // `implements_clone(T)` as a precondition
+            let constraints = vcx
+                .tcx()
+                .predicates_of(def_id)
+                .instantiate(vcx.tcx(), substs);
+            for constraint in constraints.predicates {
+                match constraint.as_predicate().kind().no_bound_vars().unwrap() {
+                    PredicateKind::Clause(ClauseKind::Trait(trait_predicate)) => {
+                        let vir_trait = deps.require_ref::<TraitEnc>(trait_predicate.def_id())?;
+                        pres.push(
+                            vir_trait.implements(
+                                deps.require_local::<LiftedTyEnc<EncodeGenericsAsLifted>>(
+                                    trait_predicate.self_ty(),
+                                )?
+                                .expr(vcx),
+                                deps.require_local::<TraitTyArgsEnc>(trait_predicate.trait_ref)?
+                            ),
+                        );
+                    }
+                    _ => todo!(),
+                }
+            }
+
             pres.extend(spec_pres);
 
             let mut posts = Vec::with_capacity(spec_posts.len() + 1);

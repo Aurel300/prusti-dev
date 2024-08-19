@@ -2,13 +2,19 @@ use mir_state_analysis::{
     free_pcs::{CapabilityKind, FreePcsAnalysis, FreePcsBasicBlock, FreePcsLocation, RepackOp},
     utils::Place,
 };
+use prusti_interface::specs::specifications::SpecQuery;
 use prusti_rustc_interface::{
     abi,
     middle::{
         mir,
-        ty::{GenericArgs, TyKind},
+        ty::{GenericArgs, TyKind, PredicateKind, ClauseKind},
     },
     span::def_id::DefId,
+    infer::{
+        infer::TyCtxtInferExt,
+        traits::{self, Obligation, ObligationCause},
+    },
+    trait_selection::traits::SelectionContext,
 };
 //use mir_ssa_analysis::{
 //    SsaAnalysis,
@@ -39,15 +45,13 @@ use crate::{
         ImpureFunctionEncOutput, ImpureFunctionEncOutputRef,
     }, pure_func_app_enc::PureFuncAppEnc},
     encoders::{
-        self,
-        lifted::{
+        self, lifted::{
             aggregate_cast::{
                 AggregateSnapArgsCastEnc,
                 AggregateSnapArgsCastEncTask
             },
             func_app_ty_params::LiftedFuncAppTyParamsEnc
-        },
-        FunctionCallTaskDescription, MirBuiltinEnc
+        }, BuiltinTraitImplEnc, FunctionCallTaskDescription, MirBuiltinEnc, UserDefinedTraitImplEnc
     }
 };
 
@@ -816,8 +820,56 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                 ..
             } => {
                 let (func_def_id, caller_substs) = self.get_def_id_and_caller_substs(func);
-                let is_pure = crate::encoders::with_proc_spec(func_def_id, |spec|
-                    spec.kind.is_pure().unwrap_or_default()
+
+                // Locate the impl for any trait bounds on the callee (w.r.t to
+                // input args), and encode the appropriate axiom(s). For example
+                // suppose we are calling f<T: Copy>(t: T) via a call f(bool).
+                // Then, we need to ensure there is an axiom asserting
+                // `implements_Copy(s_Bool_type())`.
+                let constraints = self.vcx
+                    .tcx()
+                    .predicates_of(func_def_id)
+                    .instantiate(self.vcx.tcx(), caller_substs);
+
+                let infcx = self.vcx.tcx().infer_ctxt().build();
+
+                for constraint in constraints.predicates {
+                    match constraint.as_predicate().kind().no_bound_vars().unwrap() {
+                        PredicateKind::Clause(ClauseKind::Trait(trait_predicate)) => {
+                            let obligation = Obligation {
+                                cause: ObligationCause::dummy(),
+                                param_env: self.vcx.tcx().param_env(self.def_id),
+                                predicate: trait_predicate,
+                                recursion_depth: 0,
+                            };
+                            let mut selcx = SelectionContext::new(&infcx);
+                            match selcx.select(&obligation) {
+                                Ok(Some(sel)) => match sel {
+                                    traits::ImplSource::UserDefined(ud) => {
+                                        self.deps.require_dep::<UserDefinedTraitImplEnc>(ud.impl_def_id).unwrap();
+                                    }
+                                    traits::ImplSource::Param(_) => {}
+                                    traits::ImplSource::Builtin(_, _) => {
+                                        self.deps.require_dep::<BuiltinTraitImplEnc>(trait_predicate.trait_ref).unwrap();
+                                    }
+                                },
+                                other => panic!(
+                                    "{:?} when locating impl {:?} in fn {:?} calling {:?}",
+                                     other,
+                                     obligation,
+                                     self.def_id,
+                                     func_def_id
+                                ),
+                            }
+                        },
+                        _ => todo!()
+                    }
+                }
+
+
+                let is_pure = crate::encoders::with_proc_spec(
+                    SpecQuery::GetProcKind(func_def_id, caller_substs),
+                    |spec| spec.kind.is_pure().unwrap_or_default()
                 ).unwrap_or_default();
 
                 let dest = self.encode_place(Place::from(*destination)).expr;

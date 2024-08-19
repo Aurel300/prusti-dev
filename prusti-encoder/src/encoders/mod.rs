@@ -10,6 +10,10 @@ mod local_def;
 mod r#type;
 mod r#const;
 mod mono;
+mod r#trait;
+mod builtin_trait_impl;
+mod user_defined_trait_impl;
+mod trait_ty_args;
 
 cfg_if::cfg_if! {
     if #[cfg(feature = "mono_function_encoding")] {
@@ -43,7 +47,7 @@ pub use spec::{
     SpecEncOutput,
     SpecEncTask,
 };
-pub(super) use spec::{init_def_spec, with_proc_spec};
+pub(super) use spec::with_proc_spec;
 pub use snapshot::SnapshotEnc;
 pub use predicate::{
     PredicateEnc,
@@ -56,3 +60,7 @@ pub use viper_tuple::{
     ViperTupleEncOutput,
 };
 pub use r#const::ConstEnc;
+pub use r#trait::TraitEnc;
+pub use builtin_trait_impl::BuiltinTraitImplEnc;
+pub use user_defined_trait_impl::UserDefinedTraitImplEnc;
+pub use trait_ty_args::TraitTyArgsEnc;

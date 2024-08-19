@@ -9,19 +9,21 @@ extern crate rustc_type_ir;
 
 mod encoders;
 mod encoder_traits;
+mod generic_args_support;
+mod trait_support;
 pub mod request;
 
-use prusti_interface::environment::EnvBody;
+use prusti_interface::{environment::EnvBody, specs::specifications::SpecQuery};
 use prusti_rustc_interface::{
     middle::ty,
-    hir,
+    hir::{self, intravisit::{self, Visitor}},
 };
 use task_encoder::TaskEncoder;
 
 use crate::encoders::{lifted::{
     casters::{CastTypeImpure, CastTypePure, CastersEnc},
     ty_constructor::TyConstructorEnc
-}, MirPolyImpureEnc};
+}, MirPolyImpureEnc, TraitEnc, UserDefinedTraitImplEnc};
 
 pub fn test_entrypoint<'tcx>(
     tcx: ty::TyCtxt<'tcx>,
@@ -29,10 +31,30 @@ pub fn test_entrypoint<'tcx>(
     def_spec: prusti_interface::specs::typed::DefSpecificationMap,
 ) -> request::RequestWithContext {
 
-    crate::encoders::init_def_spec(def_spec);
-    vir::init_vcx(vir::VirCtxt::new(tcx, body));
+    vir::init_vcx(vir::VirCtxt::new(tcx, body, def_spec));
 
     // TODO: this should be a "crate" encoder, which will deps.require all the methods in the crate
+
+    struct TraitAndImplVisitor;
+
+    impl <'tcx> Visitor<'tcx> for TraitAndImplVisitor {
+        fn visit_item(&mut self, item: &'tcx hir::Item<'tcx>) {
+            match item.kind {
+                hir::ItemKind::Trait(..) => {
+                    let res = TraitEnc::encode(item.owner_id.def_id.to_def_id(), false);
+                    assert!(res.is_ok());
+                },
+                hir::ItemKind::Impl(hir_impl) if hir_impl.of_trait.is_some() => {
+                    let res = UserDefinedTraitImplEnc::encode(item.owner_id.def_id.to_def_id(), false);
+                    assert!(res.is_ok());
+                }
+                _ => {}
+            }
+            intravisit::walk_item(self, item);
+        }
+    }
+
+    tcx.hir().visit_all_item_likes_in_crate(&mut TraitAndImplVisitor);
 
     for def_id in tcx.hir().body_owners() {
         tracing::debug!("test_entrypoint item: {def_id:?}");
@@ -45,7 +67,9 @@ pub fn test_entrypoint<'tcx>(
                     continue;
                 }
 
-                let (is_pure, is_trusted) = crate::encoders::with_proc_spec(def_id, |proc_spec| {
+                let (is_pure, is_trusted) = crate::encoders::with_proc_spec(
+                    SpecQuery::GetProcKind(def_id, ty::List::identity_for_item(tcx, def_id)),
+                    |proc_spec| {
                         let is_pure = proc_spec.kind.is_pure().unwrap_or_default();
                         let is_trusted = proc_spec.trusted.extract_inherit().unwrap_or_default();
                         (is_pure, is_trusted)
@@ -157,6 +181,24 @@ pub fn test_entrypoint<'tcx>(
         }
         viper_code.push_str(&format!("{:?}\n", output.method_assign));
         program_methods.push(output.method_assign);
+    }
+
+    header(&mut viper_code, "traits");
+    for output in crate::encoders::TraitEnc::all_outputs() {
+        viper_code.push_str(&format!("{:?}\n", output));
+        program_domains.push(output);
+    }
+
+    header(&mut viper_code, "builtin trait impls");
+    for output in crate::encoders::BuiltinTraitImplEnc::all_outputs() {
+        viper_code.push_str(&format!("{:?}\n", output));
+        program_domains.push(output);
+    }
+
+    header(&mut viper_code, "user-defined trait impls");
+    for output in crate::encoders::UserDefinedTraitImplEnc::all_outputs() {
+        viper_code.push_str(&format!("{:?}\n", output));
+        program_domains.push(output);
     }
 
     std::fs::write("local-testing/simple.vpr", viper_code).unwrap();

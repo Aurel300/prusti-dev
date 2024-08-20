@@ -192,10 +192,7 @@ where
                 .require_local::<RustTyCastersEnc<T>>(task_key.actual)
                 .unwrap();
             if let CastersEncOutputRef::Casters { make_generic, .. } = generic_cast.cast {
-                GenericCastOutputRef::Cast(Cast::new(
-                    T::to_generic_applicator(make_generic),
-                    generic_cast.ty_args,
-                ))
+                GenericCastOutputRef::Cast(Cast::new(T::to_generic_applicator(make_generic), &[]))
             } else {
                 unreachable!()
             }

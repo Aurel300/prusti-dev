@@ -5,6 +5,7 @@ use prusti_rustc_interface::{
     span::def_id::DefId,
     type_ir::sty::TyKind, ast,
 };
+use rustc_middle::ty::{Binder, FnSig};
 use task_encoder::{
     TaskEncoder,
     TaskEncoderDependencies,
@@ -253,16 +254,11 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
 
     fn get_ty_for_local(&mut self, local: mir::Local) -> vir::Type<'vir> {
         let ty = self.body.local_decls[local].ty;
-        if let ty::TyKind::Closure(..) = ty.kind() {
-            // TODO: Support closure types
-            &vir::TypeData::Unsupported(vir::UnsupportedType { name: "closure" })
-        } else {
-            self.deps
-                .require_ref::<RustTySnapshotsEnc>(ty)
-                .unwrap()
-                .generic_snapshot
-                .snapshot
-        }
+        self.deps
+            .require_ref::<RustTySnapshotsEnc>(ty)
+            .unwrap()
+            .generic_snapshot
+            .snapshot
     }
 
     fn mk_local_ex(
@@ -486,18 +482,18 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                     let is_pure = crate::encoders::with_proc_spec(def_id, |def_spec|
                         def_spec.kind.is_pure().unwrap_or_default()
                     ).unwrap_or_default();
+                    let sig = self.vcx().tcx().fn_sig(def_id);
+                    let sig = if self.monomorphize {
+                        let param_env = self.vcx().tcx().param_env(self.def_id);
+                        self.vcx().tcx().subst_and_normalize_erasing_regions(
+                            arg_tys,
+                            param_env,
+                            sig
+                        )
+                    } else {
+                        sig.instantiate_identity()
+                    };
                     if is_pure {
-                        let sig = self.vcx().tcx().fn_sig(def_id);
-                        let sig = if self.monomorphize {
-                            let param_env = self.vcx().tcx().param_env(self.def_id);
-                            self.vcx().tcx().subst_and_normalize_erasing_regions(
-                                arg_tys,
-                                param_env,
-                                sig
-                            )
-                        } else {
-                            sig.instantiate_identity()
-                        };
                         self.encode_pure_func_app(
                             def_id,
                             sig,
@@ -505,10 +501,16 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                             args,
                             destination,
                             self.def_id,
-                            &new_curr_ver
+                            &new_curr_ver,
                         )
                     } else {
-                        self.encode_prusti_builtin(&new_curr_ver, def_id, arg_tys, args)
+                        self.encode_prusti_builtin(
+                            def_id,
+                            sig,
+                            arg_tys,
+                            args,
+                            &new_curr_ver,
+                        )
                     }
                 };
 
@@ -633,17 +635,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
             }
             // Discriminant
             mir::Rvalue::Aggregate(box kind, fields) => match kind {
-                mir::AggregateKind::Closure(..) => {
-                    // TODO: only when this is a spec closure?
-                    let tuple_ref = self.deps.require_local::<ViperTupleEnc>(
-                        fields.len(),
-                    ).unwrap();
-                    let fields = fields.iter()
-                        .map(|field| self.encode_operand(curr_ver, field))
-                        .collect::<Vec<_>>();
-                    tuple_ref.mk_cons(self.vcx, &fields)
-                }
-                mir::AggregateKind::Adt(..) | mir::AggregateKind::Tuple => {
+                mir::AggregateKind::Adt(..) | mir::AggregateKind::Tuple | mir::AggregateKind::Closure(..) => {
                     let e_rvalue_ty = self.deps.require_ref::<RustTyPredicatesEnc>(rvalue_ty).unwrap();
                     let sl = match kind {
                         mir::AggregateKind::Adt(_, vidx, _, _, _) => {
@@ -782,58 +774,53 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                 (expr, place_ref)
             }
             mir::ProjectionElem::Field(field_idx, ty) => {
-                match place_ty.ty.kind() {
-                    TyKind::Closure(_def_id, args) => {
-                        let upvars = args.as_closure().upvar_tys().iter().collect::<Vec<_>>().len();
-                        let tuple_ref = self.deps.require_local::<ViperTupleEnc>(
-                            upvars,
-                        ).unwrap();
-                       (tuple_ref.mk_elem(self.vcx, expr, field_idx.as_usize()), place_ref)
-                    }
-                    tykind => {
-                        let e_ty = self.deps.require_ref::<RustTyPredicatesEnc>(place_ty.ty).unwrap();
-                        let struct_like = e_ty
-                            .generic_predicate
-                            .expect_variant_opt(place_ty.variant_index);
-                        let proj = struct_like.snap_data.field_access[field_idx.as_usize()].read;
-                        let proj_app = proj.apply(self.vcx, [expr]);
-                        let proj_app = if let TyKind::Adt(def, _) = tykind {
-
-                            // The ADT type for the field might be generic, concretize if necessary
-                            let variant = def.variant(place_ty.variant_index.unwrap_or(
-                                abi::FIRST_VARIANT
-                            ));
-                            let generic_field_ty = variant.fields[field_idx].ty(
-                                self.vcx.tcx(),
-                                GenericArgs::identity_for_item(self.vcx.tcx(), def.did())
-                            );
-                            let cast_args = CastArgs {
-                                expected: ty,
-                                actual: generic_field_ty
-                            };
-                            self.deps.require_ref::<CastToEnc<CastTypePure>>(cast_args)
-                                .unwrap().apply_cast_if_necessary(self.vcx, proj_app)
-
-                        } else if let TyKind::Tuple(_) = tykind {
-                            self
-                                .deps.require_local::<RustTyCastersEnc<CastTypePure>>(ty)
-                                .unwrap().cast_to_concrete_if_possible(self.vcx, proj_app)
-                        } else {
-                            proj_app
-                        };
-                        let place_ref = place_ref.map(|pr| {
-                            struct_like.ref_to_field_refs[field_idx.as_usize()].apply(self.vcx, [pr])
-                        });
-                        (proj_app, place_ref)
-                    }
-                }
+                let tykind = place_ty.ty.kind();
+                let e_ty = self.deps.require_ref::<RustTyPredicatesEnc>(place_ty.ty).unwrap();
+                let struct_like = e_ty
+                    .generic_predicate
+                    .expect_variant_opt(place_ty.variant_index);
+                let proj = struct_like.snap_data.field_access[field_idx.as_usize()].read;
+                let proj_app = proj.apply(self.vcx, [expr]);
+                let proj_app = if let TyKind::Adt(def, _) = tykind {
+                    // The ADT type for the field might be generic, concretize if necessary
+                    let variant = def.variant(place_ty.variant_index.unwrap_or(
+                        abi::FIRST_VARIANT
+                    ));
+                    let generic_field_ty = variant.fields[field_idx].ty(
+                        self.vcx.tcx(),
+                        GenericArgs::identity_for_item(self.vcx.tcx(), def.did())
+                    );
+                    let cast_args = CastArgs {
+                        expected: ty,
+                        actual: generic_field_ty
+                    };
+                    self.deps.require_ref::<CastToEnc<CastTypePure>>(cast_args)
+                        .unwrap().apply_cast_if_necessary(self.vcx, proj_app)
+                } else if let TyKind::Tuple(_) = tykind {
+                    self
+                        .deps.require_local::<RustTyCastersEnc<CastTypePure>>(ty)
+                        .unwrap().cast_to_concrete_if_possible(self.vcx, proj_app)
+                } else {
+                    proj_app
+                };
+                let place_ref = place_ref.map(|pr| {
+                    struct_like.ref_to_field_refs[field_idx.as_usize()].apply(self.vcx, [pr])
+                });
+                (proj_app, place_ref)
             }
             mir::ProjectionElem::Downcast(..) => (expr, place_ref),
             _ => todo!("Unsupported ProjectionElem {:?}", elem),
         }
     }
 
-    fn encode_prusti_builtin(&mut self, curr_ver: &HashMap<mir::Local, usize>, def_id: DefId, arg_tys: ty::GenericArgsRef<'vir>, args: &Vec<mir::Operand<'vir>>) -> ExprRet<'vir> {
+    fn encode_prusti_builtin(
+        &mut self,
+        def_id: DefId,
+        sig: Binder<'vir, FnSig<'vir>>,
+        arg_tys: ty::GenericArgsRef<'vir>,
+        args: &Vec<mir::Operand<'vir>>,
+        curr_ver: &HashMap<mir::Local, usize>,
+    ) -> ExprRet<'vir> {
         #[derive(Debug)]
         enum PrustiBuiltin {
             Forall,
@@ -885,7 +872,16 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
             }
             PrustiBuiltin::Forall => {
                 assert_eq!(arg_tys.len(), 2);
-                let (qvar_tys, upvar_tys, cl_def_id) = match arg_tys[1].expect_ty().kind() {
+
+                let encoded_args = self.encode_fn_args(sig, arg_tys, args, curr_ver);
+                // TODO: for now, let's expect this to give us these four:
+                //   - type of the trigger param (unit unless triggers provided)
+                //   - type of the body param (a closure type)
+                //   - expression for the triggers
+                //   - expression for the body
+                assert_eq!(encoded_args.len(), 4);
+
+                let (qvar_tys, upvar_tys, cl_def_id) = match arg_tys[1].expect_ty().peel_refs().kind() {
                     TyKind::Closure(cl_def_id, cl_args) => (
                         match cl_args.as_closure().sig().skip_binder().inputs()[0].kind() {
                             TyKind::Tuple(list) => list,
@@ -927,7 +923,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                 //   operation, which will work like reify
                 //   but panicking on a Lazy(..)?
                 reify_args.push(unsafe {
-                    std::mem::transmute(self.encode_operand(&curr_ver, &args[1]))
+                    std::mem::transmute(encoded_args[3])
                 });
                 reify_args.extend(qvars.iter().map(|qvar| {
                     self.vcx.mk_local_ex(qvar.name, qvar.ty)

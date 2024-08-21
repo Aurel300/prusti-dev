@@ -64,6 +64,8 @@ use super::{
     MirMonoImpureEnc,
     MirPolyImpureEnc
 };
+use tracing::log::debug;
+use crate::hir::PatKind::Box;
 use prusti_utils::config;
 
 const ENCODE_REACH_BB: bool = false;
@@ -542,21 +544,125 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
         let stmts = self.current_stmts.take().unwrap();
         let terminator = self.current_terminator.take().unwrap();
 
+        // Register the spans of individual blocks. Since these ranges are supposed to give an idea
+        // of the more granular range of what has been verified already, we need to filter them a bit.
         if prusti_utils::config::report_block_messages() {
             let stmt_count = data.statements.len();
             if stmt_count > 0 {
-                let terminator_span = data
-                    .terminator
-                    .as_ref()
-                    .unwrap()
-                    .source_info
-                    .span;
+                debug!("bb_{}", block.as_usize());
+                let terminator = data.terminator.as_ref().unwrap();
+                // TODO more (or more precise) filters may be needed
+                // note that if there is a possibility for errors to occur in blocks that do not end up having
+                // any spans, this will cause that the block messages finally emitted do not show this error.
+                // so some care is needed (how should the ranges of such blocks be reported?).
+                let terminator_span = match terminator.kind {
+                // Terminator kinds: https://doc.rust-lang.org/beta/nightly-rustc/rustc_middle/mir/syntax/enum.TerminatorKind.html
+                // `Goto` may have large ranges (yet to figure out what the ranges really refer to)
+                // `SwitchInt` seem to cover a condition, a `match expr` or an `assert!` argument, which is ok
+                // `UnwindResume` not observed but probably similar to `Return`
+                // `UnwindTerminate` not observed but probably similar to `Return`
+                //
+                // `Return` may include the end of a method body, including the braces (and a column past it).
+                // According to my observations, if there are actual statements or expressions associated with
+                // the return (as in `return val;`), the ranges thereof are in the block statements. So we can
+                // skip these.
+                //
+                // `Unreachable` not observed.
+                // `Drop` seems to just cover the end of a method similar to what `Return` may do. Only observed
+                // one case though.
+                //
+                // `Call` includes the span of the call, which may not be included in any statements of the block
+                // so we need to include these spans.
+                // `TailCall` is not present in the rust version we use?
+                //
+                // `Assert` are not `assert!` calls. These are compiler inserted and seem to have the range of
+                // the statements or expressions that trigger them to be inserted. E.g. this may be an overflow
+                // check on the range of `+1` in an expression `var+1`. In this case the span is also included in
+                // block statements. Are there examples where they are not/where `Assert` has problematic spans?
+                //
+                // `Yield` not observed. Should be like `Return` in terms of spans?
+                // `CoroutineDrop` not observed. Should be like `Return` in terms of spans?
+                //
+                // `FalseEdge` not observed. The description states it behaves like a goto, so assuming the same
+                // for associated spans. They do occur in the .vpr file but the blocks don't seem to pass through
+                // here.
+                // `FalseUnwind` not observed. They do occur in the .vpr file but the blocks don't seem to pass
+                // through here.
+                //
+                // `InlineAsm` not observed
+                //
+                    mir::TerminatorKind::Call {..} => Some(terminator.source_info.span),
+                    _ => None,
+                };
+                debug!("{}terminator: --{:?}--", if terminator_span.is_none() {"(ignored) "} else {""}, data.terminator);
                 let block_span = data
                     .statements
                     .iter()
-                    .fold(terminator_span, |acc, stmt| acc.to(stmt.source_info.span));
+                    .fold(terminator_span, |acc, stmt| {
+                        // Statement kinds: https://doc.rust-lang.org/beta/nightly-rustc/rustc_middle/mir/syntax/enum.StatementKind.html
+                        // Some statements include excessively large ranges, so we try to filter them out.
+                        //
+                        // `Assign` sometimes occurs in the form `lval = const ()`. These assignments (according to inexhaustive observation)
+                        // either refer to small ranges that are contained in other statements of the block or to large, encompassing ones.
+                        // Sometimes even the entire method body or if-else statements. The lvals of these assignments, from my observation,
+                        // only seem to occur in `StorageDead` & `StorageLive` statements.
+                        // Might be generalizing too much. If there are unit assignments that have a relevant local range, they should be included.
+                        // Could other rvalues also be problematic?
+                        // Rvalues: https://doc.rust-lang.org/beta/nightly-rustc/rustc_middle/mir/syntax/enum.Rvalue.html
+                        //
+                        // `FakeRead` may be problematic. e.g. `FakeRead(ForLet(None), _2)` seems to have the range of where `_2` was defined
+                        //  (same range as the corresponding `StorageLive`). Which means this range may go outside the current block.
+                        // `FakeRead(ForMatchedPlace(None), _2)` on the other hand, seems to cover the range of a statement to be matched rather
+                        // than the definition (using `let`) of `_2`. But this range is also covered by an assignment like `_4 = discriminant(_2)`.
+                        //
+                        // `SetDiscriminant` not observed (should be ok?)
+                        // `Deinit` not observed
+                        //
+                        // `StorageLive` & `StorageDead` may cover ranges that cover entire statement blocks or branching statements
+                        // like if-else. Additionally, `StorageDead` often refers to places of variables outside the current block.
+                        // They aren't really relevant to user provided code locations anyhow, should be save to skip.
+                        //
+                        // `Retag` not observed (requires `-Z mir-emit-retag`) but should not cause errors and are not part of user code
+                        // `PlaceMention` seems ok (observed to range over the rvalue inline, not definition place)
+                        // `AscribeUserType` seems ok
+                        // `Coverage` not observed (requires `-Cinstrument-coverage`) but should not cause errors and are not part of user code
+                        // `Intrinsic` not observed
+                        // `ConstEvalCounter` not observed (but probably not part of user code?)
+                        // `Nop` not observed
+                        //
+                        match &stmt.kind {
+                            mir::StatementKind::Assign(box (_, mir::Rvalue::Use(operand))) => {
+                                let constant = operand.constant();
+                                if let Some(constant) = constant {
+                                    if constant.ty().is_unit() {
+                                        debug!("(ignored) stmt: --{:?}--({:?}) with span: {:?}", stmt, stmt.kind.name(), stmt.source_info.span);
+                                        return acc;
+                                    }
+                                }
+                                debug!("stmt: --{:?}--({:?}) with span: {:?}", stmt, stmt.kind.name(), stmt.source_info.span);
+                                acc.map_or(Some(stmt.source_info.span), |acc| Some(acc.to(stmt.source_info.span)))
+                            },
+                            mir::StatementKind::FakeRead(..) |
+                            mir::StatementKind::StorageLive(..) |
+                            mir::StatementKind::StorageDead(..) |
+                            mir::StatementKind::Retag(..) |
+                            mir::StatementKind::Coverage(..) |
+                            mir::StatementKind::ConstEvalCounter => {
+                                debug!("(ignored) stmt: --{:?}--({:?}) with span: {:?}", stmt, stmt.kind.name(), stmt.source_info.span);
+                                acc
+                            },
+                            _ => {
+                                debug!("stmt: --{:?}--({:?}) with span: {:?}", stmt, stmt.kind.name(), stmt.source_info.span);
+                                acc.map_or(Some(stmt.source_info.span), |acc| Some(acc.to(stmt.source_info.span)))
+                            }
+                        }
+                });
                 let label = format!("bb_{}", block.as_usize());
-                self.vcx.insert_block_span((self.def_id, label), block_span);
+                if let Some(block_span) = block_span{
+                    self.vcx.insert_block_span((self.def_id, label), block_span);
+                } else {
+                    debug!("no spans for block {label}!");
+                }
             }
         }
 

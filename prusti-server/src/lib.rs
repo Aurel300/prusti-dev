@@ -469,10 +469,11 @@ fn handle_block_processing_message(
             if let Some(def_id) = vcx.get_viper_identifier(&viper_method) {
                 let rust_method = vcx.get_unique_item_name(&def_id);
                 if vir_label == "end" {
+                    // if we reach end, the path finished successfully
                     PrustiError::message(
                         format!("{}{}",
                             "pathProcessedMessage",
-                            json!({"method": rust_method, "path_id": path_id})
+                            json!({"method": rust_method, "path_id": path_id, "result": "Success"})
                         ), DUMMY_SP.into()
                     ).emit(env_diagnostic);
                 } else {
@@ -485,9 +486,9 @@ fn handle_block_processing_message(
                                 else         {json!({"method": rust_method, "path_id": path_id})},
                             ), span.clone().into()
                         ).emit(env_diagnostic);
-                    } else { error!("Could not map vir label {} to a position in {rust_method}", key.1) }
+                    } else { debug!("Could not map vir label {} to a position in {rust_method}", key.1) }
                 }
-            } else { error!("Could not map method identifier to def id: {viper_method}") }
+            } else { debug!("Could not map method identifier to def id: {viper_method}") }
         })
     }
 }

@@ -176,11 +176,15 @@ fn main() {
                 method!("label"),
                 method!("pathId"),
             ]),
-            java_class!("viper.silver.reporter.PathProcessedMessage", vec![
+            java_class!("viper.silver.reporter.BlockFailureMessage", vec![
                 method!("methodName"),
                 method!("label"),
                 method!("pathId"),
-                method!("verificationResultKind"),
+            ]),
+            java_class!("viper.silver.reporter.PathProcessedMessage", vec![
+                method!("methodName"),
+                method!("pathId"),
+                method!("result"),
             ]),
             java_class!("viper.silver.reporter.EntitySuccessMessage", vec![
                 method!("concerning"),

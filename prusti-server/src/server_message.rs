@@ -47,13 +47,20 @@ pub enum ServerMessage {
         path_id: i32,
     },
 
-    /// Contains a path id, label, viper method name and a result corresponding to a 
-    /// symbolic execution path through the program being verified, the VIR label of 
-    /// the cfg basic block in the program, name of the method in the generated
-    /// viper file, and the tentative verification result of the block.
-    PathProcessed {
+    /// Contains a path id, label and viper method name corresponding to a symbolic
+    /// execution path through the program being verified, the VIR label of the cfg
+    /// basic block in the program and name of the method in the generated viper file
+    BlockFailure{
         viper_method: String,
         vir_label: String,
+        path_id: i32,
+    },
+
+    /// Contains a path id, viper method name and a result corresponding to a 
+    /// symbolic execution path through the program being verified,
+    /// and the tentative verification result of the last explored block.
+    PathProcessed {
+        viper_method: String,
         path_id: i32,
         result: String,
     },

@@ -172,22 +172,34 @@ async fn handle_stream(
                 env_diagnostic,
                 program_name,
                 viper_method,
-                vir_label,
+                Some(vir_label),
                 path_id,
                 None
             ),
-            ServerMessage::PathProcessed {
+            ServerMessage::BlockFailure {
                 viper_method,
                 vir_label,
+                path_id,
+            } => handle_block_processing_message(
+                env_diagnostic,
+                program_name,
+                viper_method,
+                Some(vir_label),
+                path_id,
+                // for now, we don't report any details about failures here
+                Some("Failure".to_owned()),
+            ),
+            ServerMessage::PathProcessed {
+                viper_method,
                 path_id,
                 result,
             } => handle_block_processing_message(
                 env_diagnostic,
                 program_name,
                 viper_method,
-                vir_label,
+                None,                
                 path_id,
-                Some(result)
+                None,
             ),
         }
     }
@@ -455,38 +467,46 @@ fn handle_block_processing_message(
     env_diagnostic: &EnvDiagnostic<'_>,
     program_name: String,
     viper_method: String,
-    vir_label: String,
+    vir_label: Option<String>,
     path_id: i32,
     result: Option<String>,
 ) {
     if config::report_viper_messages() && config::report_block_messages() {
-        let processed = result != None;
-        debug!("Received {} message: {{ method: {viper_method} ({program_name}) message, vir_label: {vir_label}, path_id: {path_id} }}",
-        if processed {"path processed"} else {"block reached"}
-        );
-        if vir_label == "start" { return }
+        let mut token = if result.is_none() && vir_label.is_none() {
+            "pathProcessedMessage"
+        } else if result.is_none() {
+            "blockReachedMessage"
+        } else {
+            "blockFailureMessage"
+        };
+        debug!("Received {token}: {{ method: {viper_method} ({program_name}) message, vir_label: {vir_label:?}, path_id: {path_id}, result: {result:?} }}");
+
         vir::with_vcx(|vcx| {
             if let Some(def_id) = vcx.get_viper_identifier(&viper_method) {
                 let rust_method = vcx.get_unique_item_name(&def_id);
-                if vir_label == "end" {
-                    // if we reach end, the path finished successfully
-                    PrustiError::message(
-                        format!("{}{}",
-                            "pathProcessedMessage",
-                            json!({"method": rust_method, "path_id": path_id, "result": "Success"})
-                        ), DUMMY_SP.into()
-                    ).emit(env_diagnostic);
-                } else {
+                if let Some(vir_label) = vir_label {
+                    if vir_label == "start" { return }
                     let key = (def_id, vir_label);
                     if let Some(span) = vcx.get_block_span(&key) {
                         PrustiError::message(
                             format!("{}{}",
-                                if processed {"pathProcessedMessage"} else {"blockReachedMessage"},
-                                if processed {json!({"method": rust_method, "path_id": path_id, "result": result.unwrap()})}
-                                else         {json!({"method": rust_method, "path_id": path_id})},
+                                token,
+                                if token == "blockFailureMessage" {
+                                    json!({"method": rust_method, "path_id": path_id, "result": result.unwrap()})
+                                } else {
+                                    json!({"method": rust_method, "path_id": path_id})
+                                },
                             ), span.clone().into()
                         ).emit(env_diagnostic);
                     } else { debug!("Could not map vir label {} to a position in {rust_method}", key.1) }
+                } else {
+                    // no label means this is a pathProcessedMessage. This also covers the case of label == "end"
+                    PrustiError::message(
+                        format!("{}{}",
+                            "pathProcessedMessage",
+                            json!({"method": rust_method, "path_id": path_id})
+                        ), DUMMY_SP.into()
+                    ).emit(env_diagnostic);
                 }
             } else { debug!("Could not map method identifier to def id: {viper_method}") }
         })

@@ -39,32 +39,33 @@ pub(crate) struct ServerVerificationRequest {
 
 /// Specifies the kind of backend to be used for verification and carries necessary data.
 enum ServerVerificationRequestKind {
-    // viper program, program name, backend config
-    JVMViperRequest(jni::objects::GlobalRef, String, ViperBackendConfig, HashSet<String>),
+    // viper program, backend config, set of viper identifiers
+    JVMViperRequest(jni::objects::GlobalRef, ViperBackendConfig, HashSet<String>),
 }
 
 impl ServerVerificationRequest {
     /// Process and consume the request
+    // FIXME: can we do without the "program" strings?
     pub fn process<'v, 't: 'v>(
         self,
         sender: &mpsc::Sender<ServerMessage>,
     ) {
         let mut stopwatch = Stopwatch::start("prusti-server", "verifier startup");
         let mut result = VerificationResult {
-            item_name: "".to_string(),
+            item_name: "program".to_string(),
             kind: VerificationResultKind::Success,
             cached: false,
             time_ms: 0,
         };
 
         match self.kind {
-            ServerVerificationRequestKind::JVMViperRequest(viper_program_ref, program_name, backend_config, procedures) => {
+            ServerVerificationRequestKind::JVMViperRequest(viper_program_ref, backend_config, procedures) => {
                 let viper = VIPER.get().expect("ServerVerificationRequest: Viper was not instantiated before processing a request");
                 let verification_context = viper.attach_current_thread();
                 let mut backend = match backend_config.backend {
                     VerificationBackend::Carbon | VerificationBackend::Silicon => Backend::Viper(
                         new_viper_verifier(
-                            &program_name,
+                            "program",
                             &verification_context,
                             backend_config.clone(),
                         ),
@@ -73,7 +74,6 @@ impl ServerVerificationRequest {
                     ),
                 };
                 stopwatch.start_next("backend verification");
-                result.item_name = program_name.clone();
                 result.kind = backend.verify(procedures, sender.clone());
                 result.time_ms = stopwatch.finish().as_millis();
             }
@@ -147,7 +147,6 @@ impl<'vir> VerificationRequest {
 
                     let kind = ServerVerificationRequestKind::JVMViperRequest(
                         viper_program_ref,
-                        self.program.get_name().to_string(),
                         self.backend_config.clone(),
                         self.procedures.clone(),
                     );

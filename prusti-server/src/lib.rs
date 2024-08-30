@@ -53,24 +53,18 @@ use std::sync::{self, Arc};
 use once_cell::sync::Lazy;
 
 /// Verify a list of programs.
-/// Returns a list of (program_name, verification_result) tuples.
 pub fn verify_programs(
     env_diagnostic: &EnvDiagnostic<'_>,
     programs: Vec<vir::ProgramRef>
     ) -> VerificationResult {
-    let verification_requests = programs.into_iter().map(|mut program| {
-        let rust_program_name = program.get_rust_name().to_string();
-        let program_name = program.get_name().to_string();
+    let verification_requests = programs.into_iter().map(|program| {
         let procedures = vir::with_vcx(|vcx| vcx.get_viper_identifiers());
-        // Prepend the Rust file name to the program.
-        program.set_name(&format!("{rust_program_name}_{program_name}"));
         let backend = config::viper_backend().parse().unwrap();
-        let request = VerificationRequest {
+        VerificationRequest {
             program,
             procedures,
             backend_config: ViperBackendConfig::new(backend),
-        };
-        (program_name, request)
+        }
     }).collect();
 
     let stopwatch = Stopwatch::start("prusti-server", "verifying Viper program");
@@ -104,7 +98,7 @@ pub fn verify_programs(
 
 async fn handle_stream(
     env_diagnostic: &EnvDiagnostic<'_>,
-    verification_messages: impl Stream<Item = (String, ServerMessage)>,
+    verification_messages: impl Stream<Item = ServerMessage>,
 ) -> VerificationResult {
     let mut overall_result = VerificationResult::Success;
     // let encoding_errors_count = self.encoder.count_encoding_errors();
@@ -119,11 +113,10 @@ async fn handle_stream(
 
     pin_mut!(verification_messages);
 
-    while let Some((program_name, server_msg)) = verification_messages.next().await {
+    while let Some(server_msg) = verification_messages.next().await {
         match server_msg {
             ServerMessage::Termination(result) => handle_termination_message(
                 env_diagnostic,
-                program_name,
                 result,
                 &mut prusti_errors,
                 &mut overall_result
@@ -134,7 +127,6 @@ async fn handle_stream(
                 verification_time,
              } => handle_method_termination_message(
                 env_diagnostic,
-                program_name,
                 viper_method_name,
                 result,
                 verification_time,
@@ -147,7 +139,6 @@ async fn handle_stream(
                 pos_id,
             } => handle_quantifier_instantiation_message(
                 env_diagnostic,
-                program_name,
                 q_name,
                 insts,
                 pos_id,
@@ -159,7 +150,6 @@ async fn handle_stream(
                 pos_id,
             } => handle_quantifier_chosen_triggers_message(
                 env_diagnostic,
-                program_name,
                 viper_quant,
                 triggers,
                 pos_id
@@ -170,7 +160,6 @@ async fn handle_stream(
                 path_id,
             } => handle_block_processing_message(
                 env_diagnostic,
-                program_name,
                 viper_method,
                 Some(vir_label),
                 path_id,
@@ -182,7 +171,6 @@ async fn handle_stream(
                 path_id,
             } => handle_block_processing_message(
                 env_diagnostic,
-                program_name,
                 viper_method,
                 Some(vir_label),
                 path_id,
@@ -192,10 +180,9 @@ async fn handle_stream(
             ServerMessage::PathProcessed {
                 viper_method,
                 path_id,
-                result,
+                result: _,
             } => handle_block_processing_message(
                 env_diagnostic,
-                program_name,
                 viper_method,
                 None,                
                 path_id,
@@ -223,7 +210,6 @@ async fn handle_stream(
 
 fn handle_result(
     env_diagnostic: &EnvDiagnostic<'_>,
-    program_name: String,
     result: viper::VerificationResult,
     prusti_errors: &mut Vec<PrustiError>,
     overall_result: &mut VerificationResult
@@ -234,7 +220,7 @@ fn handle_result(
         viper::VerificationResultKind::ConsistencyErrors(errors) => {
             for error in errors {
                 PrustiError::internal(
-                    format!("consistency error in {program_name}: {error:?}"),
+                    format!("consistency error: {error:?}"),
                     DUMMY_SP.into(),
                 )
                 .emit(env_diagnostic);
@@ -318,7 +304,7 @@ fn handle_result(
         viper::VerificationResultKind::JavaException(exception) => {
             error!("Java exception: {}", exception.get_stack_trace());
             PrustiError::internal(
-                format!("in {program_name}: {exception}"),
+                format!("in: {exception}"),
                 DUMMY_SP.into(),
             )
             .emit(env_diagnostic);
@@ -329,7 +315,6 @@ fn handle_result(
 
 fn handle_method_termination_message(
     env_diagnostic: &EnvDiagnostic<'_>,
-    _program_name: String,
     viper_method_name: String,
     result_kind: viper::VerificationResultKind,
     verification_time: u128,
@@ -361,7 +346,7 @@ fn handle_method_termination_message(
             .emit(env_diagnostic);
         }
 
-        handle_result(env_diagnostic, result.item_name.clone(), result, prusti_errors, overall_result);
+        handle_result(env_diagnostic, result, prusti_errors, overall_result);
     } else {
         debug!("Could not map method identifier to def id: {viper_method_name}");
     }
@@ -369,12 +354,11 @@ fn handle_method_termination_message(
 
 fn handle_termination_message(
     env_diagnostic: &EnvDiagnostic<'_>,
-    program_name: String,
     result: viper::VerificationResult,
     prusti_errors: &mut Vec<PrustiError>,
     overall_result: &mut VerificationResult
 ) {
-    debug!("Received termination message with result {result:?} in verification of {program_name}");
+    debug!("Received termination message with result {result:?} during verification");
     if config::show_ide_info() {
         PrustiError::message(
             format!(
@@ -390,22 +374,22 @@ fn handle_termination_message(
         )
         .emit(env_diagnostic);
     }
-    handle_result(env_diagnostic, program_name, result, prusti_errors, overall_result);
+    handle_result(env_diagnostic, result, prusti_errors, overall_result);
 }
 
 fn handle_quantifier_instantiation_message(
     env_diagnostic: &EnvDiagnostic<'_>,
-    program_name: String,
     q_name: String,
     insts: u64,
     pos_id: usize,
     quantifier_instantiations: &mut FxHashMap<(usize, String), FxHashMap<String, u64>>
 ) {
     if config::report_viper_messages() {
-        debug!("Received #{insts} quantifier instantiations of {q_name} for position id {pos_id} in verification of {program_name}");
+        debug!("Received #{insts} quantifier instantiations of {q_name} for position id {pos_id} durign verification");
         vir::with_vcx(|vcx| {          
             match vcx.get_span_from_id(pos_id.try_into().unwrap()) {
                 Some(span) => {
+                    let program_name = "program".to_owned();
                     let key = (pos_id, program_name.clone());
                     if !quantifier_instantiations.contains_key(&key) {
                         quantifier_instantiations.insert(key.clone(), FxHashMap::default());
@@ -427,12 +411,16 @@ fn handle_quantifier_instantiation_message(
                     }
                     PrustiError::message(
                         format!("quantifierInstantiationsMessage{}",
-                            json!({"instantiations": n, "method": program_name}),
+                            // FIXME: assistant can't display these at the moment because it expects
+                            // them to be associated with a method. our options are:
+                            // - resolve the method name (probably somehow from the pos_id)
+                            // - report quantifier instantiations stand-alone and make assistant inlay those
+                            json!({"instantiations": n, "method": "program"}),
                         ), span.clone().into()
                     ).emit(env_diagnostic);
                 },
                 None => error!(
-                  "#{insts} quantifier instantiations of {q_name} for unknown position id {pos_id} in verification of {program_name}"
+                  "#{insts} quantifier instantiations of {q_name} for unknown position id {pos_id} during verification"
                 ),
             }
         });
@@ -441,13 +429,12 @@ fn handle_quantifier_instantiation_message(
 
 fn handle_quantifier_chosen_triggers_message(
     env_diagnostic: &EnvDiagnostic<'_>,
-    program_name: String,
     viper_quant: String,
     triggers: String,
     pos_id: usize
 ) {
     if config::report_viper_messages() && pos_id != 0 {
-        debug!("Received quantifier triggers {triggers} for quantifier {viper_quant} for position id {pos_id} in verification of {program_name}");
+        debug!("Received quantifier triggers {triggers} for quantifier {viper_quant} for position id {pos_id} during verification");
         vir::with_vcx(|vcx| {
             match vcx.get_span_from_id(pos_id.try_into().unwrap()) {
                 Some(span) => {
@@ -457,7 +444,7 @@ fn handle_quantifier_chosen_triggers_message(
                         ), span.clone().into()
                     ).emit(env_diagnostic);
                 },
-                None => error!("Invalid position id {pos_id} for viper quantifier {viper_quant} in verification of {program_name}"),
+                None => error!("Invalid position id {pos_id} for viper quantifier {viper_quant} during verification"),
             }
         });
     }
@@ -465,21 +452,20 @@ fn handle_quantifier_chosen_triggers_message(
 
 fn handle_block_processing_message(
     env_diagnostic: &EnvDiagnostic<'_>,
-    program_name: String,
     viper_method: String,
     vir_label: Option<String>,
     path_id: i32,
     result: Option<String>,
 ) {
     if config::report_viper_messages() && config::report_block_messages() {
-        let mut token = if result.is_none() && vir_label.is_none() {
+        let token = if result.is_none() && vir_label.is_none() {
             "pathProcessedMessage"
         } else if result.is_none() {
             "blockReachedMessage"
         } else {
             "blockFailureMessage"
         };
-        debug!("Received {token}: {{ method: {viper_method} ({program_name}) message, vir_label: {vir_label:?}, path_id: {path_id}, result: {result:?} }}");
+        debug!("Received {token}: {{ method: {viper_method} message, vir_label: {vir_label:?}, path_id: {path_id}, result: {result:?} }}");
 
         vir::with_vcx(|vcx| {
             if let Some(def_id) = vcx.get_viper_identifier(&viper_method) {
@@ -514,9 +500,9 @@ fn handle_block_processing_message(
 }
 
 fn verify_requests_server(
-    verification_requests: Vec<(String, VerificationRequest)>,
+    verification_requests: Vec<VerificationRequest>,
     server_address: String,
-) -> impl Stream<Item = (String, ServerMessage)> {
+) -> impl Stream<Item = ServerMessage> {
     let server_address = if server_address == "MOCK" {
         spawn_server_thread().to_string()
     } else {
@@ -524,31 +510,29 @@ fn verify_requests_server(
     };
     info!("Connecting to Prusti server at {}", server_address);
     let verification_stream = stream! {
-        for (program_name, request) in verification_requests {
-            yield PrustiClient::verify(server_address.clone(), request).await.map(move |msg| (program_name.clone(), msg));
+        for request in verification_requests {
+            yield PrustiClient::verify(server_address.clone(), request).await;
         }
     };
     verification_stream.flatten()
 }
 
 fn verify_requests_local<'a>(
-    verification_requests: Vec<(String, VerificationRequest)>,
+    verification_requests: Vec<VerificationRequest>,
     cache: &'a Lazy<Arc<sync::Mutex<PersistentCache>>, impl FnOnce() -> Arc<sync::Mutex<PersistentCache>>>,
     vrp: &'a Lazy<VerificationRequestProcessing, impl FnMut() -> VerificationRequestProcessing + 'a>,
-) -> impl Stream<Item = (String, ServerMessage)> + 'a {
+) -> impl Stream<Item = ServerMessage> + 'a {
     let verification_stream = stream! {
-        for (program_name, request) in verification_requests {
-            let program_name_clone = program_name.clone();
+        for request in verification_requests {
             let request_hash = request.get_hash();
             if config::enable_cache() {
                 if let Some(result) = Lazy::force(cache).get(request_hash) {
                     info!(
-                        "Using cached result {:?} for program {}",
+                        "Using cached result {:?}",
                         &result,
-                        &program_name
                     );
                     yield futures::stream::once(async move {
-                        (program_name.clone(), ServerMessage::Termination(result))
+                        ServerMessage::Termination(result)
                     }).left_stream();
                 }
             }
@@ -556,14 +540,13 @@ fn verify_requests_local<'a>(
                 if let ServerMessage::Termination(result) = &msg {
                     if config::enable_cache() && !matches!(result.kind, viper::VerificationResultKind::JavaException(_)) {
                         info!(
-                            "Storing new cached result {:?} for program {}",
+                            "Storing new cached result {:?}",
                             &result,
-                            &program_name_clone
                         );
                         cache.insert(request_hash, result.clone());
                     }
                 }
-                (program_name_clone.clone(), msg)
+                msg
             }).right_stream();
         }
     };

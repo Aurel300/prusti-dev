@@ -18,16 +18,7 @@ pub fn verify<'tcx>(
     if env.diagnostic.has_errors() {
         warn!("The compiler reported an error, so the program will not be verified.");
     } else {
-        debug!("Prepare verification task...");
-        // // TODO: can we replace `get_annotated_procedures` with information
-        // // that is already in `def_spec`?
-        // let (annotated_procedures, types) = env.get_annotated_procedures_and_types();
-        // let verification_task = VerificationTask {
-        //     procedures: annotated_procedures,
-        //     types,
-        // };
         debug!("Verification task: {:?}", &verification_task);
-
         user::message(format!(
             "{}erification of {} items...",
             if verification_task.selective { "Selective v" } else { "V" },

@@ -36,7 +36,7 @@ thread_local!(
     pub static SELECTIVE_TASKS: std::cell::OnceCell<Vec<DefId>> = std::cell::OnceCell::new()
 );
 
-pub fn selected(def_id: &DefId) -> bool {
+pub fn is_selected(def_id: &DefId) -> bool {
     SELECTIVE_TASKS.with(|selective_tasks|
         selective_tasks
             .get()
@@ -77,7 +77,7 @@ pub fn test_entrypoint<'tcx>(
                 // methods that also aren't called from a selected method are not present
                 // in the viper program. Called methods are only stubs, but this is handled
                 // during the actual encoding (treated as trusted).
-                if prusti_interface::specs::is_spec_fn(tcx, def_id) || !selected(&def_id) {
+                if prusti_interface::specs::is_spec_fn(tcx, def_id) || !is_selected(&def_id) {
                     continue;
                 }
 
@@ -195,7 +195,7 @@ pub fn test_entrypoint<'tcx>(
         program_methods.push(output.method_assign);
     }
 
-    // std::fs::write("local-testing/simple.vpr", viper_code).unwrap();
+    std::fs::write("local-testing/simple.vpr", viper_code).unwrap();
 
     let program = vir::with_vcx(|vcx| vcx.mk_program(
         vcx.alloc_slice(&program_fields),

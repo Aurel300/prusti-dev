@@ -85,7 +85,7 @@ where
             // a call stub.
             // Also do not encode if we are doing selective verification and the
             // current method is not selected.
-            let local_def_id = def_id.as_local().filter(|_| !trusted && crate::selected(&def_id));
+            let local_def_id = def_id.as_local().filter(|_| !trusted && crate::is_selected(&def_id));
             let blocks = if let Some(local_def_id) = local_def_id {
                 // Store identifiers for backtranslation, move this if other ones should also be included
                 vcx.insert_viper_identifier(method_name.to_str().to_string(), &def_id);

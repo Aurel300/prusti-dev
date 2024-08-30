@@ -33,12 +33,8 @@ pub(crate) enum ServerRequest {
 }
 
 /// Server requests that are sent between threads of the verifying process.
-pub(crate) struct ServerVerificationRequest {
-    kind: ServerVerificationRequestKind,
-}
-
 /// Specifies the kind of backend to be used for verification and carries necessary data.
-enum ServerVerificationRequestKind {
+pub(crate) enum ServerVerificationRequest {
     // viper program, backend config, set of viper identifiers
     JVMViperRequest(jni::objects::GlobalRef, ViperBackendConfig, HashSet<String>),
 }
@@ -58,8 +54,8 @@ impl ServerVerificationRequest {
             time_ms: 0,
         };
 
-        match self.kind {
-            ServerVerificationRequestKind::JVMViperRequest(viper_program_ref, backend_config, procedures) => {
+        match self {
+            ServerVerificationRequest::JVMViperRequest(viper_program_ref, backend_config, procedures) => {
                 let viper = VIPER.get().expect("ServerVerificationRequest: Viper was not instantiated before processing a request");
                 let verification_context = viper.attach_current_thread();
                 let mut backend = match backend_config.backend {
@@ -145,12 +141,11 @@ impl<'vir> VerificationRequest {
                         .new_global_ref(viper_program.to_jobject())
                         .unwrap();
 
-                    let kind = ServerVerificationRequestKind::JVMViperRequest(
+                    ServerVerificationRequest::JVMViperRequest(
                         viper_program_ref,
                         self.backend_config.clone(),
                         self.procedures.clone(),
-                    );
-                    ServerVerificationRequest { kind }
+                    )
                 })
             },
         }

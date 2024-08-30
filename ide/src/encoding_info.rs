@@ -8,7 +8,7 @@ use crate::vsc_span::VscSpan;
 pub struct SpanOfCallContracts {
     /// the defpath of the method that is called
     pub defpath: String,
-    /// the spans where this method is called
+    /// the span where this method is called
     pub call_span: VscSpan,
     /// the spans of all the specifications of the called method
     pub contracts_spans: Vec<VscSpan>,

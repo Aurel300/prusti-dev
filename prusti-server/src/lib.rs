@@ -321,7 +321,6 @@ fn handle_method_termination_message(
     prusti_errors: &mut Vec<PrustiError>,
     overall_result: &mut VerificationResult
 ) {
-    debug!("Received method termination message with result {result_kind:?} in verification of {viper_method_name}");
     if let Some(rust_method) = vir::with_vcx(|vcx| vcx.viper_to_rust_identifier(&viper_method_name)) {
         let result = viper::VerificationResult {
             item_name: rust_method,
@@ -330,25 +329,9 @@ fn handle_method_termination_message(
             time_ms: verification_time,
         };
 
-        if config::show_ide_info() {
-            PrustiError::message(
-                format!(
-                    "ideVerificationResult{}",
-                    serde_json::to_string(&IdeVerificationResult {
-                        item_name: result.item_name.clone(),
-                        success: result.is_success(),
-                        cached: result.cached,
-                        time_ms: result.time_ms,
-                    }).unwrap()
-                ),
-                DUMMY_SP.into(),
-            )
-            .emit(env_diagnostic);
-        }
-
-        handle_result(env_diagnostic, result, prusti_errors, overall_result);
+        handle_termination_message(env_diagnostic, result, prusti_errors, overall_result);
     } else {
-        debug!("Could not map method identifier to def id: {viper_method_name}");
+        debug!("Could not map method identifier to def id in termination message: {viper_method_name}");
     }
 }
 
@@ -358,7 +341,7 @@ fn handle_termination_message(
     prusti_errors: &mut Vec<PrustiError>,
     overall_result: &mut VerificationResult
 ) {
-    debug!("Received termination message with result {result:?} during verification");
+    debug!("Received termination message for {} with result {result:?} during verification", result.item_name);
     if config::show_ide_info() {
         PrustiError::message(
             format!(
@@ -411,10 +394,16 @@ fn handle_quantifier_instantiation_message(
                     }
                     PrustiError::message(
                         format!("quantifierInstantiationsMessage{}",
-                            // FIXME: assistant can't display these at the moment because it expects
-                            // them to be associated with a method. our options are:
-                            // - resolve the method name (probably somehow from the pos_id)
-                            // - report quantifier instantiations stand-alone and make assistant inlay those
+                            // TODO: in assistant, this quantifier message becomes an inlay hint at the given
+                            // span. on hover of this inlay, a list of method names and their instantiation count
+                            // for this range are displayed. currently, methods aren't resolved here, meaning the
+                            // hover text will only display the isntantiations of the last message for the range.
+                            // which is probably ok since all methods are in the same program. but the hover is useless.
+                            // it should count which quantifier was instantiated how many times _by_ which method.
+                            // resolving the method name here would merely tell what method the quantifier belongs
+                            // to, not which one instantiated it. this is an artifact of verifying the entire program
+                            // at once rather than having different programs for each method (as in the original PR).
+                            // if it stays that way, the logic can be simplified.
                             json!({"instantiations": n, "method": "program"}),
                         ), span.clone().into()
                     ).emit(env_diagnostic);

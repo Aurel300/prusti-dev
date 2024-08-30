@@ -126,7 +126,7 @@ where
 
             // don't encode the body if it is trusted or we are doing selective verification
             // and the current item is not selected
-            let expr = if trusted || !crate::selected(&def_id) {
+            let expr = if trusted || !crate::is_selected(&def_id) {
                 None
             } else {
                 // Encode the body of the function

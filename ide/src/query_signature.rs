@@ -4,7 +4,6 @@ use std::{collections::HashMap, fmt};
 use crate::ProcDef;
 use prusti_rustc_interface::{
     hir::{def::DefKind, def_id::DefId},
-    // middle::ty::{self, Clause, DefIdTree, ImplSubject, PredicateKind, TyCtxt},
     middle::ty::{ImplSubject, ClauseKind, TyCtxt},
 };
 
@@ -53,7 +52,6 @@ impl ExternSpecBlock {
                     Some(impl_defid) => {
                         // function is part of impl block
                         let mut trait_name = None;
-                        // let impl_subj = tcx.impl_subject(impl_defid);
                         let impl_subj = tcx.impl_subject(impl_defid).skip_binder();
                         let self_ty = match impl_subj {
                             ImplSubject::Trait(tref) => {
@@ -320,13 +318,8 @@ fn generic_params(tcx: TyCtxt<'_>, defid: DefId) -> Vec<GenericArg> {
             if ident == "Self" {
                 None
             } else {
-                // let substs = ty::subst::InternalSubsts::identity_for_item(tcx, defid);
                 let default_value = param
                     .default_value(tcx)
-                    // FIXME: i'm not sure what subst really is but am assuming ty::generic_args::GenerigArg is its analog
-                    // in this rust nightly version.
-                    // the construct seems to be removed from documentation? https://doc.rust-lang.org/stable/nightly-rustc/rustc_middle/ty/subst/
-                    // .map(|val| val.skip_binder().subst(tcx, substs).to_string());
                     .map(|val| val.skip_binder().to_string());
                 Some(GenericArg {
                     name: ident,
@@ -343,9 +336,7 @@ fn trait_bounds(tcx: TyCtxt<'_>, defid: DefId) -> HashMap<String, Vec<TraitBound
 
     for (predicate, _) in predicates.predicates {
         let kind: ClauseKind = predicate.kind().skip_binder();
-        // let kind: PredicateKind = predicate.kind().skip_binder();
         match kind {
-            // PredicateKind::Clause(Clause::Trait(t)) => {
             ClauseKind::Trait(t) => {
                 let bound_traitref = t.trait_ref;
                 let trait_name = tcx.def_path_str(bound_traitref.def_id);
@@ -353,18 +344,11 @@ fn trait_bounds(tcx: TyCtxt<'_>, defid: DefId) -> HashMap<String, Vec<TraitBound
                 if self_ty == "Self" {
                     continue;
                 }
-                // let trait_args_opt = bound_traitref.substs.try_as_type_list();
                 let trait_args = bound_traitref.args
-                // let trait_args = if let Some(typelist) = trait_args_opt {
-                    // typelist
                         .iter()
                         .skip(1) // the first one is the self type
                         .map(|ty| format!("{ty}"))
                         .collect::<Vec<String>>();
-                        // .collect::<Vec<String>>()
-                // } else {
-                //     vec![]
-                // };
                 let bound = TraitBound {
                     name: trait_name,
                     args: trait_args,
@@ -376,7 +360,6 @@ fn trait_bounds(tcx: TyCtxt<'_>, defid: DefId) -> HashMap<String, Vec<TraitBound
                     traitbounds.insert(self_ty, vec![bound]);
                 }
             }
-            // PredicateKind::Clause(Clause::Projection(p)) => {
             ClauseKind::Projection(p) => {
                 let item_id = p.projection_ty.def_id;
                 let self_ty = format!("{}", p.projection_ty.self_ty());

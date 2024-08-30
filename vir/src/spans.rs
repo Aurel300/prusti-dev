@@ -85,7 +85,9 @@ pub struct VirSpanManager<'vir> {
     /// (See `prusti_encoder::ImpureFunctionEnc::encode`)
     /// Used for backtranslation of viper names where the identifier is all to
     /// go off of.
-    // TODO: If useful, extend to include other identifiers too.
+    // TODO: If useful, extend to include other identifiers too. But take care
+    // to also change the usage as well - these currently server as a filter
+    // for EntitySuccess/FailureMessages in prusti-server's viper backend
     viper_identifiers: HashMap<String, DefId>,
 
 }
@@ -278,6 +280,7 @@ impl<'tcx> VirCtxt<'tcx> {
         manager.call_contract_spans.push(span_of_call_contracts);
     }
 
+    /// Emit contract spans as diagnostic. (For Prusti-Assistant)
     pub fn emit_contract_spans(
         &'tcx self,
         env_diagnostic: &EnvDiagnostic<'_>,
@@ -287,7 +290,7 @@ impl<'tcx> VirCtxt<'tcx> {
             .borrow()
             .call_contract_spans
             .clone();
-        // sort, so the is deterministic
+        // sort, so the order is deterministic
         call_contract_spans
             .sort_by(|a,b| a.defpath.cmp(&b.defpath));
 

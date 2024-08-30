@@ -196,14 +196,20 @@ impl prusti_rustc_interface::driver::Callbacks for PrustiCompilerCalls {
             // as long as we have to throw a fake error we need to check this
             // note that is_single_file will still be false if this is run through x.py.
             // it will find a manifest in prusti-launch but CARGO_PRIMARY_PACKAGE will still
-            // not be ok.
+            // not be ok. meaning that selective verification can't currently be tested through
+            // x.py if the target is a single-file program.
             let is_single_file = !std::env::var("CARGO_MANIFEST_DIR").is_ok();
             let is_primary_package =  is_single_file || std::env::var("CARGO_PRIMARY_PACKAGE").is_ok();
 
             // collect and output Information used by IDE:
             if !config::no_verify() && !config::skip_verification() {
                 let target_def_paths = config::verify_only_defpaths();
-                debug!("Received def paths: {:?}. Package is primary: {}", target_def_paths, is_primary_package);
+                debug!(
+                    "Received def paths: {:?}. Package is primary: {}, Package is single-file: {}",
+                    target_def_paths,
+                    is_primary_package,
+                    is_single_file,
+                );
                 if !target_def_paths.is_empty() {
                     // if we do selective verification, then definitely only
                     // for methods of the primary package. Check needed because

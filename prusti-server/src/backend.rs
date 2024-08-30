@@ -137,17 +137,12 @@ fn polling_function(
                     let viper_quant = jni.unwrap_result(msg_wrapper.call_quantifier(msg));
                     let viper_quant_str =
                         jni.get_string(jni.unwrap_result(obj_wrapper.call_toString(viper_quant)));
-                    // debug!("quantifier chosen trigger quant: {viper_quant_str}");
                     // we encoded the position id in the line and column number since this is not used by
                     // prusti either way
                     let pos = jni.unwrap_result(positioned_wrapper.call_pos(viper_quant));
                     let pos_string =
                         jni.get_string(jni.unwrap_result(obj_wrapper.call_toString(pos)));
-                    // debug!("quantifier chosen trigger pos: {pos_string}");
-                    // TODO: the PR (https://github.com/viperproject/prusti-dev/pull/1334) unconditionally does `pos_string.rfind('.').unwrap()` which crashes when there is no position.
-                    // Is that intended?
                     if let Some(pos_id_index) = pos_string.rfind('.') {
-                        // let pos_id_index = pos_string.rfind('.').unwrap();
                         let pos_id = pos_string[pos_id_index + 1..].parse::<usize>().unwrap();
 
                         let viper_triggers =
@@ -163,6 +158,8 @@ fn polling_function(
                                 pos_id,
                             })
                             .unwrap();
+                    } else {
+                        debug!("quantifier chosen trigger for {viper_quant_str} had no position.");
                     }
                 },
                 "viper.silver.reporter.VerificationTerminationMessage" => return error_hashes,

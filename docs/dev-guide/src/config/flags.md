@@ -377,12 +377,6 @@ When enabled for both server and client, certain supported Viper messages will b
 
 When enabled for both server and client, messages for individual basic blocks will be reported to the user. Does nothing if [`REPORT_VIPER_MESSAGES`](#report_viper_messages) is not enabled. Intended for usage with the Prusti Assistant (IDE). 
 
-## `VERIFY_ONLY_DEFPATHS`
-
-When set to a list of defpaths of local methods, prusti will only verify the specified methods. A fake error will be generated to avoid caching of a success. 
-
-> **Note:** This argument should be of JSON compatible form, e.g. `["<METHOD1>","METHOD2>",...]`, with no white spaces.
-
 ## `SERVER_ADDRESS`
 
 When set to an address and port (e.g. `"127.0.0.1:2468"`), Prusti will connect to the given server and use it for its verification backend.

@@ -244,7 +244,7 @@ impl<'a> Verifier<'a> {
             self.smt_manager.stop_and_check();
 
             // wait for the polling thread if present so no errors get processed here that should
-            // be processed by the polling thread. Also aviods the need for locking.
+            // be processed by the polling thread. Also avoids the need for locking.
             let error_hashes_opt = polling_thread.map(|pt| pt.join().unwrap());
             if is_failure {
                 if let Some(mut error_hashes) = error_hashes_opt {
@@ -407,8 +407,6 @@ pub fn extract_errors(
         // that occurred during the verification of user-written rust functions. Any other errors
         // will still be processed here by the verifier for the overall result.
         if let Some(ref mut error_hashes) = error_hashes_opt {
-            // let error_hash = jni_utils
-            //     .unwrap_result(verification_error_wrapper.call_fullId(viper_error));
             let error_hash = hash_error(&error_full_id, &pos_id, &offending_pos_id, &reason_pos_id);
             if (error_hashes).contains(&error_hash) {
                 debug!("already processed {error_hash}");
@@ -470,6 +468,7 @@ pub fn extract_errors(
     VerificationResultKind::Failure(errors)
 } 
 
+/// manually hash identifying parts of an error
 fn hash_error(
     full_id: &str,
     pos_id: &Option<String>,

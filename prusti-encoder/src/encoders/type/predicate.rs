@@ -369,6 +369,64 @@ impl TaskEncoder for PredicateEnc {
                 );
                 Ok((enc.mk_prim(&snap.base_name), ()))
             }
+            TyKind::Generator(def_id, args, _m) if enc.vcx.tcx().generator_is_async(*def_id) => {
+                // generators are encoded like a struct with one field per upvar,
+                // ghost field per upvar capturing that upvar's initial state,
+                // as well as a field for the generator's state
+                let snap_data = snap.specifics.expect_structlike();
+                let specifics = enc.mk_struct_ref(None, snap_data);
+                deps.emit_output_ref(
+                    *task_key,
+                    enc.output_ref(PredicateEncData::StructLike(specifics))
+                )?;
+                let upvar_tys = args.as_generator().upvar_tys();
+                let u32_ty = enc.vcx.tcx().mk_ty_from_kind(ty::TyKind::Uint(ty::UintTy::U32));
+                let fields: Result<Vec<RustTyPredicatesEncOutputRef>, _> = upvar_tys
+                    .into_iter()
+                    .chain(upvar_tys)
+                    .chain(std::iter::once(u32_ty))
+                    .map(|ty| deps.require_ref::<RustTyPredicatesEnc>(ty))
+                    .collect();
+                let fields = enc.mk_field_apps(specifics.ref_to_field_refs, fields?);
+                let fn_snap_body =
+                    enc.mk_struct_ref_to_snap_body(None, fields, snap_data.field_snaps_to_snap);
+                Ok((enc.mk_struct(fn_snap_body), ()))
+            }
+            // FIXME: for now, we encode closures as wrapper struct-likes for their upvars
+            // in order to use them for async specifications
+            TyKind::Closure(_def_id, args) => {
+                // closures are encoded like a struct with one field per upvar
+                let snap_data = snap.specifics.expect_structlike();
+                let specifics = enc.mk_struct_ref(None, snap_data);
+                deps.emit_output_ref(
+                    *task_key,
+                    enc.output_ref(PredicateEncData::StructLike(specifics))
+                )?;
+                let fields: Result<Vec<RustTyPredicatesEncOutputRef>, _> = args
+                    .as_closure()
+                    .upvar_tys()
+                    .into_iter()
+                    .map(|ty| deps.require_ref::<RustTyPredicatesEnc>(ty))
+                    .collect();
+                let fields = enc.mk_field_apps(specifics.ref_to_field_refs, fields?);
+                let fn_snap_body =
+                    enc.mk_struct_ref_to_snap_body(None, fields, snap_data.field_snaps_to_snap);
+                Ok((enc.mk_struct(fn_snap_body), ()))
+            }
+            // FIXME: these are empty dummy domains to permit encoding async code
+            TyKind::FnPtr(_)
+            | TyKind::GeneratorWitness(_)
+            | TyKind::RawPtr(_) => {
+                let snap_data = snap.specifics.expect_structlike();
+                let specifics = enc.mk_struct_ref(None, snap_data);
+                deps.emit_output_ref(
+                    *task_key,
+                    enc.output_ref(PredicateEncData::StructLike(specifics))
+                );
+                let fn_snap_body =
+                    enc.mk_struct_ref_to_snap_body(None, Vec::new(), snap_data.field_snaps_to_snap);
+                Ok((enc.mk_struct(fn_snap_body), ()))
+            }
             unsupported_type => todo!("type not supported: {unsupported_type:?}"),
         }
     }
@@ -687,16 +745,18 @@ impl<'vir, 'tcx> PredicateEncValues<'vir, 'tcx> {
         ));
 
         let inner_snap = inner.ref_to_snap.apply(self.vcx, inner_ref_to_args);
-        let snap = if data.perm.is_none() {
-            // `Ref` is only part of snapshots for mutable references.
-            data.snap_data
-                .field_snaps_to_snap
-                .apply(self.vcx, &[inner_snap, self_ref])
-        } else {
-            data.snap_data
-                .field_snaps_to_snap
-                .apply(self.vcx, &[inner_snap])
-        };
+        // FIXME: this does not work as of now, so we never use the self-ref
+        let snap = data.snap_data.field_snaps_to_snap.apply(self.vcx, &[inner_snap]);
+        // let snap = if data.perm.is_none() {
+        //     // `Ref` is only part of snapshots for mutable references.
+        //     data.snap_data
+        //         .field_snaps_to_snap
+        //         .apply(self.vcx, &[inner_snap, self_ref])
+        // } else {
+        //     data.snap_data
+        //         .field_snaps_to_snap
+        //         .apply(self.vcx, &[inner_snap])
+        // };
         let fn_snap_body = self.vcx.mk_unfolding_expr(self.self_pred_read, snap);
         self.finalize(Some(fn_snap_body))
     }

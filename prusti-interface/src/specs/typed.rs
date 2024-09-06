@@ -82,6 +82,12 @@ impl DefSpecificationMap {
                 if let Some(posts) = spec.posts.extract_with_selective_replacement() {
                     specs.extend(posts);
                 }
+                if let Some(posts) = spec.async_stub_posts.extract_with_selective_replacement() {
+                    specs.extend(posts);
+                }
+                if let Some(invs) = spec.async_invariants.extract_with_selective_replacement() {
+                    specs.extend(invs);
+                }
                 if let Some(Some(term)) = spec.terminates.extract_with_selective_replacement() {
                     specs.push(term.to_def_id());
                 }
@@ -202,6 +208,13 @@ impl DefSpecificationMap {
     }
 }
 
+#[derive(Debug, Copy, Clone, TyEncodable, TyDecodable)]
+pub enum ProcedureKind {
+    Method,
+    AsyncConstructor,
+    AsyncPoll,
+}
+
 #[derive(Debug, Clone, TyEncodable, TyDecodable)]
 pub struct ProcedureSpecification {
     // DefId of fn signature to which the spec was attached.
@@ -210,10 +223,13 @@ pub struct ProcedureSpecification {
     pub kind: SpecificationItem<ProcedureSpecificationKind>,
     pub pres: SpecificationItem<Vec<DefId>>,
     pub posts: SpecificationItem<Vec<DefId>>,
+    pub async_stub_posts: SpecificationItem<Vec<DefId>>,
+    pub async_invariants: SpecificationItem<Vec<DefId>>,
     pub pledges: SpecificationItem<Vec<Pledge>>,
     pub trusted: SpecificationItem<bool>,
     pub terminates: SpecificationItem<Option<LocalDefId>>,
     pub purity: SpecificationItem<Option<DefId>>, // for type-conditional spec refinements
+    pub proc_kind: ProcedureKind,
 }
 
 impl ProcedureSpecification {
@@ -225,10 +241,13 @@ impl ProcedureSpecification {
             kind: SpecificationItem::Inherent(ProcedureSpecificationKind::Impure),
             pres: SpecificationItem::Empty,
             posts: SpecificationItem::Empty,
+            async_stub_posts: SpecificationItem::Empty,
+            async_invariants: SpecificationItem::Empty,
             pledges: SpecificationItem::Empty,
             trusted: SpecificationItem::Inherent(false),
             terminates: SpecificationItem::Inherent(None),
             purity: SpecificationItem::Inherent(None),
+            proc_kind: ProcedureKind::Method,
         }
     }
 }
@@ -453,6 +472,46 @@ impl SpecGraph<ProcedureSpecification> {
         }
     }
 
+    /// Attaches the async stub postcondition `post` to this [SpecGraph].
+    ///
+    /// If this postcondition has a constraint it will be attached to the corresponding
+    /// constrained spec **and** the base spec, otherwise just to the base spec.
+    pub fn add_async_stub_postcondition<'tcx>(&mut self, post: LocalDefId, env: &Environment<'tcx>) {
+        match self.get_constraint(post, env) {
+            None => {
+                self.base_spec.async_stub_posts.push(post.to_def_id());
+                self.specs_with_constraints
+                    .values_mut()
+                    .for_each(|s| s.async_stub_posts.push(post.to_def_id()));
+            }
+            Some(obligation) => {
+                self.get_constrained_spec_mut(obligation)
+                    .async_stub_posts
+                    .push(post.to_def_id());
+            }
+        }
+    }
+
+    /// Attaches the async invariant `inv` to this [SpecGraph].
+    ///
+    /// If this postcondition has a constraint it will be attached to the corresponding
+    /// constrained spec **and** the base spec, otherwise just to the base spec.
+    pub fn add_async_invariant<'tcx>(&mut self, inv: LocalDefId, env: &Environment<'tcx>) {
+        match self.get_constraint(inv, env) {
+            None => {
+                self.base_spec.async_invariants.push(inv.to_def_id());
+                self.specs_with_constraints
+                    .values_mut()
+                    .for_each(|s| s.async_invariants.push(inv.to_def_id()));
+            }
+            Some(obligation) => {
+                self.get_constrained_spec_mut(obligation)
+                    .async_invariants
+                    .push(inv.to_def_id());
+            }
+        }
+    }
+
     pub fn add_purity<'tcx>(&mut self, purity: LocalDefId, env: &Environment<'tcx>) {
         match self.get_constraint(purity, env) {
             None => {
@@ -500,6 +559,14 @@ impl SpecGraph<ProcedureSpecification> {
         self.specs_with_constraints
             .values_mut()
             .for_each(|s| s.kind.set(kind));
+    }
+
+    /// Sets the [ProcedureKind] for the base spec and all constrained specs.
+    pub fn set_proc_kind(&mut self, proc_kind: ProcedureKind) {
+        self.base_spec.proc_kind = proc_kind;
+        self.specs_with_constraints
+            .values_mut()
+            .for_each(|s| s.proc_kind = proc_kind);
     }
 
     /// Lazily gets/creates a constrained spec.
@@ -777,11 +844,14 @@ impl Refinable for ProcedureSpecification {
             source: self.source,
             pres: self.pres.refine(replace_empty(&EMPTYL, &other.pres)),
             posts: self.posts.refine(replace_empty(&EMPTYL, &other.posts)),
+            async_stub_posts: self.async_stub_posts.refine(replace_empty(&EMPTYL, &other.async_stub_posts)),
+            async_invariants: self.async_invariants.refine(replace_empty(&EMPTYL, &other.async_invariants)),
             pledges: self.pledges.refine(replace_empty(&EMPTYP, &other.pledges)),
             kind: self.kind.refine(&other.kind),
             trusted: self.trusted.refine(&other.trusted),
             terminates: self.terminates.refine(&other.terminates),
             purity: self.purity.refine(&other.purity),
+            proc_kind: self.proc_kind,
         }
     }
 }

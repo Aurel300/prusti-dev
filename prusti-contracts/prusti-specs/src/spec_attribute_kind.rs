@@ -18,6 +18,8 @@ pub enum SpecAttributeKind {
     Terminates = 10,
     PrintCounterexample = 11,
     Verified = 12,
+    AsyncEnsures = 13,
+    AsyncInvariant = 14,
 }
 
 impl TryFrom<String> for SpecAttributeKind {
@@ -37,6 +39,7 @@ impl TryFrom<String> for SpecAttributeKind {
             "model" => Ok(SpecAttributeKind::Model),
             "print_counterexample" => Ok(SpecAttributeKind::PrintCounterexample),
             "verified" => Ok(SpecAttributeKind::Verified),
+            "async_invariant" => Ok(SpecAttributeKind::AsyncInvariant),
             _ => Err(name),
         }
     }

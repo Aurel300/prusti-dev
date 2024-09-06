@@ -2,11 +2,12 @@ use mir_state_analysis::{
     free_pcs::{CapabilityKind, FreePcsAnalysis, FreePcsBasicBlock, FreePcsLocation, RepackOp},
     utils::Place,
 };
+use prusti_interface::{environment::EnvQuery, specs::typed::ProcedureKind};
 use prusti_rustc_interface::{
     abi,
     middle::{
         mir,
-        ty::{GenericArgs, TyKind},
+        ty::{self, GenericArgs, TyKind},
     },
     span::def_id::DefId,
 };
@@ -14,7 +15,7 @@ use prusti_rustc_interface::{
 //    SsaAnalysis,
 //};
 use task_encoder::{TaskEncoder, TaskEncoderDependencies, EncodeFullResult};
-use vir::{MethodIdent, UnknownArity};
+use vir::{MethodIdent, UnknownArity, Reify};
 
 pub struct MirImpureEnc;
 
@@ -42,19 +43,22 @@ use crate::{
         self,
         lifted::{
             aggregate_cast::{
+                self,
                 AggregateSnapArgsCastEnc,
                 AggregateSnapArgsCastEncTask
             },
             func_app_ty_params::LiftedFuncAppTyParamsEnc
         },
-        FunctionCallTaskDescription, MirBuiltinEnc
+        FunctionCallTaskDescription, MirBuiltinEnc,
+        r#async::{AsyncPollStubEnc, SuspensionPointAnalysis},
+        MirSpecEnc,
     }
 };
 
 use super::{
     lifted::{
         cast::{CastArgs, CastToEnc},
-        casters::CastTypeImpure,
+        casters::{CastTypeImpure, CastTypePure},
         rust_ty_cast::RustTyCastersEnc
     },
     rust_ty_predicates::RustTyPredicatesEnc,
@@ -113,6 +117,7 @@ pub struct ImpureEncVisitor<'vir, 'enc, E: TaskEncoder>
     pub monomorphize: bool,
     pub deps: &'enc mut TaskEncoderDependencies<'vir, E>,
     pub def_id: DefId,
+    pub substs: ty::GenericArgsRef<'vir>,
     pub local_decls: &'enc mir::LocalDecls<'vir>,
     //ssa_analysis: SsaAnalysis,
     pub fpcs_analysis: FreePcsAnalysis<'enc, 'vir>,
@@ -484,6 +489,81 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         let tmp = self.vcx.mk_local(name, ty);
         (tmp, self.vcx.mk_local_ex_local(tmp))
     }
+
+    /// helper function to create a call to an async generator's poll stub
+    fn mk_poll_call(
+        &mut self,
+        gen_def_id: DefId,
+        gen_args: ty::GenericArgsRef<'vir>,
+        args: &Vec<mir::Operand<'vir>>,
+        destination: & mir::Place<'vir>,
+        target: &Option<mir::BasicBlock>,
+        pin_gen_ty: ty::Ty<'vir>,
+        poll_ret_ty: ty::Ty<'vir>,
+    ) {
+        let poll_stub = self.deps.require_ref::<AsyncPollStubEnc>(gen_def_id).unwrap();
+        let dest = self.encode_place(Place::from(*destination)).expr;
+
+        let method_in = args.iter().map(|arg| self.encode_operand(arg)).collect::<Vec<_>>();
+
+       for ((fn_arg_ty, arg), arg_ex) in poll_stub.arg_tys.iter().zip(args.iter()).zip(method_in.iter()) {
+            let local_decls = self.local_decls_src();
+            let tcx = self.vcx().tcx();
+            let arg_ty = arg.ty(local_decls, tcx);
+            let caster = self.deps()
+                .require_ref::<CastToEnc<CastTypeImpure>>(CastArgs {
+                    expected: *fn_arg_ty,
+                    actual: arg_ty
+                })
+                .unwrap();
+            // In this context, `apply_cast_if_necessary` returns
+            // the impure operation to perform the cast
+            if let Some(stmt) = caster.apply_cast_if_necessary(self.vcx(), arg_ex) {
+                self.stmt(stmt);
+            }
+        }
+
+        let mut method_args =
+            std::iter::once(dest).chain(method_in).collect::<Vec<_>>();
+        let mono = self.monomorphize;
+        let encoded_ty_args = self
+            .deps()
+            .require_local::<LiftedFuncAppTyParamsEnc>(
+                (mono, gen_args)
+            )
+            .unwrap()
+            .iter()
+            .map(|ty| ty.expr(self.vcx()));
+
+        method_args.extend(encoded_ty_args);
+
+        self.stmt(
+            self.vcx
+                .alloc(poll_stub.method_ref.apply(self.vcx, &method_args)),
+        );
+        let expected_ty = destination.ty(self.local_decls_src(), self.vcx.tcx()).ty;
+        let result_cast = self
+            .deps()
+            .require_ref::<CastToEnc<CastTypeImpure>>(CastArgs {
+                expected: expected_ty,
+                actual: poll_stub.return_ty,
+            })
+            .unwrap();
+        if let Some(stmt) = result_cast.apply_cast_if_necessary(self.vcx, dest) {
+            self.stmt(stmt);
+        }
+
+        let terminator = target
+            .map(|target| {
+                self.vcx.mk_goto_stmt(
+                    self.vcx
+                        .alloc(vir::CfgBlockLabelData::BasicBlock(target.as_usize())),
+                )
+            })
+            .unwrap_or_else(|| self.unreachable());
+
+        assert!(self.current_terminator.replace(terminator).is_none());
+    }
 }
 
 impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<'vir, 'enc, E> {
@@ -539,6 +619,66 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
         }
         */
 
+        // if this is the head of an await's busy loop, we need to add some invariants
+        let invariants = (|| {
+            let suspension_points = self.deps.require_local::<SuspensionPointAnalysis>(self.def_id).unwrap().0;
+            let suspension_point = suspension_points
+                .into_iter()
+                .find(|sp| sp.loop_head == block)?;
+            let fut_ty = self.local_decls[suspension_point.future_local].ty;
+            let fut_ty = self.vcx.tcx().expand_opaque_types(fut_ty);
+            let ty::TyKind::Generator(fut_def_id, ..) = fut_ty.kind() else {
+                panic!("suspension-point future place does not contain generator type");
+            };
+            // make sure to get generator type without any substitutions already applied
+            let fut_ty = self.vcx.tcx().type_of(fut_def_id).skip_binder();
+            let ty::TyKind::Generator(fut_def_id, params, _) = fut_ty.kind() else {
+                unreachable!()
+            };
+            // FIXME: this encodes the invariants for the wrong generator, namely the self-arg,
+            // as it encodes from the polled future's perspective rather than from the polling
+            // future's
+            // we might be able to fix this by manually encoding using `MirPure` and refiying
+            // the result here
+            let fut_invs = self.deps.require_local::<MirSpecEnc>(
+                (*fut_def_id, self.substs, None, false, true)
+            ).unwrap().async_invariants;
+
+            let upvar_tys = params.as_generator().upvar_tys();
+            let ghost_field_invs = if let Some(original_fut_local) = suspension_point.original_future_local {
+                let gen_snap = self.local_defs.locals[suspension_point.future_local].impure_snap;
+                let fut_ty = self.deps.require_ref::<RustTyPredicatesEnc>(fut_ty).unwrap();
+                let fields = fut_ty.generic_predicate.expect_structlike().snap_data.field_access;
+                assert_eq!(fields.len(), 2 * upvar_tys.len() + 1);
+                let ghost_fields = fields[upvar_tys.len() .. 2 * upvar_tys.len()]
+                    .iter()
+                    .map(|f| f.read.apply(self.vcx, [gen_snap]));
+                ghost_fields
+                    .zip(upvar_tys.iter())
+                    .enumerate()
+                    .map(|(idx, (f, ty))| {
+                        let ty = self.deps.require_ref::<RustTyPredicatesEnc>(ty).unwrap().snapshot();
+                        let name = vir::vir_format!(self.vcx, "_fut_arg_snap${original_fut_local:?}p${idx}");
+                        let snap_local = self.vcx.mk_local_ex(name, ty);
+                        self.vcx.mk_bin_op_expr(vir::BinOpKind::CmpEq, f, snap_local)
+                    })
+                    .collect()
+            } else {
+                Vec::new()
+            };
+
+            // we now add the necessary invariant about the typing of the generator and `ResumeTy`
+            // argument, the generator ghost fields being equal to the snapshots taken at the
+            // constructor call, as well as the polled future's invariants
+            let mut invs = Vec::with_capacity(2 + upvar_tys.len() + fut_invs.len());
+            invs.push(self.local_defs.locals[suspension_point.future_local].impure_pred);
+            invs.push(self.local_defs.locals[2_u32.into()].impure_pred);
+            invs.extend(ghost_field_invs);
+            invs.extend(fut_invs);
+
+            Some(self.vcx.alloc_slice(&invs))
+        })();
+
         assert!(self.current_terminator.is_none());
         self.super_basic_block_data(block, data);
         let stmts = self.current_stmts.take().unwrap();
@@ -547,7 +687,8 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
             self.vcx.mk_cfg_block(
                 self.vcx.alloc(vir::CfgBlockLabelData::BasicBlock(block.as_usize())),
                 self.vcx.alloc_slice(&stmts),
-                terminator
+                terminator,
+                invariants.unwrap_or(&[]),
             )
         );
     }
@@ -694,6 +835,105 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                         }
                     }
 
+                    // future constructors
+                    mir::Rvalue::Aggregate(
+                        box kind@mir::AggregateKind::Generator(def_id, _params, _movbl),
+                        operands
+                    ) if self.vcx.tcx().generator_is_async(*def_id) => {
+                        let generator_ty = self.deps.require_ref::<RustTyPredicatesEnc>(rvalue_ty).unwrap();
+                        let snap_cons = generator_ty
+                            .generic_predicate
+                            .expect_structlike()
+                            .snap_data
+                            .field_snaps_to_snap;
+                        let operand_tys = operands
+                            .iter()
+                            .map(|oper| oper.ty(self.local_decls, self.vcx.tcx()))
+                            .collect::<Vec<_>>();
+                        // cast given arguments to field types
+                        let ty_caster = self.deps.require_local::<AggregateSnapArgsCastEnc>(
+                            AggregateSnapArgsCastEncTask {
+                                tys: operand_tys,
+                                aggregate_type: kind.into()
+                            }
+                        ).unwrap();
+                        let operand_snaps = operands
+                            .iter()
+                            .map(|oper| self.encode_operand_snap(oper))
+                            .collect::<Vec<_>>();
+                        let casted_args = ty_caster.apply_casts(self.vcx, operand_snaps.into_iter());
+                        // duplicate them to also initialize the ghost fields
+                        // and initialize the state to 0
+                        let zero = self
+                            .deps
+                            .require_ref::<RustTyPredicatesEnc>(
+                            self.vcx.tcx().mk_ty_from_kind(ty::TyKind::Uint(ty::UintTy::U32))
+                            )
+                            .unwrap()
+                            .generic_predicate
+                            .expect_prim()
+                            .prim_to_snap
+                            .apply(self.vcx, [self.vcx.mk_uint::<0>()]);
+                        let n_args = casted_args.len();
+                        let args = casted_args
+                            .into_iter()
+                            .cycle()
+                            .take(2 * n_args)
+                            .chain(std::iter::once(zero))
+                            .collect::<Vec<_>>();
+                        snap_cons.apply(self.vcx, self.vcx.alloc_slice(&args))
+                    }
+
+                    // FIXME: this is only a dummy to inspect generated async code
+                    mir::Rvalue::Ref(region, borrow_kind, place) => {
+                        // get the type of the place the ref points to
+                        let place_ty = place.ty(self.local_decls, self.vcx.tcx());
+                        // and construct the type of the reference pointing to it
+                        let ref_domain = {
+                            // either by manually creating the domain
+                            // (with hardcoded name for Ref-domains)
+                            // let place_ty = self.deps.require_ref::<PredicateEnc>(place_ty.ty).unwrap();
+                            // let dom_name = match borrow_kind {
+                            //     mir::BorrowKind::Mut { .. } => "s_Ref_Mut",
+                            //     _ => "s_Ref",
+                            // };
+                            // let dom_args = self.vcx.alloc([place_ty.snapshot]);
+                            // self.vcx.alloc(vir::TypeData::Domain(dom_name, dom_args))
+                            // or by wrapping it in a ref and using the encoder
+                            let mutability = match borrow_kind {
+                                mir::BorrowKind::Shared | mir::BorrowKind::Shallow => mir::Mutability::Not,
+                                mir::BorrowKind::Mut { .. } => mir::Mutability::Mut,
+                            };
+                            let ref_ty = self.vcx.tcx().mk_ty_from_kind(TyKind::Ref(*region, place_ty.ty, mutability));
+                            let (ref_ty, _) = crate::encoders::most_generic_ty::extract_type_params(self.vcx.tcx(), ref_ty);
+                            let enc_ref_ty = self.deps.require_ref::<crate::encoders::PredicateEnc>(ref_ty).unwrap();
+                            enc_ref_ty.snapshot
+                        };
+                        let name = match borrow_kind {
+                            mir::BorrowKind::Shared | mir::BorrowKind::Shallow => "DummyRefLocal",
+                            mir::BorrowKind::Mut { .. } => "DummyRefMutLocal",
+                        };
+                        self.vcx.mk_local_ex(name, ref_domain)
+                    }
+                    // FIXME: this is only a dummy to inspect generated async code
+                    mir::Rvalue::Aggregate(
+                        box mir::AggregateKind::Closure(def_id, args),
+                        fields
+                    ) => {
+                        let closure_ty = self.vcx.tcx().type_of(def_id).skip_binder();
+                        let closure_ty = self.deps.require_ref::<RustTyPredicatesEnc>(closure_ty).unwrap();
+                        let snap_cons = closure_ty
+                            .generic_predicate
+                            .expect_structlike()
+                            .snap_data
+                            .field_snaps_to_snap;
+                        let fields = fields
+                            .iter()
+                            .map(|f| self.encode_operand_snap(f))
+                            .collect::<Vec<_>>();
+                        snap_cons.apply(self.vcx, &fields)
+                    }
+
                     //mir::Rvalue::Discriminant(Place<'vir>) => {}
                     //mir::Rvalue::ShallowInitBox(Operand<'vir>, Ty<'vir>) => {}
                     //mir::Rvalue::CopyForDeref(Place<'vir>) => {}
@@ -806,8 +1046,21 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                     self.vcx.alloc_slice(&otherwise_stmts),
                 )
             }
-            mir::TerminatorKind::Return =>
-                self.vcx.mk_goto_stmt(self.vcx.alloc(vir::CfgBlockLabelData::End)),
+            mir::TerminatorKind::Return => {
+                // make sure all async-invariants still hold
+                // FIXME: see comment regarding async-invariants at yield-terminators
+                if self.vcx.tcx().generator_is_async(self.def_id) {
+                    let invs = self
+                        .deps
+                        .require_local::<MirSpecEnc>((self.def_id, self.substs, None, false, false))
+                        .unwrap()
+                        .async_invariants;
+                    for inv in invs {
+                        self.stmt(self.vcx.mk_exhale_stmt(inv));
+                    }
+                }
+                self.vcx.mk_goto_stmt(self.vcx.alloc(vir::CfgBlockLabelData::End))
+            }
             mir::TerminatorKind::Call {
                 func,
                 args,
@@ -815,10 +1068,163 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                 target,
                 ..
             } => {
-                let (func_def_id, caller_substs) = self.get_def_id_and_caller_substs(func);
-                let is_pure = crate::encoders::with_proc_spec(func_def_id, |spec|
-                    spec.kind.is_pure().unwrap_or_default()
-                ).unwrap_or_default();
+                let (mut func_def_id, mut caller_substs) = self.get_def_id_and_caller_substs(func);
+                let (is_pure, proc_kind) = crate::encoders::with_proc_spec(func_def_id, |spec|
+                    (spec.kind.is_pure().unwrap_or_default(), spec.proc_kind)
+                ).unwrap_or((false, ProcedureKind::Method));
+
+                // encode suspension-point on_exit/on_entry markers as assert/assume instead of method calls
+                let def_path = self.vcx.tcx().def_path_str(func_def_id);
+                let suspension_point_marker = match def_path.as_str() {
+                    "prusti_contracts::suspension_point_on_exit_marker" => Some(true),
+                    "prusti_contracts::suspension_point_on_entry_marker" => Some(false),
+                    _ => None,
+                };
+                if let Some(is_on_exit) = suspension_point_marker {
+                    // generate assert/assume for each closure of the tuple passed as second arg
+                    let closures_local = {
+                        assert_eq!(args.len(), 2, "expected 2 arguments to suspension-point marker");
+                        let mir::Operand::Move(place) = &args[1] else {
+                            panic!("expected closure tuple argument to suspension-point to be moved")
+                        };
+                        assert!(
+                            place.projection.is_empty(),
+                            "expected no projections on closure tuple argument to suspension-point marker"
+                        );
+                        place.local
+                    };
+                    let closure_def_ids = {
+                        let ty::TyKind::Tuple(closures) = self.local_decls[closures_local].ty.kind() else {
+                            panic!("expected second argument to suspension-point marker to be tuple")
+                        };
+                        closures
+                            .into_iter()
+                            .map(|closure_ty| match closure_ty.kind() {
+                                ty::TyKind::Closure(def_id, _) => def_id,
+                                _ => panic!("expected second argument to suspension-point marker to be tuple of closures")
+                            })
+                    };
+
+                    let closure_fields = {
+                        let tuple_ty = self.local_defs.locals[closures_local].ty;
+                        tuple_ty.expect_structlike().snap_data.field_access
+                    };
+                    let tuple_expr = self.local_defs.locals[closures_local].impure_snap;
+                    for (i, def_id) in closure_def_ids.enumerate() {
+                        // construct a (pure) reference to the closure to provide the exit/entry
+                        // predicate spec method body with
+                        let closure_ref = {
+                            let closure_ty = self.vcx.tcx().type_of(def_id).skip_binder();
+                            let caster = self.deps.require_local::<RustTyCastersEnc<CastTypePure>>(closure_ty).unwrap();
+                            let ref_ty = self.vcx.tcx().mk_ty_from_kind(ty::TyKind::Ref(
+                                ty::Region::new_from_kind(self.vcx.tcx(), ty::RegionKind::ReErased),
+                                closure_ty,
+                                mir::Mutability::Not,
+                            ));
+                            let ref_ty = self.deps.require_ref::<RustTyPredicatesEnc>(ref_ty).unwrap();
+                            let ref_cons = ref_ty.generic_predicate.expect_ref().snap_data.field_snaps_to_snap;
+                            let closure = closure_fields[i].read.apply(self.vcx, [tuple_expr]);
+                            let closure_ref = ref_cons.apply(self.vcx, &[closure]);
+                            closure_ref
+                        };
+                        let expr = self.deps
+                            .require_local::<crate::encoders::MirPureEnc>(
+                                crate::encoders::MirPureEncTask {
+                                    encoding_depth: 0,
+                                    kind: crate::encoders::PureKind::Closure,
+                                    parent_def_id: *def_id,
+                                    param_env: self.vcx.tcx().param_env(def_id),
+                                    substs: self.substs,
+                                    // TODO: should this be `def_id` or `caller_def_id`
+                                    caller_def_id: Some(self.def_id),
+                                },
+                            )
+                            .unwrap()
+                            .expr;
+                        let expr = expr.reify(self.vcx, (*def_id, self.vcx.alloc_slice(&[closure_ref])));
+                        let to_bool = self.deps
+                            .require_ref::<RustTyPredicatesEnc>(self.vcx.tcx().types.bool).unwrap()
+                            .generic_predicate
+                            .expect_prim()
+                            .snap_to_prim;
+                        let expr = to_bool.apply(self.vcx, [expr]);
+                        let stmt_kind = if is_on_exit {
+                            vir::StmtGenData::Exhale
+                        } else {
+                            vir::StmtGenData::Inhale
+                        };
+                        self.stmt(self.vcx.alloc(stmt_kind(expr)));
+                    }
+
+                    // and then just proceed with the next BB
+                    let terminator = target
+                        .map(|target| {
+                            self.vcx.mk_goto_stmt(
+                                self.vcx
+                                    .alloc(vir::CfgBlockLabelData::BasicBlock(target.as_usize())),
+                            )
+                        })
+                        .unwrap_or_else(|| self.unreachable());
+                    assert!(self.current_terminator.replace(terminator).is_none());
+                    return;
+                }
+
+                // intercept some calls that are necessary for async code,
+                // but need to be encoded differently
+                if self.vcx.tcx().trait_of_item(func_def_id).is_some() {
+                    let env_query = EnvQuery::new(self.vcx.tcx());
+                    let (resolved_def_id, resolved_params) = env_query.resolve_method_call(self.def_id, func_def_id, caller_substs);
+                    match self.vcx.tcx().def_path_str(func_def_id).as_ref() {
+                        // we can resolve calls to into_future
+                        "std::future::IntoFuture::into_future" => {
+                            func_def_id = resolved_def_id;
+                            caller_substs = resolved_params;
+                        },
+                        // and replace calls to poll with the annotated poll stub
+                        "std::future::Future::poll" => {
+                            // the generator is passed (by move) as the first argument
+                            let mir::Operand::Move(ref fut_place) = args[0] else {
+                                panic!("expected first argument to poll to be moved");
+                            };
+                            let fut_ty = {
+                                // TODO: verify that this works with manual poll calls
+                                assert!(fut_place.projection.is_empty(), "expected no projections on poll-argument");
+                                let fut_ty = &self.local_decls[fut_place.local].ty;
+                                let fut_ty =match fut_ty.kind() {
+                                    ty::Adt(adt_def, args) => {
+                                        assert_eq!(self.vcx.tcx().def_path_str(adt_def.did()), "std::pin::Pin");
+                                        assert_eq!(args.len(), 1);
+                                        args[0].as_type().expect("expected Pin's generic arg to be type")
+                                    },
+                                    _ => panic!("expected poll argument to be pinned"),
+                                };
+                                let ty::TyKind::Ref(_, ref fut_ty, mir::Mutability::Mut) = fut_ty.kind() else {
+                                    panic!("expected poll argument to be pinned mutable reference");
+                                };
+                                // generally, the future type is hidden behind an OTA
+                                self.vcx.tcx().expand_opaque_types(*fut_ty)
+                            };
+
+                            // if the future is now known to be a specific generator,
+                            // we can use its `DefId` to redirect the call to its poll-stub
+                            if let ty::TyKind::Generator(gen_def_id, gen_args, _) = fut_ty.kind() {
+                                self.mk_poll_call(
+                                    *gen_def_id,
+                                    gen_args,
+                                    args,
+                                    destination,
+                                    target,
+                                    self.local_decls[fut_place.local].ty,
+                                    destination.ty(self.local_decls, self.vcx.tcx()).ty,
+                                );
+                                return;
+                            } else {
+                                println!("unable to resolve poll for {fut_ty:?}");
+                            }
+                        },
+                        _ => {},
+                    }
+                }
 
                 let dest = self.encode_place(Place::from(*destination)).expr;
 
@@ -873,7 +1279,12 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                     let method_in = args.iter().map(|arg| self.encode_operand(arg)).collect::<Vec<_>>();
 
 
-                   for ((fn_arg_ty, arg), arg_ex) in fn_arg_tys.iter().zip(args.iter()).zip(method_in.iter()) {
+                   for (idx, ((fn_arg_ty, arg), arg_ex)) in fn_arg_tys
+                       .iter()
+                       .zip(args.iter())
+                       .zip(method_in.iter())
+                       .enumerate()
+                   {
                         let local_decls = self.local_decls_src();
                         let tcx = self.vcx().tcx();
                         let arg_ty = arg.ty(local_decls, tcx);
@@ -887,6 +1298,19 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                         // the impure operation to perform the cast
                         if let Some(stmt) = caster.apply_cast_if_necessary(self.vcx(), arg_ex) {
                             self.stmt(stmt);
+                        }
+
+                        // if this is a call to a future constructor, create a new variable
+                        // capturing a snapshot of the argument
+                        if matches!(proc_kind, ProcedureKind::AsyncConstructor) {
+                            let arg_ty = self.deps.require_ref::<RustTyPredicatesEnc>(*fn_arg_ty).unwrap();
+                            let name = vir::vir_format!(self.vcx, "_fut_arg_snap${dest:?}${idx}");
+                            let snap = arg_ty.generic_predicate.ref_to_snap.apply(self.vcx, &[arg_ex]);
+                            let decl = self.vcx.mk_local_decl_stmt(
+                                vir::vir_local_decl! { self.vcx; [name] : [arg_ty.generic_predicate.snapshot]},
+                                Some(snap),
+                            );
+                            self.stmt(decl);
                         }
                     }
 
@@ -976,6 +1400,52 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                 self.vcx.mk_goto_stmt(
                     self.vcx
                         .alloc(vir::CfgBlockLabelData::BasicBlock(target.as_usize())),
+                )
+            }
+
+            kind@mir::TerminatorKind::Yield {
+                value,
+                resume,
+                resume_arg,
+                drop: _,
+            } => {
+                // when yielding, we exhale permissions to the yielded value,
+                let mir::Operand::Move(place) = value else {
+                    panic!("expected yielded value to be moved")
+                };
+                let yield_val_permission = self.local_defs.locals[place.local].impure_pred;
+                self.stmt(self.vcx.mk_exhale_stmt(yield_val_permission));
+                // make sure all async-invariants still hold
+                // FIXME: currently, the async-invariants are exhaled as if the generator is still
+                // in the first argument place _1p, but generally it will be be moved to different
+                // places during the body's execution.
+                // Furthermore, it is behind a pinned mutable reference when polled, so we also
+                // need to make sure that accessing it via the original place has the correct
+                // behavior once Pin and mutable references are supported.
+                // TODO: figure out the place in which the generator is during busy-loop analysis
+                if self.vcx.tcx().generator_is_async(self.def_id) {
+                    let invs = self
+                        .deps
+                        .require_local::<MirSpecEnc>((self.def_id, self.substs, None, false, false))
+                        .unwrap()
+                        .async_invariants;
+                    for inv in invs {
+                        self.stmt(self.vcx.mk_exhale_stmt(inv));
+                    }
+                }
+                // TODO: once shared state is supported, we also need to havoc all shared state,
+                // and inhale all invariants again
+                // inhale permissions to the obtained resume-values,
+                let resume_permission = self.local_defs.locals[resume_arg.local].impure_pred;
+                self.stmt(self.vcx.mk_inhale_stmt(resume_permission));
+                // and continue with the resume BB
+                // Ensure that the terminator succ that we use for the repacks is the correct one
+                const REAL_TARGET_SUCC_IDX: usize = 0;
+                assert_eq!(&self.current_fpcs.as_ref().unwrap().terminator.succs[REAL_TARGET_SUCC_IDX].location.block, resume);
+                self.fpcs_repacks_terminator(REAL_TARGET_SUCC_IDX, |rep| &rep.repacks_start);
+                self.vcx.mk_goto_stmt(
+                    self.vcx
+                        .alloc(vir::CfgBlockLabelData::BasicBlock(resume.as_usize())),
                 )
             }
 

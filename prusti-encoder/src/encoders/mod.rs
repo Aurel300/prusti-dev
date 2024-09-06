@@ -10,6 +10,7 @@ mod local_def;
 mod r#type;
 mod r#const;
 mod mono;
+mod r#async;
 
 cfg_if::cfg_if! {
     if #[cfg(feature = "mono_function_encoding")] {
@@ -56,3 +57,4 @@ pub use viper_tuple::{
     ViperTupleEncOutput,
 };
 pub use r#const::ConstEnc;
+pub use r#async::poll_stub::AsyncPollStubEnc;

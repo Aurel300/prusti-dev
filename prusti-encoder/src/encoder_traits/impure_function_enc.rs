@@ -1,9 +1,16 @@
-use prusti_rustc_interface::middle::mir;
+use prusti_rustc_interface::middle::{ty, mir};
+use prusti_interface::specs::typed::ProcedureKind;
 use task_encoder::{EncodeFullError, TaskEncoder, TaskEncoderDependencies};
-use vir::{MethodIdent, UnknownArity, ViperIdent};
+use vir::{self, MethodIdent, UnknownArity, ViperIdent};
 
 use crate::encoders::{
-    lifted::func_def_ty_params::LiftedTyParamsEnc, ImpureEncVisitor, MirImpureEnc, MirLocalDefEnc, MirSpecEnc
+    lifted::func_def_ty_params::LiftedTyParamsEnc,
+    ImpureEncVisitor,
+    MirImpureEnc,
+    MirLocalDefEnc,
+    MirSpecEnc,
+    rust_ty_predicates::RustTyPredicatesEnc,
+    predicate,
 };
 
 use super::function_enc::FunctionEnc;
@@ -125,6 +132,7 @@ where
                     vcx.alloc(vir::CfgBlockLabelData::Start),
                     vcx.alloc_slice(&start_stmts),
                     vcx.mk_goto_stmt(vcx.alloc(vir::CfgBlockLabelData::BasicBlock(0))),
+                    &[],
                 ));
 
                 let mut visitor = ImpureEncVisitor {
@@ -132,6 +140,7 @@ where
                     vcx,
                     deps,
                     def_id,
+                    substs,
                     local_decls: &body.local_decls,
                     //ssa_analysis,
                     fpcs_analysis,
@@ -151,16 +160,24 @@ where
                     vcx.alloc(vir::CfgBlockLabelData::End),
                     &[],
                     vcx.alloc(vir::TerminatorStmtData::Exit),
+                    &[],
                 ));
                 Some(vcx.alloc_slice(&visitor.encoded_blocks))
             } else {
                 None
             };
 
-            let spec = deps
-                .require_local::<MirSpecEnc>((def_id, substs, None, false))?;
-            let (spec_pres, spec_posts) = (spec.pres, spec.posts);
+            let proc_kind = crate::encoders::with_proc_spec(
+                    def_id,
+                    |def_spec| def_spec.proc_kind
+                )
+                .unwrap_or(ProcedureKind::Method);
 
+            let spec = deps
+                .require_local::<MirSpecEnc>((def_id, substs, None, false, false))?;
+            let (spec_pres, spec_posts, spec_async_invs) = (spec.pres, spec.posts, spec.async_invariants);
+
+            // TODO: fix capacity?
             let mut pres = Vec::with_capacity(arg_count - 1);
             let mut args = Vec::with_capacity(arg_count + substs.len());
             for arg_idx in 0..arg_count {
@@ -173,9 +190,69 @@ where
             args.extend(param_ty_decls.iter());
             pres.extend(spec_pres);
 
+            // in the case of an async body, we additionally require that the ghost fields
+            // capturing the initial upvar state are equal to the upvar fields
+            // as well as that all invariants hold initially
+            if matches!(proc_kind, ProcedureKind::AsyncPoll) {
+                let gen_ty = vcx.tcx().type_of(def_id).skip_binder();
+                let fields = {
+                    let gen_ty = deps.require_ref::<RustTyPredicatesEnc>(gen_ty)?;
+                    gen_ty.generic_predicate.expect_structlike().snap_data.field_access
+                };
+                let upvar_tys = {
+                    let ty::TyKind::Generator(_, args, _) = gen_ty.kind() else {
+                        panic!("expected generator TyKind to be Generator");
+                    };
+                    args.as_generator().upvar_tys()
+                };
+                let n_upvars = upvar_tys.len();
+                assert_eq!(fields.len(), 2 * upvar_tys.len() + 1);
+                let gen_snap = local_defs.locals[1_u32.into()].impure_snap;
+                for i in 0 .. upvar_tys.len() {
+                    let field = fields[i].read.apply(vcx, [gen_snap]);
+                    let ghost_field = fields[n_upvars + i].read.apply(vcx, [gen_snap]);
+                    pres.push(vcx.mk_bin_op_expr(vir::BinOpKind::CmpEq, field, ghost_field));
+                }
+
+                for inv in spec_async_invs {
+                    pres.push(inv);
+                }
+            }
+
             let mut posts = Vec::with_capacity(spec_posts.len() + 1);
             posts.push(local_defs.locals[mir::RETURN_PLACE].impure_pred);
             posts.extend(spec_posts);
+
+            // in the case of a future constructor, we also ensure that the generator's upvar
+            // fields, ghost fields, and state field are set correctly
+            // NOTE: this detection mechanism is not always correct, specifically, it does not
+            // correctly mark the future constructors of async fn's without specifications as such,
+            // but this should not matter, as the caller cannot obtain guarantees about this
+            // future type anyways
+            if matches!(proc_kind, ProcedureKind::AsyncConstructor) {
+                let gen_domain = local_defs.locals[0_u32.into()].ty;
+                let fields = gen_domain.expect_structlike().snap_data.field_access;
+                let n_upvars = local_defs.arg_count;
+                assert_eq!(fields.len(), 2 * n_upvars + 1);
+                let gen_snap = local_defs.locals[0_u32.into()].impure_snap;
+                for i in 0 .. n_upvars {
+                    let arg = vcx.mk_old_expr(local_defs.locals[(i + 1).into()].impure_snap);
+                    let upvar_field = fields[i].read.apply(vcx, [gen_snap]);
+                    let ghost_field = fields[n_upvars + i].read.apply(vcx, [gen_snap]);
+                    posts.push(vcx.mk_bin_op_expr(vir::BinOpKind::CmpEq, upvar_field, arg));
+                    posts.push(vcx.mk_bin_op_expr(vir::BinOpKind::CmpEq, ghost_field, arg));
+                }
+                let state_field = fields[2 * n_upvars].read.apply(vcx, [gen_snap]);
+                let zero = deps
+                    .require_ref::<RustTyPredicatesEnc>(
+                        vcx.tcx().mk_ty_from_kind(ty::TyKind::Uint(ty::UintTy::U32))
+                    )?
+                    .generic_predicate
+                    .expect_prim()
+                    .prim_to_snap
+                    .apply(vcx, [vcx.mk_uint::<0>()]);
+                posts.push(vcx.mk_bin_op_expr(vir::BinOpKind::CmpEq, state_field, zero));
+            }
 
             Ok(ImpureFunctionEncOutput {
                 method: vcx.mk_method(

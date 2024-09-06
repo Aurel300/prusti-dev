@@ -66,6 +66,12 @@ pub use prusti_contracts_proc_macros::terminates;
 /// A macro to annotate body variant of a loop to prove termination
 pub use prusti_contracts_proc_macros::body_variant;
 
+/// A macro to annotate suspension points inside async constructs
+pub use prusti_contracts_proc_macros::suspension_point;
+
+/// A macro for writing async invariants on an async function
+pub use prusti_contracts_proc_macros::async_invariant;
+
 #[cfg(not(feature = "prusti"))]
 mod private {
     use core::marker::PhantomData;
@@ -338,6 +344,10 @@ pub fn before_expiry<T>(arg: T) -> T {
 pub fn old<T>(arg: T) -> T {
     arg
 }
+
+pub fn suspension_point_on_exit_marker<T>(_label: u32, _closures: T) {}
+
+pub fn suspension_point_on_entry_marker<T>(_label: u32, _closures: T) {}
 
 /// Universal quantifier.
 ///

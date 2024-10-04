@@ -1,5 +1,5 @@
 use prusti_rustc_interface::{
-    abi,
+    target::abi,
     middle::ty::{self, TyKind},
 };
 use task_encoder::{TaskEncoder, TaskEncoderDependencies, EncodeFullResult};
@@ -691,7 +691,10 @@ impl<'vir, 'tcx> PredicateEncValues<'vir, 'tcx> {
             // `Ref` is only part of snapshots for mutable references.
             data.snap_data
                 .field_snaps_to_snap
-                .apply(self.vcx, &[inner_snap, self_ref])
+                .apply(self.vcx, &[inner_snap, 
+                    // TODO: Re-enable this once its purpose is understood
+                    // self_ref
+                    ])
         } else {
             data.snap_data
                 .field_snaps_to_snap

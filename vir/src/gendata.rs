@@ -508,8 +508,8 @@ mod tests {
     roundtrip_test_match!(
         rt_stmt,
         _vcx,
-        crate::StmtGenData::<!, !>::Dummy("hello",),
-        crate::StmtGenData::Dummy("hello",)
+        crate::StmtKindGenData::<!, !>::Dummy("hello",),
+        crate::StmtKindGenData::Dummy("hello",)
     );
     roundtrip_test_match!(
         rt_terminatorstmt,

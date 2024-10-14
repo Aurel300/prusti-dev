@@ -639,14 +639,14 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
             // AddressOf
             // Len
             // Cast
-            rv @ mir::Rvalue::BinaryOp(op, box (l, r)) => {
+            mir::Rvalue::BinaryOp(op, box (l, r)) => {
                 let l_ty = l.ty(self.body, self.vcx.tcx());
                 let r_ty = r.ty(self.body, self.vcx.tcx());
                 use crate::encoders::MirBuiltinEncTask::{BinOp, CheckedBinOp};
-                let task = if matches!(rv, mir::Rvalue::BinaryOp(..)) {
-                    BinOp(rvalue_ty, *op, l_ty, r_ty)
-                } else {
+                let task = if op.is_overflowing() {
                     CheckedBinOp(rvalue_ty, *op, l_ty, r_ty)
+                } else {
+                    BinOp(rvalue_ty, *op, l_ty, r_ty)
                 };
                 let binop_function = self
                     .deps

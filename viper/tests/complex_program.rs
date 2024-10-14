@@ -89,7 +89,7 @@ fn success_with_complex_program() {
         Some(
             // x % 2 == 0
             ast.eq_cmp(
-                ast.module(ast.local_var("v", ast.int_type(), ast.no_position()), ast.int_lit(2)),
+                ast.mod_(ast.local_var("v", ast.int_type(), ast.no_position()), ast.int_lit(2)),
                 ast.int_lit(0),
             ),
         ),

@@ -249,10 +249,8 @@ impl MirBuiltinEnc {
             }
             // Cannot overflow and no undefined behavior
             BitXor | BitAnd | BitOr | Eq | Lt | Le | Ne | Ge | Gt | Offset => (Vec::new(), val),
-            AddWithOverflow => todo!(),
-            SubWithOverflow => todo!(),
-            MulWithOverflow => todo!(),
             Cmp => todo!(),
+            _ => unreachable!(),
         };
         vcx.mk_function(
             name.to_str(),
@@ -276,10 +274,11 @@ impl MirBuiltinEnc {
         l_ty: ty::Ty<'vir>,
         r_ty: ty::Ty<'vir>,
     ) -> vir::Function<'vir> {
-        // `op` can only be `Add`, `Sub` or `Mul`
+        // `op` can only be `Add`, `Sub` or `Mul`, or their overflowing version
         assert!(matches!(
             op,
             mir::BinOp::Add | mir::BinOp::Sub | mir::BinOp::Mul
+            | mir::BinOp::AddWithOverflow | mir::BinOp::SubWithOverflow | mir::BinOp::MulWithOverflow
         ));
         let e_l_ty = deps
             .require_local::<RustTySnapshotsEnc>(l_ty)

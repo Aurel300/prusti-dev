@@ -61,12 +61,15 @@ pub enum BinOpKind {
 impl From<mir::BinOp> for BinOpKind {
     fn from(value: mir::BinOp) -> Self {
         match value {
-            mir::BinOp::Add => BinOpKind::Add,
-            mir::BinOp::AddUnchecked => todo!(),
-            mir::BinOp::Sub => BinOpKind::Sub,
-            mir::BinOp::SubUnchecked => todo!(),
-            mir::BinOp::Mul => BinOpKind::Mul,
-            mir::BinOp::MulUnchecked => todo!(),
+            mir::BinOp::Add
+            | mir::BinOp::AddUnchecked
+            | mir::BinOp::AddWithOverflow => BinOpKind::Add,
+            mir::BinOp::Sub
+            | mir::BinOp::SubUnchecked
+            | mir::BinOp::SubWithOverflow => BinOpKind::Sub,
+            mir::BinOp::Mul
+            | mir::BinOp::MulUnchecked
+            | mir::BinOp::MulWithOverflow => BinOpKind::Mul,
             mir::BinOp::Div => BinOpKind::Div,
             mir::BinOp::Rem => BinOpKind::Mod,
             mir::BinOp::BitXor => todo!(),
@@ -86,9 +89,6 @@ impl From<mir::BinOp> for BinOpKind {
             mir::BinOp::Ge => BinOpKind::CmpGe,
             mir::BinOp::Gt => BinOpKind::CmpGt,
             mir::BinOp::Offset => todo!(),
-            mir::BinOp::AddWithOverflow => todo!(),
-            mir::BinOp::SubWithOverflow => todo!(),
-            mir::BinOp::MulWithOverflow => todo!(),
             mir::BinOp::Cmp => todo!(),
         }
     }

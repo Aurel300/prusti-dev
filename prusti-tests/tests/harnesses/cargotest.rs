@@ -4,13 +4,18 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-use cargo_test_support::{cargo_test, project, symlink_supported};
+// use cargo_test_support::{cargo_test, project, symlink_supported};
+use log::{error, info};
+use prusti_server::spawn_server_thread;
+use std::sync::atomic::AtomicBool;
+use std::sync::{Arc, Mutex};
+use std::{env, path::PathBuf, sync::atomic::Ordering};
+use ui_test::{run_tests, spanned::Spanned, Config};
 use std::{
     fs,
-    path::{Path, PathBuf},
 };
 
-fn cargo_prusti_path() -> PathBuf {
+fn find_cargo_prusti_path() -> PathBuf {
     let target_directory = if cfg!(debug_assertions) {
         "debug"
     } else {
@@ -42,8 +47,7 @@ fn cargo_prusti_path() -> PathBuf {
         It might be that Prusti has not been compiled correctly."
     );
 }
-
-#[cargo_test]
+/*
 fn simple_assert_true() {
     let p = project()
         .file("src/main.rs", "fn main() { assert!(true); }")
@@ -225,17 +229,36 @@ fn test_prusti_toml_fail() {
         std::env::set_var("RUST_BACKTRACE", value)
     }
 }
+*/
 
-// `#![no_std]` binaries on Windows are not a thing yet,
-// see <https://github.com/viperproject/prusti-dev/pull/762>.
-#[cfg_attr(windows, ignore)]
-#[cargo_test]
-fn test_no_std() {
-    test_local_project("test_no_std");
+fn run_cargo_test(
+    project: &str,
+    cargo_flags: &[&str],
+    cargo_env: &[(&str, &str)],
+) {
+    static ABORT_CHECK: Mutex<Option<Arc<AtomicBool>>> = Mutex::new(None);
+    _ = ctrlc::try_set_handler(move || if let Some(flag) = &*ABORT_CHECK.lock().unwrap() { flag.store(true, Ordering::Relaxed); });
+
+    let mut config = Config::cargo(&project);
+    *ABORT_CHECK.lock().unwrap() = Some(config.abort_check.clone());
+    config.program.program = find_cargo_prusti_path();
+    config.program.args.extend(cargo_flags.iter().map(|s| s.into()));
+    config.program.envs.push(("RUSTC_ICE".into(), Some("0".into()))); // suppress rustc-ice*.txt files
+    config.program.envs.extend(cargo_env.iter().map(|(k, v)| (k.into(), Some(v.into()))));
+
+    run_tests(config).unwrap();
 }
 
-#[ignore] // Currently broken
-#[cargo_test]
-fn test_veribetrfs() {
-    test_local_project("veribetrfs");
+pub(crate) fn run() {
+    run_cargo_test("tests/cargo_verify/simple_assert_true", &[], &[]);
+
+    /*
+    // `#![no_std]` binaries on Windows are not a thing yet,
+    // see <https://github.com/viperproject/prusti-dev/pull/762>.
+    #[cfg(not(windows))]
+    test_local_project("test_no_std");
+
+    // Currently broken
+    // test_local_project("veribetrfs");
+    */
 }

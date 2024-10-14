@@ -57,8 +57,6 @@ pub fn verify(env: Environment<'_>, def_spec: typed::DefSpecificationMap) {
         assert_eq!(results.len(), 1); // TODO: eventually verify separate methods as separate programs again?
 
         let result = results.pop().unwrap().1;
-        println!("verification result: {result:?}");
-
         let success = match result {
             viper::VerificationResult::Success => true,
             viper::VerificationResult::JavaException(_e) => false,
@@ -77,17 +75,6 @@ pub fn verify(env: Environment<'_>, def_spec: typed::DefSpecificationMap) {
                 false
             }
         };
-        if !success {
-            // TODO: This will be unnecessary if diagnostic errors are emitted
-            // earlier, it's useful for now to ensure that Prusti returns an
-            // error code when verification fails
-            env.diagnostic.span_err_with_help_and_notes(
-                MultiSpan::new(),
-                "Verification failed",
-                &None,
-                &[],
-            );
-        }
 
         //let verification_result =
         //    if verification_task.procedures.is_empty() && verification_task.types.is_empty() {

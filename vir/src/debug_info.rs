@@ -52,7 +52,7 @@ impl<'de> serde::Deserialize<'de> for DebugInfo<'_> {
     }
 }
 impl std::hash::Hash for DebugInfo<'_> {
-    fn hash<H>(&self, state: &mut H)
+    fn hash<H>(&self, _state: &mut H)
     where
         H: std::hash::Hasher,
     {}
@@ -158,9 +158,7 @@ cfg_if! {
     } else {
         #[macro_export]
         macro_rules! add_debug_note {
-            ($debug_info:expr, $($arg:tt)*) => {{
-                ()
-            }};
+            ($debug_info:expr, $($arg:tt)*) => {};
         }
     }
 }

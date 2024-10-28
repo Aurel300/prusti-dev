@@ -12,7 +12,7 @@ use prusti_rustc_interface::{
     serialize::{opaque, Encodable, Encoder},
     span::{
         hygiene::{raw_encode_syntax_context, HygieneEncodeContext},
-        ExpnId, SourceFile, Span, SpanEncoder, StableSourceFileId, Symbol, SyntaxContext,
+        ExpnId, Span, SpanEncoder, StableSourceFileId, Symbol, SyntaxContext,
     },
 };
 

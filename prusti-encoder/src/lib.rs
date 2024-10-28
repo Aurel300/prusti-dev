@@ -3,10 +3,6 @@
 #![feature(box_patterns)]
 #![feature(never_type)]
 
-extern crate rustc_middle;
-extern crate rustc_serialize;
-extern crate rustc_type_ir;
-
 mod encoders;
 mod encoder_traits;
 pub mod request;

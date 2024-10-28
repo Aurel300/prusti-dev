@@ -2,6 +2,8 @@
 #![feature(never_type)]
 #![feature(iter_intersperse)]
 
+#![allow(clippy::needless_lifetimes)]
+
 mod context;
 mod data;
 mod debug;

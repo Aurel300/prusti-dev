@@ -80,7 +80,7 @@ impl<'tcx> VirCtxt<'tcx> {
             TypeData::DomainTypeParam(p) => substs.get(p.name).unwrap_or(&ty),
             TypeData::Domain(name, args) => {
                 let args = args.iter().map(|t| self.apply_ty_substs(t, substs)).collect::<Vec<_>>();
-                self.alloc(TypeData::Domain(name, &self.alloc(args)))
+                self.alloc(TypeData::Domain(name, self.alloc(args)))
             }
             other => other
         }
@@ -133,17 +133,26 @@ impl<'de> serde::Deserialize<'de> for ProgramRef {
 }
 
 thread_local! {
-    static VCTX: RefCell<Option<VirCtxt<'static>>> = RefCell::new(None);
+    static VCTX: RefCell<Option<VirCtxt<'static>>> = const { RefCell::new(None) };
 }
 
 /// Initialises the VIR context. Should only be called once, when the type
 /// context is available.
 pub fn init_vcx<'tcx>(vcx: VirCtxt<'tcx>) {
-    VCTX.replace(Some(unsafe { std::mem::transmute(vcx) }));
+    VCTX.replace(Some(unsafe {
+        std::mem::transmute::<VirCtxt<'_>, VirCtxt<'_>>(vcx)
+    }));
 }
 
+#[cfg(test)]
 pub(crate) fn replace_vcx<'tcx>(vcx: VirCtxt<'tcx>) -> Option<VirCtxt<'tcx>> {
-    unsafe { std::mem::transmute(VCTX.replace(Some(std::mem::transmute(vcx)))) }
+    let old = VCTX.replace(Some(unsafe {
+        std::mem::transmute::<VirCtxt<'_>, VirCtxt<'_>>(vcx)
+    }));
+    unsafe { std::mem::transmute::<
+        Option<VirCtxt<'_>>,
+        Option<VirCtxt<'_>>,
+    >(old) }
 }
 
 /// Perform an action with the VIR context.
@@ -156,7 +165,9 @@ where
         //   the same (or shorter) than the lifetimes of the VIR arena and
         //   the rustc type context, respectively
         let vcx = vcx.as_ref().expect("VIR context was not initialised");
-        let vcx = unsafe { std::mem::transmute(vcx) };
+        let vcx = unsafe {
+            std::mem::transmute::<&VirCtxt<'_>, &VirCtxt<'_>>(vcx)
+        };
         f(vcx)
     })
 }
@@ -170,7 +181,9 @@ where
         //   the same (or shorter) than the lifetimes of the VIR arena and
         //   the rustc type context, respectively
         let vcx = vcx.as_mut().expect("VIR context was not initialised");
-        let vcx = unsafe { std::mem::transmute(vcx) };
+        let vcx = unsafe {
+            std::mem::transmute::<&mut VirCtxt<'_>, &mut VirCtxt<'_>>(vcx)
+        };
         f(vcx)
     })
 }

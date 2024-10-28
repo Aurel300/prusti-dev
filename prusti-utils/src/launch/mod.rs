@@ -288,10 +288,13 @@ pub fn set_java_home_setting(cmd: &mut Command, java_home: &Path) {
     cmd.env("PRUSTI_JAVA_HOME", java_home);
 }
 
-/// Checks if the current crate has a (transitive) dependency on `prusti-contracts`
-/// and if that should lead to enabling the `prusti` feature when running cargo.
-/// Will panic if there is a transitive dependency but not a direct one; in such a
-/// case it wouldn't be possible to enable the feature.
+/// Checks if the current crate enable the `prusti` cargo feature on
+/// `prusti-contracts`.
+///
+/// The feature should be enabled if the current crate has a (transitive)
+/// dependency on `prusti-contracts`. Will panic if there is a transitive
+/// dependency but not a direct one; in such a case it isn't possible
+/// to enable the feature.
 pub fn enable_prusti_feature(cargo_path: &str) -> bool {
     let out = Command::new(cargo_path)
         .args(["tree", "--prefix", "depth", "-f", " [{f}] {p}"])

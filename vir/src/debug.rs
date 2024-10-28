@@ -2,26 +2,22 @@ use std::fmt::{Debug, Display, Formatter, Result as FmtResult};
 
 use crate::data::*;
 use crate::gendata::*;
-use crate::DomainAxiomGen;
-use crate::DomainFunction;
 
 fn fmt_comma_sep_display<T: Display>(f: &mut Formatter<'_>, els: &[T]) -> FmtResult {
     els.iter()
         .enumerate()
-        .map(|(idx, el)| {
+        .try_for_each(|(idx, el)| {
             if idx > 0 { write!(f, ", ")? }
             el.fmt(f)
         })
-        .collect::<FmtResult>()
 }
 fn fmt_comma_sep<T: Debug>(f: &mut Formatter<'_>, els: &[T]) -> FmtResult {
     els.iter()
         .enumerate()
-        .map(|(idx, el)| {
+        .try_for_each(|(idx, el)| {
             if idx > 0 { write!(f, ", ")? }
             el.fmt(f)
         })
-        .collect::<FmtResult>()
 }
 fn fmt_comma_sep_lines<T: Debug>(f: &mut Formatter<'_>, els: &[T]) -> FmtResult {
     for (idx, el) in els.iter().enumerate() {
@@ -29,7 +25,7 @@ fn fmt_comma_sep_lines<T: Debug>(f: &mut Formatter<'_>, els: &[T]) -> FmtResult 
         if idx < els.len() - 1 {
             write!(f, ",")?;
         }
-        writeln!(f, "")?;
+        writeln!(f)?;
     }
     Ok(())
 }
@@ -99,12 +95,12 @@ impl<'vir, Curr, Next> Debug for DomainGenData<'vir, Curr, Next> {
         write!(f, "domain {}", self.name)?;
         if !self.typarams.is_empty() {
             write!(f, "[")?;
-            fmt_comma_sep_display(f, &self.typarams)?;
+            fmt_comma_sep_display(f, self.typarams)?;
             write!(f, "]")?;
         }
         writeln!(f, " {{")?;
-        self.axioms.iter().map(|el| el.fmt(f)).collect::<FmtResult>()?;
-        self.functions.iter().map(|el| el.fmt(f)).collect::<FmtResult>()?;
+        self.axioms.iter().try_for_each(|el| el.fmt(f))?;
+        self.functions.iter().try_for_each(|el| el.fmt(f))?;
         writeln!(f, "}}")
     }
 }
@@ -124,7 +120,7 @@ impl<'vir> Debug for DomainFunctionData<'vir> {
             write!(f, "unique ")?;
         }
         write!(f, "function {}(", self.name)?;
-        fmt_comma_sep(f, &self.args)?;
+        fmt_comma_sep(f, self.args)?;
         writeln!(f, "): {:?}", self.ret)
     }
 }
@@ -171,7 +167,7 @@ impl<'vir> Debug for FieldData<'vir> {
 impl<'vir, Curr, Next> Debug for ForallGenData<'vir, Curr, Next> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         write!(f, "forall ")?;
-        fmt_comma_sep(f, &self.qvars)?;
+        fmt_comma_sep(f, self.qvars)?;
         write!(f, " ::")?;
         for trigger in self.triggers {
             write!(f, " {:?}", trigger)?;
@@ -183,7 +179,7 @@ impl<'vir, Curr, Next> Debug for ForallGenData<'vir, Curr, Next> {
 impl<'vir, Curr, Next> Debug for ExistsGenData<'vir, Curr, Next> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         write!(f, "exists ")?;
-        fmt_comma_sep(f, &self.qvars)?;
+        fmt_comma_sep(f, self.qvars)?;
         write!(f, " ::")?;
         for trigger in self.triggers {
             write!(f, " {:?}", trigger)?;
@@ -195,7 +191,7 @@ impl<'vir, Curr, Next> Debug for ExistsGenData<'vir, Curr, Next> {
 impl<'vir, Curr, Next> Debug for FuncAppGenData<'vir, Curr, Next> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         write!(f, "{}(", self.target)?;
-        fmt_comma_sep(f, &self.args)?;
+        fmt_comma_sep(f, self.args)?;
         write!(f, ")")?;
         Ok(())
     }
@@ -204,10 +200,10 @@ impl<'vir, Curr, Next> Debug for FuncAppGenData<'vir, Curr, Next> {
 impl<'vir, Curr, Next> Debug for FunctionGenData<'vir, Curr, Next> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         writeln!(f, "function {}(", self.name)?;
-        fmt_comma_sep_lines(f, &self.args)?;
+        fmt_comma_sep_lines(f, self.args)?;
         writeln!(f, "): {:?}", self.ret)?;
-        self.pres.iter().map(|el| writeln!(f, "  requires {:?}", el)).collect::<FmtResult>()?;
-        self.posts.iter().map(|el| writeln!(f, "  ensures {:?}", el)).collect::<FmtResult>()?;
+        self.pres.iter().try_for_each(|el| writeln!(f, "  requires {:?}", el))?;
+        self.posts.iter().try_for_each(|el| writeln!(f, "  ensures {:?}", el))?;
         if let Some(expr) = self.expr {
             write!(f, "{{\n  ")?;
             expr.fmt(f)?;
@@ -246,16 +242,16 @@ impl<'vir> Debug for LocalDeclData<'vir> {
 impl<'vir, Curr, Next> Debug for MethodGenData<'vir, Curr, Next> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         writeln!(f, "method {}(", self.name)?;
-        fmt_comma_sep_lines(f, &self.args)?;
+        fmt_comma_sep_lines(f, self.args)?;
         if !self.rets.is_empty() {
             writeln!(f, ") returns (")?;
-            fmt_comma_sep_lines(f, &self.rets)?;
+            fmt_comma_sep_lines(f, self.rets)?;
             writeln!(f, ")")?;
         } else {
             writeln!(f, ")")?;
         }
-        self.pres.iter().map(|el| writeln!(f, "  requires {:?}", el)).collect::<FmtResult>()?;
-        self.posts.iter().map(|el| writeln!(f, "  ensures {:?}", el)).collect::<FmtResult>()?;
+        self.pres.iter().try_for_each(|el| writeln!(f, "  requires {:?}", el))?;
+        self.posts.iter().try_for_each(|el| writeln!(f, "  ensures {:?}", el))?;
         if let Some(body) = self.body.as_ref() {
             writeln!(f, "{{")?;
             for block in body.blocks.iter() {
@@ -274,14 +270,14 @@ impl<'vir, Curr, Next> Debug for MethodGenData<'vir, Curr, Next> {
 impl<'vir, Curr, Next> Debug for PredicateGenData<'vir, Curr, Next> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         write!(f, "predicate {}(", self.name)?;
-        fmt_comma_sep(f, &self.args)?;
+        fmt_comma_sep(f, self.args)?;
         write!(f, ")")?;
         if let Some(expr) = self.expr {
             write!(f, " {{\n  ")?;
             expr.fmt(f)?;
             writeln!(f, "\n}}")
         } else {
-            writeln!(f, "")
+            writeln!(f)
         }
     }
 }
@@ -292,7 +288,7 @@ impl<'vir, Curr, Next> Debug for PredicateAppGenData<'vir, Curr, Next> {
             write!(f, "acc(")?;
         }
         write!(f, "{}(", self.target)?;
-        fmt_comma_sep(f, &self.args)?;
+        fmt_comma_sep(f, self.args)?;
         write!(f, ")")?;
         if let Some(perm) = self.perm {
             write!(f, ", {perm:?})")?;
@@ -327,11 +323,11 @@ impl<'vir, Curr, Next> Debug for StmtKindGenData<'vir, Curr, Next> {
             Self::Fold(data) => write!(f, "fold {:?}", data),
             Self::MethodCall(data) => {
                 if !data.targets.is_empty() {
-                    fmt_comma_sep(f, &data.targets)?;
+                    fmt_comma_sep(f, data.targets)?;
                     write!(f, " := ")?;
                 }
                 write!(f, "{}(", data.method)?;
-                fmt_comma_sep(f, &data.args)?;
+                fmt_comma_sep(f, data.args)?;
                 write!(f, ")")
             }
             Self::Comment(info) => write!(f, "// {}", info),
@@ -402,7 +398,7 @@ impl<'vir> Debug for TypeData<'vir> {
                 write!(f, "{name}")?;
                 if !params.is_empty() {
                     write!(f, "[")?;
-                    fmt_comma_sep(f, &params)?;
+                    fmt_comma_sep(f, params)?;
                     write!(f, "]")?;
                 }
                 Ok(())

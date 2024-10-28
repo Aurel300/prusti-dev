@@ -6,7 +6,7 @@
 
 use prusti_rustc_interface::{
     hir::Mutability,
-    middle::mir::{FakeBorrowKind,
+    middle::mir::{
         visit::Visitor, BorrowKind, Local, Location, Operand, Rvalue, Statement, StatementKind,
         Terminator, TerminatorKind, RETURN_PLACE,
     },

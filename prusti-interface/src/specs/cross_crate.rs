@@ -1,6 +1,5 @@
 use prusti_rustc_interface::{
-    metadata::creader::CStore,
-    serialize::{Decodable, Encodable},
+    serialize::Decodable,
     session::config::OutputType,
     span::DUMMY_SP,
 };
@@ -44,7 +43,6 @@ impl CrossCrateSpecs {
     }
 
     fn import_specs(env: &mut Environment, def_spec: &mut DefSpecificationMap) {
-        let cstore = CStore::from_tcx(env.tcx());
         // TODO: atm one needs to write `extern crate extern_spec_lib` to import the specs
         // from a crate which is not used in the current crate (e.g. an `#[extern_spec]` only crate)
         // Otherwise the crate doesn't show up in `tcx.crates()`.  Is there some better way
@@ -77,11 +75,11 @@ impl CrossCrateSpecs {
     fn write_into_file(
         env: &Environment,
         def_spec: &DefSpecificationMap,
-        path: &path::PathBuf,
+        path: &path::Path,
     ) -> io::Result<()> {
         DefSpecsEncoder::serialize(
             env.tcx(),
-            &path,
+            path,
             (
                 &def_spec.proc_specs,
                 &def_spec.type_specs,

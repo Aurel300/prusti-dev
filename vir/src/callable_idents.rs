@@ -1,5 +1,11 @@
+#![allow(clippy::len_without_is_empty)]
+
 use crate::{
-    debug_info::DebugInfo, viper_ident::ViperIdent, with_vcx, DomainParamData, ExprGen, LocalDecl, MethodCallGenData, PredicateAppGen, PredicateAppGenData, StmtGenData, Type, TypeData, VirCtxt, typecheck_error,
+    debug_info::DebugInfo,
+    viper_ident::ViperIdent,
+    VirCtxt,
+    typecheck_error,
+    with_vcx,
 };
 use crate::data::*;
 use crate::refs::*;
@@ -78,9 +84,7 @@ impl<'vir, A: Arity<'vir>> CallableIdent<'vir, A, ()> for MethodIdent<'vir, A> {
     fn arity(&self) -> &A {
         &self.1
     }
-    fn result_ty(&self) -> () {
-       ()
-    }
+    fn result_ty(&self) {}
 }
 
 impl <'vir, A: Arity<'vir>> MethodIdent<'vir, A> {
@@ -113,9 +117,7 @@ impl<'vir, A: Arity<'vir>> CallableIdent<'vir, A, ()> for PredicateIdent<'vir, A
     fn arity(&self) -> &A {
         &self.1
     }
-    fn result_ty(&self) -> () {
-        ()
-    }
+    fn result_ty(&self) {}
 }
 
 impl <'vir, A: Arity<'vir>> PredicateIdent<'vir, A> {
@@ -145,9 +147,7 @@ impl<'vir, A: Arity<'vir>> CallableIdent<'vir, A, ()> for DomainIdent<'vir, A> {
     fn arity(&self) -> &A {
         &self.1
     }
-    fn result_ty(&self) -> () {
-        ()
-    }
+    fn result_ty(&self) {}
 }
 
 impl<'vir> DomainIdent<'vir, KnownArityAny<'vir, DomainParamData<'vir>, 0>> {
@@ -177,7 +177,7 @@ pub trait Arity<'vir>: Copy {
 impl<'vir, T, const N: usize> Arity<'vir> for KnownArityAny<'vir, T, N> {
     type Arg = T;
     fn args(&self) -> &'vir [T] {
-        &self.0
+        self.0
     }
     fn len_matches(&self, _len: usize) -> bool {
         true
@@ -187,7 +187,7 @@ impl<'vir, T, const N: usize> Arity<'vir> for KnownArityAny<'vir, T, N> {
 impl<'vir, T> Arity<'vir> for UnknownArityAny<'vir, T> {
     type Arg = T;
     fn args(&self) -> &'vir [T] {
-        &self.0
+        self.0
     }
 
     fn len_matches(&self, len: usize) -> bool {
@@ -222,7 +222,7 @@ impl<'vir, A: Arity<'vir, Arg = Type<'vir>>> CheckTypes<'vir> for A {
             return false;
         }
         args.iter()
-            .zip(self.args().into_iter())
+            .zip(self.args())
             .all(|(a, expected)| a.typ() == *expected)
     }
 }
@@ -236,7 +236,7 @@ impl<'vir, T, const N: usize> KnownArityAny<'vir, T, N> {
 }
 impl<'vir, T, const N: usize> Clone for KnownArityAny<'vir, T, N> {
     fn clone(&self) -> Self {
-        Self(self.0)
+        *self
     }
 }
 pub type NullaryArityAny<'vir, T> = KnownArityAny<'vir, T, 0>;
@@ -260,7 +260,7 @@ impl<'vir, T> UnknownArityAny<'vir, T> {
 }
 impl<'vir, T> Clone for UnknownArityAny<'vir, T> {
     fn clone(&self) -> Self {
-        Self(self.0)
+        *self
     }
 }
 impl<'vir, T> Copy for UnknownArityAny<'vir, T> {}

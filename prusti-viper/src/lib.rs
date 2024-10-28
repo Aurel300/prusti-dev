@@ -4,7 +4,7 @@ use rustc_hash::FxHashMap;
 use viper::{self, AstFactory, Position};
 
 /// Convert the given VIR program into a Viper program (i.e., Java object).
-pub fn program_to_viper<'vir, 'v>(program: vir::Program<'vir>, ast: &'vir AstFactory<'v>) -> viper::Program<'vir> {
+pub fn program_to_viper<'vir>(program: vir::Program<'vir>, ast: &'vir AstFactory<'_>) -> viper::Program<'vir> {
     let mut domains: FxHashMap<_, _> = Default::default();
     let mut domain_functions: FxHashMap<_, _> = Default::default();
     let mut domain_axioms: FxHashMap<_, _> = Default::default();
@@ -26,9 +26,11 @@ pub fn program_to_viper<'vir, 'v>(program: vir::Program<'vir>, ast: &'vir AstFac
     program.to_viper_no_pos(&ctx)
 }
 
-/// Context for conversion of VIR nodes to Viper AST. We need to keep track of
-/// domain information in particular, since domain function application nodes
-/// must be created with information that we do not store in the VIR.
+/// Context for conversion of VIR nodes to Viper AST.
+///
+/// We need to keep track of domain information in particular, since domain
+/// function application nodes must be created with information that we do not
+/// store in the VIR.
 pub struct ToViperContext<'vir, 'v> {
     /// Wrapper around JNI methods to create Viper AST methods.
     ast: &'v AstFactory<'v>,
@@ -125,16 +127,16 @@ impl<'vir, 'v, T: ToViper<'vir, 'v>> ToViperPosHelper<'vir, 'v> for T {
 trait ToViperVecPosHelper<'vir, 'v> {
     type Output;
     fn to_viper_extend_no_pos(&self, vec: &mut Vec<Self::Output>, ctx: &ToViperContext<'vir, 'v>);
-    fn to_viper_vec_no_pos(&self, ctx: &ToViperContext<'vir, 'v>) -> Vec<Self::Output>;
+    //fn to_viper_vec_no_pos(&self, ctx: &ToViperContext<'vir, 'v>) -> Vec<Self::Output>;
 }
 impl<'vir, 'v, T: ToViperVec<'vir, 'v>> ToViperVecPosHelper<'vir, 'v> for T {
     type Output = <Self as ToViperVec<'vir, 'v>>::Output;
     fn to_viper_extend_no_pos(&self, vec: &mut Vec<Self::Output>, ctx: &ToViperContext<'vir, 'v>) {
         self.to_viper_extend(vec, ctx, ctx.ast.no_position());
     }
-    fn to_viper_vec_no_pos(&self, ctx: &ToViperContext<'vir, 'v>) -> Vec<Self::Output> {
-        self.to_viper_vec(ctx, ctx.ast.no_position())
-    }
+    //fn to_viper_vec_no_pos(&self, ctx: &ToViperContext<'vir, 'v>) -> Vec<Self::Output> {
+    //    self.to_viper_vec(ctx, ctx.ast.no_position())
+    //}
 }
 
 impl<'vir, 'v> ToViper<'vir, 'v> for vir::AccField<'vir> {
@@ -466,9 +468,8 @@ impl<'vir, 'v> ToViper<'vir, 'v> for vir::Method<'vir> {
                             &[],
                         ).into());
                         b.stmts.iter()
-                            .for_each(|s| match s.kind {
-                                vir::StmtKindGenData::LocalDecl(decl, _) => declarations.push(decl.to_viper_no_pos(ctx).into()),
-                                _ => (),
+                            .for_each(|s| if let vir::StmtKindGenData::LocalDecl(decl, _) = s.kind {
+                                declarations.push(decl.to_viper_no_pos(ctx).into());
                             });
                         b.to_viper_extend_no_pos(&mut result, ctx);
                     });
@@ -525,11 +526,11 @@ impl<'vir, 'v> ToViper<'vir, 'v> for vir::Program<'vir> {
     type Output = viper::Program<'v>;
     fn to_viper(&self, ctx: &ToViperContext<'vir, 'v>, _pos: Position) -> Self::Output {
         ctx.ast.program(
-            &self.domains.iter().map(|v| v.to_viper_no_pos(&ctx)).collect::<Vec<_>>(),
-            &self.fields.iter().map(|v| v.to_viper_no_pos(&ctx)).collect::<Vec<_>>(),
-            &self.functions.iter().map(|v| v.to_viper_no_pos(&ctx)).collect::<Vec<_>>(),
-            &self.predicates.iter().map(|v| v.to_viper_no_pos(&ctx)).collect::<Vec<_>>(),
-            &self.methods.iter().map(|v| v.to_viper_no_pos(&ctx)).collect::<Vec<_>>(),
+            &self.domains.iter().map(|v| v.to_viper_no_pos(ctx)).collect::<Vec<_>>(),
+            &self.fields.iter().map(|v| v.to_viper_no_pos(ctx)).collect::<Vec<_>>(),
+            &self.functions.iter().map(|v| v.to_viper_no_pos(ctx)).collect::<Vec<_>>(),
+            &self.predicates.iter().map(|v| v.to_viper_no_pos(ctx)).collect::<Vec<_>>(),
+            &self.methods.iter().map(|v| v.to_viper_no_pos(ctx)).collect::<Vec<_>>(),
         )
     }
 }

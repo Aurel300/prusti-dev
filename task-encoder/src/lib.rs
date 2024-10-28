@@ -78,10 +78,17 @@ impl<'vir, E: TaskEncoder> TaskEncoderOutput<'vir, E> {
 }
 */
 
+/// The result of an `encode` call.
+pub type EncodeResult<'vir, E/*: TaskEncoder + 'vir + ?Sized*/> = Result<Option<(
+    <E as TaskEncoder>::OutputRef<'vir>,
+    <E as TaskEncoder>::OutputFullLocal<'vir>,
+    <E as TaskEncoder>::OutputFullDependency<'vir>,
+)>, TaskEncoderError<E>>;
+
 /// The result of the actual encoder implementation (`do_encode_full`).
-pub type EncodeFullResult<'vir, E: TaskEncoder + 'vir + ?Sized> = Result<(
-    E::OutputFullLocal<'vir>,
-    E::OutputFullDependency<'vir>,
+pub type EncodeFullResult<'vir, E/*: TaskEncoder + 'vir + ?Sized*/> = Result<(
+    <E as TaskEncoder>::OutputFullLocal<'vir>,
+    <E as TaskEncoder>::OutputFullDependency<'vir>,
 ), EncodeFullError<'vir, E>>;
 
 /// An unsuccessful result occurring in `do_encode_full`.
@@ -332,11 +339,7 @@ pub trait TaskEncoder {
         panic!("output ref not found after encoding") // TODO: error?
     }
 
-    fn encode<'vir>(task: Self::TaskDescription<'vir>, need_output: bool) -> Result<Option<(
-        Self::OutputRef<'vir>,
-        Self::OutputFullLocal<'vir>,
-        Self::OutputFullDependency<'vir>,
-    )>, TaskEncoderError<Self>>
+    fn encode<'vir>(task: Self::TaskDescription<'vir>, need_output: bool) -> EncodeResult<'vir, Self>
         where Self: 'vir
     {
         let task_key = Self::task_to_key(&task);
@@ -406,10 +409,10 @@ pub trait TaskEncoder {
                     )))
                 } else {
                     Self::with_cache(|cache| cache.borrow_mut().insert(task_key, TaskEncoderCacheState::Encoded {
-                        output_ref: output_ref,
+                        output_ref,
                         deps,
-                        output_local: output_local,
-                        output_dep: output_dep,
+                        output_local,
+                        output_dep,
                     }));
                     Ok(None)
                 }
@@ -568,16 +571,14 @@ pub trait TaskEncoder {
     fn all_outputs<'vir>() -> Vec<Self::OutputFullLocal<'vir>>
         where Self: 'vir
     {
-        Self::with_cache(|cache| {
-            let mut ret = vec![];
-            for (_task_key, cache_state) in cache.borrow().iter() {
-                match cache_state { // TODO: make this into an iterator chain
-                    TaskEncoderCacheState::Encoded { output_local, .. } => ret.push(output_local.clone()),
-                    _ => {}
-                }
-            }
-            ret
-        })
+        Self::with_cache(|cache| cache.borrow().iter()
+            .flat_map(|(_, cache_state)| if let TaskEncoderCacheState::Encoded { output_local, .. } = cache_state {
+                Some(output_local)
+            } else {
+                None
+            })
+            .cloned()
+            .collect())
     }
 }
 

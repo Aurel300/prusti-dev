@@ -31,8 +31,8 @@ impl<'a, 'tcx> DefSpecsDecoder<'a, 'tcx> {
 
 //TODO: Unify with Encoder
 // Tags used for encoding Spans:
-const TAG_FULL_SPAN: u8 = 0;
-const TAG_PARTIAL_SPAN: u8 = 1;
+//const TAG_FULL_SPAN: u8 = 0;
+//const TAG_PARTIAL_SPAN: u8 = 1;
 
 // Tags for encoding Symbol's
 const SYMBOL_STR: u8 = 0;

@@ -31,7 +31,7 @@ impl<'a> Backend<'a> {
                         dump_viper_program(
                             &ast_utils,
                             viper_program,
-                            &program.get_name_with_check_mode(),
+                            program.get_name_with_check_mode(),
                         );
                     }
 

@@ -42,6 +42,7 @@ pub enum PrustiErrorKind {
     WarningOnError,
 }
 
+#[allow(clippy::non_canonical_partial_ord_impl)]
 impl PartialOrd for PrustiError {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         self.span

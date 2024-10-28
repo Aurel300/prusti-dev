@@ -5,9 +5,14 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 use log::{error, info};
 use prusti_server::spawn_server_thread;
-use std::sync::atomic::AtomicBool;
-use std::sync::{Arc, Mutex};
-use std::{env, path::PathBuf, sync::atomic::Ordering};
+use std::{
+    env,
+    path::PathBuf,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+    },
+};
 use ui_test::{run_tests, spanned::Spanned, Config};
 
 fn find_prusti_rustc_path() -> PathBuf {
@@ -45,15 +50,28 @@ fn run_prusti_tests(
     rustc_env: &[(&str, &str)],
 ) -> ui_test::color_eyre::Result<()> {
     static ABORT_CHECK: Mutex<Option<Arc<AtomicBool>>> = Mutex::new(None);
-    _ = ctrlc::try_set_handler(move || if let Some(flag) = &*ABORT_CHECK.lock().unwrap() { flag.store(true, Ordering::Relaxed); });
+    _ = ctrlc::try_set_handler(move || {
+        if let Some(flag) = &*ABORT_CHECK.lock().unwrap() {
+            flag.store(true, Ordering::Relaxed);
+        }
+    });
 
     let prusti_config = |path| {
         let mut config = Config::rustc(&path);
         *ABORT_CHECK.lock().unwrap() = Some(config.abort_check.clone());
         config.program.program = find_prusti_rustc_path();
-        config.program.args.extend(rustc_flags.iter().map(|s| s.into()));
-        config.program.envs.push(("RUSTC_ICE".into(), Some("0".into()))); // suppress rustc-ice*.txt files
-        config.program.envs.extend(rustc_env.iter().map(|(k, v)| (k.into(), Some(v.into()))));
+        config
+            .program
+            .args
+            .extend(rustc_flags.iter().map(|s| s.into()));
+        config
+            .program
+            .envs
+            .push(("RUSTC_ICE".into(), Some("0".into()))); // suppress rustc-ice*.txt files
+        config
+            .program
+            .envs
+            .extend(rustc_env.iter().map(|(k, v)| (k.into(), Some(v.into()))));
         config
     };
 
@@ -86,43 +104,68 @@ fn run_prusti_tests(
 }
 
 fn run_no_verification(group_name: &str) {
-    run_prusti_tests(group_name, &[], &[
-        ("PRUSTI_FULL_COMPILATION", "true"),
-        ("PRUSTI_NO_VERIFY", "true"),
-        ("PRUSTI_QUIET", "true"),
-    ]).unwrap();
+    run_prusti_tests(
+        group_name,
+        &[],
+        &[
+            ("PRUSTI_FULL_COMPILATION", "true"),
+            ("PRUSTI_NO_VERIFY", "true"),
+            ("PRUSTI_QUIET", "true"),
+        ],
+    )
+    .unwrap();
 }
 
 fn run_verification_no_overflow(group_name: &str) {
-    run_prusti_tests(group_name, &["-Awarnings"], &[
-        ("PRUSTI_FULL_COMPILATION", "true"),
-        ("PRUSTI_QUIET", "true"),
-        ("PRUSTI_CHECK_OVERFLOWS", "false"),
-    ]).unwrap();
+    run_prusti_tests(
+        group_name,
+        &["-Awarnings"],
+        &[
+            ("PRUSTI_FULL_COMPILATION", "true"),
+            ("PRUSTI_QUIET", "true"),
+            ("PRUSTI_CHECK_OVERFLOWS", "false"),
+        ],
+    )
+    .unwrap();
 }
 
 fn run_verification_overflow(group_name: &str) {
-    run_prusti_tests(group_name, &["-Awarnings"], &[
-        ("PRUSTI_FULL_COMPILATION", "true"),
-        ("PRUSTI_QUIET", "true"),
-    ]).unwrap();
+    run_prusti_tests(
+        group_name,
+        &["-Awarnings"],
+        &[
+            ("PRUSTI_FULL_COMPILATION", "true"),
+            ("PRUSTI_QUIET", "true"),
+        ],
+    )
+    .unwrap();
 }
 
 fn run_verification_core_proof(group_name: &str) {
-    run_prusti_tests(group_name, &["-Awarnings"], &[
-        ("PRUSTI_FULL_COMPILATION", "true"),
-        ("PRUSTI_QUIET", "true"),
-        ("PRUSTI_CHECK_PANICS", "false"),
-        ("PRUSTI_CHECK_OVERFLOWS", "false"),
-    ]).unwrap();
+    run_prusti_tests(
+        group_name,
+        &["-Awarnings"],
+        &[
+            ("PRUSTI_FULL_COMPILATION", "true"),
+            ("PRUSTI_QUIET", "true"),
+            ("PRUSTI_CHECK_PANICS", "false"),
+            ("PRUSTI_CHECK_OVERFLOWS", "false"),
+        ],
+    )
+    .unwrap();
 }
 
 fn run_lifetimes_dump(group_name: &str) {
-    run_prusti_tests(group_name, &[], &[
-        ("PRUSTI_NO_VERIFY", "true"),
-        ("PRUSTI_DUMP_BORROWCK_INFO", "true"),
-        ("PRUSTI_QUIET", "true"),
-    ]).unwrap();
+    run_prusti_tests(
+        group_name,
+        &[],
+        &[
+            ("PRUSTI_NO_VERIFY", "true"),
+            ("PRUSTI_DUMP_BORROWCK_INFO", "true"),
+            ("PRUSTI_QUIET", "true"),
+        ],
+    )
+    .unwrap();
 }
 
 pub(crate) fn run() {

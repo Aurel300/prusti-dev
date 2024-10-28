@@ -1,23 +1,22 @@
 use std::fmt::{Debug, Display, Formatter, Result as FmtResult};
 
-use crate::data::*;
-use crate::gendata::*;
+use crate::{data::*, gendata::*};
 
 fn fmt_comma_sep_display<T: Display>(f: &mut Formatter<'_>, els: &[T]) -> FmtResult {
-    els.iter()
-        .enumerate()
-        .try_for_each(|(idx, el)| {
-            if idx > 0 { write!(f, ", ")? }
-            el.fmt(f)
-        })
+    els.iter().enumerate().try_for_each(|(idx, el)| {
+        if idx > 0 {
+            write!(f, ", ")?
+        }
+        el.fmt(f)
+    })
 }
 fn fmt_comma_sep<T: Debug>(f: &mut Formatter<'_>, els: &[T]) -> FmtResult {
-    els.iter()
-        .enumerate()
-        .try_for_each(|(idx, el)| {
-            if idx > 0 { write!(f, ", ")? }
-            el.fmt(f)
-        })
+    els.iter().enumerate().try_for_each(|(idx, el)| {
+        if idx > 0 {
+            write!(f, ", ")?
+        }
+        el.fmt(f)
+    })
 }
 fn fmt_comma_sep_lines<T: Debug>(f: &mut Formatter<'_>, els: &[T]) -> FmtResult {
     for (idx, el) in els.iter().enumerate() {
@@ -30,13 +29,8 @@ fn fmt_comma_sep_lines<T: Debug>(f: &mut Formatter<'_>, els: &[T]) -> FmtResult 
     Ok(())
 }
 fn indent(s: String) -> String {
-    s
-        .split("\n")
-        .intersperse("\n  ")
-        .collect::<String>()
+    s.split("\n").intersperse("\n  ").collect::<String>()
 }
-
-
 
 impl<'vir, Curr, Next> Debug for AccFieldGenData<'vir, Curr, Next> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
@@ -52,22 +46,26 @@ impl<'vir, Curr, Next> Debug for BinOpGenData<'vir, Curr, Next> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         write!(f, "(")?;
         self.lhs.fmt(f)?;
-        write!(f, ") {} (", match self.kind {
-            BinOpKind::CmpEq => "==",
-            BinOpKind::CmpNe => "!=",
-            BinOpKind::CmpGt => ">",
-            BinOpKind::CmpGe => ">=",
-            BinOpKind::CmpLt => "<",
-            BinOpKind::CmpLe => "<=",
-            BinOpKind::And => "&&",
-            BinOpKind::Or => "||",
-            BinOpKind::Implies => "==>",
-            BinOpKind::Add => "+",
-            BinOpKind::Sub => "-",
-            BinOpKind::Mul => "*",
-            BinOpKind::Div => "\\",
-            BinOpKind::Mod => "%",
-        })?;
+        write!(
+            f,
+            ") {} (",
+            match self.kind {
+                BinOpKind::CmpEq => "==",
+                BinOpKind::CmpNe => "!=",
+                BinOpKind::CmpGt => ">",
+                BinOpKind::CmpGe => ">=",
+                BinOpKind::CmpLt => "<",
+                BinOpKind::CmpLe => "<=",
+                BinOpKind::And => "&&",
+                BinOpKind::Or => "||",
+                BinOpKind::Implies => "==>",
+                BinOpKind::Add => "+",
+                BinOpKind::Sub => "-",
+                BinOpKind::Mul => "*",
+                BinOpKind::Div => "\\",
+                BinOpKind::Mod => "%",
+            }
+        )?;
         self.rhs.fmt(f)?;
         write!(f, ")")
     }
@@ -202,8 +200,12 @@ impl<'vir, Curr, Next> Debug for FunctionGenData<'vir, Curr, Next> {
         writeln!(f, "function {}(", self.name)?;
         fmt_comma_sep_lines(f, self.args)?;
         writeln!(f, "): {:?}", self.ret)?;
-        self.pres.iter().try_for_each(|el| writeln!(f, "  requires {:?}", el))?;
-        self.posts.iter().try_for_each(|el| writeln!(f, "  ensures {:?}", el))?;
+        self.pres
+            .iter()
+            .try_for_each(|el| writeln!(f, "  requires {:?}", el))?;
+        self.posts
+            .iter()
+            .try_for_each(|el| writeln!(f, "  ensures {:?}", el))?;
         if let Some(expr) = self.expr {
             write!(f, "{{\n  ")?;
             expr.fmt(f)?;
@@ -250,8 +252,12 @@ impl<'vir, Curr, Next> Debug for MethodGenData<'vir, Curr, Next> {
         } else {
             writeln!(f, ")")?;
         }
-        self.pres.iter().try_for_each(|el| writeln!(f, "  requires {:?}", el))?;
-        self.posts.iter().try_for_each(|el| writeln!(f, "  ensures {:?}", el))?;
+        self.pres
+            .iter()
+            .try_for_each(|el| writeln!(f, "  requires {:?}", el))?;
+        self.posts
+            .iter()
+            .try_for_each(|el| writeln!(f, "  ensures {:?}", el))?;
         if let Some(body) = self.body.as_ref() {
             writeln!(f, "{{")?;
             for block in body.blocks.iter() {
@@ -406,7 +412,7 @@ impl<'vir> Debug for TypeData<'vir> {
             Self::Ref => write!(f, "Ref"),
             Self::Perm => write!(f, "Perm"),
             Self::Predicate => write!(f, "Predicate"),
-            Self::Unsupported(u) => u.fmt(f)
+            Self::Unsupported(u) => u.fmt(f),
         }
     }
 }
@@ -425,10 +431,15 @@ impl<'vir> Display for DomainParamData<'vir> {
 
 impl<'vir, Curr, Next> Debug for UnOpGenData<'vir, Curr, Next> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        write!(f, "{}({:?})", match self.kind {
-            UnOpKind::Neg => "-",
-            UnOpKind::Not => "!",
-        }, self.expr)
+        write!(
+            f,
+            "{}({:?})",
+            match self.kind {
+                UnOpKind::Neg => "-",
+                UnOpKind::Not => "!",
+            },
+            self.expr
+        )
     }
 }
 

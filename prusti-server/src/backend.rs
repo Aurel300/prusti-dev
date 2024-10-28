@@ -1,8 +1,5 @@
 use crate::dump_viper_program;
-use prusti_utils::{
-    config,
-    Stopwatch,
-};
+use prusti_utils::{config, Stopwatch};
 use viper::{VerificationContext, VerificationResult};
 
 pub enum Backend<'a> {

@@ -201,10 +201,12 @@ impl<'vir, Curr, Next> ExprGenData<'vir, Curr, Next> {
     pub fn lift<Prev>(&self) -> ExprGen<'vir, Prev, ExprKindGen<'vir, Curr, Next>> {
         match self.kind {
             ExprKindGenData::Lazy(_) => panic!("cannot lift lazy expression"),
-            _ => unsafe { std::mem::transmute::<
-                &ExprGenData<'vir, Curr, Next>,
-                &ExprGenData<'vir, Prev, ExprKindGen<'vir, Curr, Next>>,
-            >(self) },
+            _ => unsafe {
+                std::mem::transmute::<
+                    &ExprGenData<'vir, Curr, Next>,
+                    &ExprGenData<'vir, Prev, ExprKindGen<'vir, Curr, Next>>,
+                >(self)
+            },
         }
     }
 }
@@ -297,10 +299,11 @@ pub struct MethodCallGenData<'vir, Curr, Next> {
 pub struct StmtGenData<'vir, Curr, Next> {
     pub kind: StmtKindGen<'vir, Curr, Next>,
     // #[vir(reify_pass)] pub debug_info: DebugInfo<'vir>,
-    #[vir(reify_pass)] pub span: Option<&'vir VirSpan<'vir>>,
+    #[vir(reify_pass)]
+    pub span: Option<&'vir VirSpan<'vir>>,
 }
 
-impl <'vir, Curr: 'vir, Next: 'vir> StmtGenData<'vir, Curr, Next> {
+impl<'vir, Curr: 'vir, Next: 'vir> StmtGenData<'vir, Curr, Next> {
     pub fn new(kind: StmtKindGen<'vir, Curr, Next>) -> Self {
         with_vcx(|vcx| Self {
             kind,
@@ -399,10 +402,11 @@ impl<'vir> ProgramGenData<'vir, !, !> {
             // SAFETY: this transmutes a `'vir` (or shorter) reference to a
             //   `'static` reference. The reference is not used except in
             //   `VirCtxt::get_program`. See comment there.
-            program: unsafe { std::mem::transmute::<
-                &ProgramGenData<'vir, !, !>,
-                &ProgramGenData<'static, !, !>,
-            >(self) },
+            program: unsafe {
+                std::mem::transmute::<&ProgramGenData<'vir, !, !>, &ProgramGenData<'static, !, !>>(
+                    self,
+                )
+            },
         }
     }
 }

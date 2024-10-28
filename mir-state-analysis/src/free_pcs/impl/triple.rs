@@ -81,7 +81,7 @@ impl<'tcx> Visitor<'tcx> for Fpcs<'_, 'tcx> {
             | CoroutineDrop
             | FalseEdge { .. }
             | FalseUnwind { .. } => (),
-            Return | TailCall {.. } => {
+            Return | TailCall { .. } => {
                 let always_live = self.repacker.always_live_locals();
                 for local in 0..self.repacker.local_count() {
                     let local = Local::from_usize(local);

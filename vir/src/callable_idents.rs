@@ -1,16 +1,9 @@
 #![allow(clippy::len_without_is_empty)]
 
 use crate::{
-    debug_info::DebugInfo,
-    viper_ident::ViperIdent,
-    VirCtxt,
-    typecheck_error,
-    with_vcx,
+    data::*, debug_info::DebugInfo, gendata::*, genrefs::*, refs::*, typecheck_error,
+    viper_ident::ViperIdent, with_vcx, VirCtxt,
 };
-use crate::data::*;
-use crate::refs::*;
-use crate::gendata::*;
-use crate::genrefs::*;
 use sealed::sealed;
 use std::fmt::Debug;
 
@@ -23,8 +16,16 @@ pub trait CallableIdent<'vir, A: Arity<'vir>, ResultTy> {
     fn arity(&self) -> &A;
     fn result_ty(&self) -> ResultTy;
 }
-pub trait ToKnownArity<'vir, T: 'vir, ResultTy>: CallableIdent<'vir, UnknownArityAny<'vir, T>, ResultTy> + Sized {
-    fn to_known<'tcx, K: CallableIdent<'vir, KnownArityAny<'vir, T, N>, ResultTy>, const N: usize>(self) -> K {
+pub trait ToKnownArity<'vir, T: 'vir, ResultTy>:
+    CallableIdent<'vir, UnknownArityAny<'vir, T>, ResultTy> + Sized
+{
+    fn to_known<
+        'tcx,
+        K: CallableIdent<'vir, KnownArityAny<'vir, T, N>, ResultTy>,
+        const N: usize,
+    >(
+        self,
+    ) -> K {
         K::new(
             self.name(),
             KnownArityAny::new(self.arity().args().try_into().unwrap()),
@@ -87,13 +88,13 @@ impl<'vir, A: Arity<'vir>> CallableIdent<'vir, A, ()> for MethodIdent<'vir, A> {
     fn result_ty(&self) {}
 }
 
-impl <'vir, A: Arity<'vir>> MethodIdent<'vir, A> {
+impl<'vir, A: Arity<'vir>> MethodIdent<'vir, A> {
     pub fn debug_info(&self) -> DebugInfo<'vir> {
         self.2
     }
 }
 
-impl <'vir, A: Arity<'vir>> MethodIdent<'vir, A> {
+impl<'vir, A: Arity<'vir>> MethodIdent<'vir, A> {
     pub fn new(name: ViperIdent<'vir>, args: A) -> Self {
         Self(name, args, with_vcx(DebugInfo::new))
     }
@@ -101,7 +102,11 @@ impl <'vir, A: Arity<'vir>> MethodIdent<'vir, A> {
 
 impl<'vir, A: Arity<'vir, Arg = Type<'vir>>> MethodIdent<'vir, A> {
     pub fn as_unknown_arity(self) -> MethodIdent<'vir, UnknownArity<'vir>> {
-        MethodIdent(self.name(), UnknownArity::new(self.1.args()), self.debug_info())
+        MethodIdent(
+            self.name(),
+            UnknownArity::new(self.1.args()),
+            self.debug_info(),
+        )
     }
 }
 
@@ -120,7 +125,7 @@ impl<'vir, A: Arity<'vir>> CallableIdent<'vir, A, ()> for PredicateIdent<'vir, A
     fn result_ty(&self) {}
 }
 
-impl <'vir, A: Arity<'vir>> PredicateIdent<'vir, A> {
+impl<'vir, A: Arity<'vir>> PredicateIdent<'vir, A> {
     pub fn debug_info(&self) -> DebugInfo<'vir> {
         self.2
     }
@@ -360,7 +365,6 @@ impl<'vir, const N: usize> DomainIdent<'vir, KnownArityAny<'vir, DomainParamData
         vcx.alloc(TypeData::Domain(self.0.to_str(), vcx.alloc_slice(&args)))
     }
 }
-
 
 // Func arity checked at runtime
 

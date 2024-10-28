@@ -1,15 +1,15 @@
 use std::io;
 
 use prusti_rustc_interface::{
+    ast::AttrId,
     hir::def_id::{CrateNum, DefId, DefIndex, DefPathHash},
     middle::{
         implement_ty_decoder,
         ty::{codec::TyDecoder, Ty, TyCtxt},
     },
-    ast::AttrId,
     serialize::{opaque, Decodable, Decoder},
     session::StableCrateId,
-    span::{BytePos, ExpnId, Symbol, Span, SpanDecoder, StableSourceFileId, SyntaxContext},
+    span::{BytePos, ExpnId, Span, SpanDecoder, StableSourceFileId, Symbol, SyntaxContext},
 };
 use rustc_hash::FxHashMap;
 
@@ -103,15 +103,13 @@ impl<'a, 'tcx> SpanDecoder for DefSpecsDecoder<'a, 'tcx> {
     // sessions, to map the old `DefId` to the new one.
     fn decode_def_id(&mut self) -> DefId {
         let def_path_hash = DefPathHash::decode(self);
-        self.tcx
-            .def_path_hash_to_def_id(def_path_hash).unwrap()
+        self.tcx.def_path_hash_to_def_id(def_path_hash).unwrap()
     }
 
     fn decode_attr_id(&mut self) -> AttrId {
         todo!()
     }
 }
-
 
 implement_ty_decoder!(DefSpecsDecoder<'a, 'tcx>);
 

@@ -342,7 +342,7 @@ pub fn old<T>(arg: T) -> T {
 /// Universal quantifier.
 ///
 /// This is a Prusti-internal representation of the `forall` syntax.
-#[prusti::builtin="forall"]
+#[prusti::builtin = "forall"]
 pub fn forall<T, F>(_trigger_set: T, _closure: &F) -> bool {
     true
 }
@@ -365,7 +365,7 @@ pub fn snap<T>(_x: &T) -> T {
 /// `PartialEq` nor `Copy` implementation. The in-memory representation is
 /// constructed recursively: references are followed, unsafe pointers and cells
 /// are not. Importantly, addresses are not taken into consideration.
-#[prusti::builtin="snapshot_equality"]
+#[prusti::builtin = "snapshot_equality"]
 pub fn snapshot_equality<T>(_l: T, _r: T) -> bool {
     true
 }

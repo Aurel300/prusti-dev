@@ -1,7 +1,6 @@
 #![feature(rustc_private)]
 #![feature(never_type)]
 #![feature(iter_intersperse)]
-
 #![allow(clippy::needless_lifetimes)]
 
 mod context;
@@ -19,6 +18,7 @@ mod spans;
 mod callable_idents;
 mod viper_ident;
 
+pub use callable_idents::*;
 pub use context::*;
 pub use data::*;
 pub use gendata::*;
@@ -26,7 +26,6 @@ pub use genrefs::*;
 pub use refs::*;
 pub use reify::*;
 pub use spans::VirSpan;
-pub use callable_idents::*;
 pub use viper_ident::*;
 
 // for all arena-allocated types, there are two type definitions: one with

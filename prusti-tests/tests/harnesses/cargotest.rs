@@ -4,16 +4,15 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-// use cargo_test_support::{cargo_test, project, symlink_supported};
-use log::{error, info};
-use prusti_server::spawn_server_thread;
-use std::sync::atomic::AtomicBool;
-use std::sync::{Arc, Mutex};
-use std::{env, path::PathBuf, sync::atomic::Ordering};
-use ui_test::{run_tests, spanned::Spanned, Config};
 use std::{
     fs,
+    path::PathBuf,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+    },
 };
+use ui_test::{default_any_file_filter, run_tests_generic, spanned::Spanned, Args, Config};
 
 fn find_cargo_prusti_path() -> PathBuf {
     let target_directory = if cfg!(debug_assertions) {
@@ -47,218 +46,104 @@ fn find_cargo_prusti_path() -> PathBuf {
         It might be that Prusti has not been compiled correctly."
     );
 }
-/*
-fn simple_assert_true() {
-    let p = project()
-        .file("src/main.rs", "fn main() { assert!(true); }")
-        .build();
-    p.process(cargo_prusti_path()).run();
-}
 
-#[cargo_test]
-fn simple_assert_false() {
-    let p = project()
-        .file("src/main.rs", "fn main() { assert!(false); }")
-        .build();
-    p.process(cargo_prusti_path())
-        .with_status(101)
-        .with_stderr(
-            "\
-[CHECKING] foo v0.0.1 ([..])
-[WARNING] Prusti specifications are supported only from 2018 edition. Please specify the edition with adding a command line argument `--edition=2018` or `--edition=2021`.
-
-[ERROR] [Prusti: verification error] the asserted expression might not hold
- --> src/main.rs:1:13
-  |
-1 | fn main() { assert!(false); }
-  |             ^^^^^^^^^^^^^^
-  |
-  = note: this error originates in the macro `assert` (in Nightly builds, run with -Z macro-backtrace for more info)
-
-warning: `foo` (bin \"foo\") generated 1 warning
-error: could not compile `foo` due to previous error; 1 warning emitted
-",
-        )
-        .run();
-}
-
-/// Test `cargo-prusti` on one of the crates in `test/cargo_verify`.
-///
-/// Special files and folders in the root of the test crate:
-/// * `output.stdout` and `output.stderr`: if present, they are used to check the output of
-///   `cargo-prusti`.
-/// * `prusti-contracts` and related Prusti crates: during the test they will link to the
-///   corresponding Prusti crate.
-///
-/// This function requires symlinks to be supported.
-///
-/// For more details on the special syntax allowed in the `output.*` files, check the documentation
-/// of `cargo_test_support`: <https://doc.crates.io/contrib/tests/writing.html>.
-fn test_local_project<T: Into<PathBuf>>(project_name: T) {
-    let mut project_builder = project().no_manifest();
-    let relative_project_path = Path::new("tests/cargo_verify").join(project_name.into());
-    let project_path = fs::canonicalize(&relative_project_path).unwrap_or_else(|_| {
-        panic!(
-            "Failed to canonicalize the path {}",
-            relative_project_path.display()
-        )
+fn run_cargo_tests(root_dir: &str, cargo_flags: &[&str], cargo_env: &[(&str, &str)]) {
+    static ABORT_CHECK: Mutex<Option<Arc<AtomicBool>>> = Mutex::new(None);
+    _ = ctrlc::try_set_handler(move || {
+        if let Some(flag) = &*ABORT_CHECK.lock().unwrap() {
+            flag.store(true, Ordering::Relaxed);
+        }
     });
 
-    // Populate the test project with symlinks to the local project
-    let project_path_content = fs::read_dir(&project_path)
-        .unwrap_or_else(|_| panic!("Failed to read directory {}", project_path.display()));
-    for entry in project_path_content {
-        let entry = entry
-            .unwrap_or_else(|_| panic!("Failed to read content of {}", project_path.display()));
-        let path = entry.path();
-        let file_name = path
-            .as_path()
-            .file_name()
-            .unwrap_or_else(|| panic!("Failed to obtain the name of {}", path.display()));
-        if file_name == "target" {
-            continue;
-        }
-        if path.is_dir() {
-            project_builder = project_builder.symlink_dir(path.as_path(), Path::new(file_name));
-        } else {
-            project_builder = project_builder.symlink(path.as_path(), Path::new(file_name));
-        }
-    }
+    // This setup for testing with `cargo` is loosely based on `ui_test`'s;
+    // see https://github.com/oli-obk/ui_test/blob/main/tests/integration.rs
 
-    // Create a special symlink for prusti_contract and related Prusti crates
-    let prusti_dev_path = project_path
-        .parent()
-        .and_then(|p| p.parent())
-        .and_then(|p| p.parent())
-        .and_then(|p| p.parent())
-        .unwrap_or_else(|| {
-            panic!(
-                "Failed to obtain parent folders of {}",
-                project_path.display()
-            )
-        });
-    project_builder = project_builder.symlink_dir(
-        prusti_dev_path.join("prusti-contracts").as_path(),
-        Path::new("prusti-contracts"),
-    );
+    let mut config = Config::cargo(&root_dir);
 
-    // Fetch dependencies using the same target folder of cargo-prusti
-    let project = project_builder.build();
-    project
-        .process("cargo")
-        .arg("--config")
-        .arg("net.retry=5")
-        .arg("build")
-        .env("CARGO_TARGET_DIR", "target/verify")
-        .run();
+    let args = Args::test().unwrap();
+    config.with_args(&args);
 
-    // Set the expected exit status, stdout and stderr
-    let mut test_builder = project.process(cargo_prusti_path());
-    test_builder.arg("--quiet");
-    let opt_expected_stdout = fs::read_to_string(project_path.join("output.stdout")).ok();
-    let opt_expected_stderr = fs::read_to_string(project_path.join("output.stderr")).ok();
-    if let Some(ref expected_stdout) = opt_expected_stdout {
-        // In some cases, Prusti outputs more macro definitions than needed.
-        // See: https://github.com/viperproject/prusti-dev/pull/762
-        test_builder.with_stdout_contains(expected_stdout);
-    }
-    if let Some(ref expected_stderr) = opt_expected_stderr {
-        test_builder.with_status(101).with_stderr(expected_stderr);
-    }
-
-    // Run the test
-    test_builder.run();
-}
-
-#[cargo_test]
-fn test_symlinks() {
-    // Required by `test_local_project`
-    assert!(symlink_supported());
-}
-
-// TODO: automatically create a test for each folder in `test/cargo_verify`.
-// Each of the following functions, listed in alphabetic order, test a crate in `cargo_verify/`.
-
-#[cargo_test]
-fn test_failing_crate() {
-    test_local_project("failing_crate");
-}
-
-#[cargo_test]
-fn test_failing_stable_toolchain() {
-    test_local_project("failing_stable_toolchain");
-}
-
-#[cargo_test]
-fn test_foreign_mods() {
-    test_local_project("foreign_mods");
-}
-
-#[cargo_test]
-fn test_library_contracts_test() {
-    test_local_project("library_contracts_test");
-}
-
-#[cargo_test]
-fn test_no_deps() {
-    test_local_project("no_deps");
-}
-
-#[cargo_test]
-fn test_overflow_checks() {
-    test_local_project("overflow_checks");
-}
-
-#[cargo_test]
-fn test_prusti_toml() {
-    test_local_project("prusti_toml");
-}
-
-#[cargo_test]
-fn test_prusti_toml_fail() {
-    let old_value = if let Ok(value) = std::env::var("RUST_BACKTRACE") {
-        // We need to remove this environment variable because it affects the
-        // compiler output.
-        std::env::remove_var("RUST_BACKTRACE");
-        Some(value)
-    } else {
-        None
-    };
-    test_local_project("prusti_toml_fail");
-    if let Some(value) = old_value {
-        std::env::set_var("RUST_BACKTRACE", value)
-    }
-}
-*/
-
-fn run_cargo_test(
-    project: &str,
-    cargo_flags: &[&str],
-    cargo_env: &[(&str, &str)],
-) {
-    static ABORT_CHECK: Mutex<Option<Arc<AtomicBool>>> = Mutex::new(None);
-    _ = ctrlc::try_set_handler(move || if let Some(flag) = &*ABORT_CHECK.lock().unwrap() { flag.store(true, Ordering::Relaxed); });
-
-    let mut config = Config::cargo(&project);
     *ABORT_CHECK.lock().unwrap() = Some(config.abort_check.clone());
     config.program.program = find_cargo_prusti_path();
-    config.program.args.extend(cargo_flags.iter().map(|s| s.into()));
-    config.program.envs.push(("RUSTC_ICE".into(), Some("0".into()))); // suppress rustc-ice*.txt files
-    config.program.envs.extend(cargo_env.iter().map(|(k, v)| (k.into(), Some(v.into()))));
+    assert_eq!(config.program.args.remove(0), "build");
+    config
+        .program
+        .args
+        .extend(cargo_flags.iter().map(|s| s.into()));
+    config
+        .program
+        .envs
+        .push(("RUSTC_ICE".into(), Some("0".into()))); // suppress rustc-ice*.txt files
+    config
+        .program
+        .envs
+        .extend(cargo_env.iter().map(|(k, v)| (k.into(), Some(v.into()))));
 
-    run_tests(config).unwrap();
+    config.comment_defaults.base().require_annotations = Some(Spanned::dummy(false)).into();
+
+    let mut config_pass = config.clone();
+    config_pass.comment_defaults.base().exit_status = Some(Spanned::dummy(0)).into();
+
+    let mut config_fail = config;
+    config_fail.comment_defaults.base().exit_status = Some(Spanned::dummy(101)).into();
+
+    let text = ui_test::status_emitter::Text::from(args.format);
+    run_tests_generic(
+        vec![config_pass, config_fail],
+        |path, config| {
+            // TODO: only these tests are currently enabled. The rest have
+            //   issues that need to be fixed:
+            //   - foreign_mods: "no MIR body for external fn"
+            //   - library_contracts_test: AliasTy problem due to Fn type
+            //   - no_deps: Prusti.toml is not taken from manifest dir
+            //   - overflow_checks: missing span for overflow check
+            //   - prusti_toml: Prusti.toml is not taken from manifest dir
+            //   - prusti_toml_fail: Prusti.toml is not taken from manifest dir
+            //   - test_no_std: needs to be updated for toolchain
+            //     also: `#![no_std]` binaries on Windows are not a thing yet,
+            //     see <https://github.com/viperproject/prusti-dev/pull/762>.
+            //   - veribetrfs: currently broken (?)
+            if !(path.ends_with("failing_crate_fail/Cargo.toml")
+                || path.ends_with("failing_stable_toolchain_fail/Cargo.toml")
+                || path.ends_with("simple_assert_false_fail/Cargo.toml")
+                || path.ends_with("simple_assert_true/Cargo.toml"))
+            {
+                return None;
+            }
+
+            if !path.ends_with("Cargo.toml") {
+                return None;
+            }
+            let file_is_fail = path
+                .parent()
+                .unwrap()
+                .file_name()
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .ends_with("fail");
+            let config_is_fail = match config
+                .comment_defaults
+                .base_immut()
+                .exit_status
+                .as_deref()
+                .unwrap()
+            {
+                0 => false,
+                101 => true,
+                _ => unreachable!(),
+            };
+            if file_is_fail != config_is_fail {
+                return None;
+            }
+            Some(default_any_file_filter(path, config))
+        },
+        |_, _| {},
+        (text,),
+    )
+    .unwrap();
 }
 
 pub(crate) fn run() {
-    run_cargo_test("tests/cargo_verify/simple_assert_true", &[], &[]);
-
-    /*
-    // `#![no_std]` binaries on Windows are not a thing yet,
-    // see <https://github.com/viperproject/prusti-dev/pull/762>.
-    #[cfg(not(windows))]
-    test_local_project("test_no_std");
-
-    // Currently broken
-    // test_local_project("veribetrfs");
-    */
+    run_cargo_tests("tests/cargo_verify", &[], &[]);
 }

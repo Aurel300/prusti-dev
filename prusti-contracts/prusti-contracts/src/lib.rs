@@ -129,7 +129,7 @@ mod private {
     use core::{marker::PhantomData, ops::*};
 
     /// A macro for defining a closure with a specification.
-    pub use prusti_contracts_proc_macros::{closure, pure, trusted};
+    pub use prusti_contracts_proc_macros::{closure, pure};
 
     pub fn prusti_set_union_active_field<T>(_arg: T) {
         unreachable!();

@@ -295,9 +295,16 @@ pub fn set_java_home_setting(cmd: &mut Command, java_home: &Path) {
 /// dependency on `prusti-contracts`. Will panic if there is a transitive
 /// dependency but not a direct one; in such a case it isn't possible
 /// to enable the feature.
-pub fn enable_prusti_feature(cargo_path: &str) -> bool {
-    let out = Command::new(cargo_path)
-        .args(["tree", "--prefix", "depth", "-f", " [{f}] {p}"])
+pub fn enable_prusti_feature(cargo_path: &str, manifest_path: Option<&str>) -> bool {
+    let mut command = Command::new(cargo_path);
+    command.args(["tree", "--prefix", "depth", "-f", " [{f}] {p}"]);
+
+    // `--manifest-path` makes `cargo` invocations not CWD-dependent.
+    if let Some(manifest_path) = manifest_path {
+        command.args(["--manifest-path", manifest_path]);
+    }
+
+    let out = command
         .output()
         .unwrap_or_else(|_| panic!("Failed to run '{cargo_path} tree'"));
     // Expected stdout:

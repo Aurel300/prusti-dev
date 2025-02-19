@@ -255,7 +255,9 @@ impl<'tcx> VirCtxt<'tcx> {
         exec: u32,
     ) -> ExprGen<'vir, Curr, Next> {
         let v = self.mk_const_expr(ConstData::Int(exec as u128));
-        self.mk_func_app("rel", &[expr, v], expr.typ())
+        // TODO: the type here is wrong; we cannot just call .typ() though,
+        // because the arguments may be lazy
+        self.mk_func_app("rel", &[expr, v], &crate::TypeData::Int)
     }
 
     pub fn mk_forall_expr<'vir, Curr, Next>(

@@ -38,13 +38,10 @@ pub enum MirPureEncError {
 }
 
 #[derive(Clone, Debug)]
-pub enum ModeMarker {
-    OldStart, 
-    OldEnd,
-    Rel1Start,
-    Rel1End,
-    Rel0Start,
-    Rel0End,
+pub enum Mode {
+    Old,
+    Rel(usize),
+    BeforeExpiry,
 }
 
 // TODO: does this need to be `&'vir [..]`?
@@ -784,7 +781,8 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
         let should_wrap = {
             let is_in_a_mode = self.old_mode || self.rel0_mode || self.rel1_mode;
             let local_kind = self.body.local_kind(place.local);
-            (local_kind == mir::LocalKind::Arg || local_kind == mir::LocalKind::ReturnPointer) && is_in_a_mode
+            (local_kind == mir::LocalKind::Arg || local_kind == mir::LocalKind::ReturnPointer)
+                && is_in_a_mode
         };
 
         let mut expr = if should_wrap {
@@ -794,8 +792,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                 vir::vir_format!(self.vcx, "wraped in _{}", local_as_uzize),
                 Box::new(move |_vcx, lctx: ExprInput<'vir>| lctx.1[local_as_uzize - 1].kind),
             )
-        }
-        else {
+        } else {
             self.mk_local_ex(place.local, curr_ver[&place.local])
         };
         let mut place_ref = None;
@@ -910,7 +907,8 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
         enum PrustiBuiltin {
             Forall,
             SnapshotEquality,
-            Mode(ModeMarker),
+            ModeStart(Mode),
+            ModeEnd(Mode),
         }
 
         // TODO: this attribute extraction should be done elsewhere?
@@ -926,18 +924,33 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                 && item.path.segments[0].ident.as_str() == "prusti"
                 && item.path.segments[1].ident.as_str() == "builtin"
         }) {
+            let param_env = self.vcx.tcx().param_env(self.def_id);
             match &attr.args {
                 ast::AttrArgs::Eq(_, ast::AttrArgsEq::Hir(lit)) => {
                     assert!(builtin.is_none(), "multiple prusti::builtin");
                     builtin = Some(match lit.symbol.as_str() {
                         "forall" => PrustiBuiltin::Forall,
                         "snapshot_equality" => PrustiBuiltin::SnapshotEquality,
-                        "old_start" => PrustiBuiltin::Mode(ModeMarker::OldStart),
-                        "old_end" => PrustiBuiltin::Mode(ModeMarker::OldEnd),
-                        "rel0_start" => PrustiBuiltin::Mode(ModeMarker::Rel0Start),
-                        "rel0_end" => PrustiBuiltin::Mode(ModeMarker::Rel0End),
-                        "rel1_start" => PrustiBuiltin::Mode(ModeMarker::Rel1Start),
-                        "rel1_end" => PrustiBuiltin::Mode(ModeMarker::Rel1End),
+                        "old_start" => PrustiBuiltin::ModeStart(Mode::Old),
+                        "old_end" => PrustiBuiltin::ModeEnd(Mode::Old),
+                        "rel_start" => PrustiBuiltin::ModeStart(Mode::Rel(
+                            arg_tys[0]
+                                .expect_const()
+                                .try_eval_scalar_int(self.vcx.tcx(), param_env)
+                                .unwrap()
+                                .1
+                                .to_bits_unchecked() as usize,
+                        )),
+                        "rel_end" => PrustiBuiltin::ModeEnd(Mode::Rel(
+                            arg_tys[0]
+                                .expect_const()
+                                .try_eval_scalar_int(self.vcx.tcx(), param_env)
+                                .unwrap()
+                                .1
+                                .to_bits_unchecked() as usize,
+                        )),
+                        "before_expiry_start" => PrustiBuiltin::ModeStart(Mode::BeforeExpiry),
+                        "before_expiry_end" => PrustiBuiltin::ModeEnd(Mode::BeforeExpiry),
                         other => panic!("illegal prusti::builtin ({other})"),
                     });
                 }
@@ -1067,43 +1080,45 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                     )],
                 )
             }
-            PrustiBuiltin::Mode(marker) => {
-                match marker {
-                    ModeMarker::OldStart => {
+            PrustiBuiltin::ModeStart(mode) => {
+                match mode {
+                    Mode::Old => {
                         assert!(!self.old_mode);
                         self.old_mode = true;
                     }
-                    ModeMarker::OldEnd => {
+                    Mode::Rel(0) => {
+                        assert!(!self.rel0_mode);
+                        assert!(!self.rel1_mode);
+                        self.rel0_mode = true;
+                    }
+                    Mode::Rel(_) => {
+                        assert!(!self.rel1_mode);
+                        assert!(!self.rel0_mode);
+                        self.rel1_mode = true;
+                    }
+                    Mode::BeforeExpiry => todo!(),
+                }
+                self.vcx.mk_bool::<true>().lift() //TODO what value do we return?
+            }
+            PrustiBuiltin::ModeEnd(mode) => {
+                match mode {
+                    Mode::Old => {
                         assert!(self.old_mode);
                         self.old_mode = false;
                     }
-                    ModeMarker::Rel1Start => {
-                        assert!(!self.rel1_mode);
-                        assert!(!self.rel0_mode);
-
-                        self.rel1_mode = true;
-                    }
-                    ModeMarker::Rel1End => {
-                        assert!(!self.rel0_mode);
-                        assert!(self.rel1_mode);
-
-                        self.rel1_mode = false;
-                    }
-                    ModeMarker::Rel0Start => {
-                        assert!(!self.rel0_mode);
-                        assert!(!self.rel1_mode);
-
-                        self.rel0_mode = true;
-                    }
-                    ModeMarker::Rel0End => {
+                    Mode::Rel(0) => {
                         assert!(self.rel0_mode);
                         assert!(!self.rel1_mode);
-
                         self.rel0_mode = false;
                     }
+                    Mode::Rel(_) => {
+                        assert!(!self.rel0_mode);
+                        assert!(self.rel1_mode);
+                        self.rel1_mode = false;
+                    }
+                    Mode::BeforeExpiry => todo!(),
                 }
-
-                self.vcx.mk_todo_expr("true") //TODO what value do we return?
+                self.vcx.mk_bool::<true>().lift() //TODO what value do we return?
             }
         }
     }

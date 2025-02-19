@@ -159,10 +159,13 @@ impl PrustiTokenStream {
                         PrustiToken::ModeMarker(ident.span(), MarkerKind::Old)
                     }
                     (TokenTree::Ident(ident), _, _, _) if ident == "rel0" => {
-                        PrustiToken::ModeMarker(ident.span(), MarkerKind::Rel0)
+                        PrustiToken::ModeMarker(ident.span(), MarkerKind::Rel(0))
                     }
                     (TokenTree::Ident(ident), _, _, _) if ident == "rel1" => {
-                        PrustiToken::ModeMarker(ident.span(), MarkerKind::Rel1)
+                        PrustiToken::ModeMarker(ident.span(), MarkerKind::Rel(1))
+                    }
+                    (TokenTree::Ident(ident), _, _, _) if ident == "before_expiry" => {
+                        PrustiToken::ModeMarker(ident.span(), MarkerKind::BeforeExpiry)
                     }
                     (TokenTree::Punct(punct), _, _, _)
                         if punct.as_char() == ',' && punct.spacing() == Alone =>
@@ -299,7 +302,11 @@ impl PrustiTokenStream {
                 todo!()
             }
             Some(PrustiToken::ModeMarker(span, kind)) => {
-               self.parse_marker(span, kind)?
+                let expr = self.pop_group(Delimiter::Parenthesis).ok_or_else(|| {
+                    error(span, "expected parenthesized expression after mode marker")
+                })?;
+                let expr = expr.parse()?;
+                kind.translate(span, expr)
             }
             Some(PrustiToken::Quantifier(span, kind)) => {
                 let mut stream = self.pop_group(Delimiter::Parenthesis).ok_or_else(|| {
@@ -397,14 +404,16 @@ impl PrustiTokenStream {
                     return err(*span, "unexpected quantifier")
                 }
                 Some(PrustiToken::ModeMarker(span, kind)) => {
-                    let span = span.clone();
-                    let kind = kind.clone();
-
+                    let span = *span;
+                    let kind = *kind;
                     self.tokens.pop_front();
-                    lhs.extend(self.parse_marker(span, kind)?);
-
+                    let expr = self.pop_group(Delimiter::Parenthesis).ok_or_else(|| {
+                        error(span, "expected parenthesized expression after mode marker")
+                    })?;
+                    let expr = expr.parse()?;
+                    lhs.extend(kind.translate(span, expr).to_token_stream());
                     continue;
-                 }
+                }
 
                 None => break,
             };
@@ -510,25 +519,6 @@ impl PrustiTokenStream {
             .map(|stream| stream.and_then(|s| s.parse()))
             .collect::<syn::Result<Vec<NestedSpec<TokenStream>>>>()?;
         Ok(parsed)
-    }
-
-    fn parse_marker(&mut self, span: Span, kind: MarkerKind) -> syn::Result<TokenStream> {
-        let args = self.pop_group(Delimiter::Parenthesis).ok_or_else(|| {
-            error(span, "expected parenthesized expression after mode marker")
-        })?;
-
-        let parsed = args.parse()?;
-        let start_fn = kind.start_fn();
-        let end_fn = kind.end_fn();
-
-        Ok(quote_spanned! { span =>
-            {
-                #start_fn ;
-                let r = { #parsed };
-                #end_fn ;
-                r
-            }
-        })
     }
 
     fn split(self, split_on: PrustiBinaryOp, allow_trailing: bool) -> Vec<Self> {
@@ -705,7 +695,7 @@ enum PrustiToken {
     #[allow(unused)]
     // TODO: the "once" flag is not used since there is no calldesc translation yet
     CallDesc(Span, bool),
-    ModeMarker(Span, MarkerKind)
+    ModeMarker(Span, MarkerKind),
 }
 
 fn translate_spec_ent(
@@ -781,6 +771,38 @@ fn translate_spec_ent(
             ( #( #[prusti::spec_only] || -> bool { ((#postconds): bool) }, )* ),
         )
     } }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MarkerKind {
+    Old,
+    Rel(usize),
+    BeforeExpiry,
+}
+
+impl MarkerKind {
+    fn translate(&self, span: Span, expr: TokenStream) -> TokenStream {
+        let (start, end) = match self {
+            MarkerKind::Old => (
+                quote_spanned!(span => ::prusti_contracts::old_start()),
+                quote_spanned!(span => ::prusti_contracts::old_end()),
+            ),
+            MarkerKind::Rel(execution) => (
+                quote_spanned!(span => ::prusti_contracts::rel_start::<#execution>()),
+                quote_spanned!(span => ::prusti_contracts::rel_end::<#execution>()),
+            ),
+            MarkerKind::BeforeExpiry => (
+                quote_spanned!(span => ::prusti_contracts::before_expiry_start()),
+                quote_spanned!(span => ::prusti_contracts::before_expiry_end()),
+            ),
+        };
+        quote_spanned! { span => {
+            #start ;
+            let r = { #expr };
+            #end ;
+            r
+        } }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -860,7 +882,7 @@ impl PrustiToken {
             | Self::Quantifier(span, _)
             | Self::SpecEnt(span, _)
             | Self::CallDesc(span, _)
-            | Self::ModeMarker(span, _)=> *span,
+            | Self::ModeMarker(span, _) => *span,
             Self::Token(tree) => tree.span(),
         }
     }
@@ -964,31 +986,6 @@ enum PrustiBinaryOp {
     And,
     SnapEq,
     SnapNe,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum MarkerKind {
-   Old,
-   Rel0,
-   Rel1,
-}
-
-impl MarkerKind {
-    fn start_fn(&self) -> TokenStream {
-        match self {
-            MarkerKind::Old =>  quote!(::prusti_contracts::old_start()),
-            MarkerKind::Rel0 => quote!(::prusti_contracts::rel0_start()),
-            MarkerKind::Rel1 => quote!(::prusti_contracts::rel1_start()),
-        }
-    }
-
-    fn end_fn(&self) -> TokenStream {
-        match self {
-            MarkerKind::Old =>  quote!(::prusti_contracts::old_end()),
-            MarkerKind::Rel0 => quote!(::prusti_contracts::rel0_end()),
-            MarkerKind::Rel1 => quote!(::prusti_contracts::rel1_end()),
-        }
-    }
 }
 
 impl PrustiBinaryOp {

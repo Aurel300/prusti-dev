@@ -25,6 +25,7 @@ use prusti_rustc_interface::{
 //    SsaAnalysis,
 //};
 use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
+use vir::Reify;
 
 pub struct MirImpureEnc;
 
@@ -45,6 +46,7 @@ use crate::{
             casters::CastTypePure,
             func_app_ty_params::LiftedFuncAppTyParamsEnc,
         },
+        indirect::IndirectPredicatesEnc,
         FunctionCallTaskDescription, MirBuiltinEnc, WandEnc, WandEncTask,
     },
 };
@@ -1018,6 +1020,9 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
             return;
         }
 
+        self.current_stmts = Some(Vec::with_capacity(
+            data.statements.len(), // TODO: not exact?
+        ));
         self.current_block_label = Some(self.vcx
             .alloc(vir::CfgBlockLabelData::BasicBlock(block.as_usize())));
         let cfpcs = self.fpcs_analysis.get_all_for_bb(block).unwrap().unwrap();
@@ -1027,7 +1032,7 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
             let mut inv = Vec::new();
             let start = &cfpcs.statements[0];
             let state = &**start.states[EvalStmtPhase::PreOperands];
-            let _borrows = &*start.borrows[EvalStmtPhase::PreOperands];
+            let borrows = &*start.borrows[EvalStmtPhase::PreOperands];
             for (_local, cap) in state.iter_enumerated() {
                 if cap.is_unallocated() {
                     continue;
@@ -1042,16 +1047,22 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                     let ty_out = self.deps.require_ref::<RustTyPredicatesEnc>(ty.ty).unwrap();
                     let pred = ty_out.ref_to_pred(self.vcx, place_res.expr, None);
                     inv.push(pred);
+
+                    let place_ty = (**place).ty(self.local_decls, self.vcx.tcx());
+                    let regions = place_ty.ty.walk().flat_map(|w| w.as_region());
+                    for region in regions {
+                        let indirect = self.deps.require_ref::<IndirectPredicatesEnc>((place_ty.ty, region)).unwrap();
+                        inv.extend(indirect.expr_pre.into_iter().map(|expr|
+                            expr.reify(self.vcx, (place_res.expr, self.current_block_label))
+                        ));
+                    }
                 }
             }
             self.vcx.alloc_slice(&inv)
-        }).unwrap_or(&[]);
+        }).unwrap_or_default();
 
         self.current_fpcs = Some(cfpcs);
 
-        self.current_stmts = Some(Vec::with_capacity(
-            data.statements.len(), // TODO: not exact?
-        ));
         if ENCODE_REACH_BB {
             self.stmt(self.vcx.mk_pure_assign_stmt(
                 self.vcx.mk_local_ex(
@@ -1276,7 +1287,12 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                                     .deps
                                     .require_local::<RustTyCastersEnc<CastTypePure>>(*inner_ty)
                                     .unwrap();
-                                let snap = inner_ty_out.generic_predicate.ref_to_snap.apply(self.vcx, &[place_expr]);
+
+                                let generics = cast.ty_args.iter().map(|ty| ty.expr(self.vcx));
+                                let ref_to_args = std::iter::once(place_expr)
+                                    .chain(generics)
+                                    .collect::<Vec<_>>();
+                                let snap = inner_ty_out.generic_predicate.ref_to_snap.apply(self.vcx, &ref_to_args);
                                 // The snapshot of the referenced value should be encoded as a generic `Param`
                                 let snap = cast.cast_to_generic_if_necessary(self.vcx, snap);
                                 let inner = e_rvalue_ty.generic_predicate.expect_mutref();

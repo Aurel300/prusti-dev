@@ -119,21 +119,19 @@ where
             // ..
             let wands = wands.reify(vcx, (def_id, vcx.alloc_slice(&(0..arg_count)
                 .map(|arg_idx| local_defs.locals[arg_idx.into()].local_ex)
-                .collect::<Vec<_>>())));
+                .collect::<Vec<_>>()), None));
 
             pres.extend(wands.indirect_pres.clone());
             posts.extend(wands.indirect_posts.clone());
-            /*
             posts.extend(wands.encoded_wands.iter()
                 .map(|EncodedWand { wand, .. }| {
                     let mut wand_expr = vcx.mk_wand_expr(wand);
-                    if let Some((expr, snap)) = output_in_wand {
+                    if let Some((expr, snap)) = wands.output_in_wand {
                         wand_expr = vcx.mk_let_expr("_0r", expr, wand_expr);
                         wand_expr = vcx.mk_let_expr("_0s", snap, wand_expr);
                     }
                     wand_expr
                 }));
-            */
 
             // Do not encode the method body if it is external, trusted, or just
             // a call stub.
@@ -197,6 +195,7 @@ where
                     local_decls: &body.local_decls,
                     fpcs_analysis,
                     local_defs,
+                    body: &body,
 
                     loop_analysis,
 

@@ -16,7 +16,7 @@ pub struct WandEnc;
 
 pub type WandEncError = ();
 
-type ExprInput<'vir> = (DefId, &'vir [vir::Expr<'vir>]);
+type ExprInput<'vir> = (DefId, &'vir [vir::Expr<'vir>], Option<vir::CfgBlockLabel<'vir>>);
 //type ExprRet<'vir> = vir::ExprGen<'vir, ExprInput<'vir>, vir::ExprKind<'vir>>;
 
 #[derive(Clone, Debug)]
@@ -65,6 +65,31 @@ impl<'vir> vir::Reify<'vir, ExprInput<'vir>> for WandEncOutput<'vir, ExprInput<'
 }
 
 impl<'vir> WandEncOutput<'vir, !, !> {
+    pub fn apply_wands(
+        &self,
+    ) -> Vec<vir::Stmt<'vir>> {
+        vir::with_vcx(|vcx| {
+            let tcx = vcx.tcx();
+            let mut wand_applies = Vec::new();
+            if let Some((expr, snap)) = self.output_in_wand {
+                wand_applies.push(vcx.mk_local_decl_stmt(
+                    vcx.mk_local_decl_local(self.ret_deref_ref),
+                    Some(expr),
+                ));
+                wand_applies.push(vcx.mk_local_decl_stmt(
+                    vcx.mk_local_decl_local(self.ret_deref_snap.unwrap()),
+                    Some(snap),
+                ));
+            }
+
+            for EncodedWand { wand, .. } in self.encoded_wands.clone() {
+                wand_applies.push(vcx.mk_apply_stmt(wand));
+            }
+
+            wand_applies
+        })
+    }
+
     pub fn package_wands<E: ImpureFunctionEnc>(
         &self,
         final_borrow_state: Rc<BorrowsState<'vir>>,
@@ -281,14 +306,14 @@ impl TaskEncoder for WandEnc {
                         .map(|expr| vcx.mk_lazy_expr(
                             "wand_arg_indirect_pre", // &format!("wand_arg{local_idx}_indirect_pre"),
                             &vir::TypeData::Predicate,
-                            Box::new(move |vcx, lctx: ExprInput<'_>| (expr.reify(vcx, lctx.1[local_idx])).kind),
+                            Box::new(move |vcx, lctx: ExprInput<'_>| (expr.reify(vcx, (lctx.1[local_idx], lctx.2))).kind),
                         )));
                         // expr.reify(vcx, local_ex)));
                     conjuncts.extend(indirect.expr_post.into_iter()
                         .map(|expr| vcx.mk_lazy_expr(
                             "wand_arg_indirect_post", // &format!("wand_arg{local_idx}_post"),
                             &vir::TypeData::Predicate,
-                            Box::new(move |vcx, lctx: ExprInput<'_>| (expr.reify(vcx, lctx.1[local_idx])).kind),
+                            Box::new(move |vcx, lctx: ExprInput<'_>| (expr.reify(vcx, (lctx.1[local_idx], lctx.2))).kind),
                         )));
                         //.map(|expr| expr.reify(vcx, local_ex)));
                     places.push(tcx.mk_place_deref(mir::Place::from(mir::Local::from(local_idx))));
@@ -302,7 +327,7 @@ impl TaskEncoder for WandEnc {
                         .map(|expr| vcx.mk_lazy_expr(
                             "wand_ret_post",
                             &vir::TypeData::Predicate,
-                            Box::new(move |vcx, lctx: ExprInput<'_>| (expr.reify(vcx, lctx.1[0])).kind),
+                            Box::new(move |vcx, lctx: ExprInput<'_>| (expr.reify(vcx, (lctx.1[0], lctx.2))).kind),
                         )));
                         // .map(|expr| expr.reify(vcx, locals[0])));
 
@@ -325,7 +350,7 @@ impl TaskEncoder for WandEnc {
                             // conjuncts_in_wand.push(inner_ty_enc.ref_to_pred(vcx, vcx.mk_local_ex_local(ret_deref_ref), None));
                             output_in_wand = Some((
                                 vcx.mk_lazy_expr(
-                                    "wand_outputn",
+                                    "wand_output1",
                                     &vir::TypeData::Predicate,
                                     Box::new(move |vcx, lctx: ExprInput<'_>| deref_access.apply(vcx, [lctx.1[0]]).kind),
                                 ),

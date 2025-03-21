@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use pcs::{
     borrow_pcg::{
         action::BorrowPCGAction, borrow_pcg_expansion::BorrowPCGExpansion,
-        edge::kind::BorrowPCGEdgeKind, unblock_graph::BorrowPCGUnblockAction,
+        edge::{abstraction::AbstractionType, kind::BorrowPCGEdgeKind}, unblock_graph::BorrowPCGUnblockAction,
     },
     combined_pcs::{EvalStmtPhase, PCGNode, PcgSuccessor},
     free_pcs::{CapabilityKind, PcgBasicBlock, PcgLocation, RepackOp},
@@ -45,7 +45,7 @@ use crate::{
             casters::CastTypePure,
             func_app_ty_params::LiftedFuncAppTyParamsEnc,
         },
-        FunctionCallTaskDescription, MirBuiltinEnc,
+        FunctionCallTaskDescription, MirBuiltinEnc, WandEnc, WandEncTask,
     },
 };
 
@@ -115,6 +115,7 @@ where
     //ssa_analysis: SsaAnalysis,
     pub fpcs_analysis: FpcsOutput<'enc, 'vir>,
     pub local_defs: crate::encoders::MirLocalDefEncOutput<'vir>,
+    pub body: &'enc mir::Body<'vir>,
 
     pub loop_analysis: LoopAnalysis,
 
@@ -345,6 +346,32 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 BorrowPCGActionKind::RemoveEdge(edge) => match edge.kind() {
                     BorrowPCGEdgeKind::BorrowPCGExpansion(expansion) => {
                         self.pcs_borrow_expansion(expansion.clone(), false);
+                    }
+                    BorrowPCGEdgeKind::Abstraction(AbstractionType::FunctionCall(call)) => {
+                        // TODO: this applies *all* the wands for the referenced
+                        //   function call; instead we should figure out which
+                        //   wand it is based on the edge info.
+                        let wands = self.deps
+                            .require_local::<WandEnc>(WandEncTask {
+                                def_id: call.def_id(),
+                                substs: call.substs(),
+                            })
+                            .unwrap();
+                        let bb = &self.body[call.location().block];
+                        let terminator = bb.terminator.as_ref().unwrap();
+                        match &terminator.kind {
+                            mir::TerminatorKind::Call { args, destination, .. } => {
+                                use vir::Reify;
+                                let destination_enc = self.encode_place((*destination).into());
+                                let wand_args = std::iter::once(destination_enc.expr)
+                                    .chain(args.iter()
+                                        .map(|operand| self.encode_operand(&operand.node)))
+                                    .collect::<Vec<_>>();
+                                let wands = wands.reify(self.vcx, (call.def_id(), self.vcx.alloc_slice(&wand_args), Some(self.vcx.alloc(vir::CfgBlockLabelData::BasicBlockTerminator(call.location().block.as_usize())))));
+                                self.stmts(wands.apply_wands());
+                            }
+                            _ => unreachable!(),
+                        }
                     }
                     _ => comment!(self, "(ignoring)"),
                 },
@@ -1085,12 +1112,18 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
 
         let current_fpcs = self.current_fpcs.take().unwrap();
         // TODO: does this belong here?
+        comment!(self, "PCG PreOperands");
         self.pcs_actions(current_fpcs.statements[location.statement_index].borrow_pcg_actions(EvalStmtPhase::PreOperands).actions());
+        comment!(self, "PCG PostOperands");
         self.pcs_actions(current_fpcs.statements[location.statement_index].borrow_pcg_actions(EvalStmtPhase::PostOperands).actions());
         // TODO: move this to after getting operands, before assignment
+        comment!(self, "PCG PreMain");
         self.pcs_actions(current_fpcs.statements[location.statement_index].borrow_pcg_actions(EvalStmtPhase::PreMain).actions());
+        comment!(self, "PCG PostMain");
         self.pcs_actions(current_fpcs.statements[location.statement_index].borrow_pcg_actions(EvalStmtPhase::PostMain).actions());
+        comment!(self, "PCG repacks_start");
         self.pcs_repacks(current_fpcs.statements[location.statement_index].repacks_start.iter());
+        comment!(self, "PCG repacks_middle");
         self.pcs_repacks(current_fpcs.statements[location.statement_index].repacks_middle.iter());
         self.current_fpcs = Some(current_fpcs);
 
@@ -1306,19 +1339,22 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
             return;
         }
 
-        self.stmt(self.vcx.mk_comment_stmt(
-            // TODO: also add bb and location for better debugging?
-            vir::vir_format!(self.vcx, "{:?}", terminator.kind),
-        ));
+        comment!(self, "[MIR] {location:?}: {:?}", terminator.kind);
         let span = terminator.source_info.span;
 
         let current_fpcs = self.current_fpcs.take().unwrap();
+        comment!(self, "PCG (T) PreOperands");
         self.pcs_actions(current_fpcs.statements[location.statement_index].borrow_pcg_actions(EvalStmtPhase::PreOperands).actions());
         // TODO: move this to after getting operands, before assignment
+        comment!(self, "PCG (T) PostOperands");
         self.pcs_actions(current_fpcs.statements[location.statement_index].borrow_pcg_actions(EvalStmtPhase::PostOperands).actions());
+        comment!(self, "PCG (T) PreMain");
         self.pcs_actions(current_fpcs.statements[location.statement_index].borrow_pcg_actions(EvalStmtPhase::PreMain).actions());
+        comment!(self, "PCG (T) PostMain");
         self.pcs_actions(current_fpcs.statements[location.statement_index].borrow_pcg_actions(EvalStmtPhase::PostMain).actions());
+        comment!(self, "PCG (T) repacks_start");
         self.pcs_repacks(current_fpcs.statements[location.statement_index].repacks_start.iter());
+        comment!(self, "PCG (T) repacks_middle");
         self.pcs_repacks(current_fpcs.statements[location.statement_index].repacks_middle.iter());
         self.current_fpcs = Some(current_fpcs);
 

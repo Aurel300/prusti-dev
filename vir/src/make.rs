@@ -73,6 +73,9 @@ cfg_if! {
                         check_stmt_bindings(m, stmt);
                     }
                 }
+                StmtKindGenData::Apply(_wand) => {
+                    // TODO: check types in wand
+                }
                 StmtKindGenData::MethodCall(MethodCallGenData {
                     args,
                     ..
@@ -271,6 +274,16 @@ impl<'tcx> VirCtxt<'tcx> {
     ) -> ExprGen<'vir, Curr, Next> {
         self.alloc(ExprGenData::new(self.alloc(ExprKindGenData::Old(
             self.alloc(OldGenData { expr, label: OldLabel::Lhs }),
+        ))))
+    }
+
+    pub fn mk_labelled_old_expr<'vir, Curr, Next>(
+        &'vir self,
+        expr: ExprGen<'vir, Curr, Next>,
+        label: Option<CfgBlockLabel<'vir>>,
+    ) -> ExprGen<'vir, Curr, Next> {
+        self.alloc(ExprGenData::new(self.alloc(ExprKindGenData::Old(
+            self.alloc(OldGenData { expr, label: label.map(|label| OldLabel::Block(*label)).unwrap_or(OldLabel::None) }),
         ))))
     }
 
@@ -597,6 +610,17 @@ impl<'tcx> VirCtxt<'tcx> {
             self.alloc(StmtKindGenData::Package(
                 wand,
                 stmts,
+            )),
+        ))
+    }
+
+    pub fn mk_apply_stmt<'vir, Curr, Next>(
+        &'vir self,
+        wand: WandGen<'vir, Curr, Next>,
+    ) -> StmtGen<'vir, Curr, Next> {
+        self.alloc(StmtGenData::new(
+            self.alloc(StmtKindGenData::Apply(
+                wand,
             )),
         ))
     }

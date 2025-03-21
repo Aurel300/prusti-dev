@@ -340,6 +340,7 @@ pub enum StmtKindGenData<'vir, Curr, Next> {
     Unfold(PredicateAppGen<'vir, Curr, Next>),
     Fold(PredicateAppGen<'vir, Curr, Next>),
     Package(WandGen<'vir, Curr, Next>, &'vir [StmtGen<'vir, Curr, Next>]),
+    Apply(WandGen<'vir, Curr, Next>),
     MethodCall(MethodCallGen<'vir, Curr, Next>),
     Comment(&'vir str),
     Dummy(&'vir str),

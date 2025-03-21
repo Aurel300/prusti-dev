@@ -723,6 +723,10 @@ impl<'vir, 'v> ToViper<'vir, 'v> for vir::Stmt<'vir> {
                 ),
                 ctx.span_to_pos(self.span),
             ),
+            vir::StmtKindGenData::Apply(wand) => ctx.ast.apply(
+                wand.to_viper_no_pos(ctx),
+                ctx.span_to_pos(self.span),
+            ),
             vir::StmtKindGenData::PureAssign(v) => v.to_viper_with_span(ctx, self.span),
             vir::StmtKindGenData::Unfold(pred) => ctx
                 .ast

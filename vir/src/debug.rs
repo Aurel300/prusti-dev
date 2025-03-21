@@ -360,6 +360,7 @@ impl<'vir, Curr, Next> Debug for StmtKindGenData<'vir, Curr, Next> {
                 }
                 write!(f, "}}")
             }
+            Self::Apply(wand) => write!(f, "apply {:?}", wand),
             Self::MethodCall(data) => {
                 if !data.targets.is_empty() {
                     fmt_comma_sep(f, data.targets)?;

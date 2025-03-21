@@ -397,7 +397,7 @@ impl<'vir, Curr, Next> Debug for TerminatorStmtGenData<'vir, Curr, Next> {
                     }
                     write!(f, " {{ ")?;
                     for extra in data.otherwise_statements {
-                        write!(f, "{extra:?}")?;
+                        write!(f, "{extra:?}\n")?;
                     }
                     write!(f, "goto {:?} }}", data.otherwise)
                 }

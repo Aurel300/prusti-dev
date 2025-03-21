@@ -198,7 +198,8 @@ macro_rules! comment {
 }
 
 impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
-    fn stmt(&mut self, stmt: vir::Stmt<'vir>) {
+    // TODO: make `pub(super)`
+    pub(crate) fn stmt(&mut self, stmt: vir::Stmt<'vir>) {
         self.current_stmts.as_mut().unwrap().push(stmt);
     }
 
@@ -256,10 +257,10 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
 
     /// Do the same as [self.pcs_succ] but instead of adding the statements to [self.current_stmts] return them instead.
     /// TODO: clean this up
-    fn collect_pcs_succ<'a>(&mut self, pcs: &'a PcgSuccessor<'vir>) -> Vec<vir::Stmt<'vir>> {
+    fn collect_pcs_succ<'a>(&mut self, curr_fpcs: &PcgBasicBlock<'vir>, pcs: &'a PcgSuccessor<'vir>) -> Vec<vir::Stmt<'vir>> {
         let current_stmts = self.current_stmts.take();
         self.current_stmts = Some(Vec::new());
-        self.pcs_succ(pcs);
+        self.pcs_succ(curr_fpcs, pcs);
         let new_stmts = self.current_stmts.take().unwrap();
         self.current_stmts = current_stmts;
         new_stmts
@@ -662,9 +663,10 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         }
     }
 
-    fn pcs_succ<'a>(&mut self, pcs: &'a PcgSuccessor<'vir>) {
+    fn pcs_succ<'a>(&mut self, curr_fpcs: &PcgBasicBlock<'vir>, pcs: &'a PcgSuccessor<'vir>) {
         self.pcs_actions(pcs.borrow_ops().actions());
         self.pcs_repacks(pcs.owned_ops().iter());
+        self.pcs_wands(curr_fpcs, pcs);
     }
 
     fn undo_impure_casts(&mut self, result: EncodePlaceResult<'vir>) {
@@ -1362,7 +1364,7 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                     target
                 );
                 let current_fpcs = self.current_fpcs.take().unwrap();
-                self.pcs_succ(&current_fpcs.terminator.succs[REAL_TARGET_SUCC_IDX]);
+                self.pcs_succ(&current_fpcs, &current_fpcs.terminator.succs[REAL_TARGET_SUCC_IDX]);
                 self.current_fpcs = Some(current_fpcs);
 
                 self.vcx.mk_goto_stmt(
@@ -1390,7 +1392,7 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                             );
 
                             let current_fpcs = self.current_fpcs.take().unwrap();
-                            let extra_stmts = self.collect_pcs_succ(&current_fpcs.terminator.succs[idx]);
+                            let extra_stmts = self.collect_pcs_succ(&current_fpcs, &current_fpcs.terminator.succs[idx]);
                             self.current_fpcs = Some(current_fpcs);
 
                             self.vcx.mk_goto_if_target(
@@ -1414,7 +1416,7 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                 );
 
                 let current_fpcs = self.current_fpcs.take().unwrap();
-                let otherwise_stmts = self.collect_pcs_succ(&current_fpcs.terminator.succs[otherwise_succ_idx]);
+                let otherwise_stmts = self.collect_pcs_succ(&current_fpcs, &current_fpcs.terminator.succs[otherwise_succ_idx]);
                 self.current_fpcs = Some(current_fpcs);
 
                 let discr_ex = discr_ty
@@ -1597,7 +1599,7 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                             target
                         );
                         let current_fpcs = self.current_fpcs.take().unwrap();
-                        self.pcs_succ(&current_fpcs.terminator.succs[REAL_TARGET_SUCC_IDX]);
+                        self.pcs_succ(&current_fpcs, &current_fpcs.terminator.succs[REAL_TARGET_SUCC_IDX]);
                         self.current_fpcs = Some(current_fpcs);
 
                         self.vcx.mk_goto_stmt(
@@ -1634,7 +1636,7 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                     target,
                 );
                 let current_fpcs = self.current_fpcs.take().unwrap();
-                self.pcs_succ(&current_fpcs.terminator.succs[REAL_TARGET_SUCC_IDX]);
+                self.pcs_succ(&current_fpcs, &current_fpcs.terminator.succs[REAL_TARGET_SUCC_IDX]);
                 self.current_fpcs = Some(current_fpcs);
 
                 let e_bool = self

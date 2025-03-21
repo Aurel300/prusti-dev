@@ -11,6 +11,8 @@ mod r#type;
 mod r#const;
 mod mono;
 mod wand;
+// TODO: move `mir_impure` to this dir:
+pub mod impure;
 
 cfg_if::cfg_if! {
     if #[cfg(feature = "mono_function_encoding")] {

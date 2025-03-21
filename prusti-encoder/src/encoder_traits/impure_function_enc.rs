@@ -118,7 +118,7 @@ where
 
             // ..
             let wands = wands.reify(vcx, (def_id, vcx.alloc_slice(&(0..arg_count)
-                .map(|arg_idx| local_defs.locals[arg_idx.into()].local_ex)
+                .map(|arg_idx| local_defs.locals[arg_idx.into()].impure_snap)
                 .collect::<Vec<_>>()), None));
 
             pres.extend(wands.indirect_pres.clone());

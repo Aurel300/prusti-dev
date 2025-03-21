@@ -302,19 +302,24 @@ impl TaskEncoder for WandEnc {
                 // arguments
                 for (ty, (local_idx, local_ex)) in sig_identity_liberated.inputs().into_iter().zip(locals.iter().enumerate().skip(1)) {
                     let indirect = deps.require_ref::<IndirectPredicatesEnc>((*ty, *region))?;
-                    indirect_pres.extend(indirect.expr_pre.into_iter()
+                    indirect_pres.extend(indirect.expr.iter().copied()
                         .map(|expr| vcx.mk_lazy_expr(
                             "wand_arg_indirect_pre", // &format!("wand_arg{local_idx}_indirect_pre"),
                             &vir::TypeData::Predicate,
-                            Box::new(move |vcx, lctx: ExprInput<'_>| (expr.reify(vcx, (lctx.1[local_idx], lctx.2))).kind),
+                            Box::new(move |vcx, lctx: ExprInput<'_>| (expr.reify(vcx, lctx.1[local_idx])).kind),
                         )));
                         // expr.reify(vcx, local_ex)));
-                    conjuncts.extend(indirect.expr_post.into_iter()
-                        .map(|expr| vcx.mk_lazy_expr(
-                            "wand_arg_indirect_post", // &format!("wand_arg{local_idx}_post"),
-                            &vir::TypeData::Predicate,
-                            Box::new(move |vcx, lctx: ExprInput<'_>| (expr.reify(vcx, (lctx.1[local_idx], lctx.2))).kind),
-                        )));
+                    conjuncts.extend(indirect.expr.into_iter()
+                        .map(|expr| {
+                            vcx.mk_lazy_expr(
+                                "wand_arg_indirect_post", // &format!("wand_arg{local_idx}_post"),
+                                &vir::TypeData::Predicate,
+                                Box::new(move |vcx, lctx: ExprInput<'_>| {
+                                    let tgt = vcx.mk_labelled_old_expr(lctx.1[local_idx], lctx.2);
+                                    (expr.reify(vcx, tgt)).kind
+                                }),
+                            )
+                        }));
                         //.map(|expr| expr.reify(vcx, local_ex)));
                     places.push(tcx.mk_place_deref(mir::Place::from(mir::Local::from(local_idx))));
                 }
@@ -323,11 +328,11 @@ impl TaskEncoder for WandEnc {
                     let indirect = deps.require_ref::<IndirectPredicatesEnc>((sig_identity_liberated.output(), *region))?;
                     // here we use "expr_pre" to avoid wrapping in "old",
                     // because _0 does not exist in that state
-                    conjuncts.extend(indirect.expr_pre.into_iter()
+                    conjuncts.extend(indirect.expr.into_iter()
                         .map(|expr| vcx.mk_lazy_expr(
                             "wand_ret_post",
                             &vir::TypeData::Predicate,
-                            Box::new(move |vcx, lctx: ExprInput<'_>| (expr.reify(vcx, (lctx.1[0], lctx.2))).kind),
+                            Box::new(move |vcx, lctx: ExprInput<'_>| (expr.reify(vcx, lctx.1[0])).kind),
                         )));
                         // .map(|expr| expr.reify(vcx, locals[0])));
 

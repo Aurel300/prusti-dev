@@ -1,0 +1,199 @@
+use pcs::{
+    borrow_pcg::{
+        borrow_pcg_edge::BorrowPCGEdgeLike,
+        edge::kind::BorrowPCGEdgeKind,
+        region_projection::{
+            MaybeRemoteRegionProjectionBase, PCGRegion, RegionProjection, RegionProjectionBaseLike,
+        },
+    },
+    combined_pcs::{EvalStmtPhase, PCGNode},
+    free_pcs::PcgBasicBlock,
+    r#loop::LoopId,
+    utils::{
+        maybe_old::MaybeOldPlace, maybe_remote::MaybeRemotePlace, Place, PlaceRepacker,
+        SnapshotLocation,
+    },
+};
+use prusti_rustc_interface::middle::{mir::tcx::PlaceTy, ty::RegionKind};
+
+use task_encoder::TaskEncoder;
+use vir::Reify;
+
+use crate::encoders::{
+    indirect::IndirectPredicatesEnc,
+    rust_ty_predicates::{RustTyPredicatesEnc, RustTyPredicatesEncOutputRef},
+    ImpureEncVisitor,
+};
+
+impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
+    /// Calculate invariant at loop head
+    pub(crate) fn get_loop_inv(
+        &mut self,
+        _lh: LoopId,
+        cfpcs: &PcgBasicBlock<'vir>,
+    ) -> &'vir [vir::Expr<'vir>] {
+        let mut inv = Vec::new();
+        let start = &cfpcs.statements[0];
+        let state = &**start.states[EvalStmtPhase::PreOperands];
+        let borrows = &*start.borrows[EvalStmtPhase::PreOperands];
+        // let repacker = PlaceRepacker::new(self.body, self.vcx.tcx());
+        // self.stmt(self.vcx.mk_comment_stmt(
+        //     vir::vir_format!(self.vcx, "_borrows: {:#?}", borrows),
+        // ));
+        for (_local, cap) in state.iter_enumerated() {
+            if cap.is_unallocated() {
+                continue;
+            }
+            let cap = cap.get_allocated();
+            for (place, cap) in cap.place_capabilities().iter() {
+                if !cap.is_exclusive() {
+                    continue;
+                }
+                let (place_res, snap, _, _) = self.encode_place_snap(*place);
+                let ty = (**place).ty(self.local_decls, self.vcx.tcx());
+                let ty_out = self.deps.require_ref::<RustTyPredicatesEnc>(ty.ty).unwrap();
+                let pred = ty_out.ref_to_pred(self.vcx, place_res.expr, None);
+                inv.push(pred);
+
+                let regions = ty.ty.walk().flat_map(|w| w.as_region());
+                for region in regions {
+                    let indirect = self
+                        .deps
+                        .require_ref::<IndirectPredicatesEnc>((ty.ty, region))
+                        .unwrap();
+                    inv.extend(
+                        indirect
+                            .expr
+                            .into_iter()
+                            .map(|expr| expr.reify(self.vcx, snap)),
+                    );
+                }
+            }
+        }
+        for edge in borrows.graph().edges() {
+            match edge.kind() {
+                BorrowPCGEdgeKind::Abstraction(at) => {
+                    let inputs = at.inputs();
+                    let mut is = inputs.iter();
+                    if is.any(|i| matches!(i, PCGNode::Place(MaybeRemotePlace::Remote(_)))) {
+                        // BUG in the pcg
+                        continue;
+                    }
+                    let mut let_bind = Vec::new();
+                    let mut wand_rhs = Vec::new();
+                    for i in inputs {
+                        match i {
+                            PCGNode::Place(MaybeRemotePlace::Remote(_)) => unreachable!(),
+                            PCGNode::Place(place @ MaybeRemotePlace::Local(_)) => {
+                                let p = Self::get_place(place);
+                                let ty = (*p).ty(self.local_decls, self.vcx.tcx());
+                                let ty_out =
+                                    self.deps.require_ref::<RustTyPredicatesEnc>(ty.ty).unwrap();
+                                let p = self.encode_place(p);
+                                let p = self.configure_old(place, p.expr, &mut let_bind);
+
+                                let pred = ty_out.ref_to_pred(self.vcx, p, None);
+                                wand_rhs.push(pred);
+                            }
+                            PCGNode::RegionProjection(r) => {
+                                let exprs = self.encode_region_projection(r, &mut let_bind);
+                                wand_rhs.extend(exprs);
+                            }
+                        }
+                    }
+                    let mut wand_lhs = Vec::new();
+                    for i in at.outputs() {
+                        let exprs = self.encode_region_projection(i, &mut let_bind);
+                        wand_lhs.extend(exprs);
+                    }
+                    let mut wand = self.vcx.mk_wand_expr(self.vcx.alloc(vir::WandData {
+                        lhs: self.vcx.mk_conj(self.vcx.alloc_slice(&wand_lhs)),
+                        rhs: self.vcx.mk_conj(self.vcx.alloc_slice(&wand_rhs)),
+                    }));
+                    for (ident, expr) in let_bind {
+                        wand = self.vcx.mk_let_expr(ident, expr, wand);
+                    }
+                    inv.push(wand);
+                }
+                _ => (),
+            }
+        }
+        self.vcx.alloc_slice(&inv)
+    }
+
+    fn encode_region_projection<T: RegionProjectionBaseLike<'vir>>(
+        &mut self,
+        r: RegionProjection<'vir, T>,
+        let_bind: &mut Vec<(&'vir str, vir::Expr<'vir>)>,
+    ) -> Vec<vir::Expr<'vir>> {
+        let repacker = PlaceRepacker::new(self.body, self.vcx.tcx());
+        let place = r.place().to_maybe_remote_region_projection_base();
+        let (place_snap, ty, _) = match place {
+            MaybeRemoteRegionProjectionBase::Place(p) => {
+                self.encode_maybe_remote_place_snap(p, let_bind)
+            }
+            MaybeRemoteRegionProjectionBase::Const(c) => todo!("{c:?}"),
+        };
+        let mut regions = ty.ty.walk().flat_map(|w| w.as_region());
+        let region = regions.next().unwrap();
+        // TODO:
+        assert!(regions.next().is_none(), "multiple regions in a type not supported ({:?})", ty.ty);
+        let indirect = self
+            .deps
+            .require_ref::<IndirectPredicatesEnc>((ty.ty, region))
+            .unwrap();
+        indirect
+            .expr
+            .into_iter()
+            .map(|expr| expr.reify(self.vcx, place_snap))
+            .collect::<Vec<_>>()
+    }
+
+    fn get_place(place: MaybeRemotePlace<'vir>) -> Place<'vir> {
+        match place {
+            MaybeRemotePlace::Local(MaybeOldPlace::Current { place }) => place,
+            MaybeRemotePlace::Local(MaybeOldPlace::OldPlace(place)) => place.place,
+            MaybeRemotePlace::Remote(r) => r.assigned_local().into(),
+        }
+    }
+
+    fn encode_maybe_remote_place_snap(
+        &mut self,
+        place: MaybeRemotePlace<'vir>,
+        let_bind: &mut Vec<(&'vir str, vir::Expr<'vir>)>,
+    ) -> (
+        vir::Expr<'vir>,
+        PlaceTy<'vir>,
+        RustTyPredicatesEncOutputRef<'vir>,
+    ) {
+        let p = Self::get_place(place);
+        let (_, place_snap, ty, ty_out) = self.encode_place_snap(p);
+        let place_snap = self.configure_old(place, place_snap, let_bind);
+        (place_snap, ty, ty_out)
+    }
+
+    fn configure_old(
+        &mut self,
+        place: MaybeRemotePlace,
+        expr: vir::Expr<'vir>,
+        let_bind: &mut Vec<(&'vir str, vir::Expr<'vir>)>,
+    ) -> vir::Expr<'vir> {
+        match place {
+            MaybeRemotePlace::Local(MaybeOldPlace::Current { .. }) => {
+                let ident = vir::vir_format!(self.vcx, "_wand_snap{}", let_bind.len());
+                let_bind.push((ident, expr));
+                self.vcx.mk_local_ex(ident, expr.ty())
+            }
+            MaybeRemotePlace::Local(MaybeOldPlace::OldPlace(place)) => match place.at {
+                SnapshotLocation::After(_) => todo!(),
+                SnapshotLocation::Start(bb) => {
+                    let label = self
+                        .vcx
+                        .alloc(vir::CfgBlockLabelData::BasicBlock(bb.as_usize()));
+                    self.vcx.mk_labelled_old_expr(expr, Some(label))
+                }
+            },
+            MaybeRemotePlace::Remote(_) => self.vcx.mk_old_expr(expr),
+        }
+    }
+}

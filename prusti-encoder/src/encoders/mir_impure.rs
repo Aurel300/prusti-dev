@@ -316,8 +316,8 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 match &terminator.kind {
                     mir::TerminatorKind::Call { args, destination, .. } => {
                         use vir::Reify;
-                        let destination_enc = self.encode_place((*destination).into());
-                        let wand_args = std::iter::once(destination_enc.expr)
+                        let (_, dest_snap, _, _) = self.encode_place_snap((*destination).into());
+                        let wand_args = std::iter::once(dest_snap)
                             .chain(args.iter()
                                 .map(|operand| self.encode_operand_snap(&operand.node)))
                             .collect::<Vec<_>>();

@@ -126,9 +126,8 @@ where
             posts.extend(wands.encoded_wands.iter()
                 .map(|EncodedWand { wand, .. }| {
                     let mut wand_expr = vcx.mk_wand_expr(wand);
-                    if let Some((expr, snap)) = wands.output_in_wand {
+                    if let Some(expr) = wands.output_in_wand {
                         wand_expr = vcx.mk_let_expr("_0r", expr, wand_expr);
-                        wand_expr = vcx.mk_let_expr("_0s", snap, wand_expr);
                     }
                     wand_expr
                 }));

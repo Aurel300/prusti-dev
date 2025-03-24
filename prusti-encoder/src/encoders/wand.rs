@@ -8,7 +8,7 @@ use prusti_rustc_interface::{
 };
 use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 
-use crate::{encoder_traits::impure_function_enc::ImpureFunctionEnc, encoders::{indirect::IndirectPredicatesEnc, rust_ty_predicates::RustTyPredicatesEnc, MirSpecEnc}};
+use crate::{encoder_traits::impure_function_enc::ImpureFunctionEnc, encoders::{indirect::IndirectPredicatesEnc, rust_ty_predicates::RustTyPredicatesEnc, rust_ty_snapshots::RustTySnapshotsEnc, MirSpecEnc}};
 
 use super::ImpureEncVisitor;
 
@@ -22,11 +22,10 @@ type ExprInput<'vir> = (DefId, &'vir [vir::Expr<'vir>], Option<vir::CfgBlockLabe
 #[derive(Clone, Debug)]
 pub struct WandEncOutput<'vir, Curr: 'vir, Next: 'vir> {
     pub encoded_wands: Vec<EncodedWand<'vir, Curr, Next>>,
-    pub output_in_wand: Option<(vir::ExprGen<'vir, Curr, Next>, vir::ExprGen<'vir, Curr, Next>)>,
+    pub output_in_wand: Option<vir::ExprGen<'vir, Curr, Next>>,
     pub indirect_pres: Vec<vir::ExprGen<'vir, Curr, Next>>,
     pub indirect_posts: Vec<vir::ExprGen<'vir, Curr, Next>>,
     ret_deref_ref: vir::Local<'vir>,
-    ret_deref_snap: Option<vir::Local<'vir>>,
     arg_count: usize,
 }
 
@@ -54,11 +53,10 @@ impl<'vir> vir::Reify<'vir, ExprInput<'vir>> for WandEncOutput<'vir, ExprInput<'
                 })
                 .collect(),
             output_in_wand: self.output_in_wand
-                .map(|(l, r)| (l.reify(vcx, lctx), r.reify(vcx, lctx))),
+                .map(|l| l.reify(vcx, lctx)),
             indirect_pres: self.indirect_pres.reify(vcx, lctx).to_vec(),
             indirect_posts: self.indirect_posts.reify(vcx, lctx).to_vec(),
             ret_deref_ref: self.ret_deref_ref,
-            ret_deref_snap: self.ret_deref_snap,
             arg_count: self.arg_count,
         }
     }
@@ -71,14 +69,10 @@ impl<'vir> WandEncOutput<'vir, !, !> {
         vir::with_vcx(|vcx| {
             let tcx = vcx.tcx();
             let mut wand_applies = Vec::new();
-            if let Some((expr, snap)) = self.output_in_wand {
+            if let Some(expr) = self.output_in_wand {
                 wand_applies.push(vcx.mk_local_decl_stmt(
                     vcx.mk_local_decl_local(self.ret_deref_ref),
                     Some(expr),
-                ));
-                wand_applies.push(vcx.mk_local_decl_stmt(
-                    vcx.mk_local_decl_local(self.ret_deref_snap.unwrap()),
-                    Some(snap),
                 ));
             }
 
@@ -99,14 +93,10 @@ impl<'vir> WandEncOutput<'vir, !, !> {
             let tcx = vcx.tcx();
             let mut wand_packages = Vec::new();
             // package wands
-            if let Some((expr, snap)) = self.output_in_wand {
+            if let Some(expr) = self.output_in_wand {
                 wand_packages.push(vcx.mk_local_decl_stmt(
                     vcx.mk_local_decl_local(self.ret_deref_ref),
                     Some(expr),
-                ));
-                wand_packages.push(vcx.mk_local_decl_stmt(
-                    vcx.mk_local_decl_local(self.ret_deref_snap.unwrap()),
-                    Some(snap),
                 ));
             }
 
@@ -263,7 +253,6 @@ impl TaskEncoder for WandEnc {
 
             // TODO: hardcoded...
             let ret_deref_ref = vcx.mk_local("_0r", &vir::TypeData::Ref);
-            let mut ret_deref_snap = None;
             //visitor.place_overrides.insert(
             //    tcx.mk_place_deref(mir::Place::return_place()),
             //    vcx.mk_local_ex_local(ret_deref_ref),
@@ -339,11 +328,10 @@ impl TaskEncoder for WandEnc {
 
                     // TODO: don't hardcode
                     let output_ty = sig_identity_liberated.output();
-                    let output_ty_enc = deps.require_ref::<RustTyPredicatesEnc>(output_ty).unwrap();
-                    ret_deref_snap = Some(vcx.mk_local("_0s", output_ty_enc.snapshot()));
+                    let output_ty_enc = deps.require_local::<RustTySnapshotsEnc>(output_ty).unwrap();
                     if let ty::TyKind::Ref(ref_region, inner_ty, ty::Mutability::Mut) = output_ty.kind() {
                         let inner_ty_enc = deps.require_ref::<RustTyPredicatesEnc>(*inner_ty).unwrap();
-                        let deref_access = output_ty_enc.generic_predicate.expect_mutref().deref_func;
+                        let deref_access = output_ty_enc.generic_snapshot.specifics.expect_mutref().deref_access;
                         let inner_ty_enc_c = inner_ty_enc.clone();
                         if true { //  ref_region == proj_region {
                             conjuncts_in_wand.push(vcx.mk_lazy_expr(
@@ -354,22 +342,15 @@ impl TaskEncoder for WandEnc {
                                     .kind),
                             ));
                             // conjuncts_in_wand.push(inner_ty_enc.ref_to_pred(vcx, vcx.mk_local_ex_local(ret_deref_ref), None));
-                            output_in_wand = Some((
+                            output_in_wand = Some(
                                 vcx.mk_lazy_expr(
                                     "wand_output1",
                                     &vir::TypeData::Predicate,
                                     Box::new(move |vcx, lctx: ExprInput<'_>| deref_access.apply(vcx, [lctx.1[0]]).kind),
-                                ),
+                                )
                                 //deref_access.apply(vcx, [locals[0]]),
-                                vcx.mk_lazy_expr(
-                                    "wand_output2",
-                                    &vir::TypeData::Predicate,
-                                    Box::new(move |vcx, lctx: ExprInput<'_>| output_ty_enc
-                                        .ref_to_snap(vcx, lctx.1[0])
-                                        .kind),
-                                ),
                                 // output_ty_enc.ref_to_snap(vcx, locals[0]),
-                            ));
+                            );
                         }
                     }
                 }
@@ -468,7 +449,6 @@ impl TaskEncoder for WandEnc {
                 indirect_pres,
                 indirect_posts: Vec::new(),
                 ret_deref_ref,
-                ret_deref_snap,
                 arg_count,
             }, ()))
         })

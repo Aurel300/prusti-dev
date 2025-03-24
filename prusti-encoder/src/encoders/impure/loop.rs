@@ -7,7 +7,7 @@ use pcs::{
     r#loop::LoopId,
     utils::{maybe_old::MaybeOldPlace, maybe_remote::MaybeRemotePlace, Place, SnapshotLocation},
 };
-use prusti_rustc_interface::middle::mir::tcx::PlaceTy;
+use prusti_rustc_interface::middle::mir;
 
 use task_encoder::TaskEncoder;
 use vir::Reify;
@@ -165,7 +165,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         old_outer: &mut WandOldOuter<'vir>,
     ) -> (
         vir::Expr<'vir>,
-        PlaceTy<'vir>,
+        mir::tcx::PlaceTy<'vir>,
         RustTyPredicatesEncOutputRef<'vir>,
     ) {
         let p = Self::get_place(place);
@@ -184,16 +184,23 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             MaybeRemotePlace::Local(MaybeOldPlace::Current { .. }) => {
                 self.mk_wand_outer(expr, old_outer)
             }
-            MaybeRemotePlace::Local(MaybeOldPlace::OldPlace(place)) => match place.at {
-                SnapshotLocation::After(_) => todo!(),
-                SnapshotLocation::Start(bb) => {
-                    let label = self
-                        .vcx
-                        .alloc(vir::CfgBlockLabelData::BasicBlock(bb.as_usize()));
-                    self.vcx.mk_labelled_old_expr(expr, Some(label))
-                }
-            },
+            MaybeRemotePlace::Local(MaybeOldPlace::OldPlace(place)) => {
+                let label = Self::get_location_label(self.vcx, place.at);
+                self.vcx.mk_old(expr, label)
+            }
             MaybeRemotePlace::Remote(_) => self.vcx.mk_old_expr(expr),
+        }
+    }
+
+    pub(crate) fn get_location_label(vcx: &'vir vir::VirCtxt<'vir>, at: SnapshotLocation) -> vir::OldLabel<'vir> {
+        match at {
+            // BIG TODO: handle this properly!!
+            SnapshotLocation::After(loc) => {
+                let name = vir::vir_format!(vcx, "after_{}_{}", loc.block.index(), loc.statement_index);
+                vir::OldLabel::Label(name)
+            }
+            SnapshotLocation::Start(bb) =>
+                vir::OldLabel::Block(vir::CfgBlockLabelData::BasicBlock(bb.as_usize())),
         }
     }
 

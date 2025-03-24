@@ -260,32 +260,36 @@ impl<'tcx> VirCtxt<'tcx> {
         ))))
     }
 
+    pub fn mk_old<'vir, Curr, Next>(
+        &'vir self,
+        expr: ExprGen<'vir, Curr, Next>,
+        label: OldLabel<'vir>,
+    ) -> ExprGen<'vir, Curr, Next> {
+        self.alloc(ExprGenData::new(self.alloc(ExprKindGenData::Old(
+            self.alloc(OldGenData { expr, label }),
+        ))))
+    }
+
     pub fn mk_old_expr<'vir, Curr, Next>(
         &'vir self,
         expr: ExprGen<'vir, Curr, Next>,
     ) -> ExprGen<'vir, Curr, Next> {
-        self.alloc(ExprGenData::new(self.alloc(ExprKindGenData::Old(
-            self.alloc(OldGenData { expr, label: OldLabel::None }),
-        ))))
+        self.mk_old(expr, OldLabel::None)
     }
 
     pub fn mk_old_lhs_expr<'vir, Curr, Next>(
         &'vir self,
         expr: ExprGen<'vir, Curr, Next>,
     ) -> ExprGen<'vir, Curr, Next> {
-        self.alloc(ExprGenData::new(self.alloc(ExprKindGenData::Old(
-            self.alloc(OldGenData { expr, label: OldLabel::Lhs }),
-        ))))
+        self.mk_old(expr, OldLabel::Lhs)
     }
 
     pub fn mk_labelled_old_expr<'vir, Curr, Next>(
         &'vir self,
         expr: ExprGen<'vir, Curr, Next>,
-        label: Option<CfgBlockLabel<'vir>>,
+        label: Option<CfgBlockLabelData>,
     ) -> ExprGen<'vir, Curr, Next> {
-        self.alloc(ExprGenData::new(self.alloc(ExprKindGenData::Old(
-            self.alloc(OldGenData { expr, label: label.map(|label| OldLabel::Block(*label)).unwrap_or(OldLabel::None) }),
-        ))))
+        self.mk_old(expr, label.map(OldLabel::Block).unwrap_or(OldLabel::None))
     }
 
     pub fn mk_local_labelled_old_expr<'vir, Curr, Next>(
@@ -293,9 +297,7 @@ impl<'tcx> VirCtxt<'tcx> {
         expr: ExprGen<'vir, Curr, Next>,
         label: &'vir str,
     ) -> ExprGen<'vir, Curr, Next> {
-        self.alloc(ExprGenData::new(self.alloc(ExprKindGenData::Old(
-            self.alloc(OldGenData { expr, label: OldLabel::Label(label) }),
-        ))))
+        self.mk_old(expr, OldLabel::Label(label))
     }
 
     pub fn mk_rel_expr<'vir, Curr, Next>(

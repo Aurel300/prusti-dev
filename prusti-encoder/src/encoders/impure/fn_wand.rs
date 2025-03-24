@@ -174,7 +174,7 @@ impl<'vir> WandEncOutput<'vir> {
             if l == mir::RETURN_PLACE {
                 vcx.mk_labelled_old_expr(
                     visitor.local_defs.locals[l].impure_snap,
-                    Some(&vir::CfgBlockLabelData::End),
+                    Some(vir::CfgBlockLabelData::End),
                 )
             } else {
                 vcx.mk_old_expr(visitor.local_defs.locals[l].impure_snap)
@@ -308,6 +308,9 @@ impl TaskEncoder for WandEnc {
                     //ty::ClauseKind::RegionOutlives(ty::OutlivesPredicate(long, short)) => outlives.push((SigLifetime::Early(long), SigLifetime::Early(short))),
                     //ty::ClauseKind::RegionOutlives(ty::OutlivesPredicate(long, short)) => outlives.push((long, short)),
                     ty::ClauseKind::RegionOutlives(ty::OutlivesPredicate(long, short)) => {
+                        if long == short {
+                            continue;
+                        }
                         outlives.entry(long).or_default().push(short)
                     }
                     // ty::ClauseKind::TypeOutlives(ty, short)

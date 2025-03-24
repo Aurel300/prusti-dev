@@ -1,7 +1,7 @@
 use pcs::{
     borrow_pcg::{
         action::BorrowPCGAction, borrow_pcg_edge::BorrowPCGEdge, borrow_pcg_expansion::BorrowPCGExpansion, edge::{abstraction::AbstractionType, kind::BorrowPCGEdgeKind}, state::BorrowsState, unblock_graph::BorrowPCGUnblockAction
-    }, combined_pcs::{EvalStmtPhase, PCGNode, PcgSuccessor}, free_pcs::{CapabilityKind, PcgBasicBlock, PcgLocation, RepackOp}, r#loop::LoopAnalysis, utils::{HasPlace, Place}, FpcsOutput
+    }, combined_pcs::{EvalStmtPhase, PCGNode, PcgSuccessor}, free_pcs::{CapabilityKind, PcgBasicBlock, PcgLocation, RepackOp}, r#loop::LoopAnalysis, utils::{maybe_old::MaybeOldPlace, HasPlace, Place}, FpcsOutput
 };
 use prusti_interface::PrustiError;
 use prusti_rustc_interface::{
@@ -258,7 +258,18 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             return;
         }
         let base = expansion.base();
-        let place = base.place().place();
+        let PCGNode::Place(base) = base else {
+            // Ignore expansions of region projections
+            return;
+        };
+        let (place, old) = match base {
+            MaybeOldPlace::Current { place } => (place, None),
+            MaybeOldPlace::OldPlace(snap) => {
+                // We shouldn't be unfolding old places?
+                debug_assert!(!unfold);
+                (snap.place, Some(Self::get_location_label(self.vcx, snap.at)))
+            }
+        };
         let place_ty = (*place).ty(self.local_decls, self.vcx.tcx());
         if matches!(
             self.local_decls[place.local].ty.kind(),
@@ -275,7 +286,9 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             .expect_pred_variant_opt(place_ty.variant_index);
 
         let mut ref_p = self.encode_place(place);
-        if let Some(label) = label {
+        if let Some(label) = old {
+            ref_p.expr = self.vcx.mk_old(ref_p.expr, label);
+        } else if let Some(label) = label {
             ref_p.expr = self.vcx.mk_local_labelled_old_expr(ref_p.expr, label);
         }
         let casts = self.place_casts(&ref_p);
@@ -997,6 +1010,11 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         self.stmt(self.vcx.mk_label_stmt(name));
         name
     }
+
+    fn new_after_label(&mut self, location: mir::Location) {
+        let name = vir::vir_format!(self.vcx, "after_{}_{}", location.block.index(), location.statement_index);
+        self.stmt(self.vcx.mk_label_stmt(name));
+    }
 }
 
 impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<'vir, 'enc, E> {
@@ -1310,6 +1328,7 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
 
             k => todo!("statement {k:?}"),
         }
+        self.new_after_label(location);
     }
 
     fn visit_terminator(&mut self, terminator: &mir::Terminator<'vir>, location: mir::Location) {
@@ -1716,6 +1735,7 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                 "terminator {unsupported_kind:?}"
             )),
         };
+        self.new_after_label(location);
         assert!(self.current_terminator.replace(terminator).is_none());
     }
 }

@@ -198,15 +198,16 @@ where
                 let last_block = visitor
                     .fpcs_analysis
                     .get_all_for_bb(last_block)
-                    .unwrap()
                     .unwrap();
-                let final_borrow_state = last_block.statements
+                let final_borrow_state = last_block.as_ref().map(|lb|
+                    lb.statements
                         .last()
                         .unwrap()
                         .borrows
-                        .post_main();
+                        .post_main()
+                );
 
-                let wand_packages = wands.package_wands(final_borrow_state, &mut visitor);
+                let wand_packages = final_borrow_state.map(|fbs| wands.package_wands(fbs, &mut visitor)).unwrap_or_default();
 
                 visitor.encoded_blocks.push(vcx.mk_cfg_block(
                     vcx.alloc(vir::CfgBlockLabelData::End),

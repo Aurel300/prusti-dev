@@ -10,7 +10,6 @@ mod local_def;
 mod r#type;
 mod r#const;
 mod mono;
-mod wand;
 // TODO: move `mir_impure` to this dir:
 pub mod impure;
 
@@ -38,4 +37,4 @@ pub use snapshot::SnapshotEnc;
 pub(super) use spec::{init_def_spec, with_proc_spec};
 pub use spec::{SpecEnc, SpecEncTask};
 pub use viper_tuple::{ViperTupleEnc, ViperTupleEncOutput};
-pub use wand::{WandEnc, WandEncOutput, WandEncTask, EncodedWand};
+pub use impure::fn_wand::{WandEnc, WandEncOutput, WandEncTask, EncodedWand};

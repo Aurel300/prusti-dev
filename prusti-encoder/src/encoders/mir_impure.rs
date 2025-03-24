@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use pcs::{
     borrow_pcg::{
         action::BorrowPCGAction, borrow_pcg_edge::BorrowPCGEdge, borrow_pcg_expansion::BorrowPCGExpansion, edge::{abstraction::AbstractionType, kind::BorrowPCGEdgeKind}, state::BorrowsState, unblock_graph::BorrowPCGUnblockAction
@@ -7,7 +5,7 @@ use pcs::{
 };
 use prusti_interface::PrustiError;
 use prusti_rustc_interface::{
-    data_structures::fx::FxHashSet,
+    data_structures::fx::FxHashMap,
     middle::{
         mir,
         ty::{self, GenericArgs, TyKind},
@@ -116,6 +114,7 @@ where
 
     pub tmp_ctr: usize,
     pub label_ctr: usize,
+    pub call_labels: FxHashMap<mir::BasicBlock, (&'vir str, &'vir str)>,
 
     // for the current basic block
     pub current_fpcs: Option<PcgBasicBlock<'vir>>,
@@ -126,7 +125,7 @@ where
 
     pub encoded_blocks: Vec<vir::CfgBlock<'vir>>, // TODO: use IndexVec ?
 
-    pub place_overrides: HashMap<mir::Place<'vir>, vir::Expr<'vir>>,
+    pub place_overrides: FxHashMap<mir::Place<'vir>, vir::Expr<'vir>>,
 }
 
 impl<'vir, E: TaskEncoder> PureFuncAppEnc<'vir, E> for ImpureEncVisitor<'vir, '_, E> {
@@ -295,13 +294,23 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         }
     }
 
-    fn pcs_handle_edge(&mut self, borrows_state: &BorrowsState<'vir>, edge: &BorrowPCGEdge<'vir>, add: bool, label: Option<&'vir str>, edge_to_loop: bool) {
+    fn pcs_handle_edge(&mut self, borrows_state: &BorrowsState<'vir>, edge: &BorrowPCGEdge<'vir>, add: bool, label: Option<&'vir str>, edge_to_loop: bool, to_skip: &mut Vec<mir::BasicBlock>) {
         match edge.kind() {
             BorrowPCGEdgeKind::BorrowPCGExpansion(expansion) => {
                 self.pcs_borrow_expansion(expansion.clone(), add, label);
             }
             BorrowPCGEdgeKind::Abstraction(AbstractionType::FunctionCall(call)) => {
-                assert!(!add);
+                if add {
+                    // The wand will be introduced by the method call itself.
+                    return;
+                }
+                // We may be encoding multiple edges as a single wand, skip
+                // further edge removals. This is a hack to get around the fact
+                // that Viper doesn't support hyperwands.
+                if to_skip.contains(&call.location().block) {
+                    return;
+                }
+                to_skip.push(call.location().block);
                 // TODO: this applies *all* the wands for the referenced
                 //   function call; instead we should figure out which
                 //   wand it is based on the edge info.
@@ -315,14 +324,13 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 let terminator = bb.terminator.as_ref().unwrap();
                 match &terminator.kind {
                     mir::TerminatorKind::Call { args, destination, .. } => {
-                        use vir::Reify;
                         let (_, dest_snap, _, _) = self.encode_place_snap((*destination).into());
                         let wand_args = std::iter::once(dest_snap)
                             .chain(args.iter()
-                                .map(|operand| self.encode_operand_snap(&operand.node)))
+                                .map(|operand| self.encode_operand_snap_immediate(&operand.node)))
                             .collect::<Vec<_>>();
-                        let wands = wands.reify(self.vcx, (call.def_id(), self.vcx.alloc_slice(&wand_args), Some(self.vcx.alloc(vir::CfgBlockLabelData::BasicBlockTerminator(call.location().block.as_usize())))));
-                        self.stmts(wands.apply_wands());
+                        let (label_pre, label_post) = self.call_labels[&call.location().block];
+                        wands.apply_wands(&wand_args, label_pre, label_post, self);
                     }
                     _ => unreachable!(),
                 }
@@ -340,8 +348,9 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         actions: &[BorrowPCGUnblockAction<'vir>],
         label: Option<&'vir str>,
     ) {
+        let mut to_skip = Vec::new();
         for action in actions {
-            self.pcs_handle_edge(borrows_state, action.edge(), false, label, false);
+            self.pcs_handle_edge(borrows_state, action.edge(), false, label, false, &mut to_skip);
         }
     }
 
@@ -352,6 +361,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         edge_to_loop: bool,
         // location: Location,
     ) {
+        let mut to_skip = Vec::new();
         use pcs::borrow_pcg::action::BorrowPCGActionKind;
         for action in actions {
             comment!(self, "pcs_action: {:?}", action.kind());
@@ -361,11 +371,11 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 //MakePlaceOld(Place<'tcx>),
                 //SetLatest(Place<'tcx>, Location),
                 //AddRegionProjectionMember(RegionProjectionMember<'tcx>, PathConditions),
-                BorrowPCGActionKind::RemoveEdge(edge) => self.pcs_handle_edge(borrows_state, edge, false, None, edge_to_loop),
+                BorrowPCGActionKind::RemoveEdge(edge) => self.pcs_handle_edge(borrows_state, edge, false, None, edge_to_loop, &mut to_skip),
                 BorrowPCGActionKind::AddEdge {
                     edge,
                     for_exclusive: _,
-                } => self.pcs_handle_edge(borrows_state, edge, true, None, edge_to_loop),
+                } => self.pcs_handle_edge(borrows_state, edge, true, None, edge_to_loop, &mut to_skip),
                 //RenamePlace {
                 //    old: MaybeOldPlace<'tcx>,
                 //    new: MaybeOldPlace<'tcx>,
@@ -737,10 +747,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 }
                 result
             }
-            mir::Operand::Constant(box constant) =>
-                self.deps
-                    .require_local::<ConstEnc>((constant.const_, 0, self.def_id))
-                    .unwrap(),
+            mir::Operand::Constant(box constant) => self.encode_constant(constant),
         }
     }
 
@@ -754,16 +761,29 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             }
             mir::Operand::Constant(box constant) => {
                 let ty_out = self.deps.require_ref::<RustTyPredicatesEnc>(ty).unwrap();
-                let constant = self
-                    .deps
-                    .require_local::<ConstEnc>((constant.const_, 0, self.def_id))
-                    .unwrap();
+                let constant = self.encode_constant(constant);
                 (constant, ty_out)
             }
         };
         let tmp_exp: vir::Expr<'vir> = self.new_tmp(&vir::TypeData::Ref).1;
         self.stmt(ty_out.apply_method_assign(self.vcx, tmp_exp, encode_place_result));
         tmp_exp
+    }
+
+    /// Encodes the snapshot of an operand. This should not be used for encoding
+    /// regular mir statements/terminators as it doesn't match the semantics.
+    fn encode_operand_snap_immediate(&mut self, operand: &mir::Operand<'vir>) -> vir::Expr<'vir> {
+        match operand {
+            &mir::Operand::Move(source) => self.encode_place_snap(Place::from(source)).1,
+            &mir::Operand::Copy(source) => self.encode_place_snap(Place::from(source)).1,
+            mir::Operand::Constant(box constant) => self.encode_constant(constant),
+        }
+    }
+
+    fn encode_constant(&mut self, constant: &mir::ConstOperand<'vir>) -> vir::Expr<'vir> {
+        self.deps
+            .require_local::<ConstEnc>((constant.const_, 0, self.def_id))
+            .unwrap()
     }
 
     pub(crate) fn encode_place(&mut self, place: Place<'vir>) -> EncodePlaceResult<'vir> {
@@ -1525,6 +1545,7 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
 
                     method_args.extend(encoded_ty_args);
 
+                    let label_pre = self.new_label("pre");
                     self.vcx().with_span(span, |vcx| {
                         vcx.handle_error(
                             "call.precondition:assertion.false",
@@ -1549,6 +1570,8 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                             )),
                         );
                     });
+                    let label_post = self.new_label("post");
+                    self.call_labels.insert(location.block, (label_pre, label_post));
                     let expected_ty = destination.ty(self.local_decls_src(), self.vcx.tcx()).ty;
                     let fn_result_ty = sig.output().skip_binder();
                     let result_cast = self

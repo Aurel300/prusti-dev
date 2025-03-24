@@ -117,20 +117,9 @@ where
             posts.push(local_defs.locals[mir::RETURN_PLACE].impure_pred);
 
             // ..
-            let wands = wands.reify(vcx, (def_id, vcx.alloc_slice(&(0..arg_count)
-                .map(|arg_idx| local_defs.locals[arg_idx.into()].impure_snap)
-                .collect::<Vec<_>>()), None));
-
-            pres.extend(wands.indirect_pres.clone());
-            posts.extend(wands.indirect_posts.clone());
-            posts.extend(wands.encoded_wands.iter()
-                .map(|EncodedWand { wand, .. }| {
-                    let mut wand_expr = vcx.mk_wand_expr(wand);
-                    if let Some(expr) = wands.output_in_wand {
-                        wand_expr = vcx.mk_let_expr("_0r", expr, wand_expr);
-                    }
-                    wand_expr
-                }));
+            pres.extend(wands.indirect_pres(vcx, &local_defs, deps));
+            posts.extend(wands.indirect_posts(vcx, &local_defs, deps));
+            posts.extend(wands.wand_posts(vcx, &local_defs, deps));
 
             // Do not encode the method body if it is external, trusted, or just
             // a call stub.
@@ -175,16 +164,6 @@ where
                     vcx.mk_goto_stmt(vcx.alloc(vir::CfgBlockLabelData::BasicBlock(0))),
                 ));
 
-                let last_block = (block_count - 1).into();
-                let final_borrow_state = fpcs_analysis
-                    .get_all_for_bb(last_block)
-                    .unwrap()
-                    .map(|block| block.statements
-                        .last()
-                        .unwrap()
-                        .borrows
-                        .post_main().clone());
-
                 deps.check_cycle()?;
                 let mut visitor = ImpureEncVisitor {
                     monomorphize: MirImpureEnc::monomorphize(),
@@ -200,6 +179,7 @@ where
 
                     tmp_ctr: 0,
                     label_ctr: 0,
+                    call_labels: Default::default(),
 
                     current_block_label: None,
                     current_fpcs: None,
@@ -208,13 +188,25 @@ where
                     current_terminator: None,
                     encoded_blocks,
 
-                    place_overrides: HashMap::new(),
+                    place_overrides: Default::default(),
                 };
                 visitor.visit_body(&body);
 
-                let wand_packages = final_borrow_state
-                    .map(|state| wands.package_wands(state, &mut visitor))
-                    .unwrap_or_default();
+                // TODO: we should probably do this at the return terminator. No
+                // guarantee that this will be the last block?
+                let last_block = (block_count - 1).into();
+                let last_block = visitor
+                    .fpcs_analysis
+                    .get_all_for_bb(last_block)
+                    .unwrap()
+                    .unwrap();
+                let final_borrow_state = last_block.statements
+                        .last()
+                        .unwrap()
+                        .borrows
+                        .post_main();
+
+                let wand_packages = wands.package_wands(final_borrow_state, &mut visitor);
 
                 visitor.encoded_blocks.push(vcx.mk_cfg_block(
                     vcx.alloc(vir::CfgBlockLabelData::End),

@@ -143,7 +143,7 @@ impl<'vir> WandEncOutput<'vir, !, !> {
                 let actions = ug.actions(visitor.fpcs_analysis.repacker()).unwrap();
                 let mut package_script = visitor.block(|visitor| {
                     // TODO: add label?
-                    visitor.pcs_unblock_actions(&actions, None);
+                    visitor.pcs_unblock_actions(&final_borrow_state, &actions, None);
                 });
 
                 for (spec, span) in rhs_specs {

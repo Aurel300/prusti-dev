@@ -18,6 +18,11 @@ use crate::encoders::{
     ImpureEncVisitor,
 };
 
+pub(super) enum WandOldOuter<'vir> {
+    LetBind(Vec<(&'vir str, vir::Expr<'vir>)>),
+    Label(Option<&'vir str>),
+}
+
 impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
     /// Calculate invariant at loop head
     pub(crate) fn get_loop_inv(
@@ -64,14 +69,14 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             }
         }
         for (_edge, inputs, outputs) in Self::get_abstraction_edges(borrows.graph()) {
-            let mut let_bind = Vec::new();
+            let mut let_bind = WandOldOuter::LetBind(Vec::new());
             let mut wand_rhs = Vec::new();
             for i in inputs {
-                self.encode_pcg_node(&i, &mut wand_rhs, &mut let_bind, 0);
+                self.encode_pcg_node(&i, &mut wand_rhs, &mut let_bind);
             }
             let mut wand_lhs = Vec::new();
             for i in outputs {
-                let exprs = self.encode_region_projection(i, &mut let_bind, 0);
+                let exprs = self.encode_region_projection(i, &mut let_bind);
                 wand_lhs.extend(exprs);
             }
             let wand = self.vcx.mk_wand(
@@ -79,6 +84,9 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 self.vcx.mk_conj(self.vcx.alloc_slice(&wand_rhs)),
             );
             let mut wand = self.vcx.mk_wand_expr(wand);
+            let WandOldOuter::LetBind(let_bind) = let_bind else {
+                unreachable!()
+            };
             for (ident, expr) in let_bind {
                 wand = self.vcx.mk_let_expr(ident, expr, wand);
             }
@@ -91,8 +99,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         &mut self,
         node: &PCGNode<'vir, MaybeRemotePlace<'vir>, MaybeRemotePlace<'vir>>,
         wand_rhs: &mut Vec<vir::Expr<'vir>>,
-        let_bind: &mut Vec<(&'vir str, vir::Expr<'vir>)>,
-        i: usize,
+        old_outer: &mut WandOldOuter<'vir>,
     ) {
         match node {
             PCGNode::Place(MaybeRemotePlace::Remote(_)) => unreachable!(),
@@ -101,13 +108,13 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 let ty = (*p).ty(self.local_decls, self.vcx.tcx());
                 let ty_out = self.deps.require_ref::<RustTyPredicatesEnc>(ty.ty).unwrap();
                 let p = self.encode_place(p);
-                let p = self.configure_old(*place, p.expr, let_bind, i);
+                let p = self.configure_old(*place, p.expr, old_outer);
 
                 let pred = ty_out.ref_to_pred(self.vcx, p, None);
                 wand_rhs.push(pred);
             }
             PCGNode::RegionProjection(r) => {
-                let exprs = self.encode_region_projection(*r, let_bind, i);
+                let exprs = self.encode_region_projection(*r, old_outer);
                 wand_rhs.extend(exprs);
             }
         }
@@ -116,13 +123,12 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
     pub(super) fn encode_region_projection<T: RegionProjectionBaseLike<'vir>>(
         &mut self,
         r: RegionProjection<'vir, T>,
-        let_bind: &mut Vec<(&'vir str, vir::Expr<'vir>)>,
-        i: usize,
+        old_outer: &mut WandOldOuter<'vir>,
     ) -> Vec<vir::Expr<'vir>> {
         let place = r.place().to_maybe_remote_region_projection_base();
         let (place_snap, ty, _) = match place {
             MaybeRemoteRegionProjectionBase::Place(p) => {
-                self.encode_maybe_remote_place_snap(p, let_bind, i)
+                self.encode_maybe_remote_place_snap(p, old_outer)
             }
             MaybeRemoteRegionProjectionBase::Const(c) => todo!("{c:?}"),
         };
@@ -156,8 +162,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
     fn encode_maybe_remote_place_snap(
         &mut self,
         place: MaybeRemotePlace<'vir>,
-        let_bind: &mut Vec<(&'vir str, vir::Expr<'vir>)>,
-        i: usize,
+        old_outer: &mut WandOldOuter<'vir>,
     ) -> (
         vir::Expr<'vir>,
         PlaceTy<'vir>,
@@ -165,7 +170,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
     ) {
         let p = Self::get_place(place);
         let (_, place_snap, ty, ty_out) = self.encode_place_snap(p);
-        let place_snap = self.configure_old(place, place_snap, let_bind, i);
+        let place_snap = self.configure_old(place, place_snap, old_outer);
         (place_snap, ty, ty_out)
     }
 
@@ -173,14 +178,11 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         &mut self,
         place: MaybeRemotePlace,
         expr: vir::Expr<'vir>,
-        let_bind: &mut Vec<(&'vir str, vir::Expr<'vir>)>,
-        i: usize,
+        old_outer: &mut WandOldOuter<'vir>,
     ) -> vir::Expr<'vir> {
         match place {
             MaybeRemotePlace::Local(MaybeOldPlace::Current { .. }) => {
-                let ident = vir::vir_format!(self.vcx, "_snap{i}_{}", let_bind.len());
-                let_bind.push((ident, expr));
-                self.vcx.mk_local_ex(ident, expr.ty())
+                self.mk_wand_outer(expr, old_outer)
             }
             MaybeRemotePlace::Local(MaybeOldPlace::OldPlace(place)) => match place.at {
                 SnapshotLocation::After(_) => todo!(),
@@ -192,6 +194,24 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 }
             },
             MaybeRemotePlace::Remote(_) => self.vcx.mk_old_expr(expr),
+        }
+    }
+
+    fn mk_wand_outer(
+        &mut self,
+        expr: vir::Expr<'vir>,
+        old_outer: &mut WandOldOuter<'vir>,
+    ) -> vir::Expr<'vir> {
+        match old_outer {
+            WandOldOuter::LetBind(let_bind) => {
+                let ident = vir::vir_format!(self.vcx, "_snap{}", let_bind.len());
+                let_bind.push((ident, expr));
+                self.vcx.mk_local_ex(ident, expr.ty())
+            }
+            WandOldOuter::Label(label) => {
+                let label = *label.get_or_insert_with(|| self.new_label("outer_package"));
+                self.vcx.mk_local_labelled_old_expr(expr, label)
+            }
         }
     }
 }

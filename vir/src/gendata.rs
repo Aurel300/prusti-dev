@@ -77,7 +77,7 @@ pub struct FuncAppGenData<'vir, Curr, Next> {
 pub struct OldGenData<'vir, Curr, Next> {
     pub expr: ExprGen<'vir, Curr, Next>,
     #[vir(reify_pass)]
-    pub label: OldLabel,
+    pub label: OldLabel<'vir>,
 }
 
 #[derive(VirHash, VirReify, VirSerde)]
@@ -342,6 +342,7 @@ pub enum StmtKindGenData<'vir, Curr, Next> {
     Package(WandGen<'vir, Curr, Next>, &'vir [StmtGen<'vir, Curr, Next>]),
     Apply(WandGen<'vir, Curr, Next>),
     MethodCall(MethodCallGen<'vir, Curr, Next>),
+    Label(&'vir str),
     Comment(&'vir str),
     Dummy(&'vir str),
 }

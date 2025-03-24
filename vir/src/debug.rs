@@ -292,6 +292,7 @@ impl<'vir, Curr, Next> Debug for OldGenData<'vir, Curr, Next> {
             OldLabel::None => (),
             OldLabel::Lhs => write!(f, "[lhs]")?,
             OldLabel::Block(block) => block.fmt(f)?,
+            OldLabel::Label(l) => write!(f, "[{l}]")?,
         }
         write!(f, "(")?;
         self.expr.fmt(f)?;
@@ -370,6 +371,7 @@ impl<'vir, Curr, Next> Debug for StmtKindGenData<'vir, Curr, Next> {
                 fmt_comma_sep(f, data.args)?;
                 write!(f, ")")
             }
+            Self::Label(label) => write!(f, "label {label}"),
             Self::Comment(info) => write!(f, "// {}", info),
             Self::Dummy(info) => write!(f, "// {}", info),
         }

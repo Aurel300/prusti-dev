@@ -84,6 +84,7 @@ cfg_if! {
                         check_expr_bindings(m, *arg);
                     }
                 }
+                StmtKindGenData::Label(_) => {},
                 StmtKindGenData::Comment(_) => {},
                 StmtKindGenData::Dummy(_) => todo!(),
             }
@@ -284,6 +285,16 @@ impl<'tcx> VirCtxt<'tcx> {
     ) -> ExprGen<'vir, Curr, Next> {
         self.alloc(ExprGenData::new(self.alloc(ExprKindGenData::Old(
             self.alloc(OldGenData { expr, label: label.map(|label| OldLabel::Block(*label)).unwrap_or(OldLabel::None) }),
+        ))))
+    }
+
+    pub fn mk_local_labelled_old_expr<'vir, Curr, Next>(
+        &'vir self,
+        expr: ExprGen<'vir, Curr, Next>,
+        label: &'vir str,
+    ) -> ExprGen<'vir, Curr, Next> {
+        self.alloc(ExprGenData::new(self.alloc(ExprKindGenData::Old(
+            self.alloc(OldGenData { expr, label: OldLabel::Label(label) }),
         ))))
     }
 
@@ -650,6 +661,13 @@ impl<'tcx> VirCtxt<'tcx> {
         self.alloc(StmtGenData::new(
             self.alloc(StmtKindGenData::LocalDecl(local, expr)),
         ))
+    }
+
+    pub fn mk_label_stmt<'vir, Curr, Next>(
+        &'vir self,
+        label: &'vir str,
+    ) -> StmtGen<'vir, Curr, Next> {
+        self.alloc(StmtGenData::new(self.alloc(StmtKindGenData::Label(label))))
     }
 
     pub fn mk_assume_false_stmt<'vir, Curr, Next>(

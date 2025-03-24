@@ -199,10 +199,11 @@ impl CfgBlockLabelData {
 }
 
 #[derive(PartialEq, Eq, Clone, Copy, Serialize, Deserialize, Hash)]
-pub enum OldLabel {
+pub enum OldLabel<'vir> {
     None,
     Lhs,
     Block(CfgBlockLabelData),
+    Label(#[serde(with = "crate::serde::serde_str")] &'vir str),
 }
 
 pub type AccFieldData<'vir> = crate::gendata::AccFieldGenData<'vir, !, !>;

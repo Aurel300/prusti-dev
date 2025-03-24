@@ -200,6 +200,7 @@ where
                     loop_analysis,
 
                     tmp_ctr: 0,
+                    label_ctr: 0,
 
                     current_block_label: None,
                     current_fpcs: None,

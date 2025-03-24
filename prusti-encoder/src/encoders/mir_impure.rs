@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use pcs::{
     borrow_pcg::{
-        action::BorrowPCGAction, borrow_pcg_expansion::BorrowPCGExpansion,
+        action::BorrowPCGAction, borrow_pcg_edge::BorrowPCGEdge, borrow_pcg_expansion::BorrowPCGExpansion,
         edge::{abstraction::AbstractionType, kind::BorrowPCGEdgeKind}, unblock_graph::BorrowPCGUnblockAction,
     },
     combined_pcs::{EvalStmtPhase, PCGNode, PcgSuccessor},
@@ -121,6 +121,7 @@ where
     pub loop_analysis: LoopAnalysis,
 
     pub tmp_ctr: usize,
+    pub label_ctr: usize,
 
     // for the current basic block
     pub current_fpcs: Option<PcgBasicBlock<'vir>>,
@@ -257,6 +258,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         &mut self,
         expansion: BorrowPCGExpansion<'vir>,
         unfold: bool,
+        label: Option<&'vir str>,
     ) {
         // TODO: code duplication with pcs_reborrow_expands
         if expansion.base().place().is_owned(self.fpcs_analysis.repacker()) {
@@ -279,7 +281,10 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             .generic_predicate
             .expect_pred_variant_opt(place_ty.variant_index);
 
-        let ref_p = self.encode_place(place);
+        let mut ref_p = self.encode_place(place);
+        if let Some(label) = label {
+            ref_p.expr = self.vcx.mk_local_labelled_old_expr(ref_p.expr, label);
+        }
         let casts = self.place_casts(&ref_p);
         let args = place_ty_out.ref_to_args(self.vcx, ref_p.expr);
         let predicate = ref_to_pred.apply(self.vcx, args, None);
@@ -296,23 +301,55 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         }
     }
 
+    fn pcs_remove_edge(&mut self, edge: &BorrowPCGEdge<'vir>, label: Option<&'vir str>) {
+        match edge.kind() {
+            BorrowPCGEdgeKind::BorrowPCGExpansion(expansion) => {
+                self.pcs_borrow_expansion(expansion.clone(), false, label);
+            }
+            BorrowPCGEdgeKind::Abstraction(AbstractionType::FunctionCall(call)) => {
+                // TODO: this applies *all* the wands for the referenced
+                //   function call; instead we should figure out which
+                //   wand it is based on the edge info.
+                let wands = self.deps
+                    .require_local::<WandEnc>(WandEncTask {
+                        def_id: call.def_id(),
+                        substs: call.substs(),
+                    })
+                    .unwrap();
+                let bb = &self.body[call.location().block];
+                let terminator = bb.terminator.as_ref().unwrap();
+                match &terminator.kind {
+                    mir::TerminatorKind::Call { args, destination, .. } => {
+                        use vir::Reify;
+                        let destination_enc = self.encode_place((*destination).into());
+                        let wand_args = std::iter::once(destination_enc.expr)
+                            .chain(args.iter()
+                                .map(|operand| self.encode_operand_snap(&operand.node)))
+                            .collect::<Vec<_>>();
+                        let wands = wands.reify(self.vcx, (call.def_id(), self.vcx.alloc_slice(&wand_args), Some(self.vcx.alloc(vir::CfgBlockLabelData::BasicBlockTerminator(call.location().block.as_usize())))));
+                        self.stmts(wands.apply_wands());
+                    }
+                    _ => unreachable!(),
+                }
+            }
+            BorrowPCGEdgeKind::Abstraction(at@AbstractionType::Loop(_)) => {
+                if Self::ignore_abstraction_edge(at) {
+                    return;
+                }
+                let wand = self.mk_wand(at.inputs(), at.outputs(), label);
+                self.stmt(self.vcx.mk_apply_stmt(wand));
+            }
+            _ => comment!(self, "(ignoring)"),
+        }
+    }
+
     pub(crate) fn pcs_unblock_actions(
         &mut self,
         actions: &[BorrowPCGUnblockAction<'vir>],
-        // location: Location,
+        label: Option<&'vir str>,
     ) {
-        use pcs::borrow_pcg::edge::kind::BorrowPCGEdgeKind;
         for action in actions {
-            // TODO: conditions (also in other PCS functions)
-            match action.edge().kind() {
-                BorrowPCGEdgeKind::BorrowPCGExpansion(expansion) => {
-                    self.pcs_borrow_expansion(expansion.clone(), false);
-                }
-                // BorrowPCGEdgeKind::Borrow(borrow_edge) => todo!(),
-                // BorrowPCGEdgeKind::Abstraction(abstraction_edge) => todo!(),
-                // BorrowPCGEdgeKind::RegionProjectionMember(region_projection_member) => todo!(),
-                _ => (),
-            }
+            self.pcs_remove_edge(action.edge(), label);
         }
     }
 
@@ -330,44 +367,13 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 //MakePlaceOld(Place<'tcx>),
                 //SetLatest(Place<'tcx>, Location),
                 //AddRegionProjectionMember(RegionProjectionMember<'tcx>, PathConditions),
-                BorrowPCGActionKind::RemoveEdge(edge) => match edge.kind() {
-                    BorrowPCGEdgeKind::BorrowPCGExpansion(expansion) => {
-                        self.pcs_borrow_expansion(expansion.clone(), false);
-                    }
-                    BorrowPCGEdgeKind::Abstraction(AbstractionType::FunctionCall(call)) => {
-                        // TODO: this applies *all* the wands for the referenced
-                        //   function call; instead we should figure out which
-                        //   wand it is based on the edge info.
-                        let wands = self.deps
-                            .require_local::<WandEnc>(WandEncTask {
-                                def_id: call.def_id(),
-                                substs: call.substs(),
-                            })
-                            .unwrap();
-                        let bb = &self.body[call.location().block];
-                        let terminator = bb.terminator.as_ref().unwrap();
-                        match &terminator.kind {
-                            mir::TerminatorKind::Call { args, destination, .. } => {
-                                use vir::Reify;
-                                let destination_enc = self.encode_place((*destination).into());
-                                let wand_args = std::iter::once(destination_enc.expr)
-                                    .chain(args.iter()
-                                        .map(|operand| self.encode_operand_snap(&operand.node)))
-                                    .collect::<Vec<_>>();
-                                let wands = wands.reify(self.vcx, (call.def_id(), self.vcx.alloc_slice(&wand_args), Some(self.vcx.alloc(vir::CfgBlockLabelData::BasicBlockTerminator(call.location().block.as_usize())))));
-                                self.stmts(wands.apply_wands());
-                            }
-                            _ => unreachable!(),
-                        }
-                    }
-                    _ => comment!(self, "(ignoring)"),
-                },
+                BorrowPCGActionKind::RemoveEdge(edge) => self.pcs_remove_edge(edge, None),
                 BorrowPCGActionKind::AddEdge {
                     edge,
                     for_exclusive: _,
                 } => match edge.kind() {
                     BorrowPCGEdgeKind::BorrowPCGExpansion(expansion) => {
-                        self.pcs_borrow_expansion(expansion.clone(), true);
+                        self.pcs_borrow_expansion(expansion.clone(), true, None);
                     }
                     _ => comment!(self, "(ignoring)"),
                 },
@@ -974,6 +980,13 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         );
         let tmp = self.vcx.mk_local(name, ty);
         (tmp, self.vcx.mk_local_ex_local(tmp))
+    }
+
+    pub(crate) fn new_label(&mut self, base: &str) -> &'vir str {
+        let name = vir::vir_format!(self.vcx, "{base}{}", self.label_ctr);
+        self.label_ctr += 1;
+        self.stmt(self.vcx.mk_label_stmt(name));
+        name
     }
 }
 

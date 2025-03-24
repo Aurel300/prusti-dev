@@ -595,6 +595,7 @@ impl<'vir, 'v> ToViper<'vir, 'v> for vir::Old<'vir> {
             vir::OldLabel::None => return ctx.ast.old(self.expr.to_viper_no_pos(ctx)),
             vir::OldLabel::Lhs => "lhs".to_string(),
             vir::OldLabel::Block(block) => block.name(),
+            vir::OldLabel::Label(label) => label.to_string(),
         };
         ctx.ast.labelled_old_with_pos(
             self.expr.to_viper_no_pos(ctx),
@@ -731,6 +732,7 @@ impl<'vir, 'v> ToViper<'vir, 'v> for vir::Stmt<'vir> {
             vir::StmtKindGenData::Unfold(pred) => ctx
                 .ast
                 .unfold_with_pos(pred.to_viper_no_pos(ctx), ctx.span_to_pos(self.span)),
+            vir::StmtKindGenData::Label(label) => ctx.ast.label(label, &[]),
             //vir::StmtGenData::Dummy(#[reify_copy] &'vir str),
             _ => unimplemented!(),
         }

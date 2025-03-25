@@ -34,7 +34,6 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         let start = &cfpcs.statements[0];
         let state = &**start.states[EvalStmtPhase::PreOperands];
         let borrows = &*start.borrows[EvalStmtPhase::PreOperands];
-        // let repacker = PlaceRepacker::new(self.body, self.vcx.tcx());
         // self.stmt(self.vcx.mk_comment_stmt(
         //     vir::vir_format!(self.vcx, "_borrows: {:#?}", borrows),
         // ));
@@ -194,9 +193,9 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
 
     pub(crate) fn get_location_label(vcx: &'vir vir::VirCtxt<'vir>, at: SnapshotLocation) -> vir::OldLabel<'vir> {
         match at {
-            // BIG TODO: handle this properly!!
+            // TODO: handle this properly!!
             SnapshotLocation::After(loc) => {
-                let name = vir::vir_format!(vcx, "after_{}_{}", loc.block.index(), loc.statement_index);
+                let name = vir::vir_format!(vcx, "_after_{}_{}", loc.block.index(), loc.statement_index);
                 vir::OldLabel::Label(name)
             }
             SnapshotLocation::Start(bb) =>

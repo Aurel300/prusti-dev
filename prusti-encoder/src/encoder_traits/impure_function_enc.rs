@@ -133,7 +133,7 @@ where
                     .get_impure_fn_body_with_facts(local_def_id);
 
                 let loop_analysis = LoopAnalysis::find_loops(&body);
-                let mut fpcs_analysis = pcs::run_combined_pcs(&body_with_facts, vcx.tcx(), None);
+                let fpcs_analysis = pcs::run_combined_pcs(&body_with_facts, vcx.tcx(), None);
 
                 let block_count = body.basic_blocks.len();
 
@@ -157,11 +157,12 @@ where
                         )
                     }));
                 }
+                // This will be overwritten later.
                 encoded_blocks.push(vcx.mk_cfg_block(
-                    vcx.alloc(vir::CfgBlockLabelData::Start),
+                    &vir::CfgBlockLabelData::Start,
                     &[],
-                    vcx.alloc_slice(&start_stmts),
-                    vcx.mk_goto_stmt(vcx.alloc(vir::CfgBlockLabelData::BasicBlock(0))),
+                    &[],
+                    vcx.mk_goto_stmt(&vir::CfgBlockLabelData::BasicBlock(0)),
                 ));
 
                 deps.check_cycle()?;
@@ -176,10 +177,12 @@ where
                     body: &body,
 
                     loop_analysis,
+                    wands,
 
                     tmp_ctr: 0,
                     label_ctr: 0,
                     call_labels: Default::default(),
+                    from_to_vars: Default::default(),
 
                     current_block_label: None,
                     current_fpcs: None,
@@ -191,28 +194,23 @@ where
                     place_overrides: Default::default(),
                 };
                 visitor.visit_body(&body);
-
-                // TODO: we should probably do this at the return terminator. No
-                // guarantee that this will be the last block?
-                let last_block = (block_count - 1).into();
-                let last_block = visitor
-                    .fpcs_analysis
-                    .get_all_for_bb(last_block)
-                    .unwrap();
-                let final_borrow_state = last_block.as_ref().map(|lb|
-                    lb.statements
-                        .last()
-                        .unwrap()
-                        .borrows
-                        .post_main()
+                start_stmts.extend(visitor.from_to_vars.iter().flat_map(|(_, v)| v.iter()).map(|(_, v)| {
+                    vcx.mk_local_decl_stmt(
+                        vir::vir_local_decl! { vcx; [v] : Bool },
+                        Some(vcx.mk_bool::<false>()),
+                    )
+                }));
+                visitor.encoded_blocks[0] = vcx.mk_cfg_block(
+                    &vir::CfgBlockLabelData::Start,
+                    &[],
+                    vcx.alloc_slice(&start_stmts),
+                    vcx.mk_goto_stmt(&vir::CfgBlockLabelData::BasicBlock(0)),
                 );
-
-                let wand_packages = final_borrow_state.map(|fbs| wands.package_wands(fbs, &mut visitor)).unwrap_or_default();
 
                 visitor.encoded_blocks.push(vcx.mk_cfg_block(
                     vcx.alloc(vir::CfgBlockLabelData::End),
                     &[],
-                    vcx.alloc_slice(&wand_packages),
+                    &[],
                     vcx.alloc(vir::TerminatorStmtData::Exit),
                 ));
 

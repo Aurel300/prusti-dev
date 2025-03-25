@@ -84,6 +84,15 @@ cfg_if! {
                         check_expr_bindings(m, *arg);
                     }
                 }
+                StmtKindGenData::If(e, thn, els) => {
+                    check_expr_bindings(m, e);
+                    for thn in thn.iter() {
+                        check_stmt_bindings(m, thn);
+                    }
+                    for els in els.iter() {
+                        check_stmt_bindings(m, els);
+                    }
+                }
                 StmtKindGenData::Label(_) => {},
                 StmtKindGenData::Comment(_) => {},
                 StmtKindGenData::Dummy(_) => todo!(),
@@ -663,6 +672,19 @@ impl<'tcx> VirCtxt<'tcx> {
         self.alloc(StmtGenData::new(
             self.alloc(StmtKindGenData::LocalDecl(local, expr)),
         ))
+    }
+
+    pub fn mk_if_stmt<'vir, Curr, Next>(
+        &'vir self,
+        cond: ExprGen<'vir, Curr, Next>,
+        then_stmts: &'vir [StmtGen<'vir, Curr, Next>],
+        else_stmts: &'vir [StmtGen<'vir, Curr, Next>],
+    ) -> StmtGen<'vir, Curr, Next> {
+        self.alloc(StmtGenData::new(self.alloc(StmtKindGenData::If(
+            cond,
+            then_stmts,
+            else_stmts,
+        ))))
     }
 
     pub fn mk_label_stmt<'vir, Curr, Next>(

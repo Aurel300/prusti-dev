@@ -10,18 +10,15 @@ use prusti_rustc_interface::{
 };
 use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 
-use crate::{
-    encoder_traits::impure_function_enc::ImpureFunctionEnc,
-    encoders::{
-        indirect::IndirectPredicatesEnc, ImpureEncVisitor, MirLocalDefEncOutput, MirSpecEnc,
-    },
+use crate::encoders::{
+    indirect::IndirectPredicatesEnc, ImpureEncVisitor, MirLocalDefEncOutput, MirSpecEnc,
 };
 
 pub struct WandEnc;
 
 pub type WandEncError = ();
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct WandEncOutput<'vir> {
     pub encoded_wands: Vec<EncodedWand<'vir>>,
     pub indirect_pres: Vec<(ty::Region<'vir>, mir::Local, ty::Ty<'vir>)>,
@@ -163,19 +160,17 @@ impl<'vir> WandEncOutput<'vir> {
         }
     }
 
-    pub fn package_wands<E: ImpureFunctionEnc>(
+    pub fn package_wands<E: TaskEncoder>(
         &self,
         final_borrow_state: &BorrowsState<'vir>,
         visitor: &mut ImpureEncVisitor<'vir, '_, E>,
     ) -> Vec<vir::Stmt<'vir>> {
         let mut wand_packages = Vec::new();
         let vcx = visitor.vcx;
+        let label = visitor.new_label("package_post");
         let snap_lhs = |l| {
             if l == mir::RETURN_PLACE {
-                vcx.mk_labelled_old_expr(
-                    visitor.local_defs.locals[l].impure_snap,
-                    Some(vir::CfgBlockLabelData::End),
-                )
+                vcx.mk_local_labelled_old_expr(visitor.local_defs.locals[l].impure_snap, label)
             } else {
                 vcx.mk_old_expr(visitor.local_defs.locals[l].impure_snap)
             }
@@ -193,8 +188,7 @@ impl<'vir> WandEncOutput<'vir> {
                 );
                 let actions = ug.actions(visitor.fpcs_analysis.repacker()).unwrap();
                 let unblock = visitor.block(|visitor| {
-                    // TODO: add label?
-                    visitor.pcs_unblock_actions(&final_borrow_state, &actions, None);
+                    visitor.pcs_unblock_actions(&final_borrow_state, &actions, Some(label));
                 });
                 package_script.extend(unblock);
             }

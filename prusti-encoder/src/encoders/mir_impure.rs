@@ -50,7 +50,7 @@ use super::{
         ty::{EncodeGenericsAsLifted, LiftedTyEnc},
     },
     rust_ty_predicates::{RustTyPredicatesEnc, RustTyPredicatesEncOutputRef},
-    ConstEnc, MirMonoImpureEnc, MirPolyImpureEnc,
+    ConstEnc, MirMonoImpureEnc, MirPolyImpureEnc, WandEncOutput,
 };
 
 const ENCODE_REACH_BB: bool = false;
@@ -111,10 +111,12 @@ where
     pub body: &'enc mir::Body<'vir>,
 
     pub loop_analysis: LoopAnalysis,
+    pub wands: WandEncOutput<'vir>,
 
     pub tmp_ctr: usize,
     pub label_ctr: usize,
     pub call_labels: FxHashMap<mir::BasicBlock, (&'vir str, &'vir str)>,
+    pub from_to_vars: FxHashMap<mir::BasicBlock, Vec<(mir::BasicBlock, &'vir str)>>,
 
     // for the current basic block
     pub current_fpcs: Option<PcgBasicBlock<'vir>>,
@@ -308,6 +310,31 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
     }
 
     fn pcs_handle_edge(&mut self, borrows_state: &BorrowsState<'vir>, edge: &BorrowPCGEdge<'vir>, add: bool, label: Option<&'vir str>, edge_to_loop: bool, to_skip: &mut Vec<mir::BasicBlock>) {
+        let conditions = edge.conditions();
+        let Some(paths) = conditions.paths() else {
+            // TODO: what does getting None mean?
+            return self.pcs_handle_edge_conditionless(borrows_state, edge, add, label, edge_to_loop, to_skip);
+        };
+        let stmts = self.block(|self_| self_.pcs_handle_edge_conditionless(borrows_state, edge, add, label, edge_to_loop, to_skip));
+        if stmts.is_empty() || stmts.iter().all(|stmt| matches!(stmt.kind, vir::StmtKindData::Comment(_))) {
+            self.stmts(stmts);
+            return;
+        }
+        let stmts = self.vcx.alloc_slice(&stmts);
+        let cond = paths.iter().filter_map(|path| {
+            let mut conj = Vec::new();
+            for pc in path {
+                let tos = &self.from_to_vars[&pc.from];
+                let (_, var) = tos.iter().find(|(to, _)| *to == pc.to)?;
+                conj.push(self.vcx.mk_local_ex(var, &vir::TypeData::Bool));
+            }
+            Some(self.vcx.mk_conj(self.vcx.alloc_slice(&conj)))
+        }).collect::<Vec<_>>();
+        let cond = self.vcx.mk_disj(self.vcx.alloc_slice(&cond));
+        self.stmt(self.vcx.mk_if_stmt(cond, stmts, &[]));
+    }
+
+    fn pcs_handle_edge_conditionless(&mut self, borrows_state: &BorrowsState<'vir>, edge: &BorrowPCGEdge<'vir>, add: bool, label: Option<&'vir str>, edge_to_loop: bool, to_skip: &mut Vec<mir::BasicBlock>) {
         match edge.kind() {
             BorrowPCGEdgeKind::BorrowPCGExpansion(expansion) => {
                 self.pcs_borrow_expansion(expansion.clone(), add, label);
@@ -1012,8 +1039,17 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
     }
 
     fn new_after_label(&mut self, location: mir::Location) {
-        let name = vir::vir_format!(self.vcx, "after_{}_{}", location.block.index(), location.statement_index);
+        let name = vir::vir_format!(self.vcx, "_after_{}_{}", location.block.index(), location.statement_index);
         self.stmt(self.vcx.mk_label_stmt(name));
+    }
+
+    fn set_from_to_flag(&mut self, from: mir::BasicBlock, to: mir::BasicBlock) -> vir::Stmt<'vir> {
+        let name = vir::vir_format!(self.vcx, "_from_bb{}_to_bb{}", from.index(), to.index());
+        let tos = self.from_to_vars.entry(from).or_default();
+        debug_assert!(!tos.contains(&(to, name)));
+        tos.push((to, name));
+        let local = self.vcx.mk_local_ex(name, &vir::TypeData::Bool);
+        self.vcx.mk_pure_assign_stmt(local, self.vcx.mk_bool::<true>())
     }
 }
 
@@ -1377,7 +1413,8 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                 let borrows = current_fpcs.statements.last().unwrap().borrows[EvalStmtPhase::PostMain].clone();
                 self.pcs_succ(&borrows, &current_fpcs.terminator.succs[REAL_TARGET_SUCC_IDX]);
                 self.current_fpcs = Some(current_fpcs);
-
+                let set_flag = self.set_from_to_flag(location.block, *target);
+                self.stmt(set_flag);
                 self.vcx.mk_goto_stmt(
                     self.vcx
                         .alloc(vir::CfgBlockLabelData::BasicBlock(target.as_usize())),
@@ -1404,8 +1441,9 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
 
                             let current_fpcs = self.current_fpcs.take().unwrap();
                             let borrows = current_fpcs.statements.last().unwrap().borrows[EvalStmtPhase::PostMain].clone();
-                            let extra_stmts = self.collect_pcs_succ(&borrows, &current_fpcs.terminator.succs[idx]);
+                            let mut extra_stmts = self.collect_pcs_succ(&borrows, &current_fpcs.terminator.succs[idx]);
                             self.current_fpcs = Some(current_fpcs);
+                            extra_stmts.push(self.set_from_to_flag(location.block, target));
 
                             self.vcx.mk_goto_if_target(
                                 discr_ty.expr_from_bits(discr_ty_rs, value),
@@ -1429,8 +1467,9 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
 
                 let current_fpcs = self.current_fpcs.take().unwrap();
                 let borrows = current_fpcs.statements.last().unwrap().borrows[EvalStmtPhase::PostMain].clone();
-                let otherwise_stmts = self.collect_pcs_succ(&borrows, &current_fpcs.terminator.succs[otherwise_succ_idx]);
+                let mut otherwise_stmts = self.collect_pcs_succ(&borrows, &current_fpcs.terminator.succs[otherwise_succ_idx]);
                 self.current_fpcs = Some(current_fpcs);
+                otherwise_stmts.push(self.set_from_to_flag(location.block, targets.otherwise()));
 
                 let discr_ex = discr_ty
                     .snap_to_prim
@@ -1442,9 +1481,19 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                     self.vcx.alloc_slice(&otherwise_stmts),
                 )
             }
-            mir::TerminatorKind::Return => self
-                .vcx
-                .mk_goto_stmt(self.vcx.alloc(vir::CfgBlockLabelData::End)),
+            mir::TerminatorKind::Return => {
+                let current_fpcs = self.current_fpcs.take().unwrap();
+                let wands = core::mem::take(&mut self.wands);
+                let borrows = current_fpcs.statements.last().unwrap().borrows.post_main();
+                let wand_packages = wands.package_wands(borrows, self);
+                self.wands = wands;
+                self.current_fpcs = Some(current_fpcs);
+                self.stmts(wand_packages);
+
+                self
+                    .vcx
+                    .mk_goto_stmt(self.vcx.alloc(vir::CfgBlockLabelData::End))
+            }
             mir::TerminatorKind::Call {
                 func,
                 args,
@@ -1618,6 +1667,8 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                         let borrows = current_fpcs.statements.last().unwrap().borrows[EvalStmtPhase::PostMain].clone();
                         self.pcs_succ(&borrows, &current_fpcs.terminator.succs[REAL_TARGET_SUCC_IDX]);
                         self.current_fpcs = Some(current_fpcs);
+                        let set_flag = self.set_from_to_flag(location.block, target);
+                        self.stmt(set_flag);
 
                         self.vcx.mk_goto_stmt(
                             self.vcx
@@ -1706,10 +1757,13 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                     _ => todo!(),
                 };
 
+                let statements = self.set_from_to_flag(location.block, *target);
+                let statements = self.vcx.alloc_slice(&[statements]);
+
                 self.vcx.mk_goto_if_stmt(
                     enc,
                     self.vcx
-                        .alloc_slice(&[self.vcx.mk_goto_if_target(expected, target_bb, &[])]),
+                        .alloc_slice(&[self.vcx.mk_goto_if_target(expected, target_bb, statements)]),
                     otherwise,
                     &[],
                 )
@@ -1725,10 +1779,14 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                 self.vcx.mk_assume_false_stmt()
             }),
 
-            mir::TerminatorKind::Drop { target, .. } => self.vcx.mk_goto_stmt(
-                self.vcx
-                    .alloc(vir::CfgBlockLabelData::BasicBlock(target.as_usize())),
-            ),
+            mir::TerminatorKind::Drop { target, .. } => {
+                let set_flag = self.set_from_to_flag(location.block, *target);
+                self.stmt(set_flag);
+                self.vcx.mk_goto_stmt(
+                    self.vcx
+                        .alloc(vir::CfgBlockLabelData::BasicBlock(target.as_usize())),
+                )
+            }
 
             unsupported_kind => self.vcx.mk_dummy_stmt(vir::vir_format!(
                 self.vcx,

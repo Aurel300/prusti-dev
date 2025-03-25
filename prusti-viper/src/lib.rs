@@ -729,6 +729,17 @@ impl<'vir, 'v> ToViper<'vir, 'v> for vir::Stmt<'vir> {
                 ctx.span_to_pos(self.span),
             ),
             vir::StmtKindGenData::PureAssign(v) => v.to_viper_with_span(ctx, self.span),
+            vir::StmtKindGenData::If(e, thn, els) => {
+                let thn = ctx.ast.seqn(
+                    &thn.iter().map(|v| v.to_viper_no_pos(ctx)).collect::<Vec<_>>(),
+                    &[],
+                );
+                let els = ctx.ast.seqn(
+                    &els.iter().map(|v| v.to_viper_no_pos(ctx)).collect::<Vec<_>>(),
+                    &[],
+                );
+                ctx.ast.if_stmt(e.to_viper_no_pos(ctx), thn, els)
+            }
             vir::StmtKindGenData::Unfold(pred) => ctx
                 .ast
                 .unfold_with_pos(pred.to_viper_no_pos(ctx), ctx.span_to_pos(self.span)),

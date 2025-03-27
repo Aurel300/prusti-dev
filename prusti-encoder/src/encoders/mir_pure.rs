@@ -869,68 +869,47 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
     ) -> ExprRet<'vir> {
         #[derive(Debug)]
         enum PrustiBuiltin {
-            BeforeExpiry,
             Forall,
             SnapshotEquality,
             ModeStart(Mode),
             ModeEnd(Mode),
         }
 
-        // TODO: this attribute extraction should be done elsewhere?
-        let attrs = self.vcx.tcx().get_attrs_unchecked(def_id);
-        let normal_attrs = attrs
-            .iter()
-            .filter(|attr| !attr.is_doc_comment())
-            .map(|attr| attr.get_normal_item())
-            .collect::<Vec<_>>();
-        let mut builtin = None;
-        for attr in normal_attrs.iter().filter(|item| {
-            item.path.segments.len() == 2
-                && item.path.segments[0].ident.as_str() == "prusti"
-                && item.path.segments[1].ident.as_str() == "builtin"
-        }) {
-            let param_env = self.vcx.tcx().param_env(self.def_id);
-            match &attr.args {
-                ast::AttrArgs::Eq(_, ast::AttrArgsEq::Hir(lit)) => {
-                    assert!(builtin.is_none(), "multiple prusti::builtin");
-                    builtin = Some(match lit.symbol.as_str() {
-                        "before_expiry" => PrustiBuiltin::BeforeExpiry,
-                        "forall" => PrustiBuiltin::Forall,
-                        "snapshot_equality" => PrustiBuiltin::SnapshotEquality,
-                        "old_start" => PrustiBuiltin::ModeStart(Mode::Old),
-                        "old_end" => PrustiBuiltin::ModeEnd(Mode::Old),
-                        "rel_start" => PrustiBuiltin::ModeStart(Mode::Rel(
-                            arg_tys[0]
-                                .expect_const()
-                                .try_eval_scalar_int(self.vcx.tcx(), param_env)
-                                .unwrap()
-                                .1
-                                .to_bits_unchecked() as usize,
-                        )),
-                        "rel_end" => PrustiBuiltin::ModeEnd(Mode::Rel(
-                            arg_tys[0]
-                                .expect_const()
-                                .try_eval_scalar_int(self.vcx.tcx(), param_env)
-                                .unwrap()
-                                .1
-                                .to_bits_unchecked() as usize,
-                        )),
-                        "before_expiry_start" => PrustiBuiltin::ModeStart(Mode::BeforeExpiry),
-                        "before_expiry_end" => PrustiBuiltin::ModeEnd(Mode::BeforeExpiry),
-                        other => panic!("illegal prusti::builtin ({other})"),
-                    });
-                }
-                _ => panic!("illegal prusti::builtin"),
-            }
+        let crate_name = self.vcx.tcx().crate_name(def_id.krate);
+        let item_name = self.vcx.tcx().item_name(def_id);
+        if crate_name.as_str() != "prusti_contracts" {
+            panic!("call to unknown non-pure function in pure code ({crate_name}::{item_name})");
         }
 
-        match builtin.expect("call to unknown non-pure function in pure code") {
-            PrustiBuiltin::BeforeExpiry => {
-                // TODO: before_expiry should work like a mode switch, just like old in PR #30
-                assert_eq!(args.len(), 1);
-                let expr = self.encode_operand(curr_ver, &args[0].node);
-                expr
-            }
+        // TODO: this probably isn't necessary
+        let param_env = self.vcx.tcx().param_env(self.def_id);
+        let builtin = match item_name.as_str() {
+            "forall" => PrustiBuiltin::Forall,
+            "snapshot_equality" => PrustiBuiltin::SnapshotEquality,
+            "old_start" => PrustiBuiltin::ModeStart(Mode::Old),
+            "old_end" => PrustiBuiltin::ModeEnd(Mode::Old),
+            "rel_start" => PrustiBuiltin::ModeStart(Mode::Rel(
+                arg_tys[0]
+                    .expect_const()
+                    .try_eval_scalar_int(self.vcx.tcx(), param_env)
+                    .unwrap()
+                    .1
+                    .to_bits_unchecked() as usize,
+            )),
+            "rel_end" => PrustiBuiltin::ModeEnd(Mode::Rel(
+                arg_tys[0]
+                    .expect_const()
+                    .try_eval_scalar_int(self.vcx.tcx(), param_env)
+                    .unwrap()
+                    .1
+                    .to_bits_unchecked() as usize,
+            )),
+            "before_expiry_start" => PrustiBuiltin::ModeStart(Mode::BeforeExpiry),
+            "before_expiry_end" => PrustiBuiltin::ModeEnd(Mode::BeforeExpiry),
+            other => panic!("illegal prusti::builtin ({other})"),
+        };
+
+        match builtin {
             PrustiBuiltin::SnapshotEquality => {
                 assert_eq!(args.len(), 2);
                 let lhs = self.encode_operand(curr_ver, &args[0].node);

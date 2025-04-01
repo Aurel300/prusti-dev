@@ -7,6 +7,7 @@ use prusti_rustc_interface::{
     },
     span::{def_id::DefId, source_map::Spanned},
     target::abi,
+    data_structures::graph,
 };
 use std::collections::HashMap;
 use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
@@ -256,7 +257,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
         deps: &'enc mut TaskEncoderDependencies<'vir, MirPureEnc>,
     ) -> Self {
         assert!(
-            !body.basic_blocks.is_cfg_cyclic(),
+            !graph::is_cyclic(&body.basic_blocks),
             "MIR pure encoding does not support loops"
         );
         let rev_doms = rev_doms::ReverseDominators::new(&body.basic_blocks);
@@ -543,10 +544,10 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                     .unwrap_or_default();
                     let sig = self.vcx().tcx().fn_sig(def_id);
                     let sig = if self.monomorphize {
-                        let param_env = self.vcx().tcx().param_env(self.def_id);
+                        let typing_env = ty::TypingEnv::post_analysis(self.vcx().tcx(), self.def_id);
                         self.vcx()
                             .tcx()
-                            .instantiate_and_normalize_erasing_regions(arg_tys, param_env, sig)
+                            .instantiate_and_normalize_erasing_regions(arg_tys, typing_env, sig)
                     } else {
                         sig.instantiate_identity()
                     };
@@ -882,7 +883,6 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
         }
 
         // TODO: this probably isn't necessary
-        let param_env = self.vcx.tcx().param_env(self.def_id);
         let builtin = match item_name.as_str() {
             "forall" => PrustiBuiltin::Forall,
             "snapshot_equality" => PrustiBuiltin::SnapshotEquality,
@@ -891,17 +891,19 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
             "rel_start" => PrustiBuiltin::ModeStart(Mode::Rel(
                 arg_tys[0]
                     .expect_const()
-                    .try_eval_scalar_int(self.vcx.tcx(), param_env)
+                    .to_valtree()
+                    .0
+                    .try_to_scalar_int()
                     .unwrap()
-                    .1
                     .to_bits_unchecked() as usize,
             )),
             "rel_end" => PrustiBuiltin::ModeEnd(Mode::Rel(
                 arg_tys[0]
                     .expect_const()
-                    .try_eval_scalar_int(self.vcx.tcx(), param_env)
+                    .to_valtree()
+                    .0
+                    .try_to_scalar_int()
                     .unwrap()
-                    .1
                     .to_bits_unchecked() as usize,
             )),
             "before_expiry_start" => PrustiBuiltin::ModeStart(Mode::BeforeExpiry),

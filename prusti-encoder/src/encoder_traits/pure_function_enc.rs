@@ -1,4 +1,4 @@
-use prusti_rustc_interface::middle::{mir, ty::Ty};
+use prusti_rustc_interface::middle::{mir, ty::{self, Ty}};
 use task_encoder::{EncodeFullError, TaskEncoder, TaskEncoderDependencies};
 use vir::{CallableIdent, ExprGen, FunctionIdent, Reify, UnknownArity, ViperIdent};
 
@@ -147,9 +147,10 @@ where
                 );
                 Some(expr)
             };
+            let typing_env = ty::TypingEnv::post_analysis(vcx.tcx(), def_id);
             let sig = vcx.tcx().instantiate_and_normalize_erasing_regions(
                 substs,
-                vcx.tcx().param_env(def_id),
+                typing_env,
                 vcx.tcx().fn_sig(def_id),
             );
             let input_tys = sig

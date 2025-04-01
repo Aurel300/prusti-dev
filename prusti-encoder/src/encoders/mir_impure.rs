@@ -1531,10 +1531,10 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                 let task = (func_def_id, self.def_id);
                 let sig = self.vcx().tcx().fn_sig(func_def_id);
                 let sig = if self.monomorphize {
-                    let param_env = self.vcx().tcx().param_env(self.def_id);
+                    let typing_env = ty::TypingEnv::post_analysis(self.vcx().tcx(), self.def_id);
                     self.vcx().tcx().instantiate_and_normalize_erasing_regions(
                         caller_substs,
-                        param_env,
+                        typing_env,
                         sig,
                     )
                 } else {

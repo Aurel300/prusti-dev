@@ -3,7 +3,7 @@ use prusti_rustc_interface::{
     macros::{TyDecodable, TyEncodable},
     middle::{
         mir,
-        ty::{self, GenericArgsRef, TyCtxt},
+        ty::{self, GenericArgsRef, TyCtxt, TypingEnv},
     },
     span::def_id::{DefId, LocalDefId},
 };
@@ -135,8 +135,8 @@ impl<'tcx> EnvBody<'tcx> {
             location_table: body_with_facts.location_table.map(Rc::new),
             body: body_with_facts.body,
             promoted: body_with_facts.promoted,
-            borrow_set: body_with_facts.borrow_set,
-            region_inference_context: body_with_facts.region_inference_context,
+            borrow_set: body_with_facts.borrow_set.into(),
+            region_inference_context: body_with_facts.region_inference_context.into(),
         }
     }
 
@@ -172,12 +172,12 @@ impl<'tcx> EnvBody<'tcx> {
                 .borrow_mut()
                 .entry((def_id, substs, caller_def_id))
         {
-            let param_env = self.tcx.param_env(caller_def_id.unwrap_or(def_id));
+            let typing_env = TypingEnv::post_analysis(self.tcx, caller_def_id.unwrap_or(def_id));
             // TODO: figure out some other way to substitute without losing the region information
             let body = self.tcx.erase_regions((*body.0).clone());
             let monomorphised = self.tcx.instantiate_and_normalize_erasing_regions(
                 substs,
-                param_env,
+                typing_env,
                 ty::EarlyBinder::bind(body),
             );
             v.insert(MirBody(Rc::new(monomorphised))).clone()

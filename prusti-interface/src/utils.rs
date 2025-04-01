@@ -44,7 +44,7 @@ pub fn expand_one_level<'tcx>(
     use pcg::utils::{Place, PlaceRepacker};
     let repacker = PlaceRepacker::new(mir, tcx);
     let current_place = Place::from(current_place);
-    let res = current_place.expand_one_level(Place::from(guide_place), repacker);
+    let _res = current_place.expand_one_level(Place::from(guide_place), repacker);
     unreachable!()
     /*
     (

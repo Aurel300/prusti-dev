@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use pcs::{borrow_pcg::unblock_graph::UnblockGraph, r#loop::LoopAnalysis};
+use pcg::{borrow_pcg::unblock_graph::UnblockGraph, r#loop::LoopAnalysis};
 use prusti_interface::PrustiError;
 use prusti_rustc_interface::{
     middle::{mir, ty::{self, GenericArgs}},
@@ -133,7 +133,7 @@ where
                     .get_impure_fn_body_with_facts(local_def_id);
 
                 let loop_analysis = LoopAnalysis::find_loops(&body);
-                let fpcs_analysis = pcs::run_combined_pcs(&body_with_facts, vcx.tcx(), None);
+                let fpcs_analysis = pcg::run_pcg(&body_with_facts, vcx.tcx(), None);
 
                 let block_count = body.basic_blocks.len();
 

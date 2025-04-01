@@ -1,4 +1,4 @@
-use pcs::{
+use pcg::{
     borrow_pcg::{
         action::BorrowPCGAction, borrow_pcg_edge::BorrowPCGEdge, borrow_pcg_expansion::BorrowPCGExpansion, edge::{abstraction::AbstractionType, kind::BorrowPCGEdgeKind}, state::BorrowsState, unblock_graph::BorrowPCGUnblockAction
     }, combined_pcs::{EvalStmtPhase, PCGNode, PcgSuccessor}, free_pcs::{CapabilityKind, PcgBasicBlock, PcgLocation, RepackOp}, r#loop::LoopAnalysis, utils::{maybe_old::MaybeOldPlace, HasPlace, Place}, FpcsOutput
@@ -402,7 +402,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         // location: Location,
     ) {
         let mut to_skip = Vec::new();
-        use pcs::borrow_pcg::action::BorrowPCGActionKind;
+        use pcg::borrow_pcg::action::BorrowPCGActionKind;
         for action in actions {
             comment!(self, "pcs_action: {:?}", action.kind());
             match action.kind() {
@@ -561,7 +561,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                     let casts = self.place_casts(&place_enc);
                     let args = place_ty_out.ref_to_args(self.vcx, place_enc.expr);
                     let predicate = ref_to_pred.apply(self.vcx, args, None);
-                    if matches!(repack_op, pcs::free_pcs::RepackOp::Expand(..)) {
+                    if matches!(repack_op, pcg::free_pcs::RepackOp::Expand(..)) {
                         comment!(self, "unfolding because of RepackOp::Expand in pcs_repacks");
                         /*
                         //let variant =

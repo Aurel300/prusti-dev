@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use pcs::{
+use pcg::{
     borrow_pcg::{
         borrow_pcg_edge::{BorrowPCGEdgeLike, BorrowPCGEdgeRef},
         edge::{abstraction::AbstractionType, kind::BorrowPCGEdgeKind},

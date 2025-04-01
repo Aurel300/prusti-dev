@@ -1,4 +1,4 @@
-use pcs::{
+use pcg::{
     borrow_pcg::region_projection::{
         MaybeRemoteRegionProjectionBase, RegionProjection, RegionProjectionBaseLike,
     },
@@ -46,8 +46,11 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 if !cap.is_exclusive() {
                     continue;
                 }
-                let (place_res, snap, _, _) = self.encode_place_snap(*place);
-                let ty = (**place).ty(self.local_decls, self.vcx.tcx());
+                let MaybeOldPlace::Current { place } = place else {
+                    todo!("{place:?}")
+                };
+                let (place_res, snap, _, _) = self.encode_place_snap(place);
+                let ty = (*place).ty(self.local_decls, self.vcx.tcx());
                 let ty_out = self.deps.require_ref::<RustTyPredicatesEnc>(ty.ty).unwrap();
                 let pred = ty_out.ref_to_pred(self.vcx, place_res.expr, None);
                 inv.push(pred);

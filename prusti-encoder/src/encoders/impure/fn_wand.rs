@@ -1,4 +1,4 @@
-use pcs::borrow_pcg::{state::BorrowsState, unblock_graph::UnblockGraph};
+use pcg::borrow_pcg::{state::BorrowsState, unblock_graph::UnblockGraph};
 use prusti_interface::PrustiError;
 use prusti_rustc_interface::{
     data_structures::fx::FxHashMap,

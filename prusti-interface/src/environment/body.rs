@@ -1,4 +1,4 @@
-use pcs::combined_pcs::BodyWithBorrowckFacts;
+use pcg::combined_pcs::BodyWithBorrowckFacts;
 use prusti_rustc_interface::{
     macros::{TyDecodable, TyEncodable},
     middle::{

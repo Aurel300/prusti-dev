@@ -167,8 +167,13 @@ where
 
             tracing::debug!("finished {def_id:?}");
 
-            let mut pres = spec.pres;
-            pres.extend(type_preconditions);
+            let mut type_preconditions: Vec<_> = type_preconditions.collect();
+            let pres = if type_preconditions.is_empty() {
+                spec.pres
+            } else {
+                type_preconditions.extend(spec.pres);
+                type_preconditions
+            };
 
             let type_postcondition = Self::mk_type_assertion(
                 vcx,
@@ -178,7 +183,7 @@ where
             );
             let mut posts = spec.posts;
             if let Some(pc) = type_postcondition {
-                posts.push(pc);
+                posts.insert(0, pc);
             }
 
             Ok(MirFunctionEncOutput {

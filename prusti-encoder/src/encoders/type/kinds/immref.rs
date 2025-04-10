@@ -65,7 +65,7 @@ pub(crate) fn predicate<'vir>(
 ), EncodeFullError<'vir, PredicateEnc>> {
     let ty = task_key.ty();
     let ty_kind = ty.kind();
-    let ty::TyKind::Ref(_, inner_ty, ty::Mutability::Not) = ty_kind else { unreachable!(); };
+    let ty::TyKind::Ref(_, _inner_ty, ty::Mutability::Not) = ty_kind else { unreachable!(); };
 
     let snap_type = snap.snapshot;
 

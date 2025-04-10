@@ -1,16 +1,10 @@
-use std::collections::{HashMap, HashSet};
-
-use pcg::{borrow_pcg::unblock_graph::UnblockGraph, r#loop::LoopAnalysis};
-use prusti_interface::PrustiError;
-use prusti_rustc_interface::{
-    middle::{mir, ty::{self, GenericArgs}},
-    span::Span,
-};
+use pcg::r#loop::LoopAnalysis;
+use prusti_rustc_interface::middle::mir;
 use task_encoder::{EncodeFullError, TaskEncoder, TaskEncoderDependencies};
 use vir::{MethodIdent, UnknownArity, ViperIdent};
 
 use crate::encoders::{
-    indirect::IndirectPredicatesEnc, lifted::func_def_ty_params::LiftedTyParamsEnc, rust_ty_predicates::RustTyPredicatesEnc, EncodedWand, ImpureEncVisitor, MirImpureEnc, MirLocalDefEnc, MirSpecEnc, WandEnc, WandEncTask
+    lifted::func_def_ty_params::LiftedTyParamsEnc, ImpureEncVisitor, MirImpureEnc, MirLocalDefEnc, MirSpecEnc, WandEnc, WandEncTask
 };
 
 use super::function_enc::FunctionEnc;
@@ -57,9 +51,7 @@ where
         .unwrap_or_default();
         vir::with_vcx(|vcx| {
             use mir::visit::Visitor;
-            use vir::Reify;
 
-            let tcx = vcx.tcx();
             let substs = Self::get_substs(vcx, &task_key);
             let local_defs =
                 deps.require_local::<MirLocalDefEnc>((def_id, substs, caller_def_id))?;
@@ -221,46 +213,7 @@ where
                 None
             };
 
-            // in the postcondition, we need to provide permissions to:
-            // - the return place
-            // - referenced (aka indirect) resources that are not blocked
-            // - magic wands for resources that are blocked
-
-            // which resources are blocked?
-            // - fn foo<'a>(x: &'a mut i32) -> &'a mut i32; // mutref covariant in its lifetime
-            //   *x is blocked
-            // - struct Foo<'a>(&'a mut i32) // Foo is covariant in 'a
-            //   fn foo<'a>(x: Foo<'a>) -> &'a mut i32;
-            //   *x.0 is blocked
-
-            /*
-            let identity_substs = GenericArgs::identity_for_item(vcx.tcx(), def_id);
-            wands_println!("regions of {def_id:?}:");
-            for region in identity_substs {
-                wands_println!("  {region:?}");
-            }
-
-            wands_println!("regions of args?");
-            let body = vcx
-                .body_mut()
-                .get_impure_fn_body_with_facts(def_id.as_local().unwrap());
-            for l in 0..local_defs.locals.len() {
-                let ty = body.body.local_decls[l.into()].ty;
-                wands_println!("  arg: {ty:?}");
-            }
-
-            wands_println!("regions in region inference context?");
-            for region in body.region_inference_context.regions() {
-                wands_println!("  region: {region:?}");
-            }
-            */
             args.extend(param_ty_decls.iter());
-
-            //for arg_idx in 0..arg_count {
-            //    if let Some((pre, post)) = local_defs.locals[arg_idx.into()].impure_indirect_pred {
-            //        posts.push(post);
-            //    }
-            //}
 
             // Add functional specification as the last pre- and postconditions.
             pres.extend(spec.pres);

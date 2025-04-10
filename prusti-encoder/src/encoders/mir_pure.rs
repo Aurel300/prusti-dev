@@ -1,5 +1,4 @@
 use prusti_rustc_interface::{
-    ast,
     index::IndexVec,
     middle::{
         mir::{self, Body},
@@ -25,7 +24,7 @@ use super::{
 use crate::{
     encoder_traits::pure_func_app_enc::PureFuncAppEnc,
     encoders::{
-        lifted::{cast::{CastArgs, CastToEnc}, ty::{EncodeGenericsAsLifted, LiftedTyEnc}},
+        lifted::cast::{CastArgs, CastToEnc},
         ConstEnc, MirBuiltinEnc, ViperTupleEnc,
     },
 };
@@ -313,7 +312,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
         tuple_ref: crate::encoders::ViperTupleEncOutput<'vir>,
         idx: usize,
         elem_idx: usize,
-        ty: vir::Type<'vir>,
+        _ty: vir::Type<'vir>,
     ) -> ExprRet<'vir> {
         let local_ty = self.body.local_decls[local].ty;
         let cast = self.deps.require_local::<RustTyCastersEnc<CastTypePure>>(local_ty).unwrap();
@@ -1291,8 +1290,8 @@ pub fn encode_place_element<'vir, 'enc, T: TaskEncoder>(
                         .unwrap();
                     //let ref_expr = Some(e_ty.deref_access.apply(vcx, [expr]));
                     let ref_expr = e_ty.deref_access.apply(vcx, [expr]);
-                    let val_expr = e_ty.value_access.apply(vcx, [expr]);
-                    let place_ty = place_ty.projection_ty(vcx.tcx(), elem);
+                    // let val_expr = e_ty.value_access.apply(vcx, [expr]);
+                    // let place_ty = place_ty.projection_ty(vcx.tcx(), elem);
                     // Since the `expr` is the target of a reference, it is encoded as a `Param`.
                     // If it is not a type parameter, we cast it to its concrete Snapshot.
                     //let cast = self

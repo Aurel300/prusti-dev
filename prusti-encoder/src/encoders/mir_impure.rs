@@ -1,7 +1,7 @@
 use pcg::{
     borrow_pcg::{
         action::BorrowPCGAction, borrow_pcg_edge::BorrowPCGEdge, borrow_pcg_expansion::BorrowPCGExpansion, edge::{abstraction::AbstractionType, kind::BorrowPCGEdgeKind}, state::BorrowsState, unblock_graph::BorrowPCGUnblockAction
-    }, combined_pcs::{EvalStmtPhase, PCGNode, PcgSuccessor}, free_pcs::{CapabilityKind, PcgBasicBlock, PcgLocation, RepackOp}, r#loop::LoopAnalysis, utils::{maybe_old::MaybeOldPlace, HasPlace, Place}, FpcsOutput
+    }, combined_pcs::{EvalStmtPhase, PCGNode, PcgSuccessor}, free_pcs::{CapabilityKind, PcgBasicBlock, RepackOp}, r#loop::LoopAnalysis, utils::{maybe_old::MaybeOldPlace, HasPlace, Place}, FpcsOutput
 };
 use prusti_interface::PrustiError;
 use prusti_rustc_interface::{
@@ -13,17 +13,7 @@ use prusti_rustc_interface::{
     span::def_id::DefId,
     target::abi,
 };
-//use mir_ssa_analysis::{
-//    SsaAnalysis,
-//};
 use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
-
-pub struct MirImpureEnc;
-
-#[derive(Clone, Debug)]
-pub enum MirImpureEncError {
-    // Unsupported,
-}
 
 use crate::{
     encoder_traits::{
@@ -37,7 +27,6 @@ use crate::{
             casters::CastTypePure,
             func_app_ty_params::LiftedFuncAppTyParamsEnc,
         },
-        indirect::IndirectPredicatesEnc,
         FunctionCallTaskDescription, MirBuiltinEnc, WandEnc, WandEncTask,
     },
 };
@@ -45,13 +34,20 @@ use crate::{
 use super::{
     lifted::{
         cast::{CastArgs, CastToEnc},
-        casters::{CastTypeImpure, ImpureCastStmts},
+        casters::CastTypeImpure,
         rust_ty_cast::RustTyCastersEnc,
         ty::{EncodeGenericsAsLifted, LiftedTyEnc},
     },
     rust_ty_predicates::{RustTyPredicatesEnc, RustTyPredicatesEncOutputRef},
     ConstEnc, MirMonoImpureEnc, MirPolyImpureEnc, WandEncOutput,
 };
+
+pub struct MirImpureEnc;
+
+#[derive(Clone, Debug)]
+pub enum MirImpureEncError {
+    // Unsupported,
+}
 
 const ENCODE_REACH_BB: bool = false;
 
@@ -105,7 +101,6 @@ where
     pub deps: &'enc mut TaskEncoderDependencies<'vir, E>,
     pub def_id: DefId,
     pub local_decls: &'enc mir::LocalDecls<'vir>,
-    //ssa_analysis: SsaAnalysis,
     pub fpcs_analysis: FpcsOutput<'enc, 'vir>,
     pub local_defs: crate::encoders::MirLocalDefEncOutput<'vir>,
     pub body: &'enc mir::Body<'vir>,
@@ -636,64 +631,6 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                     self.stmt(self.vcx.mk_exhale_stmt(self.vcx.mk_bool::<false>()));
                 }
             }
-        }
-    }
-
-    pub(crate) fn pcs_reborrow_expands(
-        &mut self,
-        expands: Vec<BorrowPCGExpansion<'vir>>,
-        // location: Location,
-    ) {
-        // TODO: Explain why owned expansions don't need to be handled
-        let expands = expands
-            .into_iter()
-            .filter(|expansion| !expansion.base().place().is_owned(self.fpcs_analysis.repacker()))
-            .collect::<Vec<_>>();
-
-        // Expand places with smaller projections first. For example, if f ->
-        // {f.g} and f.g -> {f.g.h}, are expansions, we must expand f before
-        // f.g.
-        // TODO: do this
-        //expands.sort_by_key(|ep| ep.expansion().base().place().projection().len());
-
-        for ep in expands {
-            let base = ep.base();
-            let PCGNode::Place(place) = base else {
-                continue;
-            };
-            let place = place.place();
-            //if matches!(capability_kind, CapabilityKind::Write) {
-            //    // Collapsing an already exhaled place is a no-op
-            //    // TODO: unless it's through a Ref I imagine?
-            //    assert!(matches!(repack_op, RepackOp::Collapse(..)));
-            //    return;
-            //}
-            let place_ty = (*place).ty(self.local_decls, self.vcx.tcx());
-            let place_ty_out = self
-                .deps
-                .require_ref::<RustTyPredicatesEnc>(place_ty.ty)
-                .unwrap();
-            let ref_to_pred = place_ty_out
-                .generic_predicate
-                .expect_pred_variant_opt(place_ty.variant_index);
-
-            let ref_p = self.encode_place(place).expr;
-            let args = place_ty_out.ref_to_args(self.vcx, ref_p);
-            let predicate = ref_to_pred.apply(self.vcx, args, None);
-            comment!(self, "unfolding in pcs_reborrow_expands");
-            self.stmt(self.vcx.mk_unfold_stmt(predicate));
-
-            /*
-            let place = ep.base();
-            let value = self.encode_maybe_old_place::<LookupGet, _>(heap.0, &place);
-
-            self.explode_value(
-                value,
-                ep.expansion(self.fpcs_analysis.repacker()).into_iter(),
-                heap,
-                location,
-            );
-            */
         }
     }
 

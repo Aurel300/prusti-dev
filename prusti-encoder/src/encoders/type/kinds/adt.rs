@@ -433,15 +433,3 @@ pub(crate) fn predicate<'vir>(
         ty::AdtKind::Union => todo!(),
     }
 }
-
-/*
-pub(crate) fn project_to_lifetimes(
-    task_key: <DomainEnc as TaskEncoder>::TaskKey<'vir>,
-) {
-    let ty = task_key.ty();
-    let ty_kind = ty.kind();
-    let ty::TyKind::Adt(adt, params) = ty_kind else { unreachable!(); };
-
-
-}
-*/

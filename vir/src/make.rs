@@ -865,7 +865,7 @@ impl<'tcx> VirCtxt<'tcx> {
             ty::Int(ty::IntTy::I32) => (32, true),
             ty::Int(ty::IntTy::I64) => (64, true),
             ty::Int(ty::IntTy::I128) => (128, true),
-            ty::Uint(ty::UintTy::Usize) => ((std::mem::size_of::<usize>() * 8) as u32, true),
+            ty::Uint(ty::UintTy::Usize) => ((std::mem::size_of::<usize>() * 8) as u32, false),
             ty::Uint(ty::UintTy::U8) => (8, false),
             ty::Uint(ty::UintTy::U16) => (16, false),
             ty::Uint(ty::UintTy::U32) => (32, false),

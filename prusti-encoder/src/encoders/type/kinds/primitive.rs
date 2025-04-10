@@ -22,23 +22,29 @@ pub(crate) fn domain<'vir>(
     let value_ident = builder.function("value", &[builder.self_type()], prim_type);
     let cons_ident = builder.function("cons", &[prim_type], builder.self_type());
 
-    builder.axiom("value", vir::expr! {
-        forall value: [prim_type] :: {[cons_ident](value)} ([value_ident]([cons_ident](value))) == (value)
-    });
     builder.axiom("cons", vir::expr! {
         forall s: [builder.self_type()] :: {[value_ident](s)} ([cons_ident]([value_ident](s))) == (s)
     });
 
     match ty_kind {
-        ty::TyKind::Int(_) => {
+        ty::TyKind::Int(_) | ty::TyKind::Uint(_) => {
             let min = builder.vcx.get_min_int(&ty_kind);
             let max = builder.vcx.get_max_int(&ty_kind);
             builder.axiom("bounds", vir::expr! {
                 forall s: [builder.self_type()] :: {[value_ident](s)} (([min]) <= ([value_ident](s))) && (([value_ident](s)) <= ([max]))
             });
+            builder.axiom("value", vir::expr! {
+                forall value: [prim_type] :: {[cons_ident](value)}
+                    ((([min]) <= (value)) && ((value) <= ([max])))
+                        ==> (([value_ident]([cons_ident](value))) == (value))
+            });
         }
-        _ => (),
-    }
+        _ => {
+            builder.axiom("value", vir::expr! {
+                forall value: [prim_type] :: {[cons_ident](value)} ([value_ident]([cons_ident](value))) == (value)
+            });
+        }
+    };
 
     Ok(DomainEncSpecifics::Primitive(DomainDataPrim {
         prim_type,

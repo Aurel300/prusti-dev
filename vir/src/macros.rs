@@ -430,6 +430,15 @@ macro_rules! expr {
         $crate::expr!(@expr_one; $($lhs)*),
         $crate::expr!(@expr_one; $($rhs)*),
     ])); } };
+    (@expr($output:ident); ( $($lhs:tt)+ ) || ( $($rhs:tt)+ )) => { { $output.push(vcx!().mk_disj(&[
+        $crate::expr!(@expr_one; $($lhs)*),
+        $crate::expr!(@expr_one; $($rhs)*),
+    ])); } };
+    (@expr($output:ident); ( $($lhs:tt)+ ) ==> ( $($rhs:tt)+ )) => { { $output.push(vcx!().mk_bin_op_expr(
+        $crate::BinOpKind::Implies,
+        $crate::expr!(@expr_one; $($lhs)*),
+        $crate::expr!(@expr_one; $($rhs)*),
+    )); } };
     (@expr($output:ident); ( $($lhs:tt)+ ) <= ( $($rhs:tt)+ )) => { { $output.push(vcx!().mk_bin_op_expr(
         $crate::BinOpKind::CmpLe,
         $crate::expr!(@expr_one; $($lhs)*),

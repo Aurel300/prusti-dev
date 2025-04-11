@@ -2,6 +2,7 @@
 #![feature(associated_type_defaults)]
 #![feature(box_patterns)]
 #![feature(never_type)]
+#![allow(clippy::needless_lifetimes)]
 
 mod encoders;
 mod encoder_traits;

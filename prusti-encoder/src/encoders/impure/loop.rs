@@ -194,15 +194,20 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         }
     }
 
-    pub(crate) fn get_location_label(vcx: &'vir vir::VirCtxt<'vir>, at: SnapshotLocation) -> vir::OldLabel<'vir> {
+    pub(crate) fn get_location_label(
+        vcx: &'vir vir::VirCtxt<'vir>,
+        at: SnapshotLocation,
+    ) -> vir::OldLabel<'vir> {
         match at {
             // TODO: handle this properly!!
             SnapshotLocation::After(loc) => {
-                let name = vir::vir_format!(vcx, "_after_{}_{}", loc.block.index(), loc.statement_index);
+                let name =
+                    vir::vir_format!(vcx, "_after_{}_{}", loc.block.index(), loc.statement_index);
                 vir::OldLabel::Label(name)
             }
-            SnapshotLocation::Start(bb) =>
-                vir::OldLabel::Block(vir::CfgBlockLabelData::BasicBlock(bb.as_usize())),
+            SnapshotLocation::Start(bb) => {
+                vir::OldLabel::Block(vir::CfgBlockLabelData::BasicBlock(bb.as_usize()))
+            }
         }
     }
 

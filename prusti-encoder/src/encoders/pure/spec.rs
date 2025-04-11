@@ -14,7 +14,7 @@ pub struct MirSpecEnc;
 pub struct MirSpecEncOutput<'vir> {
     pub pres: Vec<vir::Expr<'vir>>,
     pub posts: Vec<vir::Expr<'vir>>,
-    pub pledges: Vec<(Option<vir::Expr<'vir>>, vir::Expr<'vir>, Span)>, // TODO: associate with a named lifetime
+    pub pledges: Vec<(Option<(vir::Expr<'vir>, Span)>, vir::Expr<'vir>, Span)>, // TODO: associate with a named lifetime
     pub pre_args: &'vir [vir::Expr<'vir>],
     #[allow(dead_code)]
     pub post_args: &'vir [vir::Expr<'vir>],
@@ -192,7 +192,10 @@ impl TaskEncoder for MirSpecEnc {
                     let rhs_expr = rhs_expr.reify(vcx, (*rhs_def_id, pledge_args));
                     let rhs_span = vcx.tcx().def_span(rhs_def_id);
                     (
-                        lhs_expr.map(|lhs_expr| vcx.with_span(vcx.tcx().def_span(lhs_def_id.unwrap()), |vcx| to_bool.apply(vcx, [lhs_expr]))),
+                        lhs_expr.map(|lhs_expr| {
+                            let lhs_span = vcx.tcx().def_span(lhs_def_id.unwrap());
+                            (vcx.with_span(lhs_span, |vcx| to_bool.apply(vcx, [lhs_expr])), lhs_span)
+                        }),
                         vcx.with_span(rhs_span, |vcx| {
                             vcx.handle_error("exhale.failed:assertion.false", move |_| {
                                 Some(vec![PrustiError::verification(

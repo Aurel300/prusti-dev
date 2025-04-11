@@ -121,8 +121,6 @@ where
     pub current_terminator: Option<vir::TerminatorStmt<'vir>>,
 
     pub encoded_blocks: Vec<vir::CfgBlock<'vir>>, // TODO: use IndexVec ?
-
-    pub place_overrides: FxHashMap<mir::Place<'vir>, vir::Expr<'vir>>,
 }
 
 impl<'vir, E: TaskEncoder> PureFuncAppEnc<'vir, E> for ImpureEncVisitor<'vir, '_, E> {
@@ -681,9 +679,6 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                         )
                     };
                 for elem in place.projection {
-                    if let Some(overridden) = self.place_overrides.get(&encoded_place) {
-                        result = overridden; // TODO: casts?
-                    }
                     if crossed_ref {
                         use vir::Reify;
                         let (expr, _) = crate::encoders::mir_pure::encode_place_element(
@@ -711,9 +706,6 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                         result = ty_out.ref_to_snap(self.vcx, result);
                         crossed_ref = true;
                     }
-                }
-                if let Some(overridden) = self.place_overrides.get(&encoded_place) {
-                    result = overridden; // TODO: casts?
                 }
                 if !crossed_ref {
                     let ty_out = self
@@ -769,16 +761,10 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         let mut result = self.local_defs.locals[place.local].local_ex;
         // TODO: factor this out (duplication with pure encoder)?
         for &elem in place.projection {
-            if let Some(overridden) = self.place_overrides.get(&encoded_place) {
-                result = overridden; // TODO: casts?
-            }
             result =
                 self.encode_place_element(place_ty, elem, result);
             place_ty = place_ty.projection_ty(self.vcx.tcx(), elem);
             encoded_place = encoded_place.project_deeper(&[elem], self.vcx.tcx());
-        }
-        if let Some(overridden) = self.place_overrides.get(&encoded_place) {
-            result = overridden; // TODO: casts?
         }
         EncodePlaceResult {
             expr: result,

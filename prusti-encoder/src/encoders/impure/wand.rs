@@ -68,7 +68,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         for i in inputs {
             self.encode_pcg_node(&i, &mut wand_rhs, &mut old_outer);
             if package {
-                proof_block.extend(self.to_unblock(borrows_state, i, &mut old_outer));
+                proof_block.extend(self.create_package_script(borrows_state, i, &mut old_outer));
             }
         }
         let mut wand_lhs = Vec::new();
@@ -88,7 +88,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         }
     }
 
-    fn to_unblock(
+    fn create_package_script(
         &mut self,
         borrows_state: &BorrowsState<'vir>,
         rhs: impl Into<PCGNode<'vir>>,

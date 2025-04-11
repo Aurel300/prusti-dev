@@ -58,7 +58,7 @@ pub fn domain<'vir>(
     }
     */
 
-    if prefix == "" {
+    if prefix.is_empty() {
         // TODO: this ensures that we only produce one axiom for enums, but the
         //   check based on prefix is not very clean
         let ty_cons = deps.require_ref::<TyConstructorEnc>(task_key)?;
@@ -179,7 +179,7 @@ pub(crate) fn predicate<'vir>(
 
     // main variant predicate
     let mut pred_name = String::new();
-    if prefix != "" {
+    if !prefix.is_empty() {
         pred_name = format!("{prefix}owned");
     }
     let pred_owned = builder.predicate(

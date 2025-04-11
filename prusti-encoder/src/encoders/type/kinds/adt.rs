@@ -326,7 +326,7 @@ pub(crate) fn predicate<'vir>(
 
             // Ref-to-Ref function for the discriminant field
             let fdisc_func = builder.function(
-                &format!("field_discr"),
+                "field_discr",
                 &[ref_self_decl],
                 &vir::TypeData::Ref,
                 &[],

@@ -182,8 +182,6 @@ where
                     current_stmts: None,
                     current_terminator: None,
                     encoded_blocks,
-
-                    place_overrides: Default::default(),
                 };
                 visitor.visit_body(&body);
                 start_stmts.extend(visitor.from_to_vars.iter().flat_map(|(_, v)| v.iter()).map(|(_, v)| {

@@ -1,3 +1,6 @@
+use crate::encoders::{
+    indirect::IndirectPredicatesEnc, ImpureEncVisitor, MirLocalDefEncOutput, MirSpecEnc,
+};
 use pcg::borrow_pcg::{state::BorrowsState, unblock_graph::UnblockGraph};
 use prusti_interface::PrustiError;
 use prusti_rustc_interface::{
@@ -10,10 +13,7 @@ use prusti_rustc_interface::{
 };
 use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 
-use crate::encoders::{
-    indirect::IndirectPredicatesEnc, ImpureEncVisitor, MirLocalDefEncOutput, MirSpecEnc,
-};
-
+/// Encodes the magic wands given a function signature.
 pub struct WandEnc;
 
 pub type WandEncError = ();
@@ -30,7 +30,7 @@ pub struct EncodedWand<'vir> {
     pub region: ty::Region<'vir>,
     pub lhs_resources: Vec<(ty::Region<'vir>, mir::Local, ty::Ty<'vir>)>,
     pub rhs_resources: Vec<(mir::Local, ty::Ty<'vir>)>,
-    pub lhs_specs: Vec<vir::Expr<'vir>>,
+    pub lhs_specs: Vec<(vir::Expr<'vir>, Span)>,
     pub rhs_specs: Vec<(vir::Expr<'vir>, Span)>,
 }
 
@@ -56,7 +56,7 @@ impl<'vir> EncodedWand<'vir> {
             .copied()
             .flat_map(&mut resource_to_expr)
             .map(|(l, expr)| expr.reify(vcx, snap_lhs(l)))
-            .chain(self.lhs_specs.iter().copied())
+            .chain(self.lhs_specs.iter().map(|(e, _)| *e))
             .collect::<Vec<_>>();
         let rhs = self
             .rhs_resources
@@ -183,12 +183,12 @@ impl<'vir> WandEncOutput<'vir> {
             for (rhs, _) in ewand.rhs_resources.iter().copied() {
                 let ug = UnblockGraph::for_node(
                     mir::Place::from(rhs),
-                    &final_borrow_state,
+                    final_borrow_state,
                     visitor.fpcs_analysis.repacker(),
                 );
                 let actions = ug.actions(visitor.fpcs_analysis.repacker()).unwrap();
                 let unblock = visitor.block(|visitor| {
-                    visitor.pcs_unblock_actions(&final_borrow_state, &actions, Some(label));
+                    visitor.pcs_unblock_actions(final_borrow_state, &actions, Some(label));
                 });
                 package_script.extend(unblock);
             }
@@ -207,7 +207,7 @@ impl<'vir> WandEncOutput<'vir> {
             wand_packages.push(
                 visitor
                     .vcx
-                    .mk_package_stmt(wand, &visitor.vcx.alloc_slice(&package_script)),
+                    .mk_package_stmt(wand, visitor.vcx.alloc_slice(&package_script)),
             );
         }
         wand_packages
@@ -253,16 +253,22 @@ impl TaskEncoder for WandEnc {
             let def_id = task_key.def_id;
             let substs = task_key.substs;
             let tcx = vcx.tcx();
-            // plan:
-            // - (!) collect all lifetimes
-            //   - early-bound regions are substituted with the generics of the
-            //     item, so we can find them in the identity substitution
+
+            // Collect all early-boundy lifetimes. These are generics, same as
+            // type params, so we can find them in the identity substitution.
             let lifetimes = GenericArgs::identity_for_item(tcx, def_id)
                 .regions()
-                .into_iter()
                 .collect::<Vec<_>>();
             let sig = tcx.fn_sig(def_id);
             let sig_identity = sig.instantiate_identity();
+
+            // TODO: what about late-bound regions? In function signatures such
+            //   as this reborrowing function:
+            // ```rust
+            // fn reborrow(x: &mut (i32, i32)) -> &mut i32 { &mut x.0 }
+            // ```
+            //   the lifetimes are *not* early-bound, but we still want a magic
+            //   wand to represent the reborrow.
             /*
             #[derive(Debug)]
             enum SigLifetime<'tcx> {
@@ -284,11 +290,10 @@ impl TaskEncoder for WandEnc {
             println!("  lifetimes: {:?}", lifetimes);
             */
 
-            // - (?) create longer lifetimes for input lifetimes
-            //       (= lifetimes in which the arguments are covariant)
-            // TODO
+            // TODO: consider variance of arguments wrt. each lifetime.
 
-            // - (!) collect other outlives relations (explicit or inferred)
+            // Collect outlives relations, both explicit (e.g. declared in a
+            // `where` clause) and inferred (e.g. due to type nesting).
             let mut outlives: FxHashMap<ty::Region, Vec<ty::Region>> = FxHashMap::default();
             for (predicate, _span) in tcx.predicates_of(def_id).instantiate_identity(tcx) {
                 let Some(clause_kind) = predicate.kind().no_bound_vars() else {
@@ -297,29 +302,24 @@ impl TaskEncoder for WandEnc {
                     );
                     continue;
                 };
-                // wands_println!("  clause: {clause_kind:?}");
-                match clause_kind {
-                    //ty::ClauseKind::RegionOutlives(ty::OutlivesPredicate(long, short)) => outlives.push((SigLifetime::Early(long), SigLifetime::Early(short))),
-                    //ty::ClauseKind::RegionOutlives(ty::OutlivesPredicate(long, short)) => outlives.push((long, short)),
-                    ty::ClauseKind::RegionOutlives(ty::OutlivesPredicate(long, short)) => {
-                        if long == short {
-                            continue;
-                        }
-                        outlives.entry(long).or_default().push(short)
+                // TODO: there may be other clauses which might be important
+                //   for wands? In paritcular, see `TypeOutlives`.`
+                if let ty::ClauseKind::RegionOutlives(ty::OutlivesPredicate(long, short)) =
+                    clause_kind
+                {
+                    if long == short {
+                        continue;
                     }
-                    // ty::ClauseKind::TypeOutlives(ty, short)
-                    _ => (),
+                    outlives.entry(long).or_default().push(short)
                 }
             }
             wands_println!("  outlives: {:?}", outlives);
 
-            //visitor.place_overrides.insert(
-            //    tcx.mk_place_deref(mir::Place::return_place()),
-            //    vcx.mk_local_ex_local(ret_deref_ref),
-            //);
-
-            // - (!) collect resources associated with each lifetime
-            // TODO: maybe this should happen in MirLocalDefEnc?
+            // Associate resources to lifetimes. At this point, we will only
+            // walk the inputs and output types of the function to find ones
+            // which mention the given lifetime *at all*, regardless of its
+            // function/variance in the type. Later, the indirect encoder will
+            // be invoked on these to get the concrete predicates.
             let sig_identity_liberated = tcx.liberate_late_bound_regions(def_id, sig_identity);
             // let locals = sig_identity_liberated.inputs_and_output
             //     .iter()
@@ -336,21 +336,18 @@ impl TaskEncoder for WandEnc {
                 &ty::Region<'_>,
                 Vec<(mir::Local, ty::Ty<'vir>)>,
             > = FxHashMap::default();
-            // let mut output_in_wand = None;
-            let mut indirect_pres = Vec::new();
-            let mut indirect_posts = Vec::new();
             for region in &lifetimes {
                 // let SigLifetime::Early(region) = region else { continue; };
                 let mut resources = Vec::new();
                 let inputs = sig_identity_liberated
                     .inputs()
-                    .into_iter()
+                    .iter()
                     .enumerate()
                     .map(|(i, ty)| (mir::Local::from(i + 1), *ty));
-                let params = [(mir::RETURN_PLACE, sig_identity_liberated.output())]
+                let output_and_inputs = [(mir::RETURN_PLACE, sig_identity_liberated.output())]
                     .into_iter()
                     .chain(inputs);
-                for (local_idx, ty) in params {
+                for (local_idx, ty) in output_and_inputs {
                     if !ty.walk().any(|t| t.as_region() == Some(*region)) {
                         continue;
                     }
@@ -360,11 +357,11 @@ impl TaskEncoder for WandEnc {
             }
             wands_println!("  resources: {:?}", resources_by_region);
 
-            // - (!) construct an outlives graph
-            //       (with an "input side" and "output side")
-            // - (!) unblocked resources are available in the postcondition
-            // - (!) other resource must be reached by following edges,
-            //       result in magic wands in the postcondition
+            // Construct a graph of resources, related by the outlives edges.
+            // TODO: at the moment, we will only construct a bipartite graph;
+            //   sometimes a more complex shape should be constructed?
+            let mut indirect_pres = Vec::new();
+            let mut indirect_posts = Vec::new();
             let mut wands: Vec<(
                 ty::Region<'_>,
                 Vec<(ty::Region<'_>, mir::Local, ty::Ty<'vir>)>,
@@ -384,7 +381,7 @@ impl TaskEncoder for WandEnc {
                         .map(|(l, t)| (*region, *l, *t)),
                 );
                 // are there regions outlived by this one?
-                let Some(shorter) = outlives.get(&region) else {
+                let Some(shorter) = outlives.get(region) else {
                     indirect_posts.extend(blocked_resources.iter().map(|(l, t)| (*region, *l, *t)));
                     continue;
                 };
@@ -407,28 +404,27 @@ impl TaskEncoder for WandEnc {
                 wands.push((*region, blocking_resources, blocked_resources.clone()));
             }
             wands_println!("  wands: {:?}", wands);
-            //posts.extend(unblocked_inputs);
 
-            // add wands to postcondition
+            // Collect pledge specifications and add them to wands.
             let spec = deps.require_local::<MirSpecEnc>((def_id, substs, None, false))?;
             let encoded_wands: Vec<EncodedWand<'vir>> = wands
                 .into_iter()
-                .map(|(region, lhs, rhs)| {
-                    let mut lhs_specs: Vec<vir::Expr<'vir>> = Vec::new();
+                .map(|(region, lhs_resources, rhs_resources)| {
+                    let mut lhs_specs: Vec<(vir::Expr<'vir>, Span)> = Vec::new();
                     let mut rhs_specs: Vec<(vir::Expr<'vir>, Span)> = Vec::new();
                     if !spec.pledges.is_empty() {
-                        // TODO: find corresponding pledge, also the pledges should expect to be reified with the locals
+                        // TODO: find the corresponding pledge, also the pledges should expect to be reified with the locals
                         for (lhs_expr, rhs_expr, rhs_span) in &spec.pledges {
-                            if let Some(lhs_expr) = lhs_expr {
-                                lhs_specs.push(lhs_expr);
+                            if let Some((lhs_expr, lhs_span)) = lhs_expr {
+                                lhs_specs.push((lhs_expr, *lhs_span));
                             }
                             rhs_specs.push((rhs_expr, *rhs_span));
                         }
                     }
                     EncodedWand {
                         region,
-                        lhs_resources: lhs,
-                        rhs_resources: rhs,
+                        lhs_resources,
+                        rhs_resources,
                         lhs_specs,
                         rhs_specs,
                     }

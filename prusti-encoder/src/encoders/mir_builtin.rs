@@ -174,20 +174,19 @@ impl MirBuiltinEnc {
         }
         let op_kind = vir::BinOpKind::from(op);
         let viper_val = vcx.mk_bin_op_expr(op_kind, lhs, rhs);
-        let val = prim_res_ty.prim_to_snap.apply(vcx, [viper_val]);
         let (pres, val) = match op {
             // Overflow well defined as wrapping (implicit) and for the shifts
             // the RHS will be masked to the bit width.
-            Add | Sub | Mul | Shl | Shr => (Vec::new(), Self::get_wrapped_val(vcx, val, res_ty)),
+            Add | Sub | Mul | Shl | Shr => (Vec::new(), Self::get_wrapped_val(vcx, viper_val, res_ty)),
             // Undefined behavior to overflow (need precondition)
             AddUnchecked | SubUnchecked | MulUnchecked => {
                 let min = vcx.get_min_int(res_ty.kind());
                 // `(arg1 op arg2) >= -iN::MIN`
-                let lower_bound = vcx.mk_bin_op_expr(vir::BinOpKind::CmpGe, val, min);
+                let lower_bound = vcx.mk_bin_op_expr(vir::BinOpKind::CmpGe, viper_val, min);
                 let max = vcx.get_max_int(res_ty.kind());
                 // `(arg1 op arg2) <= iN::MAX`
-                let upper_bound = vcx.mk_bin_op_expr(vir::BinOpKind::CmpLe, val, max);
-                (vec![lower_bound, upper_bound], val)
+                let upper_bound = vcx.mk_bin_op_expr(vir::BinOpKind::CmpLe, viper_val, max);
+                (vec![lower_bound, upper_bound], viper_val)
             }
             // Overflow is well defined as wrapping (implicit), but shifting by
             // more than the bit width (or less than 0) is undefined behavior.
@@ -200,7 +199,7 @@ impl MirBuiltinEnc {
                 let upper_bound = vcx.mk_bin_op_expr(vir::BinOpKind::CmpLt, rhs, max);
                 (
                     vec![lower_bound, upper_bound],
-                    Self::get_wrapped_val(vcx, val, res_ty),
+                    Self::get_wrapped_val(vcx, viper_val, res_ty),
                 )
             }
             // Could divide by zero or overflow if divisor is `-1`
@@ -208,7 +207,7 @@ impl MirBuiltinEnc {
                 // `0 != arg2 `
                 let pre = vcx.mk_bin_op_expr(vir::BinOpKind::CmpNe, vcx.mk_int::<0>(), rhs);
                 let mut pres = vec![pre];
-                let mut val = val;
+                let mut val = viper_val;
                 if res_ty.is_signed() {
                     let min = vcx.get_min_int(res_ty.kind());
                     // `arg1 != -iN::MIN`
@@ -233,7 +232,6 @@ impl MirBuiltinEnc {
                         let rhs_pos =
                             vcx.mk_bin_op_expr(vir::BinOpKind::CmpGe, rhs, vcx.mk_int::<0>());
                         let negative = vcx.mk_ternary_expr(rhs_pos, neg_pos, neg_neg);
-                        let negative = prim_res_ty.prim_to_snap.apply(vcx, [negative]);
                         let lhs_pos =
                             vcx.mk_bin_op_expr(vir::BinOpKind::CmpGe, lhs, vcx.mk_int::<0>());
                         val = vcx.mk_ternary_expr(lhs_pos, val, negative);
@@ -247,7 +245,6 @@ impl MirBuiltinEnc {
                             vcx.mk_unary_op_expr(vir::UnOpKind::Neg, rhs),
                         );
                         let negative = vcx.mk_bin_op_expr(vir::BinOpKind::Sub, viper_val, rhs_abs);
-                        let negative = prim_res_ty.prim_to_snap.apply(vcx, [negative]);
                         let lhs_pos =
                             vcx.mk_bin_op_expr(vir::BinOpKind::CmpGe, lhs, vcx.mk_int::<0>());
                         val = vcx.mk_ternary_expr(lhs_pos, val, negative);
@@ -256,10 +253,11 @@ impl MirBuiltinEnc {
                 (pres, val)
             }
             // Cannot overflow and no undefined behavior
-            BitXor | BitAnd | BitOr | Eq | Lt | Le | Ne | Ge | Gt | Offset => (Vec::new(), val),
+            BitXor | BitAnd | BitOr | Eq | Lt | Le | Ne | Ge | Gt | Offset => (Vec::new(), viper_val),
             Cmp => todo!(),
             _ => unreachable!(),
         };
+        let val = prim_res_ty.prim_to_snap.apply(vcx, [val]);
         Ok(vcx.mk_function(
             name.to_str(),
             vcx.alloc_slice(&[

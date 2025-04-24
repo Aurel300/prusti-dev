@@ -280,7 +280,7 @@ impl<'vir> DomainBuilder<'vir> {
             base_name,
             domain: self.domain_ident.expect("name should be set"),
             typeof_function,
-            ty_param_accessors: self.vcx.alloc_slice(&ty_param_accessors),
+            ty_param_accessors: self.vcx.alloc_slice(ty_param_accessors),
         }
     }
 

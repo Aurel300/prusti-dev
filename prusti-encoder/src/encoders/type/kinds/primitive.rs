@@ -28,8 +28,8 @@ pub(crate) fn domain<'vir>(
 
     match ty_kind {
         ty::TyKind::Int(_) | ty::TyKind::Uint(_) => {
-            let min = builder.vcx.get_min_int(&ty_kind);
-            let max = builder.vcx.get_max_int(&ty_kind);
+            let min = builder.vcx.get_min_int(ty_kind);
+            let max = builder.vcx.get_max_int(ty_kind);
             builder.axiom("bounds", vir::expr! {
                 forall s: [builder.self_type()] :: {[value_ident](s)} (([min]) <= ([value_ident](s))) && (([value_ident](s)) <= ([max]))
             });

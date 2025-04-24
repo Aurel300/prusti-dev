@@ -239,7 +239,7 @@ impl<'vir> PredicateBuilder<'vir> {
 
     fn ident_str(&self, name: &str) -> &'vir str {
         let prefix = self.name.expect("name should be set");
-        if name == "" {
+        if name.is_empty() {
             prefix
         } else {
             vir::vir_format!(self.vcx, "{prefix}_{name}")

@@ -39,7 +39,7 @@ pub fn domain<'vir>(
     let field_vars = fields
         .iter()
         .enumerate()
-        .map(|(idx, ty)| builder.vcx.mk_local(&vir_format!(builder.vcx, "f{idx}"), ty.ty))
+        .map(|(idx, ty)| builder.vcx.mk_local(vir_format!(builder.vcx, "f{idx}"), ty.ty))
         .collect::<Vec<_>>();
 
     // TODO: typeof and read_type axioms

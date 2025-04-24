@@ -292,11 +292,11 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         if unfold {
             self.stmt(self.vcx.mk_unfold_stmt(predicate));
             for (apply, _) in &casts {
-                self.stmt(*apply);
+                self.stmt(apply);
             }
         } else {
             for (_, undo) in &casts {
-                self.stmt(*undo);
+                self.stmt(undo);
             }
             self.stmt(self.vcx.mk_fold_stmt(predicate));
         }
@@ -584,11 +584,11 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                         }*/
                         self.stmt(self.vcx.mk_unfold_stmt(predicate));
                         for (apply, _) in &casts {
-                            self.stmt(*apply);
+                            self.stmt(apply);
                         }
                     } else {
                         for (_, undo) in &casts {
-                            self.stmt(*undo);
+                            self.stmt(undo);
                         }
                         self.stmt(self.vcx.mk_fold_stmt(predicate));
                     }
@@ -993,7 +993,7 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
             );
             return;
         }
-        if !self.deps.check_cycle().is_ok() {
+        if self.deps.check_cycle().is_err() {
             return;
         }
 
@@ -1063,7 +1063,7 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
     }
 
     fn visit_statement(&mut self, statement: &mir::Statement<'vir>, location: mir::Location) {
-        if !self.deps.check_cycle().is_ok() {
+        if self.deps.check_cycle().is_err() {
             return;
         }
 
@@ -1291,7 +1291,7 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
     }
 
     fn visit_terminator(&mut self, terminator: &mir::Terminator<'vir>, location: mir::Location) {
-        if !self.deps.check_cycle().is_ok() {
+        if self.deps.check_cycle().is_err() {
             return;
         }
 

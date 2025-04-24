@@ -37,4 +37,4 @@ pub use snapshot::SnapshotEnc;
 pub(super) use spec::{init_def_spec, with_proc_spec};
 pub use spec::{SpecEnc, SpecEncTask};
 pub use viper_tuple::{ViperTupleEnc, ViperTupleEncOutput};
-pub use impure::fn_wand::{WandEnc, WandEncOutput, WandEncTask, EncodedWand};
+pub use impure::fn_wand::{WandEnc, WandEncOutput, WandEncTask};

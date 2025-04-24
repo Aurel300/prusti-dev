@@ -1,7 +1,7 @@
 use prusti_rustc_interface::middle::ty;
 use task_encoder::{EncodeFullError, TaskEncoder, TaskEncoderDependencies};
 use vir::ToKnownArity;
-use crate::encoders::{domain::{DomainBuilder, DomainDataEnum, DomainDataStruct, DomainDataVariant, DomainEnc, DomainEncOutputRef, DomainEncSpecifics, FieldTy}, lifted::ty::{EncodeGenericsAsParamTy, LiftedTyEnc}, predicate::{PredicateBuilder, PredicateEncData, PredicateEncDataEnum, PredicateEncDataStruct, PredicateEncDataVariant}, rust_ty_predicates::RustTyPredicatesEnc, rust_ty_snapshots::RustTySnapshotsEnc, snapshot::SnapshotEncOutput, GenericEnc, PredicateEnc};
+use crate::encoders::{domain::{DomainBuilder, DomainDataEnum, DomainDataStruct, DomainDataVariant, DomainEnc, DomainEncOutputRef, DomainEncSpecifics, FieldTy}, lifted::ty::{EncodeGenericsAsParamTy, LiftedTyEnc}, predicate::{PredicateBuilder, PredicateEncData, PredicateEncDataEnum, PredicateEncDataStruct, PredicateEncDataVariant}, rust_ty_predicates::RustTyPredicatesEnc, rust_ty_snapshots::RustTySnapshotsEnc, snapshot::SnapshotEncOutput, PredicateEnc};
 
 pub(crate) fn domain<'vir>(
     task_key: <DomainEnc as TaskEncoder>::TaskKey<'vir>,

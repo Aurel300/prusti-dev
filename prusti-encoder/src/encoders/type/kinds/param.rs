@@ -11,7 +11,7 @@ pub(crate) fn domain<'vir>(
     let ty_kind = ty.kind();
     assert!(matches!(ty_kind, ty::TyKind::Param(..)));
 
-    let base_name = get_vir_base_name_kind(&ty_kind, builder.vcx);
+    let base_name = get_vir_base_name_kind(ty_kind, builder.vcx);
     let out = deps.require_ref::<GenericEnc>(())?;
     deps.emit_output_ref(
         task_key,

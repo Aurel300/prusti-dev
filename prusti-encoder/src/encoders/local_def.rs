@@ -93,7 +93,8 @@ impl TaskEncoder for MirLocalDefEnc {
                     arg_count: body.arg_count,
                 }
             } else {
-                let typing_env = ty::TypingEnv::post_analysis(vcx.tcx(), caller_def_id.unwrap_or(def_id));
+                let typing_env =
+                    ty::TypingEnv::post_analysis(vcx.tcx(), caller_def_id.unwrap_or(def_id));
                 let sig = vcx.tcx().instantiate_and_normalize_erasing_regions(
                     substs,
                     typing_env,

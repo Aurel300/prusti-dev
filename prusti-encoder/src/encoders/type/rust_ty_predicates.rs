@@ -37,7 +37,11 @@ impl<'vir> RustTyPredicatesEncOutputRef<'vir> {
         self_new_snap: vir::Expr<'vir>,
     ) -> vir::Stmt<'vir> {
         //assert_eq!(self_ref.ty(), &TypeData::Ref);
-        assert_eq!(self.snapshot(), self_new_snap.ty(), "rhs of assignment does not have expected type");
+        assert_eq!(
+            self.snapshot(),
+            self_new_snap.ty(),
+            "rhs of assignment does not have expected type"
+        );
         let mut args = vec![self_ref];
         args.extend(self.ty.arg_exprs(vcx));
         args.push(self_new_snap);
@@ -94,7 +98,7 @@ impl<'vir> RustTyPredicatesEncOutputRef<'vir> {
         use vir::Reify;
         self.indirect_predicate
             .map(|(pre, post)| (pre.reify(vcx, self_ref), post.reify(vcx, self_ref)))
-            //.map(|pred| vcx.mk_predicate_app_expr(pred.apply(vcx, self.ref_to_args(vcx, self_ref), perm)))
+        //.map(|pred| vcx.mk_predicate_app_expr(pred.apply(vcx, self.ref_to_args(vcx, self_ref), perm)))
     }
 
     /// Arguments to `ref_to_pred` and `ref_to_snap`.

@@ -1,9 +1,11 @@
 use crate::{
-    common::HasSignature, span_overrider::SpanOverrider, specifications::{
+    common::HasSignature,
+    span_overrider::SpanOverrider,
+    specifications::{
         common::{SpecificationId, SpecificationIdGenerator},
         preparser::{parse_prusti, parse_prusti_assert_pledge, parse_prusti_pledge},
         untyped,
-    }
+    },
 };
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote, quote_spanned};

@@ -17,7 +17,8 @@ pub struct ConstEnc;
 use crate::encoders::{mir_pure::PureKind, MirPureEnc, MirPureEncTask};
 
 use super::{
-    lifted::{casters::CastTypePure, rust_ty_cast::RustTyCastersEnc}, rust_ty_snapshots::RustTySnapshotsEnc
+    lifted::{casters::CastTypePure, rust_ty_cast::RustTyCastersEnc},
+    rust_ty_snapshots::RustTySnapshotsEnc,
 };
 
 impl TaskEncoder for ConstEnc {

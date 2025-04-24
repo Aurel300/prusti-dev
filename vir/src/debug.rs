@@ -413,13 +413,16 @@ impl<'vir, Curr, Next> Debug for TerminatorStmtGenData<'vir, Curr, Next> {
                     write!(f, "goto {:?}", data.otherwise)
                 } else {
                     for target in data.targets {
-                        writeln!(f, "if ({:indent$?} == {:indent$?}) {{", data.value, target.value)?;
+                        writeln!(
+                            f,
+                            "if ({:indent$?} == {:indent$?}) {{",
+                            data.value, target.value
+                        )?;
                         f.pad("")?;
                         let indent = indent + 2;
                         for extra in target.statements {
                             writeln!(f, "  {extra:indent$?}")?;
                             f.pad("")?;
-
                         }
                         writeln!(f, "  goto {:?}", target.label)?;
                         f.pad("")?;

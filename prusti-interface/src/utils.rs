@@ -264,7 +264,11 @@ pub fn read_prusti_attrs<T: Borrow<ast::Attribute>>(attr_name: &str, attrs: &[T]
                         segments,
                         tokens: _,
                     },
-                args: ast::AttrArgs::Eq { value: ast::AttrArgsEq::Hir(token_lit), eq_span: _ },
+                args:
+                    ast::AttrArgs::Eq {
+                        value: ast::AttrArgsEq::Hir(token_lit),
+                        eq_span: _,
+                    },
                 tokens: _,
             } = &normal_attr.item
             {

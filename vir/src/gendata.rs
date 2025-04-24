@@ -342,7 +342,11 @@ pub enum StmtKindGenData<'vir, Curr, Next> {
     Package(WandGen<'vir, Curr, Next>, &'vir [StmtGen<'vir, Curr, Next>]),
     Apply(WandGen<'vir, Curr, Next>),
     MethodCall(MethodCallGen<'vir, Curr, Next>),
-    If(ExprGen<'vir, Curr, Next>, &'vir [StmtGen<'vir, Curr, Next>], &'vir [StmtGen<'vir, Curr, Next>]),
+    If(
+        ExprGen<'vir, Curr, Next>,
+        &'vir [StmtGen<'vir, Curr, Next>],
+        &'vir [StmtGen<'vir, Curr, Next>],
+    ),
     Label(&'vir str),
     Comment(&'vir str),
     Dummy(&'vir str),

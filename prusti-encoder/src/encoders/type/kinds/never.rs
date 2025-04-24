@@ -1,7 +1,12 @@
 use prusti_rustc_interface::middle::ty;
 use task_encoder::{EncodeFullError, TaskEncoder, TaskEncoderDependencies};
 
-use crate::encoders::{domain::{DomainBuilder, DomainEnc, DomainEncSpecifics}, predicate::{PredicateBuilder, PredicateEncData}, snapshot::SnapshotEncOutput, PredicateEnc};
+use crate::encoders::{
+    domain::{DomainBuilder, DomainEnc, DomainEncSpecifics},
+    predicate::{PredicateBuilder, PredicateEncData},
+    snapshot::SnapshotEncOutput,
+    PredicateEnc,
+};
 
 pub(crate) fn domain<'vir>(
     task_key: <DomainEnc as TaskEncoder>::TaskKey<'vir>,
@@ -27,21 +32,21 @@ pub(crate) fn predicate<'vir>(
     let ref_self_decl = builder.vcx.mk_local_decl_local(ref_self);
 
     // main predicate
-    builder.predicate(
-        "",
-        &[ref_self_decl],
-        Some(vir::expr! { false }),
-    );
+    builder.predicate("", &[ref_self_decl], Some(vir::expr! { false }));
 
     // Ref-to-snap
-    builder.function_snap = Some(builder.mk_function(
-        "snap",
-        &[ref_self_decl],
-        snap_type,
-        &[], // &[vir::expr! { false }],
-        &[],
-        None,
-    ).1);
+    builder.function_snap = Some(
+        builder
+            .mk_function(
+                "snap",
+                &[ref_self_decl],
+                snap_type,
+                &[], // &[vir::expr! { false }],
+                &[],
+                None,
+            )
+            .1,
+    );
 
     Ok(PredicateEncData::Never)
 }

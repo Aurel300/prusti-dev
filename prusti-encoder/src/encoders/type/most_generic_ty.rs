@@ -169,12 +169,20 @@ pub fn extract_type_params<'tcx>(
         }
         TyKind::Ref(_, inner, ty::Mutability::Not) => {
             let ty = to_placeholder(tcx, None);
-            let ty = tcx.mk_ty_from_kind(TyKind::Ref(tcx.lifetimes.re_erased, ty, ty::Mutability::Not));
+            let ty = tcx.mk_ty_from_kind(TyKind::Ref(
+                tcx.lifetimes.re_erased,
+                ty,
+                ty::Mutability::Not,
+            ));
             (MostGenericTy(ty), vec![inner])
         }
         TyKind::Ref(_, _, ty::Mutability::Mut) => {
             let ty = to_placeholder(tcx, None);
-            let ty = tcx.mk_ty_from_kind(TyKind::Ref(tcx.lifetimes.re_erased, ty, ty::Mutability::Mut));
+            let ty = tcx.mk_ty_from_kind(TyKind::Ref(
+                tcx.lifetimes.re_erased,
+                ty,
+                ty::Mutability::Mut,
+            ));
             (MostGenericTy(ty), vec![]) // vec![inner])
         }
         TyKind::RawPtr(inner, m) => {

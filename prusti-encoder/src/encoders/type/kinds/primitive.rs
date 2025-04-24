@@ -1,7 +1,12 @@
+use crate::encoders::{
+    domain::{DomainBuilder, DomainDataPrim, DomainEnc, DomainEncSpecifics},
+    predicate::{PredicateBuilder, PredicateEncData},
+    snapshot::SnapshotEncOutput,
+    PredicateEnc,
+};
 use prusti_rustc_interface::middle::ty;
 use task_encoder::{EncodeFullError, TaskEncoder, TaskEncoderDependencies};
 use vir::ToKnownArity;
-use crate::encoders::{domain::{DomainBuilder, DomainDataPrim, DomainEnc, DomainEncSpecifics}, predicate::{PredicateBuilder, PredicateEncData}, snapshot::SnapshotEncOutput, PredicateEnc};
 
 pub(crate) fn domain<'vir>(
     task_key: <DomainEnc as TaskEncoder>::TaskKey<'vir>,
@@ -12,9 +17,7 @@ pub(crate) fn domain<'vir>(
     let ty_kind = ty.kind();
     let prim_type = match ty_kind {
         ty::TyKind::Bool => &vir::TypeData::Bool,
-        ty::TyKind::Char
-        | ty::TyKind::Int(_)
-        | ty::TyKind::Uint(_) => &vir::TypeData::Int,
+        ty::TyKind::Char | ty::TyKind::Int(_) | ty::TyKind::Uint(_) => &vir::TypeData::Int,
         ty::TyKind::Float(_) => todo!(),
         _ => unreachable!(),
     };
@@ -33,11 +36,14 @@ pub(crate) fn domain<'vir>(
             builder.axiom("bounds", vir::expr! {
                 forall s: [builder.self_type()] :: {[value_ident](s)} (([min]) <= ([value_ident](s))) && (([value_ident](s)) <= ([max]))
             });
-            builder.axiom("value", vir::expr! {
-                forall value: [prim_type] :: {[cons_ident](value)}
-                    ((([min]) <= (value)) && ((value) <= ([max])))
-                        ==> (([value_ident]([cons_ident](value))) == (value))
-            });
+            builder.axiom(
+                "value",
+                vir::expr! {
+                    forall value: [prim_type] :: {[cons_ident](value)}
+                        ((([min]) <= (value)) && ((value) <= ([max])))
+                            ==> (([value_ident]([cons_ident](value))) == (value))
+                },
+            );
         }
         _ => {
             builder.axiom("value", vir::expr! {
@@ -58,7 +64,13 @@ pub(crate) fn predicate<'vir>(
     snap: SnapshotEncOutput<'vir>,
     _deps: &mut TaskEncoderDependencies<'vir, PredicateEnc>,
     builder: &mut PredicateBuilder<'vir>,
-) -> Result<(PredicateEncData<'vir>, Option<vir::ExprGen<'vir, vir::Expr<'vir>, vir::ExprKind<'vir>>>), EncodeFullError<'vir, PredicateEnc>> {
+) -> Result<
+    (
+        PredicateEncData<'vir>,
+        Option<vir::ExprGen<'vir, vir::Expr<'vir>, vir::ExprKind<'vir>>>,
+    ),
+    EncodeFullError<'vir, PredicateEnc>,
+> {
     // let ty = task_key.ty();
     // let ty_kind = ty.kind();
 
@@ -68,10 +80,7 @@ pub(crate) fn predicate<'vir>(
     let ref_self_decl = builder.vcx.mk_local_decl_local(ref_self);
 
     // fields
-    let prim_field = builder.field(
-        "val",
-        snap_type,
-    );
+    let prim_field = builder.field("val", snap_type);
 
     // main predicate
     let self_pred = builder.predicate(
@@ -81,16 +90,23 @@ pub(crate) fn predicate<'vir>(
     );
 
     // Ref-to-snap
-    builder.function_snap = Some(builder.mk_function(
-        "snap",
-        &[ref_self_decl],
-        snap_type,
-        &[vir::expr! { acc_wildcard([self_pred](ref_self)) }],
-        &[],
-        Some(vir::expr! {
-            unfolding_wildcard ([self_pred](ref_self)) in ([prim_field](ref_self))
-        }),
-    ).1);
+    builder.function_snap = Some(
+        builder
+            .mk_function(
+                "snap",
+                &[ref_self_decl],
+                snap_type,
+                &[vir::expr! { acc_wildcard([self_pred](ref_self)) }],
+                &[],
+                Some(vir::expr! {
+                    unfolding_wildcard ([self_pred](ref_self)) in ([prim_field](ref_self))
+                }),
+            )
+            .1,
+    );
 
-    Ok((PredicateEncData::Primitive(snap.specifics.expect_primitive()), None))
+    Ok((
+        PredicateEncData::Primitive(snap.specifics.expect_primitive()),
+        None,
+    ))
 }

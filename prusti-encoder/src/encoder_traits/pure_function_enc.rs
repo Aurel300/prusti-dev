@@ -1,4 +1,7 @@
-use prusti_rustc_interface::middle::{mir, ty::{self, Ty}};
+use prusti_rustc_interface::middle::{
+    mir,
+    ty::{self, Ty},
+};
 use task_encoder::{EncodeFullError, TaskEncoder, TaskEncoderDependencies};
 use vir::{CallableIdent, ExprGen, FunctionIdent, Reify, UnknownArity, ViperIdent};
 

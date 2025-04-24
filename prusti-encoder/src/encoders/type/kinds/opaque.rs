@@ -1,5 +1,5 @@
-use task_encoder::{EncodeFullError, TaskEncoder, TaskEncoderDependencies};
 use crate::encoders::domain::{DomainBuilder, DomainEnc, DomainEncSpecifics};
+use task_encoder::{EncodeFullError, TaskEncoder, TaskEncoderDependencies};
 
 pub(crate) fn domain<'vir>(
     _task_key: <DomainEnc as TaskEncoder>::TaskKey<'vir>,

@@ -164,8 +164,7 @@ impl<'vir, 'v> ToViper<'vir, 'v> for vir::AccField<'vir> {
                 self.field.to_viper_no_pos(ctx),
                 pos,
             ),
-            self.perm
-                .map(|v| v.to_viper_no_pos(ctx)),
+            self.perm.map(|v| v.to_viper_no_pos(ctx)),
             pos,
         )
     }
@@ -221,10 +220,7 @@ impl<'vir, 'v> ToViper<'vir, 'v> for vir::CfgLabel<'vir> {
     fn to_viper(&self, ctx: &ToViperContext<'vir, 'v>, _pos: Position) -> Self::Output {
         let invs = self.invariants.iter();
         let invs = invs.map(|v| v.to_viper_no_pos(ctx)).collect::<Vec<_>>();
-        ctx.ast.label(
-            &self.label.name(),
-            &invs,
-        )
+        ctx.ast.label(&self.label.name(), &invs)
     }
 }
 
@@ -597,11 +593,8 @@ impl<'vir, 'v> ToViper<'vir, 'v> for vir::Old<'vir> {
             vir::OldLabel::Block(block) => block.name(),
             vir::OldLabel::Label(label) => label.to_string(),
         };
-        ctx.ast.labelled_old_with_pos(
-            self.expr.to_viper_no_pos(ctx),
-            &label,
-            pos,
-        )
+        ctx.ast
+            .labelled_old_with_pos(self.expr.to_viper_no_pos(ctx), &label, pos)
     }
 }
 
@@ -619,9 +612,8 @@ impl<'vir, 'v> ToViper<'vir, 'v> for vir::PredicateApp<'vir> {
                 self.target,
                 pos,
             ),
-            self.perm
-                .map(|v| v.to_viper_no_pos(ctx)),
-                //.unwrap_or_else(|| ctx.ast.full_perm()),
+            self.perm.map(|v| v.to_viper_no_pos(ctx)),
+            //.unwrap_or_else(|| ctx.ast.full_perm()),
             pos,
         )
     }
@@ -724,18 +716,21 @@ impl<'vir, 'v> ToViper<'vir, 'v> for vir::Stmt<'vir> {
                 ),
                 ctx.span_to_pos(self.span),
             ),
-            vir::StmtKindGenData::Apply(wand) => ctx.ast.apply(
-                wand.to_viper_no_pos(ctx),
-                ctx.span_to_pos(self.span),
-            ),
+            vir::StmtKindGenData::Apply(wand) => ctx
+                .ast
+                .apply(wand.to_viper_no_pos(ctx), ctx.span_to_pos(self.span)),
             vir::StmtKindGenData::PureAssign(v) => v.to_viper_with_span(ctx, self.span),
             vir::StmtKindGenData::If(e, thn, els) => {
                 let thn = ctx.ast.seqn(
-                    &thn.iter().map(|v| v.to_viper_no_pos(ctx)).collect::<Vec<_>>(),
+                    &thn.iter()
+                        .map(|v| v.to_viper_no_pos(ctx))
+                        .collect::<Vec<_>>(),
                     &[],
                 );
                 let els = ctx.ast.seqn(
-                    &els.iter().map(|v| v.to_viper_no_pos(ctx)).collect::<Vec<_>>(),
+                    &els.iter()
+                        .map(|v| v.to_viper_no_pos(ctx))
+                        .collect::<Vec<_>>(),
                     &[],
                 );
                 ctx.ast.if_stmt(e.to_viper_no_pos(ctx), thn, els)

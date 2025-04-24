@@ -1,6 +1,10 @@
+use crate::encoders::{
+    domain::{DomainBuilder, DomainEnc, DomainEncOutputRef, DomainEncSpecifics},
+    most_generic_ty::get_vir_base_name_kind,
+    GenericEnc,
+};
 use prusti_rustc_interface::middle::ty;
 use task_encoder::{EncodeFullError, TaskEncoder, TaskEncoderDependencies};
-use crate::encoders::{domain::{DomainBuilder, DomainEnc, DomainEncOutputRef, DomainEncSpecifics}, most_generic_ty::get_vir_base_name_kind, GenericEnc};
 
 pub(crate) fn domain<'vir>(
     task_key: <DomainEnc as TaskEncoder>::TaskKey<'vir>,

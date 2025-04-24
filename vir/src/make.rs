@@ -455,7 +455,9 @@ impl<'tcx> VirCtxt<'tcx> {
     }
 
     // TODO: can this simply replace mk_bool?
-    pub const fn mk_bool_gen<'vir, Curr, Next, const VALUE: bool>(&'vir self) -> ExprGen<'vir, Curr, Next> {
+    pub const fn mk_bool_gen<'vir, Curr, Next, const VALUE: bool>(
+        &'vir self,
+    ) -> ExprGen<'vir, Curr, Next> {
         const_expr!(&ExprKindGenData::Const(&ConstData::Bool(VALUE)))
     }
 
@@ -629,10 +631,7 @@ impl<'tcx> VirCtxt<'tcx> {
         stmts: &'vir [StmtGen<'vir, Curr, Next>],
     ) -> StmtGen<'vir, Curr, Next> {
         self.alloc(StmtGenData::new(
-            self.alloc(StmtKindGenData::Package(
-                wand,
-                stmts,
-            )),
+            self.alloc(StmtKindGenData::Package(wand, stmts)),
         ))
     }
 
@@ -640,11 +639,7 @@ impl<'tcx> VirCtxt<'tcx> {
         &'vir self,
         wand: WandGen<'vir, Curr, Next>,
     ) -> StmtGen<'vir, Curr, Next> {
-        self.alloc(StmtGenData::new(
-            self.alloc(StmtKindGenData::Apply(
-                wand,
-            )),
-        ))
+        self.alloc(StmtGenData::new(self.alloc(StmtKindGenData::Apply(wand))))
     }
 
     pub fn mk_pure_assign_stmt<'vir, Curr, Next>(
@@ -680,11 +675,9 @@ impl<'tcx> VirCtxt<'tcx> {
         then_stmts: &'vir [StmtGen<'vir, Curr, Next>],
         else_stmts: &'vir [StmtGen<'vir, Curr, Next>],
     ) -> StmtGen<'vir, Curr, Next> {
-        self.alloc(StmtGenData::new(self.alloc(StmtKindGenData::If(
-            cond,
-            then_stmts,
-            else_stmts,
-        ))))
+        self.alloc(StmtGenData::new(
+            self.alloc(StmtKindGenData::If(cond, then_stmts, else_stmts)),
+        ))
     }
 
     pub fn mk_label_stmt<'vir, Curr, Next>(
@@ -756,10 +749,7 @@ impl<'tcx> VirCtxt<'tcx> {
         stmts: &'vir [StmtGen<'vir, Curr, Next>],
         terminator: TerminatorStmtGen<'vir, Curr, Next>,
     ) -> CfgBlockGen<'vir, Curr, Next> {
-        let label = self.alloc(CfgLabelGenData {
-            label,
-            invariants,
-        });
+        let label = self.alloc(CfgLabelGenData { label, invariants });
         self.alloc(CfgBlockGenData {
             label,
             stmts,
@@ -837,7 +827,10 @@ impl<'tcx> VirCtxt<'tcx> {
         })
     }
 
-    pub fn mk_conj<'vir, Curr, Next>(&'vir self, elems: &[ExprGen<'vir, Curr, Next>]) -> ExprGen<'vir, Curr, Next> {
+    pub fn mk_conj<'vir, Curr, Next>(
+        &'vir self,
+        elems: &[ExprGen<'vir, Curr, Next>],
+    ) -> ExprGen<'vir, Curr, Next> {
         elems
             .split_last()
             .map(|(last, rest)| {

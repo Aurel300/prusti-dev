@@ -177,7 +177,9 @@ impl MirBuiltinEnc {
         let (pres, val) = match op {
             // Overflow well defined as wrapping (implicit) and for the shifts
             // the RHS will be masked to the bit width.
-            Add | Sub | Mul | Shl | Shr => (Vec::new(), Self::get_wrapped_val(vcx, viper_val, res_ty)),
+            Add | Sub | Mul | Shl | Shr => {
+                (Vec::new(), Self::get_wrapped_val(vcx, viper_val, res_ty))
+            }
             // Undefined behavior to overflow (need precondition)
             AddUnchecked | SubUnchecked | MulUnchecked => {
                 let min = vcx.get_min_int(res_ty.kind());
@@ -253,7 +255,9 @@ impl MirBuiltinEnc {
                 (pres, val)
             }
             // Cannot overflow and no undefined behavior
-            BitXor | BitAnd | BitOr | Eq | Lt | Le | Ne | Ge | Gt | Offset => (Vec::new(), viper_val),
+            BitXor | BitAnd | BitOr | Eq | Lt | Le | Ne | Ge | Gt | Offset => {
+                (Vec::new(), viper_val)
+            }
             Cmp => todo!(),
             _ => unreachable!(),
         };

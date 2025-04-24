@@ -1,7 +1,7 @@
 use prusti_interface::PrustiError;
 use prusti_rustc_interface::{
     middle::{mir, ty},
-    span::{Span, def_id::DefId},
+    span::{def_id::DefId, Span},
 };
 
 use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
@@ -149,19 +149,23 @@ impl TaskEncoder for MirSpecEnc {
                     })
                 })
                 .collect::<Vec<vir::Expr<'_>>>();
-            let pledge_args = vcx.alloc_slice(&pre_args
-                .iter()
-                .map(|arg| vcx.mk_old_expr(arg))
-                // TODO: this looks a bit hardcoded...
-                .chain([vcx.mk_local_ex("_0s", local_defs.locals[mir::RETURN_PLACE].ty.snapshot)])
-                .collect::<Vec<_>>());
+            let pledge_args = vcx.alloc_slice(
+                &pre_args
+                    .iter()
+                    .map(|arg| vcx.mk_old_expr(arg))
+                    // TODO: this looks a bit hardcoded...
+                    .chain([
+                        vcx.mk_local_ex("_0s", local_defs.locals[mir::RETURN_PLACE].ty.snapshot)
+                    ])
+                    .collect::<Vec<_>>(),
+            );
             let pledges = specs
                 .pledges
                 .iter()
                 .map(|(lhs_def_id, rhs_def_id)| {
                     // TODO: report error locations
-                    let lhs_expr = lhs_def_id.map(|lhs_def_id| deps
-                        .require_local::<crate::encoders::MirPureEnc>(
+                    let lhs_expr = lhs_def_id.map(|lhs_def_id| {
+                        deps.require_local::<crate::encoders::MirPureEnc>(
                             crate::encoders::MirPureEncTask {
                                 encoding_depth: 0,
                                 kind: PureKind::Spec,
@@ -173,7 +177,8 @@ impl TaskEncoder for MirSpecEnc {
                             },
                         )
                         .unwrap()
-                        .expr);
+                        .expr
+                    });
                     let rhs_expr = deps
                         .require_local::<crate::encoders::MirPureEnc>(
                             crate::encoders::MirPureEncTask {
@@ -188,13 +193,17 @@ impl TaskEncoder for MirSpecEnc {
                         )
                         .unwrap()
                         .expr;
-                    let lhs_expr = lhs_expr.map(|lhs_expr| lhs_expr.reify(vcx, (lhs_def_id.unwrap(), pledge_args)));
+                    let lhs_expr = lhs_expr
+                        .map(|lhs_expr| lhs_expr.reify(vcx, (lhs_def_id.unwrap(), pledge_args)));
                     let rhs_expr = rhs_expr.reify(vcx, (*rhs_def_id, pledge_args));
                     let rhs_span = vcx.tcx().def_span(rhs_def_id);
                     (
                         lhs_expr.map(|lhs_expr| {
                             let lhs_span = vcx.tcx().def_span(lhs_def_id.unwrap());
-                            (vcx.with_span(lhs_span, |vcx| to_bool.apply(vcx, [lhs_expr])), lhs_span)
+                            (
+                                vcx.with_span(lhs_span, |vcx| to_bool.apply(vcx, [lhs_expr])),
+                                lhs_span,
+                            )
                         }),
                         vcx.with_span(rhs_span, |vcx| {
                             vcx.handle_error("exhale.failed:assertion.false", move |_| {

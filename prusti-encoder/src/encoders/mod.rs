@@ -23,6 +23,7 @@ cfg_if::cfg_if! {
 
 pub use domain::all_outputs as DomainEnc_all_outputs;
 pub use generic::GenericEnc;
+pub use impure::fn_wand::{WandEnc, WandEncOutput, WandEncTask};
 pub use local_def::*;
 pub use mir_builtin::{MirBuiltinEnc, MirBuiltinEncTask};
 pub use mir_impure::{ImpureEncVisitor, MirImpureEnc};
@@ -37,4 +38,3 @@ pub use snapshot::SnapshotEnc;
 pub(super) use spec::{init_def_spec, with_proc_spec};
 pub use spec::{SpecEnc, SpecEncTask};
 pub use viper_tuple::{ViperTupleEnc, ViperTupleEncOutput};
-pub use impure::fn_wand::{WandEnc, WandEncOutput, WandEncTask};

@@ -1,7 +1,13 @@
+use crate::encoders::{
+    domain::{DomainBuilder, DomainDataMutRef, DomainEnc, DomainEncSpecifics},
+    predicate::{PredicateBuilder, PredicateEncData, PredicateEncDataMutRef},
+    rust_ty_snapshots::RustTySnapshotsEnc,
+    snapshot::SnapshotEncOutput,
+    PredicateEnc,
+};
 use prusti_rustc_interface::middle::ty;
 use task_encoder::{EncodeFullError, TaskEncoder, TaskEncoderDependencies};
 use vir::ToKnownArity;
-use crate::encoders::{domain::{DomainBuilder, DomainDataMutRef, DomainEnc, DomainEncSpecifics}, predicate::{PredicateBuilder, PredicateEncData, PredicateEncDataMutRef}, rust_ty_snapshots::RustTySnapshotsEnc, snapshot::SnapshotEncOutput, PredicateEnc};
 
 pub(crate) fn domain<'vir>(
     task_key: <DomainEnc as TaskEncoder>::TaskKey<'vir>,
@@ -10,7 +16,9 @@ pub(crate) fn domain<'vir>(
 ) -> Result<DomainEncSpecifics<'vir>, EncodeFullError<'vir, DomainEnc>> {
     let ty = task_key.ty();
     let ty_kind = ty.kind();
-    let ty::TyKind::Ref(_, inner_ty, ty::Mutability::Mut) = ty_kind else { unreachable!(); };
+    let ty::TyKind::Ref(_, inner_ty, ty::Mutability::Mut) = ty_kind else {
+        unreachable!();
+    };
 
     let inner_ty_out = deps.require_ref::<RustTySnapshotsEnc>(*inner_ty)?;
     let inner_type = inner_ty_out.generic_snapshot.snapshot;
@@ -57,10 +65,13 @@ pub(crate) fn predicate<'vir>(
     snap: SnapshotEncOutput<'vir>,
     _deps: &mut TaskEncoderDependencies<'vir, PredicateEnc>,
     builder: &mut PredicateBuilder<'vir>,
-) -> Result<(
-    PredicateEncData<'vir>,
-    Option<vir::ExprGen<'vir, vir::Expr<'vir>, vir::ExprKind<'vir>>>,
-), EncodeFullError<'vir, PredicateEnc>> {
+) -> Result<
+    (
+        PredicateEncData<'vir>,
+        Option<vir::ExprGen<'vir, vir::Expr<'vir>, vir::ExprKind<'vir>>>,
+    ),
+    EncodeFullError<'vir, PredicateEnc>,
+> {
     //let ty = task_key.ty();
     //let ty_kind = ty.kind();
     //let ty::TyKind::Ref(_, _, _) = ty_kind else { unreachable!(); };
@@ -74,10 +85,7 @@ pub(crate) fn predicate<'vir>(
     let snap_data = snap.specifics.expect_mutref();
 
     // fields
-    let ref_field = builder.field(
-        "val",
-        snap_type,
-    );
+    let ref_field = builder.field("val", snap_type);
 
     // main predicate
     let self_pred = builder.predicate(
@@ -87,16 +95,20 @@ pub(crate) fn predicate<'vir>(
     );
 
     // Ref-to-snap
-    builder.function_snap = Some(builder.mk_function(
-        "snap",
-        &[ref_self_decl],
-        snap_type,
-        &[vir::expr! { acc_wildcard([self_pred](ref_self)) }],
-        &[],
-        Some(vir::expr! {
-            unfolding_wildcard ([self_pred](ref_self)) in ([ref_field](ref_self))
-        }),
-    ).1);
+    builder.function_snap = Some(
+        builder
+            .mk_function(
+                "snap",
+                &[ref_self_decl],
+                snap_type,
+                &[vir::expr! { acc_wildcard([self_pred](ref_self)) }],
+                &[],
+                Some(vir::expr! {
+                    unfolding_wildcard ([self_pred](ref_self)) in ([ref_field](ref_self))
+                }),
+            )
+            .1,
+    );
 
     // Ref-to-Ref
     let deref_func = builder.function(
@@ -110,9 +122,12 @@ pub(crate) fn predicate<'vir>(
         }),
     );
 
-    Ok((PredicateEncData::MutRef(PredicateEncDataMutRef {
-        deref_func: deref_func.to_known(),
-        perm: None,
-        snap_data,
-    }), None))
+    Ok((
+        PredicateEncData::MutRef(PredicateEncDataMutRef {
+            deref_func: deref_func.to_known(),
+            perm: None,
+            snap_data,
+        }),
+        None,
+    ))
 }

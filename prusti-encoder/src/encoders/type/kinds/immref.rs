@@ -1,7 +1,13 @@
+use crate::encoders::{
+    domain::{DomainBuilder, DomainDataImmRef, DomainEnc, DomainEncSpecifics},
+    predicate::{PredicateBuilder, PredicateEncData, PredicateEncDataImmRef},
+    rust_ty_snapshots::RustTySnapshotsEnc,
+    snapshot::SnapshotEncOutput,
+    GenericEnc, PredicateEnc,
+};
 use prusti_rustc_interface::middle::ty;
 use task_encoder::{EncodeFullError, TaskEncoder, TaskEncoderDependencies};
 use vir::ToKnownArity;
-use crate::encoders::{domain::{DomainBuilder, DomainDataImmRef, DomainEnc, DomainEncSpecifics}, predicate::{PredicateBuilder, PredicateEncData, PredicateEncDataImmRef}, rust_ty_snapshots::RustTySnapshotsEnc, snapshot::SnapshotEncOutput, GenericEnc, PredicateEnc};
 
 pub(crate) fn domain<'vir>(
     task_key: <DomainEnc as TaskEncoder>::TaskKey<'vir>,
@@ -10,7 +16,9 @@ pub(crate) fn domain<'vir>(
 ) -> Result<DomainEncSpecifics<'vir>, EncodeFullError<'vir, DomainEnc>> {
     let ty = task_key.ty();
     let ty_kind = ty.kind();
-    let ty::TyKind::Ref(_, inner_ty, ty::Mutability::Not) = ty_kind else { unreachable!(); };
+    let ty::TyKind::Ref(_, inner_ty, ty::Mutability::Not) = ty_kind else {
+        unreachable!();
+    };
 
     let inner_ty_out = deps.require_ref::<RustTySnapshotsEnc>(*inner_ty)?;
     let inner_type = inner_ty_out.generic_snapshot.snapshot;
@@ -59,13 +67,18 @@ pub(crate) fn predicate<'vir>(
     generic_decls: &[vir::LocalDecl<'vir>],
     generic_exprs: &[vir::Expr<'vir>],
     builder: &mut PredicateBuilder<'vir>,
-) -> Result<(
-    PredicateEncData<'vir>,
-    Option<vir::ExprGen<'vir, vir::Expr<'vir>, vir::ExprKind<'vir>>>,
-), EncodeFullError<'vir, PredicateEnc>> {
+) -> Result<
+    (
+        PredicateEncData<'vir>,
+        Option<vir::ExprGen<'vir, vir::Expr<'vir>, vir::ExprKind<'vir>>>,
+    ),
+    EncodeFullError<'vir, PredicateEnc>,
+> {
     let ty = task_key.ty();
     let ty_kind = ty.kind();
-    let ty::TyKind::Ref(_, _inner_ty, ty::Mutability::Not) = ty_kind else { unreachable!(); };
+    let ty::TyKind::Ref(_, _inner_ty, ty::Mutability::Not) = ty_kind else {
+        unreachable!();
+    };
 
     let snap_type = snap.snapshot;
 
@@ -77,10 +90,7 @@ pub(crate) fn predicate<'vir>(
     let generic = deps.require_ref::<GenericEnc>(())?;
 
     // fields
-    let ref_field = builder.field(
-        "val",
-        snap_type,
-    );
+    let ref_field = builder.field("val", snap_type);
 
     // main predicate
     let self_pred = builder.predicate(
@@ -122,9 +132,12 @@ pub(crate) fn predicate<'vir>(
         }),
     );
 
-    Ok((PredicateEncData::ImmRef(PredicateEncDataImmRef {
-        deref_func: deref_func.to_known(),
-        perm: None,
-        snap_data,
-    }), None))
+    Ok((
+        PredicateEncData::ImmRef(PredicateEncDataImmRef {
+            deref_func: deref_func.to_known(),
+            perm: None,
+            snap_data,
+        }),
+        None,
+    ))
 }

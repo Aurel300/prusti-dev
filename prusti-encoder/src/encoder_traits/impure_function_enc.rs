@@ -4,7 +4,8 @@ use task_encoder::{EncodeFullError, TaskEncoder, TaskEncoderDependencies};
 use vir::{MethodIdent, UnknownArity, ViperIdent};
 
 use crate::encoders::{
-    lifted::func_def_ty_params::LiftedTyParamsEnc, ImpureEncVisitor, MirImpureEnc, MirLocalDefEnc, MirSpecEnc, WandEnc, WandEncTask
+    lifted::func_def_ty_params::LiftedTyParamsEnc, ImpureEncVisitor, MirImpureEnc, MirLocalDefEnc,
+    MirSpecEnc, WandEnc, WandEncTask,
 };
 
 use super::function_enc::FunctionEnc;
@@ -89,10 +90,7 @@ where
             let mut pres = Vec::new();
             let mut posts = Vec::new();
             let spec = deps.require_local::<MirSpecEnc>((def_id, substs, None, false))?;
-            let wands = deps.require_local::<WandEnc>(WandEncTask {
-                def_id,
-                substs,
-            })?;
+            let wands = deps.require_local::<WandEnc>(WandEncTask { def_id, substs })?;
 
             // Add direct resources for inputs and outputs to the pre- and
             // postconditions, respectively. "Direct" here refers to owned
@@ -120,9 +118,7 @@ where
                 let body = vcx
                     .body_mut()
                     .get_impure_fn_body(local_def_id, substs, caller_def_id);
-                let body_with_facts = vcx
-                    .body_mut()
-                    .get_impure_fn_body_with_facts(local_def_id);
+                let body_with_facts = vcx.body_mut().get_impure_fn_body_with_facts(local_def_id);
 
                 let loop_analysis = LoopAnalysis::find_loops(&body);
                 let fpcs_analysis = pcg::run_pcg(&body_with_facts, vcx.tcx(), None);
@@ -184,12 +180,14 @@ where
                     encoded_blocks,
                 };
                 visitor.visit_body(&body);
-                start_stmts.extend(visitor.from_to_vars.iter().flat_map(|(_, v)| v.iter()).map(|(_, v)| {
-                    vcx.mk_local_decl_stmt(
-                        vir::vir_local_decl! { vcx; [v] : Bool },
-                        Some(vcx.mk_bool::<false>()),
-                    )
-                }));
+                start_stmts.extend(visitor.from_to_vars.iter().flat_map(|(_, v)| v.iter()).map(
+                    |(_, v)| {
+                        vcx.mk_local_decl_stmt(
+                            vir::vir_local_decl! { vcx; [v] : Bool },
+                            Some(vcx.mk_bool::<false>()),
+                        )
+                    },
+                ));
                 visitor.encoded_blocks[0] = vcx.mk_cfg_block(
                     &vir::CfgBlockLabelData::Start,
                     &[],

@@ -1,6 +1,11 @@
+use crate::encoders::{
+    domain::{DomainBuilder, DomainDataStruct, DomainEnc, DomainEncSpecifics},
+    predicate::{PredicateBuilder, PredicateEncData, PredicateEncDataStruct},
+    snapshot::SnapshotEncOutput,
+    PredicateEnc,
+};
 use prusti_rustc_interface::middle::ty;
 use task_encoder::{EncodeFullError, TaskEncoder, TaskEncoderDependencies};
-use crate::encoders::{domain::{DomainBuilder, DomainDataStruct, DomainEnc, DomainEncSpecifics}, predicate::{PredicateBuilder, PredicateEncData, PredicateEncDataStruct}, snapshot::SnapshotEncOutput, PredicateEnc};
 
 pub(crate) fn domain<'vir>(
     task_key: <DomainEnc as TaskEncoder>::TaskKey<'vir>,
@@ -40,11 +45,7 @@ pub(crate) fn predicate<'vir>(
     let ref_self_decl = builder.vcx.mk_local_decl_local(ref_self);
     //let ref_self_ex = builder.vcx.mk_local_ex_local(ref_self);
 
-    let (
-        field_accessors,
-        self_pred,
-        snap_expr,
-    ) = super::structlike::predicate(
+    let (field_accessors, self_pred, snap_expr) = super::structlike::predicate(
         "",
         &[],
         task_key,
@@ -57,17 +58,21 @@ pub(crate) fn predicate<'vir>(
     )?;
 
     // Ref-to-snap
-    builder.function_snap = Some(builder.mk_function(
-        "snap",
-        &[ref_self_decl],
-        //.into_iter()
-        //    .chain(generic_decls.iter().cloned())
-        //    .collect::<Vec<_>>(),
-        snap_type,
-        &[vir::expr! { acc_wildcard([self_pred](ref_self)) }],
-        &[],
-        Some(snap_expr),
-    ).1);
+    builder.function_snap = Some(
+        builder
+            .mk_function(
+                "snap",
+                &[ref_self_decl],
+                //.into_iter()
+                //    .chain(generic_decls.iter().cloned())
+                //    .collect::<Vec<_>>(),
+                snap_type,
+                &[vir::expr! { acc_wildcard([self_pred](ref_self)) }],
+                &[],
+                Some(snap_expr),
+            )
+            .1,
+    );
 
     Ok(PredicateEncData::StructLike(PredicateEncDataStruct {
         snap_data,

@@ -2,7 +2,8 @@ use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 
 use super::{
     domain::{DomainDataStruct, DomainEnc},
-    most_generic_ty::MostGenericTy, rust_ty_snapshots::RustTySnapshotsEnc,
+    most_generic_ty::MostGenericTy,
+    rust_ty_snapshots::RustTySnapshotsEnc,
 };
 
 pub struct ViperTupleEnc;

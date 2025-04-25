@@ -1,6 +1,7 @@
 //! Encoding for MIR types, organised by type kind.
 
 pub mod adt;
+pub mod array;
 pub mod closure;
 pub mod immref;
 pub mod mutref;

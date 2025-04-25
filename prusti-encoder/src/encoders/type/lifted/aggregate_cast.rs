@@ -25,6 +25,7 @@ pub struct AggregateSnapArgsCastEncTask<'tcx> {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum AggregateType<'tcx> {
+    Array,
     Tuple,
     Closure {
         def_id: DefId,
@@ -39,6 +40,7 @@ pub enum AggregateType<'tcx> {
 impl<'tcx> From<&mir::AggregateKind<'tcx>> for AggregateType<'tcx> {
     fn from(aggregate_kind: &mir::AggregateKind<'tcx>) -> Self {
         match aggregate_kind {
+            mir::AggregateKind::Array(elem_ty) => Self::Array,
             mir::AggregateKind::Tuple => Self::Tuple,
             mir::AggregateKind::Closure(def_id, args) => Self::Closure {
                 def_id: *def_id,
@@ -93,6 +95,18 @@ impl TaskEncoder for AggregateSnapArgsCastEnc {
         deps.emit_output_ref(task_key.clone(), ())?;
         vir::with_vcx(|vcx| {
             let cast_functions: Vec<Option<PureCast<'vir>>> = match task_key.aggregate_type {
+                AggregateType::Array => task_key
+                    .tys
+                    .iter()
+                    .map(|ty| {
+                        let cast_functions = deps
+                            .require_local::<RustTyCastersEnc<CastTypePure>>(*ty)
+                            .unwrap();
+                        cast_functions
+                            .to_generic_cast()
+                            .map(|c| c.map_applicator(|f| f.as_unknown_arity()))
+                    })
+                    .collect::<Vec<_>>(),
                 AggregateType::Tuple => task_key
                     .tys
                     .iter()

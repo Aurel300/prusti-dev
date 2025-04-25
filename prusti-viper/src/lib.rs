@@ -331,6 +331,7 @@ impl<'vir, 'v> ToViper<'vir, 'v> for vir::Expr<'vir> {
             vir::ExprKindData::Result(ty) => ctx
                 .ast
                 .result_with_pos(ty.to_viper_no_pos(ctx), ctx.span_to_pos(self.span)),
+            vir::ExprKindData::SeqLiteral(v) => v.to_viper_with_span(ctx, self.span),
             vir::ExprKindData::Ternary(v) => v.to_viper_with_span(ctx, self.span),
             vir::ExprKindData::Unfolding(v) => v.to_viper_with_span(ctx, self.span),
             vir::ExprKindData::UnOp(v) => v.to_viper_with_span(ctx, self.span),
@@ -678,6 +679,19 @@ impl<'vir, 'v> ToViper<'vir, 'v> for vir::PureAssign<'vir> {
     }
 }
 
+impl<'vir, 'v> ToViper<'vir, 'v> for vir::SeqLiteral<'vir> {
+    type Output = viper::Expr<'v>;
+    fn to_viper(&self, ctx: &ToViperContext<'vir, 'v>, _pos: Position) -> Self::Output {
+        ctx.ast.explicit_seq(
+            &self
+                .values
+                .iter()
+                .map(|v| v.to_viper_no_pos(ctx))
+                .collect::<Vec<_>>(),
+        )
+    }
+}
+
 impl<'vir, 'v> ToViper<'vir, 'v> for vir::Stmt<'vir> {
     type Output = viper::Stmt<'v>;
     fn to_viper(&self, ctx: &ToViperContext<'vir, 'v>, _pos: Position) -> Self::Output {
@@ -840,6 +854,7 @@ impl<'vir, 'v> ToViper<'vir, 'v> for vir::Type<'vir> {
             }
             vir::TypeData::Ref => ctx.ast.ref_type(),
             vir::TypeData::Perm => ctx.ast.perm_type(),
+            vir::TypeData::Seq(elem_ty) => ctx.ast.seq_type(elem_ty.to_viper_no_pos(ctx)),
             //vir::TypeData::Predicate, // The type of a predicate application
             //vir::TypeData::Unsupported(UnsupportedType<'vir>)
             other => unimplemented!("{:?}", other),

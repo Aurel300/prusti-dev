@@ -157,6 +157,11 @@ cfg_if! {
                 ExprKindGenData::UnOp(UnOpGenData { expr, .. }) => {
                     check_expr_bindings(m, *expr);
                 },
+                ExprKindGenData::SeqLiteral(SeqLiteralGenData { values, .. }) => {
+                    for value in values.iter() {
+                        check_expr_bindings(m, value);
+                    }
+                },
                 ExprKindGenData::Ternary(TernaryGenData { cond, then, else_}) => {
                     check_expr_bindings(m, *cond);
                     check_expr_bindings(m, *then);
@@ -848,6 +853,17 @@ impl<'tcx> VirCtxt<'tcx> {
                     .rfold(*last, |acc, e| self.mk_bin_op_expr(BinOpKind::Or, *e, acc))
             })
             .unwrap_or_else(|| self.mk_bool::<false>())
+    }
+
+    pub fn mk_ty_seq<'vir>(&'vir self, elem_ty: Type<'vir>) -> Type<'vir> {
+        self.alloc(TypeData::Seq(elem_ty))
+    }
+
+    pub fn mk_seq_lit<'vir, Curr, Next>(&'vir self, values: &'vir [ExprGen<'vir, Curr, Next>], elem_ty: Type<'vir>) -> ExprGen<'vir, Curr, Next> {
+        self.alloc(ExprGenData::new(self.alloc(ExprKindGenData::SeqLiteral(self.alloc(SeqLiteralGenData {
+            values,
+            ty: self.mk_ty_seq(elem_ty),
+        })))))
     }
 
     const fn get_int_data(rust_ty: &ty::TyKind) -> (u32, bool) {

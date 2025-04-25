@@ -567,6 +567,14 @@ impl TaskEncoder for PredicateEnc {
                 | TyKind::Float(_) => {
                     super::kinds::primitive::predicate(*task_key, snap.clone(), deps, &mut builder)?
                 }
+                TyKind::Array(..) => super::kinds::array::predicate(
+                    *task_key,
+                    snap.clone(),
+                    deps,
+                    &generic_decls,
+                    &generic_exprs,
+                    &mut builder,
+                )?,
                 TyKind::Adt(..) => super::kinds::adt::predicate(
                     *task_key,
                     snap.clone(),

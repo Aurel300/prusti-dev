@@ -162,6 +162,7 @@ impl<'vir, Curr, Next> Debug for ExprKindGenData<'vir, Curr, Next> {
             Self::Local(e) => e.fmt(f),
             Self::Old(e) => e.fmt(f),
             Self::PredicateApp(e) => e.fmt(f),
+            Self::SeqLiteral(e) => e.fmt(f),
             Self::Wand(e) => e.fmt(f),
             Self::Ternary(e) => e.fmt(f),
             Self::UnOp(e) => e.fmt(f),
@@ -332,6 +333,14 @@ impl<'vir, Curr, Next> Debug for PredicateAppGenData<'vir, Curr, Next> {
     }
 }
 
+impl<'vir, Curr, Next> Debug for SeqLiteralGenData<'vir, Curr, Next> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        write!(f, "Seq(")?;
+        fmt_comma_sep(f, self.values)?;
+        write!(f, ")")
+    }
+}
+
 impl<'vir, Curr, Next> Debug for StmtGenData<'vir, Curr, Next> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         if let Some(span) = self.span {
@@ -483,6 +492,7 @@ impl<'vir> Debug for TypeData<'vir> {
             Self::Ref => write!(f, "Ref"),
             Self::Perm => write!(f, "Perm"),
             Self::Predicate => write!(f, "Predicate"),
+            Self::Seq(ty) => write!(f, "Seq[{ty:?}]"),
             Self::Unsupported(u) => u.fmt(f),
         }
     }

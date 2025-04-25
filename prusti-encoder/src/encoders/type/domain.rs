@@ -187,6 +187,9 @@ impl TaskEncoder for DomainEnc {
                 | TyKind::Float(_) => {
                     super::kinds::primitive::domain(*task_key, deps, &mut builder)?
                 }
+                TyKind::Array(..) => {
+                    super::kinds::array::domain(*task_key, &output_ref, deps, &mut builder)?
+                }
                 TyKind::Closure(..) => {
                     super::kinds::closure::domain(*task_key, &output_ref, deps, &mut builder)?
                 }

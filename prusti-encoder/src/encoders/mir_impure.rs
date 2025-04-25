@@ -32,13 +32,11 @@ use crate::{
         pure_func_app_enc::PureFuncAppEnc,
     },
     encoders::{
-        self,
-        lifted::{
+        self, lifted::{
             aggregate_cast::{AggregateSnapArgsCastEnc, AggregateSnapArgsCastEncTask},
             casters::CastTypePure,
             func_app_ty_params::LiftedFuncAppTyParamsEnc,
-        },
-        FunctionCallTaskDescription, MirBuiltinEnc, WandEnc, WandEncTask,
+        }, rust_ty_snapshots::RustTySnapshotsEnc, FunctionCallTaskDescription, GenericEnc, MirBuiltinEnc, WandEnc, WandEncTask
     },
 };
 
@@ -1142,6 +1140,27 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                             unop_function,
                             &[self.vcx.mk_local_ex(source_name)],
                         ))*/
+                    }
+
+                    mir::Rvalue::Aggregate(
+                        box kind @ mir::AggregateKind::Array(elem_ty),
+                        values,
+                    ) => {
+                        //let e_elem_ty = self.deps.require_ref::<RustTySnapshotsEnc>(*elem_ty).unwrap();
+                        let generic_enc = self.deps.require_ref::<GenericEnc>(()).unwrap();
+                        let e_rvalue_ty = self.deps.require_ref::<RustTyPredicatesEnc>(rvalue_ty).unwrap();
+                        let prim = e_rvalue_ty.generic_predicate.expect_prim();
+                        let ty_caster = self.deps.require_local::<AggregateSnapArgsCastEnc>(
+                            AggregateSnapArgsCastEncTask {
+                                tys: std::iter::repeat(*elem_ty).take(values.len()).collect(),
+                                aggregate_type: kind.into()
+                            }
+                        ).unwrap();
+                        let value_snaps = values.iter().map(|value| self.encode_operand_snap(value)).collect::<Vec<_>>();
+                        let casted_values = ty_caster.apply_casts(self.vcx, value_snaps.into_iter());
+                        prim.prim_to_snap.apply(self.vcx, [
+                            self.vcx.mk_seq_lit(self.vcx.alloc_slice(&casted_values), &generic_enc.param_snapshot),
+                        ])
                     }
 
                     mir::Rvalue::Aggregate(

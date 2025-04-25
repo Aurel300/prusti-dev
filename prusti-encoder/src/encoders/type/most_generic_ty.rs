@@ -39,6 +39,7 @@ pub fn get_vir_base_name_kind<'tcx>(kind: &ty::TyKind<'tcx>, vcx: &vir::VirCtxt<
         TyKind::RawPtr(_, ty::Mutability::Not) => String::from("RawPtr_immutable"),
         TyKind::RawPtr(_, ty::Mutability::Mut) => String::from("RawPtr_mutable"),
         TyKind::Param(_) => String::from("Param"),
+        TyKind::Array(_, _) => format!("Array"), // , get_vir_base_name_kind(elem_ty.kind(), vcx)),
         TyKind::Closure(def_id, _) => {
             let def_key = vcx.tcx().def_key(def_id);
             match def_key.disambiguated_data.data {

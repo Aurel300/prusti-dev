@@ -26,6 +26,7 @@ pub type Predicate<'vir> = &'vir crate::data::PredicateData<'vir>;
 pub type PredicateApp<'vir> = &'vir crate::data::PredicateAppData<'vir>;
 pub type Program<'vir> = &'vir crate::data::ProgramData<'vir>;
 pub type PureAssign<'vir> = &'vir crate::data::PureAssignData<'vir>;
+pub type SeqLiteral<'vir> = &'vir crate::data::SeqLiteralData<'vir>;
 pub type Stmt<'vir> = &'vir crate::data::StmtData<'vir>;
 pub type StmtKind<'vir> = &'vir crate::data::StmtKindData<'vir>;
 pub type TerminatorStmt<'vir> = &'vir crate::data::TerminatorStmtData<'vir>;

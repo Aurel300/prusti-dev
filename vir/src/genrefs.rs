@@ -28,6 +28,7 @@ pub type PredicateAppGen<'vir, Curr, Next> =
 pub type ProgramGen<'vir, Curr, Next> = &'vir crate::gendata::ProgramGenData<'vir, Curr, Next>;
 pub type PureAssignGen<'vir, Curr, Next> =
     &'vir crate::gendata::PureAssignGenData<'vir, Curr, Next>;
+pub type SeqLiteralGen<'vir, Curr, Next> = &'vir crate::gendata::SeqLiteralGenData<'vir, Curr, Next>;
 pub type StmtGen<'vir, Curr, Next> = &'vir crate::gendata::StmtGenData<'vir, Curr, Next>;
 pub type StmtKindGen<'vir, Curr, Next> = &'vir crate::gendata::StmtKindGenData<'vir, Curr, Next>;
 pub type TerminatorStmtGen<'vir, Curr, Next> =

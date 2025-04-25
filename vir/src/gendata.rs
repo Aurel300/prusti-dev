@@ -114,6 +114,13 @@ pub struct WandGenData<'vir, Curr, Next> {
     pub rhs: ExprGen<'vir, Curr, Next>,
 }
 
+#[derive(VirHash, VirReify, VirSerde)]
+pub struct SeqLiteralGenData<'vir, Curr, Next> {
+    pub values: &'vir [ExprGen<'vir, Curr, Next>],
+    #[vir(reify_pass, is_ref)]
+    pub ty: Type<'vir>,
+}
+
 /*
 // TODO: something like this would be a cleaner solution for ExprGenData's
 //   generic; when tested, this runs into an infinite loop in rustc ...?
@@ -165,7 +172,8 @@ pub enum ExprKindGenData<'vir, Curr: 'vir, Next: 'vir> {
     // perm ops?
     // container ops?
     // map ops?
-    // sequence, map, set, multiset literals
+    // map, set, multiset literals
+    SeqLiteral(SeqLiteralGen<'vir, Curr, Next>),
     Ternary(TernaryGen<'vir, Curr, Next>),
     Exists(ExistsGen<'vir, Curr, Next>),
     Forall(ForallGen<'vir, Curr, Next>),
@@ -195,6 +203,7 @@ impl<'vir, Curr, Next> ExprKindGenData<'vir, Curr, Next> {
             ExprKindGenData::Unfolding(f) => f.expr.ty(),
             ExprKindGenData::UnOp(u) => u.expr.ty(),
             ExprKindGenData::BinOp(b) => b.ty(),
+            ExprKindGenData::SeqLiteral(s) => s.ty,
             ExprKindGenData::Ternary(t) => t.then.ty(),
             ExprKindGenData::Forall(_) => &TypeData::Bool,
             ExprKindGenData::Exists(_) => &TypeData::Bool,

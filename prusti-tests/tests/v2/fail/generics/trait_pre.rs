@@ -6,7 +6,7 @@ trait Foo: Sized {
 }
 
 fn go<T: Foo>(t: T) -> u32 {
-    t.baz(2)
+    t.baz(2) //~ ERROR: precondition might not hold
 }
 
 fn main(){

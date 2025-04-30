@@ -1,7 +1,7 @@
 use prusti_contracts::*;
 
 trait Foo: Sized {
-    #[ensures(result == 5)]
+    #[ensures(result == 5)] //~ ERROR: postcondition might not hold
     fn baz(self) -> u32;
 }
 

@@ -253,7 +253,8 @@ pub fn find_trait_method_substs<'tcx>(
     // more precisely.
     let impl_method_substs = ty::List::identity_for_item(tcx, impl_method_def_id);
     let trait_method_substs = ty::List::identity_for_item(tcx, trait_method_def_id);
-    let trait_method_substs = impl_method_substs.rebase_onto(tcx, trait_def_id, trait_method_substs);
+    let trait_method_substs =
+        impl_method_substs.rebase_onto(tcx, trait_def_id, trait_method_substs);
 
     // sanity check: do we now have the correct number of substs?
     let identity_trait_method = ty::List::identity_for_item(tcx, trait_method_def_id);

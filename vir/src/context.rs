@@ -1,4 +1,7 @@
-use prusti_interface::{environment::EnvBody, specs::{specifications::Specifications, typed::DefSpecificationMap}};
+use prusti_interface::{
+    environment::EnvBody,
+    specs::{specifications::Specifications, typed::DefSpecificationMap},
+};
 use prusti_rustc_interface::middle::ty;
 use std::{cell::RefCell, fmt::Debug};
 
@@ -24,7 +27,7 @@ pub struct VirCtxt<'tcx> {
 
     pub body: Option<RefCell<EnvBody<'tcx>>>,
 
-    pub specs: Option<RefCell<Specifications<'tcx>>>
+    pub specs: Option<RefCell<Specifications<'tcx>>>,
 }
 
 impl<'tcx> VirCtxt<'tcx> {

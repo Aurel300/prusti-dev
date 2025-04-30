@@ -1,5 +1,4 @@
-use prusti_interface::specs::specifications::find_trait_method_substs;
-use prusti_interface::PrustiError;
+use prusti_interface::{specs::specifications::find_trait_method_substs, PrustiError};
 use prusti_rustc_interface::{
     middle::{mir, ty},
     span::{def_id::DefId, Span},
@@ -85,8 +84,7 @@ impl TaskEncoder for MirSpecEnc {
                 .expect_prim()
                 .snap_to_prim;
 
-            let substs =
-                find_trait_method_substs(vcx.tcx(), def_id, substs)
+            let substs = find_trait_method_substs(vcx.tcx(), def_id, substs)
                 .map(|s| s.1)
                 .unwrap_or(substs);
 

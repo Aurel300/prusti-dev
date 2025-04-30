@@ -3,11 +3,17 @@ use prusti_rustc_interface::{
     middle::{mir, ty::{GenericArgs, Ty}},
     span::def_id::DefId,
 };
-use task_encoder::{TaskEncoder, TaskEncoderDependencies};
+use task_encoder::{EncodeFullError, TaskEncoder, TaskEncoderDependencies};
 use vir::{CallableIdent, ExprGen, FunctionIdent, Reify, UnknownArity, ViperIdent};
 
 use crate::encoders::{
-    domain::DomainEnc, lifted::{func_def_ty_params::LiftedTyParamsEnc, ty::{EncodeGenericsAsLifted, LiftedTy, LiftedTyEnc}}, most_generic_ty::extract_type_params, GenericEnc, MirLocalDefEnc, MirPureEnc, MirPureEncTask, MirSpecEnc, PureKind
+    domain::DomainEnc,
+    lifted::{
+        func_def_ty_params::LiftedTyParamsEnc,
+        ty::{EncodeGenericsAsLifted, LiftedTy, LiftedTyEnc},
+    },
+    most_generic_ty::extract_type_params,
+    GenericEnc, MirLocalDefEnc, MirPureEnc, MirPureEncTask, MirSpecEnc, PureKind,
 };
 
 use super::function_enc::FunctionEnc;
@@ -28,11 +34,11 @@ pub struct MirFunctionEncOutput<'vir> {
 /// functions; see [`MirMonoFunctionEnc`] and [`MirFunctionEnc`]
 pub trait PureFunctionEnc
 where
-    Self: 'static + Sized + FunctionEnc + for <'vir> TaskEncoder<
-        OutputRef<'vir> = MirFunctionEncOutputRef<'vir>
-    >
+    Self: 'static
+        + Sized
+        + FunctionEnc
+        + for<'vir> TaskEncoder<OutputRef<'vir> = MirFunctionEncOutputRef<'vir>>,
 {
-
     /// Generates the identifier for the function; for a monomorphic encoding,
     /// this should be a name including (mangled) type arguments
     fn mk_function_ident<'vir>(
@@ -81,7 +87,13 @@ where
     fn encode<'vir>(
         task_key: Self::TaskKey<'vir>,
         deps: &mut TaskEncoderDependencies<'vir, Self>,
-    ) -> MirFunctionEncOutput<'vir> {
+    ) -> Result<MirFunctionEncOutput<'vir>, EncodeFullError<'vir, Self>> {
+        let def_id = Self::get_def_id(&task_key);
+        let caller_def_id = Self::get_caller_def_id(&task_key);
+        let trusted = crate::encoders::with_proc_spec(def_id, |def_spec| {
+            def_spec.trusted.extract_inherit().unwrap_or_default()
+        })
+        .unwrap_or_default();
         vir::with_vcx(|vcx| {
             let def_id = Self::get_def_id(&task_key);
             let caller_def_id = Self::get_caller_def_id(&task_key);
@@ -100,7 +112,7 @@ where
             tracing::debug!("encoding {def_id:?}");
 
             let function_ident = Self::mk_function_ident(vcx, &task_key);
-            let ty_arg_decls = deps.require_local::<LiftedTyParamsEnc>(substs).unwrap();
+            let ty_arg_decls = deps.require_local::<LiftedTyParamsEnc>(substs)?;
             let mut ident_args = ty_arg_decls.iter().map(|arg| arg.ty()).collect::<Vec<_>>();
             ident_args.extend(
                 (1..=local_defs.arg_count)
@@ -110,11 +122,9 @@ where
             let ident_args = UnknownArity::new(vcx.alloc_slice(&ident_args));
             let return_type = local_defs.locals[mir::RETURN_PLACE].ty;
             let function_ref = FunctionIdent::new(function_ident, ident_args, return_type.snapshot);
-            deps.emit_output_ref(task_key, MirFunctionEncOutputRef { function_ref });
+            deps.emit_output_ref(task_key, MirFunctionEncOutputRef { function_ref })?;
 
-            let spec = deps
-                .require_local::<MirSpecEnc>((def_id, substs, None, true))
-                .unwrap();
+            let spec = deps.require_local::<MirSpecEnc>((def_id, substs, None, true))?;
 
             let mut func_args = ty_arg_decls
                 .iter()
@@ -140,8 +150,7 @@ where
                         param_env: vcx.tcx().param_env(def_id),
                         substs,
                         caller_def_id,
-                    })
-                    .unwrap()
+                    })?
                     .expr;
                 let expr = expr.reify(vcx, (def_id, spec.pre_args));
                 assert!(
@@ -152,9 +161,10 @@ where
                 );
                 Some(expr)
             };
-            let sig = vcx.tcx().subst_and_normalize_erasing_regions(
+            let typing_env = ty::TypingEnv::post_analysis(vcx.tcx(), def_id);
+            let sig = vcx.tcx().instantiate_and_normalize_erasing_regions(
                 substs,
-                vcx.tcx().param_env(def_id),
+                typing_env,
                 vcx.tcx().fn_sig(def_id),
             );
             let input_tys = sig
@@ -171,8 +181,13 @@ where
 
             tracing::debug!("finished {def_id:?}");
 
-            let mut pres = spec.pres;
-            pres.extend(type_preconditions);
+            let mut type_preconditions: Vec<_> = type_preconditions.collect();
+            let pres = if type_preconditions.is_empty() {
+                spec.pres
+            } else {
+                type_preconditions.extend(spec.pres);
+                type_preconditions
+            };
 
             let type_postcondition = Self::mk_type_assertion(
                 vcx,
@@ -182,10 +197,10 @@ where
             );
             let mut posts = spec.posts;
             if let Some(pc) = type_postcondition {
-                posts.push(pc);
+                posts.insert(0, pc);
             }
 
-            MirFunctionEncOutput {
+            Ok(MirFunctionEncOutput {
                 function: vcx.mk_function(
                     function_ident.to_str(),
                     vcx.alloc_slice(&func_args),
@@ -194,7 +209,7 @@ where
                     vcx.alloc_slice(&posts),
                     expr,
                 ),
-            }
+            })
         })
     }
 }

@@ -151,7 +151,7 @@ impl<'a> AstFactory<'a> {
         self.div_with_pos(left, right, self.no_position())
     }
 
-    pub fn module_with_pos(&self, left: Expr, right: Expr, pos: Position) -> Expr<'a> {
+    pub fn mod_with_pos(&self, left: Expr, right: Expr, pos: Position) -> Expr<'a> {
         build_ast_node_with_pos!(
             self,
             Expr,
@@ -162,8 +162,8 @@ impl<'a> AstFactory<'a> {
         )
     }
 
-    pub fn module(&self, left: Expr, right: Expr) -> Expr<'a> {
-        self.module_with_pos(left, right, self.no_position())
+    pub fn mod_(&self, left: Expr, right: Expr) -> Expr<'a> {
+        self.mod_with_pos(left, right, self.no_position())
     }
 
     pub fn lt_cmp_with_pos(&self, left: Expr, right: Expr, pos: Position) -> Expr<'a> {
@@ -440,52 +440,52 @@ impl<'a> AstFactory<'a> {
             BinOpBv::BitAnd => ast::utility::BVFactory::call_and(
                 &factory_,
                 factory,
-                self.jni.new_string(&format!("bv{size}_and")),
+                self.jni.new_string(format!("bv{size}_and")),
             ),
             BinOpBv::BitOr => ast::utility::BVFactory::call_or(
                 &factory_,
                 factory,
-                self.jni.new_string(&format!("bv{size}_or")),
+                self.jni.new_string(format!("bv{size}_or")),
             ),
             BinOpBv::BitXor => ast::utility::BVFactory::call_xor(
                 &factory_,
                 factory,
-                self.jni.new_string(&format!("bv{size}_xor")),
+                self.jni.new_string(format!("bv{size}_xor")),
             ),
             BinOpBv::BvAdd => ast::utility::BVFactory::call_add(
                 &factory_,
                 factory,
-                self.jni.new_string(&format!("bv{size}_add")),
+                self.jni.new_string(format!("bv{size}_add")),
             ),
             BinOpBv::BvSub => ast::utility::BVFactory::call_sub(
                 &factory_,
                 factory,
-                self.jni.new_string(&format!("bv{size}_sub")),
+                self.jni.new_string(format!("bv{size}_sub")),
             ),
             BinOpBv::BvMul => ast::utility::BVFactory::call_mul(
                 &factory_,
                 factory,
-                self.jni.new_string(&format!("bv{size}_mul")),
+                self.jni.new_string(format!("bv{size}_mul")),
             ),
             BinOpBv::BvUDiv => ast::utility::BVFactory::call_udiv(
                 &factory_,
                 factory,
-                self.jni.new_string(&format!("bv{size}_udiv")),
+                self.jni.new_string(format!("bv{size}_udiv")),
             ),
             BinOpBv::BvShl => ast::utility::BVFactory::call_shl(
                 &factory_,
                 factory,
-                self.jni.new_string(&format!("bv{size}_shl")),
+                self.jni.new_string(format!("bv{size}_shl")),
             ),
             BinOpBv::BvLShr => ast::utility::BVFactory::call_lshr(
                 &factory_,
                 factory,
-                self.jni.new_string(&format!("bv{size}_lshr")),
+                self.jni.new_string(format!("bv{size}_lshr")),
             ),
             BinOpBv::BvAShr => ast::utility::BVFactory::call_ashr(
                 &factory_,
                 factory,
-                self.jni.new_string(&format!("bv{size}_ashr")),
+                self.jni.new_string(format!("bv{size}_ashr")),
             ),
         }
         .unwrap();
@@ -784,7 +784,7 @@ impl<'a> AstFactory<'a> {
     pub fn field_access_predicate_with_pos(
         &self,
         loc: Expr,
-        perm: Expr,
+        perm: Option<Expr>,
         pos: Position,
     ) -> Expr<'a> {
         build_ast_node_with_pos!(
@@ -792,19 +792,19 @@ impl<'a> AstFactory<'a> {
             Expr,
             ast::FieldAccessPredicate,
             loc.to_jobject(),
-            perm.to_jobject(),
+            self.jni.new_option(perm.map(|p| p.to_jobject())),
             pos.to_jobject()
         )
     }
 
-    pub fn field_access_predicate(&self, loc: Expr, perm: Expr) -> Expr<'a> {
+    pub fn field_access_predicate(&self, loc: Expr, perm: Option<Expr>) -> Expr<'a> {
         self.field_access_predicate_with_pos(loc, perm, self.no_position())
     }
 
     pub fn predicate_access_predicate_with_pos(
         &self,
         loc: Expr,
-        perm: Expr,
+        perm: Option<Expr>,
         pos: Position,
     ) -> Expr<'a> {
         build_ast_node_with_pos!(
@@ -812,12 +812,12 @@ impl<'a> AstFactory<'a> {
             Expr,
             ast::PredicateAccessPredicate,
             loc.to_jobject(),
-            perm.to_jobject(),
+            self.jni.new_option(perm.map(|p| p.to_jobject())),
             pos.to_jobject()
         )
     }
 
-    pub fn predicate_access_predicate(&self, loc: Expr, perm: Expr) -> Expr<'a> {
+    pub fn predicate_access_predicate(&self, loc: Expr, perm: Option<Expr>) -> Expr<'a> {
         self.predicate_access_predicate_with_pos(loc, perm, self.no_position())
     }
 
@@ -1254,7 +1254,7 @@ impl<'a> AstFactory<'a> {
         )
     }
 
-    pub fn local_var(&self, name: &str, var_type: Type, position: Position<'a>) -> Expr<'a> {
+    pub fn local_var(&self, name: &str, var_type: Type, position: Position) -> Expr<'a> {
         self.local_var_with_pos(name, var_type, position)
     }
 
@@ -1485,6 +1485,7 @@ impl<'a> AstFactory<'a> {
                 self.jni
                     .unwrap_result(simplifier_object_wrapper.singleton()),
                 expr.to_jobject(),
+                false,
             ),
         );
         Expr::new(obj)

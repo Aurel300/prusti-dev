@@ -35,16 +35,14 @@ import verify_test
 dry_run = False
 
 RUSTFMT_CRATES = [
-    'analysis',
     'jni-gen',
-    'mir-state-analysis',
     'prusti',
-    'prusti-common',
     'prusti-contracts/prusti-contracts',
     'prusti-contracts/prusti-contracts-proc-macros',
     'prusti-contracts/prusti-specs',
     'prusti-contracts/prusti-std',
     'prusti-contracts-build',
+    'prusti-encoder',
     'prusti-interface',
     'prusti-launch',
     'prusti-rustc-interface',
@@ -52,31 +50,14 @@ RUSTFMT_CRATES = [
     'prusti-smt-solver',
     'prusti-tests',
     'prusti-utils',
-    #'prusti-viper',
+    'prusti-viper',
     'smt-log-analyzer',
+    'task-encoder',
     #'test-crates',
     'viper',
     'viper-sys',
     'vir',
-    'vir-gen',
-]
-
-RUSTFMT_PATHS = [
-    'prusti-common/src/report/mod.rs',
-    'prusti-common/src/utils/mod.rs',
-    'prusti-common/src/vir/to_viper.rs',
-    'prusti-common/src/vir/low_to_viper/mod.rs',
-    'prusti-common/src/vir/optimizations/mod.rs',
-    'prusti-viper/src/encoder/foldunfold/mod.rs',
-    'prusti-viper/src/encoder/mir/mod.rs',
-    'prusti-viper/src/encoder/high/mod.rs',
-    'prusti-viper/src/encoder/typed/mod.rs',
-    'prusti-viper/src/encoder/middle/mod.rs',
-    'prusti-viper/src/encoder/snapshot/mod.rs',
-    'prusti-viper/src/encoder/lifetimes/mod.rs',
-    'prusti-viper/src/encoder/definition_collector.rs',
-    'prusti-viper/src/encoder/counterexamples/mod.rs',
-    'vir/defs/mod.rs',
+    'vir-proc-macro',
 ]
 
 
@@ -221,9 +202,6 @@ def fmt_all():
     """Run rustfmt on all formatted files."""
     for crate in RUSTFMT_CRATES:
         fmt_in(crate)
-    for path in RUSTFMT_PATHS:
-        for file in glob.glob(path, recursive=True):
-            run_command(['rustfmt', file])
 
 def fmt_check_in(cwd):
     """Run cargo fmt check in the given subproject."""
@@ -233,14 +211,11 @@ def fmt_check_all():
     """Run rustfmt check on all formatted files."""
     for crate in RUSTFMT_CRATES:
         fmt_check_in(crate)
-    for path in RUSTFMT_PATHS:
-        for file in glob.glob(path, recursive=True):
-            run_command(['rustfmt', '--check', file])
 
 def check_smir():
     """Check that `extern crate` is used only in `prusti_rustc_interface` (TODO: `prusti_interface` is also ignored for now)."""
     for folder in os.listdir('.'):
-        if folder == 'prusti-rustc-interface' or folder == 'prusti-interface':
+        if folder == 'prusti-rustc-interface' or folder == 'prusti-interface' or folder == 'pcg':
             continue
         if os.path.exists(os.path.join(folder, 'Cargo.toml')):
             completed = subprocess.run(

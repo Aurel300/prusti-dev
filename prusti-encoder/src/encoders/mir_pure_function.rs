@@ -1,9 +1,9 @@
 use prusti_rustc_interface::span::def_id::DefId;
 
-use task_encoder::{TaskEncoder, TaskEncoderDependencies, EncodeFullResult};
+use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 
 use crate::encoder_traits::pure_function_enc::{
-    MirFunctionEncOutput, MirFunctionEncOutputRef, PureFunctionEnc
+    MirFunctionEncOutput, MirFunctionEncOutputRef, PureFunctionEnc,
 };
 
 use super::mono::task_description::FunctionCallTaskDescription;
@@ -12,11 +12,10 @@ pub struct MirFunctionEnc;
 
 #[derive(Clone, Debug)]
 pub enum MirFunctionEncError {
-    Unsupported,
+    // Unsupported,
 }
 
 impl PureFunctionEnc for MirFunctionEnc {
-
     fn mk_function_ident<'vir, 'tcx>(
         vcx: &'vir vir::VirCtxt<'tcx>,
         def_id: &Self::TaskKey<'tcx>,
@@ -44,6 +43,6 @@ impl TaskEncoder for MirFunctionEnc {
         task_key: &Self::TaskKey<'vir>,
         deps: &mut TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self> {
-        Ok((<Self as PureFunctionEnc>::encode(*task_key, deps), ()))
+        Ok((<Self as PureFunctionEnc>::encode(*task_key, deps)?, ()))
     }
 }

@@ -1,0 +1,313 @@
+// -----------------------------
+// methods
+// -----------------------------
+method m_take_first_CALLER_(
+)
+{
+label start
+  var res: s_Ref_mutable
+  var i1: s_Ref_mutable
+  var i2: s_Ref_mutable
+  inhale (typeof_s_Ref_mutable(i1)) == (s_Ref_mutable_type(s_Int_i32_type()))
+  inhale (typeof_s_Ref_mutable(i2)) == (s_Ref_mutable_type(s_Int_i32_type()))
+  // path: Acyclic(AcyclicPath([bb0]))
+  if (true) {
+} else {
+}
+  // return
+}
+
+domain Backwards_m_take_first_CALLER_ {
+  function back_m_take_first_CALLER__0(Backwards_m_take_first_CALLER_): s_Ref_mutable
+  function back_m_take_first_CALLER__1(Backwards_m_take_first_CALLER_): s_Ref_mutable
+}
+
+method m_take_first_CALLER__backwards(
+)
+{
+label start
+  var res: s_Ref_mutable
+  var i1: s_Ref_mutable
+  var i2: s_Ref_mutable
+  var backwards_0: s_Ref_mutable
+  var backwards_1: s_Ref_mutable
+  inhale (typeof_s_Ref_mutable(i1)) == (s_Ref_mutable_type(s_Int_i32_type()))
+  inhale (typeof_s_Ref_mutable(i2)) == (s_Ref_mutable_type(s_Int_i32_type()))
+  if (true) {
+    inhale (backwards_1) == i2
+    inhale (backwards_0) == (s_Ref_mutable_cons(s_Ref_mutable_type(s_Int_i32_type()), make_generic_s_Ref_mutable(s_Ref_mutable_cons(s_Int_i32_type(), make_generic_s_Int_i32(make_concrete_s_Int_i32(s_Ref_mutable_read_0(res)))))))
+    exhale s_Bool_read_0(mir_binop_Eq_i32_i32(make_concrete_s_Int_i32(s_Ref_mutable_read_0(backwards_0)), make_concrete_s_Int_i32(s_Ref_mutable_read_0(res))))
+} else {
+}
+  // return
+}
+
+function back_m_take_first_CALLER_(
+  i1: s_Ref_mutable,
+  i2: s_Ref_mutable,
+  res: s_Ref_mutable
+): Backwards_m_take_first_CALLER_
+  requires (typeof_s_Ref_mutable(i1)) == (s_Ref_mutable_type(s_Int_i32_type()))
+  requires (typeof_s_Ref_mutable(i2)) == (s_Ref_mutable_type(s_Int_i32_type()))
+  ensures s_Bool_read_0(mir_binop_Eq_i32_i32(make_concrete_s_Int_i32(s_Ref_mutable_read_0(back_m_take_first_CALLER__0(result))), make_concrete_s_Int_i32(s_Ref_mutable_read_0(res))))
+
+method m_take_first_CALLER_0_10(
+)
+{
+label start
+  var res: s_Ref_mutable
+  var i1: s_Ref_mutable
+  var i2: s_Ref_mutable
+  inhale (typeof_s_Ref_mutable(i1)) == (s_Ref_mutable_type(s_Int_i32_type()))
+  inhale (typeof_s_Ref_mutable(i2)) == (s_Ref_mutable_type(s_Int_i32_type()))
+  // path: Acyclic(AcyclicPath([bb0]))
+  if (true) {
+} else {
+}
+  // return
+}
+
+domain Backwards_m_take_first_CALLER_0_10 {
+  function back_m_take_first_CALLER_0_10_0(Backwards_m_take_first_CALLER_0_10): s_Ref_mutable
+  function back_m_take_first_CALLER_0_10_1(Backwards_m_take_first_CALLER_0_10): s_Ref_mutable
+}
+
+method m_take_first_CALLER_0_10_backwards(
+)
+{
+label start
+  var res: s_Ref_mutable
+  var i1: s_Ref_mutable
+  var i2: s_Ref_mutable
+  var backwards_0: s_Ref_mutable
+  var backwards_1: s_Ref_mutable
+  inhale (typeof_s_Ref_mutable(i1)) == (s_Ref_mutable_type(s_Int_i32_type()))
+  inhale (typeof_s_Ref_mutable(i2)) == (s_Ref_mutable_type(s_Int_i32_type()))
+  if (true) {
+    inhale (backwards_1) == (s_Ref_mutable_cons(s_Ref_mutable_type(s_Int_i32_type()), make_generic_s_Ref_mutable(i2)))
+    inhale (backwards_0) == (s_Ref_mutable_cons(s_Ref_mutable_type(s_Int_i32_type()), make_generic_s_Ref_mutable(s_Ref_mutable_cons(s_Int_i32_type(), make_generic_s_Int_i32(make_concrete_s_Int_i32(s_Ref_mutable_read_0(res)))))))
+    exhale s_Bool_read_0(mir_binop_Eq_i32_i32(make_concrete_s_Int_i32(s_Ref_mutable_read_0(backwards_0)), make_concrete_s_Int_i32(s_Ref_mutable_read_0(res))))
+} else {
+}
+  // return
+}
+
+function back_m_take_first_CALLER_0_10(
+  i1: s_Ref_mutable,
+  i2: s_Ref_mutable,
+  res: s_Ref_mutable
+): Backwards_m_take_first_CALLER_0_10
+  requires (typeof_s_Ref_mutable(i1)) == (s_Ref_mutable_type(s_Int_i32_type()))
+  requires (typeof_s_Ref_mutable(i2)) == (s_Ref_mutable_type(s_Int_i32_type()))
+  ensures s_Bool_read_0(mir_binop_Eq_i32_i32(make_concrete_s_Int_i32(s_Ref_mutable_read_0(back_m_take_first_CALLER_0_10_0(result))), make_concrete_s_Int_i32(s_Ref_mutable_read_0(res))))
+
+method m_go_CALLER_(
+)
+{
+label start
+  var res: s_Bool
+  var f0: s_Ref_mutable
+  var f1: s_Ref_mutable
+  var f2: s_Ref_mutable
+  inhale (typeof_s_Ref_mutable(f0)) == (s_Ref_mutable_type(s_Int_i32_type()))
+  inhale (typeof_s_Ref_mutable(f1)) == (s_Ref_mutable_type(s_Int_i32_type()))
+  inhale (typeof_s_Ref_mutable(f2)) == (s_Ref_mutable_type(s_Int_i32_type()))
+  // Assertion for path: Acyclic(AcyclicPath([bb0]))
+  // path: Acyclic(AcyclicPath([bb0, bb1]))
+  if (true) {
+    exhale s_Bool_read_0(mir_binop_Eq_i32_i32(make_concrete_s_Int_i32(s_Ref_mutable_read_0(back_m_take_first_CALLER_0_10_0(back_m_take_first_CALLER_0_10(s_Ref_mutable_cons(s_Int_i32_type(), make_generic_s_Int_i32(s_Int_i32_cons(2))), s_Ref_mutable_cons(s_Int_i32_type(), make_generic_s_Int_i32(s_Int_i32_cons(1))), s_Ref_mutable_cons(s_Int_i32_type(), make_generic_s_Int_i32(s_Int_i32_cons(3))))))), s_Int_i32_cons(3)))
+} else {
+}
+  // return
+}
+
+method m_go_CALLER__backwards(
+)
+{
+label start
+  var res: s_Bool
+  var f0: s_Ref_mutable
+  var f1: s_Ref_mutable
+  var f2: s_Ref_mutable
+  inhale (typeof_s_Ref_mutable(f0)) == (s_Ref_mutable_type(s_Int_i32_type()))
+  inhale (typeof_s_Ref_mutable(f1)) == (s_Ref_mutable_type(s_Int_i32_type()))
+  inhale (typeof_s_Ref_mutable(f2)) == (s_Ref_mutable_type(s_Int_i32_type()))
+  if (true) {
+} else {
+}
+  // return
+}
+
+method m_main_CALLER_(
+)
+{
+label start
+  var res: s_0_Tuple
+  // path: Acyclic(AcyclicPath([bb0]))
+  if (true) {
+} else {
+}
+  // return
+}
+
+method m_main_CALLER__backwards(
+)
+{
+label start
+  var res: s_0_Tuple
+  if (true) {
+} else {
+}
+  // return
+}
+
+// -----------------------------
+// functions
+// -----------------------------
+// -----------------------------
+// sym functions
+// -----------------------------
+// -----------------------------
+// MIR builtins
+// -----------------------------
+function mir_binop_Eq_i32_i32(
+  arg1: s_Int_i32,
+  arg2: s_Int_i32
+): s_Bool
+{
+  s_Bool_cons((s_Int_i32_read_0(arg1)) == (s_Int_i32_read_0(arg2)))
+}
+
+// -----------------------------
+// generics
+// -----------------------------
+domain Type {
+}
+
+domain s_Param {
+  function typ(s_Param): Type
+}
+
+// -----------------------------
+// pure generic casts
+// -----------------------------
+function make_generic_s_Int_i32(
+  self: s_Int_i32
+): s_Param
+  ensures (typ(result)) == (s_Int_i32_type())
+  ensures (make_concrete_s_Int_i32(result)) == (self)
+
+function make_concrete_s_Int_i32(
+  snap: s_Param
+): s_Int_i32
+  ensures (make_generic_s_Int_i32(result)) == (snap)
+
+function make_generic_s_Ref_mutable(
+  self: s_Ref_mutable
+): s_Param
+  ensures (typ(result)) == (s_Ref_mutable_type(s_Ref_mutable_typaram_T(typeof_s_Ref_mutable(self))))
+  ensures (make_concrete_s_Ref_mutable(result, s_Ref_mutable_typaram_T(typeof_s_Ref_mutable(self)))) == (self)
+
+function make_concrete_s_Ref_mutable(
+  snap: s_Param,
+  T: Type
+): s_Ref_mutable
+  ensures (make_generic_s_Ref_mutable(result)) == (snap)
+
+// -----------------------------
+// impure generic casts
+// -----------------------------
+// -----------------------------
+// snapshots
+// -----------------------------
+domain s_Ref_mutable {
+  axiom ax_s_Ref_mutable_read_0_type {
+    forall self: s_Ref_mutable :: {s_Ref_mutable_read_0(self)} (typ(s_Ref_mutable_read_0(self))) == (s_Ref_mutable_typaram_T(typeof_s_Ref_mutable(self)))
+  }
+  axiom ax_s_Ref_mutable_cons_read_0 {
+    forall T: Type, f0: s_Param :: {s_Ref_mutable_cons(T, f0)} (s_Ref_mutable_read_0(s_Ref_mutable_cons(T, f0))) == (f0)
+  }
+  axiom ax_s_Ref_mutable_cons {
+    forall self: s_Ref_mutable :: {s_Ref_mutable_cons(s_Ref_mutable_typaram_T(typeof_s_Ref_mutable(self)), s_Ref_mutable_read_0(self))} (s_Ref_mutable_cons(s_Ref_mutable_typaram_T(typeof_s_Ref_mutable(self)), s_Ref_mutable_read_0(self))) == (self)
+  }
+  axiom ax_s_Ref_mutable_cons_type_T$slash$$pound$0 {
+    forall T: Type, f0: s_Param :: {s_Ref_mutable_cons(T, f0)} (s_Ref_mutable_typaram_T(typeof_s_Ref_mutable(s_Ref_mutable_cons(T, f0)))) == (T)
+  }
+  axiom ax_s_Ref_mutable_write_0_read_0 {
+    forall self: s_Ref_mutable, val: s_Param :: {s_Ref_mutable_read_0(s_Ref_mutable_write_0(self, val))} (s_Ref_mutable_read_0(s_Ref_mutable_write_0(self, val))) == (val)
+  }
+  axiom ax_typeof_s_Ref_mutable {
+    forall self: s_Ref_mutable :: {s_Ref_mutable_typaram_T(typeof_s_Ref_mutable(self))} (typeof_s_Ref_mutable(self)) == (s_Ref_mutable_type(s_Ref_mutable_typaram_T(typeof_s_Ref_mutable(self))))
+  }
+  function typeof_s_Ref_mutable(s_Ref_mutable): Type
+  function s_Ref_mutable_cons(Type, s_Param): s_Ref_mutable
+  function s_Ref_mutable_read_0(s_Ref_mutable): s_Param
+  function s_Ref_mutable_write_0(s_Ref_mutable, s_Param): s_Ref_mutable
+}
+
+domain s_Int_i32 {
+  axiom ax_s_Int_i32_cons_read_0 {
+    forall f0: Int :: {s_Int_i32_cons(f0)} (s_Int_i32_read_0(s_Int_i32_cons(f0))) == (f0)
+  }
+  axiom ax_s_Int_i32_cons {
+    forall self: s_Int_i32 :: {s_Int_i32_read_0(self)} (s_Int_i32_cons(s_Int_i32_read_0(self))) == (self)
+  }
+  axiom ax_s_Int_i32_write_0_read_0 {
+    forall self: s_Int_i32, val: Int :: {s_Int_i32_read_0(s_Int_i32_write_0(self, val))} (s_Int_i32_read_0(s_Int_i32_write_0(self, val))) == (val)
+  }
+  axiom s_Int_i32_bounds {
+    forall self: s_Int_i32 :: {s_Int_i32_read_0(self)} ((-(2147483648)) <= (s_Int_i32_read_0(self))) && ((s_Int_i32_read_0(self)) <= (2147483647))
+  }
+  function typeof_s_Int_i32(s_Int_i32): Type
+  function s_Int_i32_cons(Int): s_Int_i32
+  function s_Int_i32_read_0(s_Int_i32): Int
+  function s_Int_i32_write_0(s_Int_i32, Int): s_Int_i32
+}
+
+domain s_Bool {
+  axiom ax_s_Bool_cons_read_0 {
+    forall f0: Bool :: {s_Bool_cons(f0)} (s_Bool_read_0(s_Bool_cons(f0))) == (f0)
+  }
+  axiom ax_s_Bool_cons {
+    forall self: s_Bool :: {s_Bool_cons(s_Bool_read_0(self))} (s_Bool_cons(s_Bool_read_0(self))) == (self)
+  }
+  axiom ax_s_Bool_write_0_read_0 {
+    forall self: s_Bool, val: Bool :: {s_Bool_read_0(s_Bool_write_0(self, val))} (s_Bool_read_0(s_Bool_write_0(self, val))) == (val)
+  }
+  function typeof_s_Bool(s_Bool): Type
+  function s_Bool_cons(Bool): s_Bool
+  function s_Bool_read_0(s_Bool): Bool
+  function s_Bool_write_0(s_Bool, Bool): s_Bool
+}
+
+domain s_0_Tuple {
+  function typeof_s_0_Tuple(s_0_Tuple): Type
+  function s_0_Tuple_cons(): s_0_Tuple
+}
+
+// -----------------------------
+// type constructors
+// -----------------------------
+domain s_Ref_mutable_ty_constructor {
+  axiom ax_s_Ref_mutable_typaram_T {
+    forall arg_0: Type :: {s_Ref_mutable_type(arg_0)} (s_Ref_mutable_typaram_T(s_Ref_mutable_type(arg_0))) == (arg_0)
+  }
+  function s_Ref_mutable_type(Type): Type
+  function s_Ref_mutable_typaram_T(Type): Type
+}
+
+domain s_Int_i32_ty_constructor {
+  function s_Int_i32_type(): Type
+}
+
+domain s_Bool_ty_constructor {
+  function s_Bool_type(): Type
+}
+
+domain s_0_Tuple_ty_constructor {
+  function s_0_Tuple_type(): Type
+}
+
+// -----------------------------
+// types
+// -----------------------------

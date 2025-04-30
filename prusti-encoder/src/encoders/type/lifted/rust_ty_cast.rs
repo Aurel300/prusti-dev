@@ -1,7 +1,7 @@
 use std::marker::PhantomData;
 
 use prusti_rustc_interface::middle::ty;
-use task_encoder::{TaskEncoder, TaskEncoderError, EncodeFullResult};
+use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderError};
 use vir::with_vcx;
 
 use crate::encoders::most_generic_ty::{extract_type_params, MostGenericTy};
@@ -33,7 +33,10 @@ impl<'vir> RustTyGenericCastEncOutput<'vir, CastFunctionsOutputRef<'vir>> {
     /// Returns the data to facilitate a cast from the concrete representation to
     /// the generic representation, if the input type wasn't already a generic.
     pub fn to_generic_cast(&self) -> Option<Cast<'vir, MakeGenericCastFunction<'vir>>> {
-        self.cast.generic_option().map(|f| Cast::new(f, &[]))
+        //self.cast.generic_option().map(|f| Cast::new(f, &[]))
+        self.cast
+            .generic_option()
+            .map(|f| Cast::new(f, self.ty_args))
     }
 }
 
@@ -61,7 +64,7 @@ impl<'vir> RustTyGenericCastEncOutput<'vir, CastFunctionsOutputRef<'vir>> {
         vcx: &'vir vir::VirCtxt<'tcx>,
         snap: vir::ExprGen<'vir, Curr, Next>,
     ) -> vir::ExprGen<'vir, Curr, Next> {
-        CastTypePure::cast_to_generic_if_necessary(&self.cast, vcx, snap)
+        CastTypePure::cast_to_generic_if_necessary(&self.cast, vcx, snap, self.ty_args)
     }
 }
 

@@ -1,8 +1,11 @@
+#![allow(clippy::len_without_is_empty)]
+
 use crate::{
-    debug_info::DebugInfo, viper_ident::ViperIdent, with_vcx, DomainParamData, ExprGen, LocalDecl, MethodCallGenData, PredicateAppGen, PredicateAppGenData, StmtGenData, Type, TypeData, VirCtxt
+    data::*, debug_info::DebugInfo, gendata::*, genrefs::*, refs::*, typecheck_error,
+    viper_ident::ViperIdent, with_vcx, VirCtxt,
 };
 use sealed::sealed;
-use std::{backtrace::Backtrace, fmt::Debug};
+use std::fmt::Debug;
 
 pub trait CallableIdent<'vir, A: Arity<'vir>, ResultTy> {
     fn new(name: ViperIdent<'vir>, args: A, result_ty: ResultTy) -> Self;
@@ -13,8 +16,16 @@ pub trait CallableIdent<'vir, A: Arity<'vir>, ResultTy> {
     fn arity(&self) -> &A;
     fn result_ty(&self) -> ResultTy;
 }
-pub trait ToKnownArity<'vir, T: 'vir, ResultTy>: CallableIdent<'vir, UnknownArityAny<'vir, T>, ResultTy> + Sized {
-    fn to_known<'tcx, K: CallableIdent<'vir, KnownArityAny<'vir, T, N>, ResultTy>, const N: usize>(self) -> K {
+pub trait ToKnownArity<'vir, T: 'vir, ResultTy>:
+    CallableIdent<'vir, UnknownArityAny<'vir, T>, ResultTy> + Sized
+{
+    fn to_known<
+        'tcx,
+        K: CallableIdent<'vir, KnownArityAny<'vir, T, N>, ResultTy>,
+        const N: usize,
+    >(
+        self,
+    ) -> K {
         K::new(
             self.name(),
             KnownArityAny::new(self.arity().args().try_into().unwrap()),
@@ -74,18 +85,16 @@ impl<'vir, A: Arity<'vir>> CallableIdent<'vir, A, ()> for MethodIdent<'vir, A> {
     fn arity(&self) -> &A {
         &self.1
     }
-    fn result_ty(&self) -> () {
-       ()
-    }
+    fn result_ty(&self) {}
 }
 
-impl <'vir, A: Arity<'vir>> MethodIdent<'vir, A> {
+impl<'vir, A: Arity<'vir>> MethodIdent<'vir, A> {
     pub fn debug_info(&self) -> DebugInfo<'vir> {
         self.2
     }
 }
 
-impl <'vir, A: Arity<'vir>> MethodIdent<'vir, A> {
+impl<'vir, A: Arity<'vir>> MethodIdent<'vir, A> {
     pub fn new(name: ViperIdent<'vir>, args: A) -> Self {
         Self(name, args, with_vcx(DebugInfo::new))
     }
@@ -93,7 +102,11 @@ impl <'vir, A: Arity<'vir>> MethodIdent<'vir, A> {
 
 impl<'vir, A: Arity<'vir, Arg = Type<'vir>>> MethodIdent<'vir, A> {
     pub fn as_unknown_arity(self) -> MethodIdent<'vir, UnknownArity<'vir>> {
-        MethodIdent(self.name(), UnknownArity::new(self.1.args()), self.debug_info())
+        MethodIdent(
+            self.name(),
+            UnknownArity::new(self.1.args()),
+            self.debug_info(),
+        )
     }
 }
 
@@ -109,12 +122,10 @@ impl<'vir, A: Arity<'vir>> CallableIdent<'vir, A, ()> for PredicateIdent<'vir, A
     fn arity(&self) -> &A {
         &self.1
     }
-    fn result_ty(&self) -> () {
-        ()
-    }
+    fn result_ty(&self) {}
 }
 
-impl <'vir, A: Arity<'vir>> PredicateIdent<'vir, A> {
+impl<'vir, A: Arity<'vir>> PredicateIdent<'vir, A> {
     pub fn debug_info(&self) -> DebugInfo<'vir> {
         self.2
     }
@@ -141,9 +152,7 @@ impl<'vir, A: Arity<'vir>> CallableIdent<'vir, A, ()> for DomainIdent<'vir, A> {
     fn arity(&self) -> &A {
         &self.1
     }
-    fn result_ty(&self) -> () {
-        ()
-    }
+    fn result_ty(&self) {}
 }
 
 impl<'vir> DomainIdent<'vir, KnownArityAny<'vir, DomainParamData<'vir>, 0>> {
@@ -173,7 +182,7 @@ pub trait Arity<'vir>: Copy {
 impl<'vir, T, const N: usize> Arity<'vir> for KnownArityAny<'vir, T, N> {
     type Arg = T;
     fn args(&self) -> &'vir [T] {
-        &self.0
+        self.0
     }
     fn len_matches(&self, _len: usize) -> bool {
         true
@@ -183,7 +192,7 @@ impl<'vir, T, const N: usize> Arity<'vir> for KnownArityAny<'vir, T, N> {
 impl<'vir, T> Arity<'vir> for UnknownArityAny<'vir, T> {
     type Arg = T;
     fn args(&self) -> &'vir [T] {
-        &self.0
+        self.0
     }
 
     fn len_matches(&self, len: usize) -> bool {
@@ -218,7 +227,7 @@ impl<'vir, A: Arity<'vir, Arg = Type<'vir>>> CheckTypes<'vir> for A {
             return false;
         }
         args.iter()
-            .zip(self.args().into_iter())
+            .zip(self.args())
             .all(|(a, expected)| a.typ() == *expected)
     }
 }
@@ -232,7 +241,7 @@ impl<'vir, T, const N: usize> KnownArityAny<'vir, T, N> {
 }
 impl<'vir, T, const N: usize> Clone for KnownArityAny<'vir, T, N> {
     fn clone(&self) -> Self {
-        Self(self.0)
+        *self
     }
 }
 pub type NullaryArityAny<'vir, T> = KnownArityAny<'vir, T, 0>;
@@ -256,7 +265,7 @@ impl<'vir, T> UnknownArityAny<'vir, T> {
 }
 impl<'vir, T> Clone for UnknownArityAny<'vir, T> {
     fn clone(&self) -> Self {
-        Self(self.0)
+        *self
     }
 }
 impl<'vir, T> Copy for UnknownArityAny<'vir, T> {}
@@ -281,10 +290,8 @@ impl<'vir, A: Arity<'vir, Arg = Type<'vir>> + Debug> FunctionIdent<'vir, A> {
         vcx: &'vir VirCtxt<'tcx>,
         args: &[ExprGen<'vir, Curr, Next>],
     ) -> ExprGen<'vir, Curr, Next> {
-        if self.1.types_match(args) {
-            vcx.mk_func_app(self.name().to_str(), args, self.result_ty())
-        } else {
-            panic!(
+        if !self.1.types_match(args) {
+            typecheck_error!(
                 "Function {} could not be applied. Expected: {:?}, Actual Exprs: {:?}, Actual Types: {:?}, debug info: {}",
                 self.name(),
                 self.arity(),
@@ -293,6 +300,7 @@ impl<'vir, A: Arity<'vir, Arg = Type<'vir>> + Debug> FunctionIdent<'vir, A> {
                 self.debug_info()
             );
         }
+        vcx.mk_func_app(self.name().to_str(), args, self.result_ty())
     }
 }
 
@@ -303,14 +311,8 @@ impl<'vir, A: Arity<'vir, Arg = Type<'vir>> + Debug> PredicateIdent<'vir, A> {
         args: &[ExprGen<'vir, Curr, Next>],
         perm: Option<ExprGen<'vir, Curr, Next>>,
     ) -> PredicateAppGen<'vir, Curr, Next> {
-        if self.1.types_match(args) {
-            vcx.alloc(PredicateAppGenData {
-                target: self.name().to_str(),
-                args: vcx.alloc_slice(args),
-                perm,
-            })
-        } else {
-            panic!(
+        if !self.1.types_match(args) {
+            typecheck_error!(
                 "Predicate {} could not be applied. Expected arg types: {:?}, Actual arg types: {:?}, Debug info: {}",
                 self.name(),
                 self.arity(),
@@ -318,6 +320,11 @@ impl<'vir, A: Arity<'vir, Arg = Type<'vir>> + Debug> PredicateIdent<'vir, A> {
                 self.debug_info()
             );
         }
+        vcx.alloc(PredicateAppGenData {
+            target: self.name().to_str(),
+            args: vcx.alloc_slice(args),
+            perm,
+        })
     }
 }
 
@@ -336,9 +343,17 @@ impl<'vir, const N: usize> MethodIdent<'vir, KnownArity<'vir, N>> {
         &self,
         vcx: &'vir VirCtxt<'tcx>,
         args: [ExprGen<'vir, Curr, Next>; N],
-    ) -> StmtGenData<'vir, Curr, Next> {
-        assert!(self.1.types_match(&args));
-        StmtGenData::MethodCall(vcx.alloc(MethodCallGenData {
+    ) -> StmtKindGenData<'vir, Curr, Next> {
+        if !self.1.types_match(&args) {
+            typecheck_error!(
+                "Method {} could not be applied. Expected arg types: {:?}, Actual arg types: {:?}, Debug info: {}",
+                self.name(),
+                self.arity(),
+                args.iter().map(|a| a.ty()).collect::<Vec<_>>(),
+                self.debug_info()
+            );
+        }
+        StmtKindGenData::MethodCall(vcx.alloc(MethodCallGenData {
             targets: &[],
             method: self.name().to_str(),
             args: vcx.alloc_slice(&args),
@@ -350,7 +365,6 @@ impl<'vir, const N: usize> DomainIdent<'vir, KnownArityAny<'vir, DomainParamData
         vcx.alloc(TypeData::Domain(self.0.to_str(), vcx.alloc_slice(&args)))
     }
 }
-
 
 // Func arity checked at runtime
 
@@ -379,9 +393,9 @@ impl<'vir> MethodIdent<'vir, UnknownArity<'vir>> {
         &self,
         vcx: &'vir VirCtxt<'tcx>,
         args: &[ExprGen<'vir, Curr, Next>],
-    ) -> StmtGenData<'vir, Curr, Next> {
+    ) -> StmtKindGenData<'vir, Curr, Next> {
         if !self.1.types_match(args) {
-            panic!(
+            typecheck_error!(
                 "Method {} could not be applied. Expected arg types: {:?}, Actual arg types: {:?}, Debug info: {}",
                 self.name(),
                 self.arity(),
@@ -389,7 +403,7 @@ impl<'vir> MethodIdent<'vir, UnknownArity<'vir>> {
                 self.debug_info()
             );
         }
-        StmtGenData::MethodCall(vcx.alloc(MethodCallGenData {
+        StmtKindGenData::MethodCall(vcx.alloc(MethodCallGenData {
             targets: &[],
             method: self.name().to_str(),
             args: vcx.alloc_slice(args),
@@ -398,7 +412,28 @@ impl<'vir> MethodIdent<'vir, UnknownArity<'vir>> {
 }
 impl<'vir> DomainIdent<'vir, UnknownArityAny<'vir, DomainParamData<'vir>>> {
     pub fn apply<'tcx>(&self, vcx: &'vir VirCtxt<'tcx>, args: &[Type<'vir>]) -> Type<'vir> {
-        assert!(self.1.len_matches(args.len()));
+        if !self.1.len_matches(args.len()) {
+            typecheck_error!(
+                "Domain {} could not be applied. Expected # args: {}, Actual # args: {}",
+                self.name(),
+                self.1.len(),
+                args.len(),
+            );
+        }
         vcx.alloc(TypeData::Domain(self.0.to_str(), vcx.alloc_slice(args)))
     }
+}
+#[macro_export]
+macro_rules! typecheck_error {
+    ($($arg:tt)*) => {
+        if cfg!(feature = "vir_panic_on_typecheck_error") {
+            panic!($($arg)*);
+        } else {
+            tracing::error!(
+                "{}\nThe error occurred at: {}",
+                format_args!($($arg)*),
+                std::backtrace::Backtrace::capture()
+            );
+        }
+    };
 }

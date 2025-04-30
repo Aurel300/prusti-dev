@@ -1,14 +1,14 @@
-use task_encoder::{TaskEncoder, TaskEncoderDependencies, EncodeFullResult};
+use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 use vir::{
-    BinaryArity, CallableIdent, DomainIdent, DomainParamData, FunctionIdent,
-    KnownArityAny, NullaryArity, PredicateIdent, TypeData, UnaryArity, ViperIdent,
+    BinaryArity, CallableIdent, DomainIdent, DomainParamData, FunctionIdent, KnownArityAny,
+    NullaryArity, PredicateIdent, TypeData, UnaryArity, ViperIdent,
 };
 
 pub struct GenericEnc;
 
 #[derive(Clone, Debug)]
 pub enum GenericEncError {
-    UnsupportedType,
+    // UnsupportedType,
 }
 
 #[derive(Clone, Debug)]
@@ -19,7 +19,7 @@ pub struct GenericEncOutputRef<'vir> {
     pub ref_to_pred: PredicateIdent<'vir, BinaryArity<'vir>>,
     pub ref_to_snap: FunctionIdent<'vir, BinaryArity<'vir>>,
     pub unreachable_to_snap: FunctionIdent<'vir, NullaryArity<'vir>>,
-    pub domain_type_name: DomainIdent<'vir, KnownArityAny<'vir, DomainParamData<'vir>, 0>>,
+    // pub domain_type_name: DomainIdent<'vir, KnownArityAny<'vir, DomainParamData<'vir>, 0>>,
     pub domain_param_name: DomainIdent<'vir, KnownArityAny<'vir, DomainParamData<'vir>, 0>>,
 }
 impl<'vir> task_encoder::OutputRefAny for GenericEncOutputRef<'vir> {}
@@ -55,9 +55,11 @@ impl TaskEncoder for GenericEnc {
         task_key: &Self::TaskKey<'vir>,
         deps: &mut TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self> {
-        let ref_to_pred =
-            PredicateIdent::new(ViperIdent::new("p_Param"), BinaryArity::new(&[&TypeData::Ref, &TYP_DOMAIN]));
-        let type_domain_ident = DomainIdent::nullary(ViperIdent::new("Type"));
+        let ref_to_pred = PredicateIdent::new(
+            ViperIdent::new("p_Param"),
+            BinaryArity::new(&[&TypeData::Ref, &TYP_DOMAIN]),
+        );
+        // let type_domain_ident = DomainIdent::nullary(ViperIdent::new("Type"));
         let param_domain_ident = DomainIdent::nullary(ViperIdent::new("s_Param"));
         let ref_to_snap = FunctionIdent::new(
             ViperIdent::new("p_Param_snap"),
@@ -76,12 +78,11 @@ impl TaskEncoder for GenericEnc {
             &TYP_DOMAIN,
         );
 
-
         let output_ref = GenericEncOutputRef {
             type_snapshot: &TYP_DOMAIN,
             param_snapshot: &SNAPSHOT_PARAM_DOMAIN,
             ref_to_pred,
-            domain_type_name: type_domain_ident,
+            // domain_type_name: type_domain_ident,
             domain_param_name: param_domain_ident,
             ref_to_snap,
             unreachable_to_snap,
@@ -89,17 +90,13 @@ impl TaskEncoder for GenericEnc {
         };
 
         #[allow(clippy::unit_arg)]
-        deps.emit_output_ref(
-            *task_key,
-            output_ref
-        )?;
+        deps.emit_output_ref(*task_key, output_ref)?;
 
         let typ = FunctionIdent::new(
             ViperIdent::new("typ"),
             UnaryArity::new(&[&SNAPSHOT_PARAM_DOMAIN]),
             &TYP_DOMAIN,
         );
-
 
         vir::with_vcx(|vcx| {
             let t = vcx.mk_local_ex("t", &TYP_DOMAIN);
@@ -124,8 +121,7 @@ impl TaskEncoder for GenericEnc {
             let name = unreachable_to_snap.name_str();
             let false_ = vcx.alloc_slice(&[vcx.mk_bool::<false>()]);
             let unreachable_to_snap =
-                vcx
-                    .mk_function(name, &[], &SNAPSHOT_PARAM_DOMAIN, false_, false_, None);
+                vcx.mk_function(name, &[], &SNAPSHOT_PARAM_DOMAIN, false_, false_, None);
             Ok((
                 GenericEncOutput {
                     param_snapshot: vir::vir_domain! { vcx; domain s_Param {
@@ -135,7 +131,7 @@ impl TaskEncoder for GenericEnc {
                     ref_to_pred: vir::vir_predicate! { vcx; predicate p_Param(self_p: Ref, t: Type) },
                     type_snapshot: vir::vir_domain! { vcx; domain Type { } },
                     ref_to_snap,
-                    unreachable_to_snap
+                    unreachable_to_snap,
                 },
                 (),
             ))

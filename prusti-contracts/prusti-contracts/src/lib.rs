@@ -129,7 +129,7 @@ mod private {
     use core::{marker::PhantomData, ops::*};
 
     /// A macro for defining a closure with a specification.
-    pub use prusti_contracts_proc_macros::{closure, pure, trusted};
+    pub use prusti_contracts_proc_macros::{closure, pure};
 
     pub fn prusti_set_union_active_field<T>(_arg: T) {
         unreachable!();
@@ -327,23 +327,33 @@ mod private {
     }
 }
 
-/// This function is used to evaluate an expression in the context just
-/// before the borrows expires.
-pub fn before_expiry<T>(arg: T) -> T {
-    arg
-}
+/// This function is used to mark the beginning of evaluation of expressions
+/// in the "before expiration" context, just before the expiry of the borrow
+/// that the pledge is specifying.
+pub fn before_expiry_start() {}
 
-/// This function is used to evaluate an expression in the “old”
-/// context, that is at the beginning of the method call.
-pub fn old<T>(arg: T) -> T {
-    arg
-}
+/// End of the context started with `before_expiry_start`.
+pub fn before_expiry_end() {}
+
+/// This function is used to mark the beginning of evaluation of expressions
+/// in the "old" context, that is at the beginning of the method call.
+pub fn old_start() {}
+
+/// End of the context started with `old_start`.
+pub fn old_end() {}
+
+/// This function is used to mark the beginning of evaluation of expressions
+/// in a given execution, when specifying a hyperproperty concerning multiple
+/// exeuctions.
+pub fn rel_start<const E: usize>() {}
+
+/// End of the context started with `rel_start`.
+pub fn rel_end<const E: usize>() {}
 
 /// Universal quantifier.
 ///
 /// This is a Prusti-internal representation of the `forall` syntax.
-#[prusti::builtin="forall"]
-pub fn forall<T, F>(_trigger_set: T, _closure: F) -> bool {
+pub fn forall<T, F>(_trigger_set: T, _closure: &F) -> bool {
     true
 }
 
@@ -365,7 +375,6 @@ pub fn snap<T>(_x: &T) -> T {
 /// `PartialEq` nor `Copy` implementation. The in-memory representation is
 /// constructed recursively: references are followed, unsafe pointers and cells
 /// are not. Importantly, addresses are not taken into consideration.
-#[prusti::builtin="snapshot_equality"]
 pub fn snapshot_equality<T>(_l: T, _r: T) -> bool {
     true
 }

@@ -1607,9 +1607,10 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                 );
 
                 let (func_def_id, caller_substs) = self.get_def_id_and_caller_substs(func);
-                let is_pure = crate::encoders::with_proc_spec(func_def_id, |spec| {
-                    spec.kind.is_pure().unwrap_or_default()
-                })
+                let is_pure = crate::encoders::with_proc_spec(
+                    SpecQuery::GetProcKind(func_def_id, ty::List::identity_for_item(self.vcx().tcx(), func_def_id)),
+                    |spec| spec.kind.is_pure().unwrap_or_default(),
+                )
                 .unwrap_or_default();
 
                 let dest = self.encode_place(Place::from(*destination)).expr;

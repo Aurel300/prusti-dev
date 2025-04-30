@@ -6,10 +6,13 @@ use prusti_rustc_interface::{
 
 use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 
-use crate::{encoders::{
-    rust_ty_predicates::{RustTyPredicatesEnc, RustTyPredicatesEncOutputRef},
-    PredicateEncOutputRef,
-}, trait_support::is_function_with_body};
+use crate::{
+    encoders::{
+        rust_ty_predicates::{RustTyPredicatesEnc, RustTyPredicatesEncOutputRef},
+        PredicateEncOutputRef,
+    },
+    trait_support::is_function_with_body,
+};
 
 pub struct MirLocalDefEnc;
 #[derive(Clone, Copy)]
@@ -116,10 +119,12 @@ impl TaskEncoder for MirLocalDefEnc {
                     sig.inputs_and_output.len(),
                 );
 
-            Ok((MirLocalDefEncOutput {
-                locals: vcx.alloc(locals),
-                arg_count: sig.inputs().len(),
-            },()))
+                MirLocalDefEncOutput {
+                    locals: vcx.alloc(locals),
+                    arg_count: sig.inputs().len(),
+                }
+            };
+            Ok((data, ()))
         })
     }
 }

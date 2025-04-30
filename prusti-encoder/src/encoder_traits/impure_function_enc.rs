@@ -1,4 +1,5 @@
 use pcg::r#loop::LoopAnalysis;
+use prusti_interface::specs::specifications::SpecQuery;
 use prusti_rustc_interface::middle::mir;
 use task_encoder::{EncodeFullError, TaskEncoder, TaskEncoderDependencies};
 use vir::{MethodIdent, UnknownArity, ViperIdent};
@@ -46,14 +47,17 @@ where
     ) -> Result<ImpureFunctionEncOutput<'vir>, EncodeFullError<'vir, Self>> {
         let def_id = Self::get_def_id(&task_key);
         let caller_def_id = Self::get_caller_def_id(&task_key);
-        let trusted = crate::encoders::with_proc_spec(def_id, |def_spec| {
-            def_spec.trusted.extract_inherit().unwrap_or_default()
-        })
-        .unwrap_or_default();
+
         vir::with_vcx(|vcx| {
             use mir::visit::Visitor;
 
             let substs = Self::get_substs(vcx, &task_key);
+            let trusted = crate::encoders::with_proc_spec(
+                SpecQuery::GetProcKind(def_id, substs),
+                |proc_spec| proc_spec.trusted.extract_inherit().unwrap_or_default(),
+            )
+            .unwrap_or_default();
+
             let local_defs =
                 deps.require_local::<MirLocalDefEnc>((def_id, substs, caller_def_id))?;
 

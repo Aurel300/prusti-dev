@@ -3,7 +3,26 @@ use crate::encoders::{
 };
 use prusti_rustc_interface::middle::ty;
 use task_encoder::{EncodeFullError, TaskEncoder, TaskEncoderDependencies};
-use vir::ToKnownArity;
+use vir::{FunctionIdent, ToKnownArity, UnaryArity};
+
+#[derive(Clone, Copy, Debug)]
+pub struct DomainDataArray<'vir> {
+    pub prim_type: vir::Type<'vir>,
+    /// Snapshot of self as argument. Returns Viper primitive value.
+    pub snap_to_prim: FunctionIdent<'vir, UnaryArity<'vir>>,
+    /// Viper primitive value as argument. Returns domain.
+    pub prim_to_snap: FunctionIdent<'vir, UnaryArity<'vir>>,
+}
+
+impl<'vir> DomainEncSpecifics<'vir> {
+    #[track_caller]
+    pub fn expect_array(self) -> DomainDataArray<'vir> {
+        match self {
+            Self::Array(data) => data,
+            _ => panic!("expected primitive"),
+        }
+    }
+}
 
 pub(crate) fn domain<'vir>(
     task_key: <DomainEnc as TaskEncoder>::TaskKey<'vir>,
@@ -27,7 +46,7 @@ pub(crate) fn domain<'vir>(
         forall value: [prim_type] :: {[cons_ident](value)} ([value_ident]([cons_ident](value))) == (value)
     });
 
-    Ok(DomainEncSpecifics::Primitive(DomainDataPrim {
+    Ok(DomainEncSpecifics::Array(DomainDataArray {
         prim_type,
         snap_to_prim: value_ident.to_known(),
         prim_to_snap: cons_ident.to_known(),
@@ -90,7 +109,7 @@ pub(crate) fn predicate<'vir>(
     );
 
     Ok((
-        PredicateEncData::Primitive(snap.specifics.expect_primitive()),
+        PredicateEncData::Array(snap.specifics.expect_array()),
         None,
     ))
 }

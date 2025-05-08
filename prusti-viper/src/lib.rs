@@ -870,6 +870,7 @@ impl<'vir, 'v> ToViper<'vir, 'v> for vir::UnOp<'vir> {
         match self.kind {
             vir::UnOpKind::Neg => ctx.ast.minus_with_pos(expr, pos),
             vir::UnOpKind::Not => ctx.ast.not_with_pos(expr, pos),
+            vir::UnOpKind::SeqLen => ctx.ast.seq_length(expr),
         }
     }
 }

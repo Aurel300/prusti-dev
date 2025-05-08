@@ -11,7 +11,7 @@ use vir::{
 use crate::encoders::GenericEnc;
 
 use super::{
-    domain::{DomainDataImmRef, DomainDataMutRef, DomainDataStruct}, kinds::primitive::DomainDataPrim, lifted::{generic::LiftedGeneric, ty::LiftedTy}, most_generic_ty::{get_vir_base_name_kind, MostGenericTy}, snapshot::SnapshotEnc
+    domain::{DomainDataArray, DomainDataImmRef, DomainDataMutRef, DomainDataStruct}, kinds::primitive::DomainDataPrim, lifted::{generic::LiftedGeneric, ty::LiftedTy}, most_generic_ty::{get_vir_base_name_kind, MostGenericTy}, snapshot::SnapshotEnc
 };
 
 /// Takes a `MostGenericTy` and returns various Viper predicates and functions for
@@ -63,6 +63,7 @@ pub struct PredicateEncDataMutRef<'vir> {
 #[derive(Clone, Copy, Debug)]
 pub enum PredicateEncData<'vir> {
     Never,
+    Array(DomainDataArray<'vir>),
     Primitive(DomainDataPrim<'vir>),
     // structs, tuples
     Trusted,
@@ -116,6 +117,13 @@ impl<'vir> PredicateEncOutputRef<'vir> {
         vcx.alloc_slice(&args)
     }
 
+    #[track_caller]
+    pub fn expect_array(&self) -> DomainDataArray<'vir> {
+        match self.specifics {
+            PredicateEncData::Array(prim) => prim,
+            _ => panic!("expected array type"),
+        }
+    }
     #[track_caller]
     pub fn expect_prim(&self) -> DomainDataPrim<'vir> {
         match self.specifics {

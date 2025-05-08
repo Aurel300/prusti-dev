@@ -514,12 +514,17 @@ impl<'vir, Curr, Next> Debug for UnOpGenData<'vir, Curr, Next> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         write!(
             f,
-            "{}({:?})",
+            "{}({:?}){}",
             match self.kind {
                 UnOpKind::Neg => "-",
                 UnOpKind::Not => "!",
+                UnOpKind::SeqLen => "|",
             },
-            self.expr
+            self.expr,
+            match self.kind {
+                UnOpKind::SeqLen => "|",
+                _ => "",
+            },
         )
     }
 }

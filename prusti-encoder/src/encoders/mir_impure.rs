@@ -1092,8 +1092,18 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                     //mir::Rvalue::Repeat(Operand<'vir>, Const<'vir>) => {}
                     //mir::Rvalue::ThreadLocalRef(DefId) => {}
                     //mir::Rvalue::AddressOf(Mutability, Place<'vir>) => {}
-                    //mir::Rvalue::Len(Place<'vir>) => {}
                     //mir::Rvalue::Cast(CastKind, Operand<'vir>, Ty<'vir>) => {}
+
+                    mir::Rvalue::Len(place) => {
+                        let place_ty = place.ty(self.local_decls, self.vcx.tcx());
+                        let place_expr = self.encode_place_snap(Place::from(*place)).1;
+                        let unop_function = self.deps.require_ref::<MirBuiltinEnc>(
+                            crate::encoders::MirBuiltinEncTask::Len(
+                                place_ty.ty,
+                            ),
+                        ).unwrap().function;
+                        unop_function.apply(self.vcx, &[place_expr])
+                    }
 
                     mir::Rvalue::BinaryOp(op, box (l, r)) => {
                         let l_ty = l.ty(self.local_decls, self.vcx.tcx());
@@ -1149,7 +1159,7 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                         //let e_elem_ty = self.deps.require_ref::<RustTySnapshotsEnc>(*elem_ty).unwrap();
                         let generic_enc = self.deps.require_ref::<GenericEnc>(()).unwrap();
                         let e_rvalue_ty = self.deps.require_ref::<RustTyPredicatesEnc>(rvalue_ty).unwrap();
-                        let prim = e_rvalue_ty.generic_predicate.expect_prim();
+                        let prim = e_rvalue_ty.generic_predicate.expect_array();
                         let ty_caster = self.deps.require_local::<AggregateSnapArgsCastEnc>(
                             AggregateSnapArgsCastEncTask {
                                 tys: std::iter::repeat(*elem_ty).take(values.len()).collect(),

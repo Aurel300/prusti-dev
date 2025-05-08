@@ -29,6 +29,7 @@ pub struct LocalDeclData<'vir> {
 pub enum UnOpKind {
     Neg,
     Not,
+    SeqLen,
 }
 impl From<mir::UnOp> for UnOpKind {
     fn from(value: mir::UnOp) -> Self {

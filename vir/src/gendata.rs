@@ -11,6 +11,16 @@ pub struct UnOpGenData<'vir, Curr, Next> {
     pub expr: ExprGen<'vir, Curr, Next>,
 }
 
+impl<'vir, Curr, Next> UnOpGenData<'vir, Curr, Next> {
+    pub fn ty(&self) -> Type<'vir> {
+        match self.kind {
+            UnOpKind::Neg
+            | UnOpKind::Not => self.expr.ty(),
+            UnOpKind::SeqLen => &TypeData::Int,
+        }
+    }
+}
+
 #[derive(VirHash, VirReify, VirSerde)]
 pub struct BinOpGenData<'vir, Curr, Next> {
     #[vir(reify_pass)]
@@ -201,7 +211,7 @@ impl<'vir, Curr, Next> ExprKindGenData<'vir, Curr, Next> {
             ExprKindGenData::Result(ty) => ty,
             ExprKindGenData::AccField(_) => &TypeData::Bool,
             ExprKindGenData::Unfolding(f) => f.expr.ty(),
-            ExprKindGenData::UnOp(u) => u.expr.ty(),
+            ExprKindGenData::UnOp(u) => u.ty(),
             ExprKindGenData::BinOp(b) => b.ty(),
             ExprKindGenData::SeqLiteral(s) => s.ty,
             ExprKindGenData::Ternary(t) => t.then.ty(),

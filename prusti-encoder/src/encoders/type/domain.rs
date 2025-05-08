@@ -2,20 +2,18 @@
 //   be an indirection in error storage somewhere, maybe even in `task-encoder`?
 #![allow(clippy::result_large_err)]
 
-use prusti_rustc_interface::middle::ty::{self, ParamTy, TyKind};
+use prusti_rustc_interface::middle::ty::{self, TyKind};
 use task_encoder::{EncodeFullError, EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 use vir::{
     BinaryArity, CallableIdent, DomainAxiomData, DomainFunctionData, DomainIdent, DomainParamData,
     FunctionIdent, NullaryArityAny, ToKnownArity, UnaryArity, UnknownArity,
 };
 use super::{
-    lifted::{
-        ty::{EncodeGenericsAsParamTy, LiftedTy, LiftedTyEnc},
-        ty_constructor::TyConstructorEnc,
-    }, most_generic_ty::{extract_type_params, get_vir_base_name_kind, MostGenericTy}, rust_ty_snapshots::RustTySnapshotsEnc
+    lifted::ty_constructor::TyConstructorEnc, most_generic_ty::{get_vir_base_name_kind, MostGenericTy}, rust_ty_snapshots::RustTySnapshotsEnc,
 };
 
 pub use super::kinds::adt::DomainDataEnum;
+pub use super::kinds::array::DomainDataArray;
 pub use super::kinds::immref::DomainDataImmRef;
 pub use super::kinds::mutref::DomainDataMutRef;
 pub use super::kinds::primitive::DomainDataPrim;
@@ -49,6 +47,7 @@ pub enum DomainEncSpecifics<'vir> {
     Opaque,
     Param,
     Never,
+    Array(DomainDataArray<'vir>),
     Primitive(DomainDataPrim<'vir>),
     ImmRef(DomainDataImmRef<'vir>),
     MutRef(DomainDataMutRef<'vir>),

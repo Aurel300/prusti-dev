@@ -5,13 +5,12 @@ use crate::encoders::{
     },
     lifted::ty::{EncodeGenericsAsParamTy, LiftedTyEnc},
     predicate::{
-        PredicateBuilder, PredicateEncData, PredicateEncDataEnum, PredicateEncDataStruct,
-        PredicateEncDataVariant,
+        PredicateBuilder, PredicateEncData, PredicateEncDataStruct,
     },
     rust_ty_predicates::RustTyPredicatesEnc,
     rust_ty_snapshots::RustTySnapshotsEnc,
     snapshot::SnapshotEncOutput,
-    PredicateEnc,
+    PredicateEnc, PredicateEncOutputRef,
 };
 use prusti_rustc_interface::{
     middle::ty,
@@ -19,7 +18,7 @@ use prusti_rustc_interface::{
     abi,
 };
 use task_encoder::{EncodeFullError, TaskEncoder, TaskEncoderDependencies};
-use vir::{FunctionIdent, ToKnownArity, UnaryArity};
+use vir::{FunctionIdent, PredicateIdent, ToKnownArity, UnaryArity, UnknownArity};
 
 use super::primitive::DomainDataPrim;
 
@@ -47,11 +46,87 @@ impl<'vir> DomainEncSpecifics<'vir> {
             _ => None,
         }
     }
+
     #[track_caller]
     pub fn expect_enumlike(self) -> Option<DomainDataEnum<'vir>> {
         match self {
             Self::EnumLike(data) => data,
-            _ => panic!("expected enum-like, was {self:?}"),
+            _ => panic!("expected enumlike domain data (got {self:?})"),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct PredicateEncDataEnum<'vir> {
+    pub discr: FunctionIdent<'vir, UnaryArity<'vir>>,
+    pub discr_prim: DomainDataPrim<'vir>,
+    //pub discr_bounds: DiscrBounds<'vir>,
+    // pub snap_to_discr_snap: FunctionIdent<'vir, UnaryArity<'vir>>,
+    pub variants: &'vir [PredicateEncDataVariant<'vir>],
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct PredicateEncDataVariant<'vir> {
+    pub predicate: PredicateIdent<'vir, UnknownArity<'vir>>,
+    pub vid: abi::VariantIdx,
+    pub discr: vir::Expr<'vir>,
+    pub fields: PredicateEncDataStruct<'vir>,
+}
+
+impl<'vir> PredicateEncOutputRef<'vir> {
+    pub fn get_enumlike(&self) -> Option<&Option<PredicateEncDataEnum<'vir>>> {
+        match &self.specifics {
+            PredicateEncData::EnumLike(e) => Some(e),
+            _ => None,
+        }
+    }
+
+    #[track_caller]
+    pub fn expect_enumlike(&self) -> Option<&PredicateEncDataEnum<'vir>> {
+        match &self.specifics {
+            PredicateEncData::EnumLike(data) => data.as_ref(),
+            s => panic!("expected enumlike predicate data (got {s:?})"),
+        }
+    }
+
+    pub fn get_variant_any(&self, vid: abi::VariantIdx) -> &PredicateEncDataStruct<'vir> {
+        match &self.specifics {
+            PredicateEncData::StructLike(s) => {
+                assert_eq!(vid, abi::FIRST_VARIANT);
+                s
+            }
+            PredicateEncData::EnumLike(e) => &e.as_ref().unwrap().variants[vid.as_usize()].fields,
+            s => panic!("expected structlike or enumlike predicate data (got {s:?})"),
+        }
+    }
+
+    #[track_caller]
+    pub fn expect_variant(&self, vid: abi::VariantIdx) -> &PredicateEncDataVariant<'vir> {
+        match &self.specifics {
+            PredicateEncData::EnumLike(e) => &e.as_ref().unwrap().variants[vid.as_usize()],
+            s => panic!("expected enumlike predicate data (got {s:?})"),
+        }
+    }
+
+    #[track_caller]
+    pub fn expect_pred_variant_opt(
+        &self,
+        vid: Option<abi::VariantIdx>,
+    ) -> PredicateIdent<'vir, UnknownArity<'vir>> {
+        vid.map(|vid| self.expect_variant(vid).predicate)
+            .unwrap_or(self.ref_to_pred)
+    }
+
+    #[track_caller]
+    pub fn expect_variant_opt(
+        &self,
+        vid: Option<abi::VariantIdx>,
+    ) -> &PredicateEncDataStruct<'vir> {
+        match vid {
+            None => self.expect_structlike(),
+            Some(vid) => {
+                &self.expect_enumlike().expect("empty enum").variants[vid.as_usize()].fields
+            }
         }
     }
 }

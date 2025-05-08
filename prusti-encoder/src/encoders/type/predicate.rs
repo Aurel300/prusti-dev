@@ -1,17 +1,21 @@
-use prusti_rustc_interface::{
-    middle::ty::{self, TyKind},
-    target::abi,
-};
+use prusti_rustc_interface::middle::ty::{self, TyKind};
 use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 use vir::{
-    BinaryArity, CallableIdent, FunctionIdent, MethodIdent, NullaryArity, PredicateIdent, TypeData,
-    UnaryArity, UnknownArity, VirCtxt,
+    CallableIdent, FunctionIdent, MethodIdent, NullaryArity, PredicateIdent, TypeData,
+    UnknownArity, VirCtxt,
 };
 
 use crate::encoders::GenericEnc;
 
 use super::{
-    domain::{DomainDataArray, DomainDataImmRef, DomainDataMutRef, DomainDataStruct}, kinds::primitive::DomainDataPrim, lifted::{generic::LiftedGeneric, ty::LiftedTy}, most_generic_ty::{get_vir_base_name_kind, MostGenericTy}, snapshot::SnapshotEnc
+    domain::DomainDataArray, kinds::primitive::DomainDataPrim, lifted::{generic::LiftedGeneric, ty::LiftedTy}, most_generic_ty::{get_vir_base_name_kind, MostGenericTy}, snapshot::SnapshotEnc
+};
+
+pub use super::kinds::{
+    adt::PredicateEncDataEnum,
+    immref::PredicateEncDataImmRef,
+    mutref::PredicateEncDataMutRef,
+    structlike::PredicateEncDataStruct,
 };
 
 /// Takes a `MostGenericTy` and returns various Viper predicates and functions for
@@ -21,43 +25,6 @@ pub struct PredicateEnc;
 #[derive(Clone, Debug)]
 pub enum PredicateEncError {
     // UnsupportedType,
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct PredicateEncDataStruct<'vir> {
-    pub snap_data: DomainDataStruct<'vir>,
-    /// Ref to self as argument. Returns Ref to field.
-    pub ref_to_field_refs: &'vir [FunctionIdent<'vir, UnknownArity<'vir>>],
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct PredicateEncDataEnum<'vir> {
-    pub discr: FunctionIdent<'vir, UnaryArity<'vir>>,
-    pub discr_prim: DomainDataPrim<'vir>,
-    //pub discr_bounds: DiscrBounds<'vir>,
-    // pub snap_to_discr_snap: FunctionIdent<'vir, UnaryArity<'vir>>,
-    pub variants: &'vir [PredicateEncDataVariant<'vir>],
-}
-#[derive(Clone, Copy, Debug)]
-pub struct PredicateEncDataVariant<'vir> {
-    pub predicate: PredicateIdent<'vir, UnknownArity<'vir>>,
-    pub vid: abi::VariantIdx,
-    pub discr: vir::Expr<'vir>,
-    pub fields: PredicateEncDataStruct<'vir>,
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct PredicateEncDataImmRef<'vir> {
-    pub deref_func: vir::FunctionIdent<'vir, BinaryArity<'vir>>,
-    pub perm: Option<vir::Expr<'vir>>,
-    pub snap_data: DomainDataImmRef<'vir>,
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct PredicateEncDataMutRef<'vir> {
-    pub deref_func: vir::FunctionIdent<'vir, UnaryArity<'vir>>,
-    pub perm: Option<vir::Expr<'vir>>,
-    pub snap_data: DomainDataMutRef<'vir>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -115,95 +82,6 @@ impl<'vir> PredicateEncOutputRef<'vir> {
         let mut args = vec![self_ref];
         args.extend(instantiated_ty.arg_exprs(vcx));
         vcx.alloc_slice(&args)
-    }
-
-    #[track_caller]
-    pub fn expect_array(&self) -> DomainDataArray<'vir> {
-        match self.specifics {
-            PredicateEncData::Array(prim) => prim,
-            _ => panic!("expected array type"),
-        }
-    }
-    #[track_caller]
-    pub fn expect_prim(&self) -> DomainDataPrim<'vir> {
-        match self.specifics {
-            PredicateEncData::Primitive(prim) => prim,
-            _ => panic!("expected primitive type"),
-        }
-    }
-    #[track_caller]
-    pub fn expect_immref(&self) -> PredicateEncDataImmRef<'vir> {
-        match self.specifics {
-            PredicateEncData::ImmRef(r) => r,
-            s => panic!("expected immref type ({s:?})"),
-        }
-    }
-    #[track_caller]
-    pub fn expect_mutref(&self) -> PredicateEncDataMutRef<'vir> {
-        match self.specifics {
-            PredicateEncData::MutRef(r) => r,
-            s => panic!("expected mutref type ({s:?})"),
-        }
-    }
-    pub fn get_structlike(&self) -> Option<&PredicateEncDataStruct<'vir>> {
-        match &self.specifics {
-            PredicateEncData::StructLike(data) => Some(data),
-            _ => None,
-        }
-    }
-    #[track_caller]
-    pub fn expect_structlike(&self) -> &PredicateEncDataStruct<'vir> {
-        self.get_structlike().expect("expected structlike type")
-    }
-    pub fn get_enumlike(&self) -> Option<&Option<PredicateEncDataEnum<'vir>>> {
-        match &self.specifics {
-            PredicateEncData::EnumLike(e) => Some(e),
-            _ => None,
-        }
-    }
-    #[track_caller]
-    pub fn expect_enumlike(&self) -> Option<&PredicateEncDataEnum<'vir>> {
-        self.get_enumlike()
-            .expect("expected enumlike type")
-            .as_ref()
-    }
-    pub fn get_variant_any(&self, vid: abi::VariantIdx) -> &PredicateEncDataStruct<'vir> {
-        match &self.specifics {
-            PredicateEncData::StructLike(s) => {
-                assert_eq!(vid, abi::FIRST_VARIANT);
-                s
-            }
-            PredicateEncData::EnumLike(e) => &e.as_ref().unwrap().variants[vid.as_usize()].fields,
-            _ => panic!("expected structlike or enumlike type"),
-        }
-    }
-
-    #[track_caller]
-    pub fn expect_variant(&self, vid: abi::VariantIdx) -> &PredicateEncDataVariant<'vir> {
-        match &self.specifics {
-            PredicateEncData::EnumLike(e) => &e.as_ref().unwrap().variants[vid.as_usize()],
-            _ => panic!("expected enum type"),
-        }
-    }
-    #[track_caller]
-    pub fn expect_pred_variant_opt(
-        &self,
-        vid: Option<abi::VariantIdx>,
-    ) -> PredicateIdent<'vir, UnknownArity<'vir>> {
-        vid.map(|vid| self.expect_variant(vid).predicate)
-            .unwrap_or(self.ref_to_pred)
-    }
-    #[track_caller]
-    pub fn expect_variant_opt(
-        &self,
-        vid: Option<abi::VariantIdx>,
-    ) -> &PredicateEncDataStruct<'vir> {
-        match vid {
-            None => self.expect_structlike(),
-            Some(vid) => {
-                &self.expect_enumlike().expect("empty enum").variants[vid.as_usize()].fields
-            }
-        }
     }
 }
 

@@ -1,10 +1,10 @@
 use crate::encoders::{
     domain::{DomainBuilder, DomainEnc, DomainEncOutputRef, DomainEncSpecifics, FieldFunctions, FieldTy},
     lifted::ty_constructor::TyConstructorEnc,
-    predicate::PredicateBuilder,
+    predicate::{PredicateBuilder, PredicateEncData},
     rust_ty_predicates::RustTyPredicatesEncOutputRef,
     snapshot::SnapshotEncOutput,
-    GenericEnc, PredicateEnc,
+    GenericEnc, PredicateEnc, PredicateEncOutputRef,
 };
 use prusti_rustc_interface::middle::ty::{ParamTy, TyKind};
 use task_encoder::{EncodeFullError, TaskEncoder, TaskEncoderDependencies};
@@ -24,9 +24,26 @@ impl<'vir> DomainEncSpecifics<'vir> {
     pub fn expect_structlike(self) -> DomainDataStruct<'vir> {
         match self {
             Self::StructLike(data) => data,
-            _ => panic!("expected struct-like (was {self:?}"),
+            _ => panic!("expected structlike domain data (got {self:?}"),
         }
     }
+}
+
+impl<'vir> PredicateEncOutputRef<'vir> {
+    #[track_caller]
+    pub fn expect_structlike(&self) -> &PredicateEncDataStruct<'vir> {
+        match &self.specifics {
+            PredicateEncData::StructLike(data) => data,
+            s => panic!("expected structlike predicate data (got {s:?}"),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct PredicateEncDataStruct<'vir> {
+    pub snap_data: DomainDataStruct<'vir>,
+    /// Ref to self as argument. Returns Ref to field.
+    pub ref_to_field_refs: &'vir [FunctionIdent<'vir, UnknownArity<'vir>>],
 }
 
 pub fn domain<'vir>(

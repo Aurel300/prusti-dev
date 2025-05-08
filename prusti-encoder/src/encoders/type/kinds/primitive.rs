@@ -2,7 +2,7 @@ use crate::encoders::{
     domain::{DomainBuilder, DomainEnc, DomainEncSpecifics},
     predicate::{PredicateBuilder, PredicateEncData},
     snapshot::SnapshotEncOutput,
-    PredicateEnc,
+    PredicateEnc, PredicateEncOutputRef,
 };
 use prusti_rustc_interface::{
     middle::ty::{self, TyKind},
@@ -25,7 +25,19 @@ impl<'vir> DomainEncSpecifics<'vir> {
     pub fn expect_primitive(self) -> DomainDataPrim<'vir> {
         match self {
             Self::Primitive(data) => data,
-            _ => panic!("expected primitive"),
+            _ => panic!("expected primitive domain data (got {self:?})"),
+        }
+    }
+}
+
+// TODO: PredicateEncDataPrim
+
+impl<'vir> PredicateEncOutputRef<'vir> {
+    #[track_caller]
+    pub fn expect_prim(&self) -> DomainDataPrim<'vir> {
+        match self.specifics {
+            PredicateEncData::Primitive(prim) => prim,
+            s => panic!("expected primitive predicate data (got {s:?})"),
         }
     }
 }

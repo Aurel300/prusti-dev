@@ -1,9 +1,9 @@
 use crate::encoders::{
     domain::{DomainBuilder, DomainEnc, DomainEncSpecifics, DomainEncOutputRef},
-    predicate::{PredicateBuilder, PredicateEncData, PredicateEncDataImmRef},
+    predicate::{PredicateBuilder, PredicateEncData},
     rust_ty_snapshots::RustTySnapshotsEnc,
     snapshot::SnapshotEncOutput,
-    GenericEnc, PredicateEnc,
+    GenericEnc, PredicateEnc, PredicateEncOutputRef,
 };
 use crate::TyConstructorEnc;
 use prusti_rustc_interface::middle::ty;
@@ -25,7 +25,24 @@ impl<'vir> DomainEncSpecifics<'vir> {
     pub fn expect_immref(self) -> DomainDataImmRef<'vir> {
         match self {
             Self::ImmRef(data) => data,
-            _ => panic!("expected immref"),
+            _ => panic!("expected immref domain data (got {self:?})"),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct PredicateEncDataImmRef<'vir> {
+    pub deref_func: vir::FunctionIdent<'vir, BinaryArity<'vir>>,
+    pub perm: Option<vir::Expr<'vir>>,
+    pub snap_data: DomainDataImmRef<'vir>,
+}
+
+impl<'vir> PredicateEncOutputRef<'vir> {
+    #[track_caller]
+    pub fn expect_immref(&self) -> PredicateEncDataImmRef<'vir> {
+        match self.specifics {
+            PredicateEncData::ImmRef(r) => r,
+            s => panic!("expected immref predicate data (got {s:?})"),
         }
     }
 }

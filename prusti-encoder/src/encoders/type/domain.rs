@@ -12,12 +12,14 @@ use super::{
     lifted::ty_constructor::TyConstructorEnc, most_generic_ty::{get_vir_base_name_kind, MostGenericTy}, rust_ty_snapshots::RustTySnapshotsEnc,
 };
 
-pub use super::kinds::adt::DomainDataEnum;
-pub use super::kinds::array::DomainDataArray;
-pub use super::kinds::immref::DomainDataImmRef;
-pub use super::kinds::mutref::DomainDataMutRef;
-pub use super::kinds::primitive::DomainDataPrim;
-pub use super::kinds::structlike::DomainDataStruct;
+pub use super::kinds::{
+    adt::DomainDataEnum,
+    array::DomainDataArray,
+    immref::DomainDataImmRef,
+    mutref::DomainDataMutRef,
+    primitive::DomainDataPrim,
+    structlike::DomainDataStruct,
+};
 
 /// You probably never want to use this, use `SnapshotEnc` instead.
 /// Note: there should never be a dependency on `PredicateEnc` inside this

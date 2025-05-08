@@ -1,9 +1,9 @@
 use crate::encoders::{
     domain::{DomainBuilder, DomainEnc, DomainEncSpecifics},
-    predicate::{PredicateBuilder, PredicateEncData, PredicateEncDataMutRef},
+    predicate::{PredicateBuilder, PredicateEncData},
     rust_ty_snapshots::RustTySnapshotsEnc,
     snapshot::SnapshotEncOutput,
-    PredicateEnc,
+    PredicateEnc, PredicateEncOutputRef,
 };
 use prusti_rustc_interface::middle::ty;
 use task_encoder::{EncodeFullError, TaskEncoder, TaskEncoderDependencies};
@@ -24,7 +24,24 @@ impl<'vir> DomainEncSpecifics<'vir> {
     pub fn expect_mutref(self) -> DomainDataMutRef<'vir> {
         match self {
             Self::MutRef(data) => data,
-            _ => panic!("expected mutref"),
+            _ => panic!("expected mutref domain data (got {self:?})"),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct PredicateEncDataMutRef<'vir> {
+    pub deref_func: vir::FunctionIdent<'vir, UnaryArity<'vir>>,
+    pub perm: Option<vir::Expr<'vir>>,
+    pub snap_data: DomainDataMutRef<'vir>,
+}
+
+impl<'vir> PredicateEncOutputRef<'vir> {
+    #[track_caller]
+    pub fn expect_mutref(&self) -> PredicateEncDataMutRef<'vir> {
+        match self.specifics {
+            PredicateEncData::MutRef(r) => r,
+            s => panic!("expected mutref predicate data (got {s:?})"),
         }
     }
 }

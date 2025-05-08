@@ -1,5 +1,5 @@
 use crate::encoders::{
-    domain::{DomainBuilder, DomainDataPrim, DomainEnc, DomainEncOutputRef, DomainEncSpecifics}, predicate::{PredicateBuilder, PredicateEncData}, rust_ty_snapshots::RustTySnapshotsEnc, snapshot::SnapshotEncOutput, PredicateEnc
+    domain::{DomainBuilder, DomainEnc, DomainEncOutputRef, DomainEncSpecifics}, predicate::{PredicateBuilder, PredicateEncData}, rust_ty_snapshots::RustTySnapshotsEnc, snapshot::SnapshotEncOutput, PredicateEnc, PredicateEncOutputRef
 };
 use prusti_rustc_interface::middle::ty;
 use task_encoder::{EncodeFullError, TaskEncoder, TaskEncoderDependencies};
@@ -19,7 +19,19 @@ impl<'vir> DomainEncSpecifics<'vir> {
     pub fn expect_array(self) -> DomainDataArray<'vir> {
         match self {
             Self::Array(data) => data,
-            _ => panic!("expected primitive"),
+            _ => panic!("expected array domain data (got {self:?})"),
+        }
+    }
+}
+
+// TODO: PredicateEncDataArray
+
+impl<'vir> PredicateEncOutputRef<'vir> {
+    #[track_caller]
+    pub fn expect_array(&self) -> DomainDataArray<'vir> {
+        match self.specifics {
+            PredicateEncData::Array(prim) => prim,
+            s => panic!("expected array predicate data (got {s:?})"),
         }
     }
 }

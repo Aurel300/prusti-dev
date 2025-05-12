@@ -412,7 +412,6 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                     .deps
                     .require_local::<WandEnc>(WandEncTask {
                         def_id: call.def_id(),
-                        substs: call.substs(),
                     })
                     .unwrap();
                 let bb = &self.body[call.location().block];

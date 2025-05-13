@@ -53,12 +53,17 @@ pub fn is_function_trusted(def_id: DefId) -> bool {
     .unwrap_or_default()
 }
 
-pub fn is_adt_trusted(def_id: DefId) -> bool {
-    with_def_spec(|def_spec| 
-        def_spec.get_type_spec(&def_id)
-            .map(|type_spec| type_spec.trusted.extract_inherit().unwrap_or_default())
-            .unwrap_or_default()
-    )
+pub fn is_type_trusted(ty: prusti_rustc_interface::middle::ty::Ty) -> bool {
+    match ty.kind() {
+        prusti_rustc_interface::middle::ty::TyKind::Adt(adt_def, _) => {
+            with_def_spec(|def_spec| 
+                def_spec.get_type_spec(&adt_def.did())
+                    .map(|type_spec| type_spec.trusted.extract_inherit().unwrap_or_default())
+                    .unwrap_or_default()
+            )
+        }
+        _ => false,
+    }
 }
 
 pub fn init_def_spec(def_spec: DefSpecificationMap) {

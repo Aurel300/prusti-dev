@@ -214,7 +214,7 @@ pub(crate) fn predicate<'vir>(
     let ref_self_decl = builder.vcx.mk_local_decl_local(ref_self);
     let ref_self_ex = builder.vcx.mk_local_ex_local(ref_self);
 
-     if crate::encoders::spec::is_adt_trusted(adt.did()) {
+     if crate::encoders::spec::is_type_trusted(ty) {
         let args = &[ref_self_decl]
             .into_iter()
             .chain(generic_decls.iter().cloned())

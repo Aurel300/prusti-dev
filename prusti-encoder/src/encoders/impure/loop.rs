@@ -7,32 +7,89 @@ use pcg::{
     r#loop::LoopId,
     utils::{maybe_old::MaybeOldPlace, maybe_remote::MaybeRemotePlace, Place, SnapshotLocation},
 };
-use prusti_rustc_interface::middle::mir;
+use prusti_rustc_interface::{
+    middle::{
+        mir::{self, visit::Visitor},
+        ty::{self, TyKind},
+    },
+    span::def_id::DefId,
+};
+use std::collections::HashSet;
 
 use task_encoder::TaskEncoder;
 use vir::{CastType, Reify};
 
-use crate::encoders::{
-    indirect::{IndirectKey, IndirectPredicatesEnc},
-    rust_ty_predicates::{RustTyPredicatesEnc, RustTyPredicatesEncOutputRef},
-    ImpureEncVisitor,
+use crate::{
+    encoders::{
+        indirect::{IndirectKey, IndirectPredicatesEnc},
+        lifted::rust_ty_cast::RustTyCastersEnc,
+        mir_pure::{MirPureEnc, MirPureEncTask, PureKind},
+        rust_ty_predicates::{RustTyPredicatesEnc, RustTyPredicatesEncOutputRef},
+        rust_ty_snapshots::RustTySnapshotsEnc,
+        spec, ImpureEncVisitor,
+    },
+    CastTypePure,
 };
+
+type ExprInput<'vir> = (DefId, &'vir [vir::Expr<'vir>]);
+type ExprRet<'vir> = vir::ExprGen<'vir, ExprInput<'vir>, vir::ExprKind<'vir>>;
 
 pub(super) enum WandOldOuter<'vir> {
     LetBind(Vec<(&'vir str, vir::ExprSnap<'vir>)>),
     Label(Option<&'vir str>),
 }
 
+struct CollectedLocals {
+    locals: HashSet<mir::Local>,
+}
+
+impl CollectedLocals {
+    fn new() -> Self {
+        Self {
+            locals: HashSet::new(),
+        }
+    }
+}
+
+impl<'tcx> Visitor<'tcx> for CollectedLocals {
+    fn visit_local(
+        &mut self,
+        local: mir::Local,
+        _context: mir::visit::PlaceContext,
+        _location: mir::Location,
+    ) {
+        self.locals.insert(local);
+    }
+}
+
 impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
+    fn collect_used_locals_in_loop(
+        &self,
+        loop_id: LoopId,
+    ) -> std::collections::HashSet<mir::Local> {
+        let mut visitor = CollectedLocals::new();
+
+        for (block_idx, block_data) in self.body.basic_blocks.iter_enumerated() {
+            if !self.loop_analysis.in_loop(block_idx, loop_id) {
+                continue;
+            }
+
+            visitor.visit_basic_block_data(block_idx, block_data);
+        }
+
+        visitor.locals
+    }
+
     /// Calculate invariant at loop head
     pub(crate) fn get_loop_inv(
         &mut self,
-        _lh: LoopId,
+        lh: LoopId,
         cfpcs: &PcgBasicBlock<'vir>,
     ) -> &'vir [vir::ExprBool<'vir>] {
         let mut inv = Vec::new();
         let start = &cfpcs.statements[0];
         let state = &start.states[EvalStmtPhase::PreOperands];
+        let used_locals = self.collect_used_locals_in_loop(lh);
         // let borrows = &*start.borrows[EvalStmtPhase::PreOperands];
         // self.stmt(self.vcx.mk_comment_stmt(
         //     vir::vir_format!(self.vcx, "_borrows: {:#?}", borrows),
@@ -44,6 +101,9 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             let cap = cap_local.get_allocated();
             for place in cap.leaves(self.pcg_ctxt()).iter() {
                 if !state.capabilities().is_exclusive(*place) {
+                    continue;
+                }
+                if !used_locals.contains(&place.local) {
                     continue;
                 }
                 let (place_res, snap, _, _) = self.encode_place_snap(*place);
@@ -91,6 +151,12 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             }
             inv.push(wand);
         }
+
+        let loop_invariants_map = self.build_loop_invariants_map();
+        if let Some(loop_invariants) = loop_invariants_map.get(&lh) {
+            inv.extend(loop_invariants.iter().cloned());
+        }
+
         self.vcx.alloc_slice(&inv)
     }
 
@@ -230,5 +296,234 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 self.vcx.mk_local_labelled_old_expr(expr, label)
             }
         }
+    }
+
+    fn build_loop_invariants_map(
+        &mut self,
+    ) -> std::collections::HashMap<LoopId, Vec<vir::Expr<'vir>>> {
+        let mut loop_invariants_map = std::collections::HashMap::new();
+
+        for (block_idx, block_data) in self.body.basic_blocks.iter_enumerated() {
+            for stmt in &block_data.statements {
+                if let mir::StatementKind::Assign(box (_, rvalue)) = &stmt.kind {
+                    if let mir::Rvalue::Aggregate(
+                        box mir::AggregateKind::Closure(cl_def_id, cl_args),
+                        ref upvar_operands,
+                    ) = rvalue
+                    {
+                        let is_loop_invariant = spec::with_type_spec(|def_spec| {
+                            if let Some(loop_spec) = def_spec.get_loop_spec(cl_def_id) {
+                                assert!(!matches!(loop_spec, prusti_interface::specs::typed::LoopSpecification::Invariant(_)), "body_invariant! currently not supported");
+                                matches!(loop_spec, prusti_interface::specs::typed::LoopSpecification::LoopInvariant(_))
+                            } else {
+                                false
+                            }
+                        });
+
+                        if is_loop_invariant {
+                            if let Some(innermost_loop_id) =
+                                self.loop_analysis.innermost_loop(block_idx)
+                            {
+                                let invariant_expr = self.encode_loop_invariant_closure(
+                                    *cl_def_id,
+                                    *cl_args,
+                                    &upvar_operands.raw,
+                                );
+                                let concrete_expr = unsafe {
+                                    std::mem::transmute::<ExprRet<'_>, vir::ExprGen<'_, !, !>>(
+                                        invariant_expr,
+                                    )
+                                };
+
+                                loop_invariants_map
+                                    .entry(innermost_loop_id)
+                                    .or_insert_with(Vec::new)
+                                    .push(concrete_expr);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        loop_invariants_map
+    }
+
+    fn encode_loop_invariant_closure(
+        &mut self,
+        cl_def_id: DefId,
+        _cl_args: ty::GenericArgsRef<'vir>,
+        upvar_operands: &[mir::Operand<'vir>],
+    ) -> ExprRet<'vir> {
+        let tcx = self.vcx.tcx();
+        let closure_ty = tcx.type_of(cl_def_id).instantiate_identity();
+
+        let (qvar_tys, upvar_rust_tys_from_closure_sig) = match closure_ty.kind() {
+            TyKind::Closure(_, gen_args) => (
+                match gen_args.as_closure().sig().skip_binder().inputs()[0].kind() {
+                    TyKind::Tuple(list) => list,
+                    _ => unreachable!("Invariant closure signature malformed: qvars not a tuple"),
+                },
+                gen_args.as_closure().upvar_tys().iter().collect::<Vec<_>>(),
+            ),
+            _ => panic!("Illegal loop invariant closure type: {:?}", closure_ty),
+        };
+
+        let qvars = self.vcx.alloc_slice(
+            &qvar_tys
+                .iter()
+                .enumerate()
+                .map(|(idx, qvar_ty)| {
+                    let ty_out = self
+                        .deps
+                        .require_ref::<RustTySnapshotsEnc>(qvar_ty)
+                        .unwrap();
+                    self.vcx.mk_local_decl(
+                        vir::vir_format!(self.vcx, "qvar_{idx}"),
+                        ty_out.generic_snapshot.snapshot,
+                    )
+                })
+                .collect::<Vec<_>>(),
+        );
+        let mut ref_to_original_place_map: std::collections::HashMap<
+            mir::Place<'vir>,
+            mir::Place<'vir>,
+        > = std::collections::HashMap::new();
+        for (_block_idx, block_data) in self.body.basic_blocks.iter_enumerated() {
+            for stmt in &block_data.statements {
+                if let mir::StatementKind::Assign(box (place, rvalue)) = &stmt.kind {
+                    if let mir::Rvalue::Ref(_, _, original_place) = rvalue {
+                        if let Some(existing_place) =
+                            ref_to_original_place_map.insert(*place, *original_place)
+                        {
+                            panic!("Collision in ref_to_original_place_map: place {:?} already mapped to {:?}, trying to map to {:?}", 
+                                   place, existing_place, original_place);
+                        }
+                    }
+                }
+            }
+        }
+
+        let mut fields_for_closure_struct = Vec::new();
+
+        for (idx, upvar_operand) in upvar_operands.iter().enumerate() {
+            let upvar_mir_place = match upvar_operand {
+                mir::Operand::Move(p) | mir::Operand::Copy(p) => *p,
+                mir::Operand::Constant(_) => {
+                    panic!("Constant upvars in loop invariant closure not yet handled")
+                }
+            };
+
+            let original_mir_place =
+                ref_to_original_place_map
+                    .get(&upvar_mir_place)
+                    .expect(&format!(
+                        "Could not find original place for upvar {:?}",
+                        upvar_mir_place
+                    ));
+            let original_place_viper_ref = self.encode_place((*original_mir_place).into()).expr;
+            let original_place_rust_ty = original_mir_place.ty(self.body, self.vcx.tcx()).ty;
+            let (_, direct_snap_of_original_place, _, _) =
+                self.encode_place_snap((*original_mir_place).into());
+            let val_caster = self
+                .deps
+                .require_local::<RustTyCastersEnc<CastTypePure>>(original_place_rust_ty)
+                .unwrap();
+            let param_for_snap_original =
+                val_caster.cast_to_generic_if_necessary(self.vcx, direct_snap_of_original_place);
+            let upvar_ref_rust_ty = upvar_rust_tys_from_closure_sig[idx];
+            let s_ref_imm_enc_for_field = self
+                .deps
+                .require_local::<RustTySnapshotsEnc>(upvar_ref_rust_ty)
+                .unwrap();
+            let field_s_ref_immutable_expr = s_ref_imm_enc_for_field
+                .generic_snapshot
+                .specifics
+                .expect_immref()
+                .prim_to_snap
+                .apply(
+                    self.vcx,
+                    [original_place_viper_ref, param_for_snap_original],
+                );
+
+            fields_for_closure_struct.push(field_s_ref_immutable_expr);
+        }
+
+        let closure_struct_snapshots_enc = self
+            .deps
+            .require_local::<RustTySnapshotsEnc>(closure_ty)
+            .unwrap();
+        let closure_struct_val_expr = vir::with_vcx(|vcx| {
+            closure_struct_snapshots_enc
+                .generic_snapshot
+                .specifics
+                .expect_structlike()
+                .field_snaps_to_snap
+                .apply(vcx, vcx.alloc_slice(&fields_for_closure_struct))
+        });
+
+        let closure_caster = self
+            .deps
+            .require_local::<RustTyCastersEnc<CastTypePure>>(closure_ty)
+            .unwrap();
+        let closure_struct_as_param_expr =
+            closure_caster.cast_to_generic_if_necessary(self.vcx, closure_struct_val_expr);
+        let outer_ref_to_closure_rust_ty = tcx.mk_ty_from_kind(ty::TyKind::Ref(
+            tcx.lifetimes.re_erased,
+            closure_ty,
+            ty::Mutability::Not,
+        ));
+        let outer_s_ref_imm_enc = self
+            .deps
+            .require_local::<RustTySnapshotsEnc>(outer_ref_to_closure_rust_ty)
+            .unwrap();
+
+        let final_reify_arg0 = outer_s_ref_imm_enc
+            .generic_snapshot
+            .specifics
+            .expect_immref()
+            .prim_to_snap
+            .apply(self.vcx, [self.vcx.mk_null(), closure_struct_as_param_expr]);
+
+        let mut reify_args = vec![final_reify_arg0];
+        reify_args.extend(
+            qvars
+                .iter()
+                .map(|qvar| self.vcx.mk_local_ex(qvar.name, qvar.ty)),
+        );
+
+        let body = self
+            .deps
+            .require_local::<MirPureEnc>(MirPureEncTask {
+                encoding_depth: 1,
+                kind: PureKind::Closure,
+                parent_def_id: cl_def_id,
+                param_env: tcx.param_env(cl_def_id),
+                substs: ty::List::identity_for_item(self.vcx.tcx(), cl_def_id),
+                caller_def_id: Some(self.def_id),
+            })
+            .unwrap()
+            .expr;
+
+        let reified_body = body
+            .reify(self.vcx, (cl_def_id, self.vcx.alloc_slice(&reify_args)))
+            .lift();
+
+        let bool_snapshots_enc = self
+            .deps
+            .require_local::<RustTySnapshotsEnc>(tcx.types.bool)
+            .unwrap();
+        let bool_primitive_enc = bool_snapshots_enc
+            .generic_snapshot
+            .specifics
+            .expect_primitive();
+
+        self.vcx.mk_forall_expr(
+            qvars,
+            &[],
+            bool_primitive_enc
+                .snap_to_prim
+                .apply(self.vcx, [reified_body]),
+        )
     }
 }

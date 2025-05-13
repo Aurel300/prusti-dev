@@ -1223,6 +1223,14 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                     //mir::Rvalue::ShallowInitBox(Operand<'vir>, Ty<'vir>) => {}
                     //mir::Rvalue::CopyForDeref(Place<'vir>) => {}
                     other => {
+                        if let ty::TyKind::Closure(def_id, _) = rvalue_ty.kind() {
+                            let has_loop_spec = crate::encoders::spec::with_type_spec(|def_spec| {
+                                def_spec.get_loop_spec(def_id).is_some()
+                            });
+                            if has_loop_spec {
+                                return;
+                            }
+                        }
                         let e_rvalue_ty = self.deps.require_ref::<RustTyPredicatesEnc>(rvalue_ty).unwrap();
                         tracing::error!("unsupported rvalue {other:?}");
                         self.vcx.mk_todo_expr(vir::vir_format!(self.vcx, "rvalue {rvalue:?}"), e_rvalue_ty.snapshot())

@@ -46,6 +46,21 @@ where
     })
 }
 
+pub fn is_function_trusted(def_id: DefId) -> bool {
+    with_proc_spec(def_id, |def_spec: &ProcedureSpecification| {
+        def_spec.trusted.extract_inherit().unwrap_or_default()
+    })
+    .unwrap_or_default()
+}
+
+pub fn is_adt_trusted(def_id: DefId) -> bool {
+    with_def_spec(|def_spec| 
+        def_spec.get_type_spec(&def_id)
+            .map(|type_spec| type_spec.trusted.extract_inherit().unwrap_or_default())
+            .unwrap_or_default()
+    )
+}
+
 pub fn init_def_spec(def_spec: DefSpecificationMap) {
     DEF_SPEC_MAP.replace(Some(def_spec));
 }

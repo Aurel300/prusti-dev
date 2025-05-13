@@ -68,6 +68,7 @@ pub enum PredicateEncData<'vir> {
     Never,
     Primitive(DomainDataPrim<'vir>),
     // structs, tuples
+    Trusted,
     StructLike(PredicateEncDataStruct<'vir>),
     EnumLike(Option<PredicateEncDataEnum<'vir>>),
     ImmRef(PredicateEncDataImmRef<'vir>),

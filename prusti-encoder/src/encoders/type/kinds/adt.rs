@@ -12,6 +12,7 @@ use crate::encoders::{
     rust_ty_snapshots::RustTySnapshotsEnc,
     snapshot::SnapshotEncOutput,
     PredicateEnc,
+    utils,
 };
 use prusti_rustc_interface::middle::ty;
 use task_encoder::{EncodeFullError, TaskEncoder, TaskEncoderDependencies};
@@ -213,6 +214,22 @@ pub(crate) fn predicate<'vir>(
     let ref_self = builder.vcx.mk_local("self", &vir::TypeData::Ref);
     let ref_self_decl = builder.vcx.mk_local_decl_local(ref_self);
     let ref_self_ex = builder.vcx.mk_local_ex_local(ref_self);
+
+     if utils::is_adt_trusted(adt.did()) {
+        let args = &[ref_self_decl]
+            .into_iter()
+            .chain(generic_decls.iter().cloned())
+            .collect::<Vec<_>>();
+        builder.predicate("", &args, None);
+
+        builder.function_snap = Some(
+            builder
+                .mk_function("snap", &args, snap_type, &[], &[], None)
+                .1,
+        );
+
+        return Ok((PredicateEncData::Trusted, None));
+    }
 
     match adt.adt_kind() {
         ty::AdtKind::Struct if adt.is_box() => {

@@ -12,9 +12,7 @@ pub enum IndirectKey {
 }
 
 impl IndirectKey {
-    pub fn from_generic_arg(
-        ga: ty::GenericArg,
-    ) -> Option<Self> {
+    pub fn from_generic_arg(ga: ty::GenericArg) -> Option<Self> {
         match ga.unpack() {
             ty::GenericArgKind::Lifetime(region) => Self::from_region(region),
             ty::GenericArgKind::Type(ty) => match *ty.kind() {
@@ -25,14 +23,16 @@ impl IndirectKey {
         }
     }
 
-    pub fn from_region(
-        region: ty::Region,
-    ) -> Option<Self> {
+    pub fn from_region(region: ty::Region) -> Option<Self> {
         use ty::RegionKind;
         match region.kind() {
             RegionKind::ReEarlyParam(e) => Some(IndirectKey::Early(e)),
             RegionKind::ReBound(_, g) => Some(IndirectKey::Late(g.kind)),
-            RegionKind::RePlaceholder(..) | RegionKind::ReError(..) | RegionKind::ReErased | RegionKind::ReVar(..) | RegionKind::ReLateParam(..) => unreachable!(),
+            RegionKind::RePlaceholder(..)
+            | RegionKind::ReError(..)
+            | RegionKind::ReErased
+            | RegionKind::ReVar(..)
+            | RegionKind::ReLateParam(..) => unreachable!(),
             RegionKind::ReStatic => None,
         }
     }
@@ -83,7 +83,9 @@ impl TaskEncoder for IndirectPredicatesEnc {
                         .specifics
                         .expect_mutref()
                         .deref_access;
-                    if IndirectKey::from_region(*ref_region).is_some_and(|indirect| &indirect == proj_region) {
+                    if IndirectKey::from_region(*ref_region)
+                        .is_some_and(|indirect| &indirect == proj_region)
+                    {
                         let inner_ty_enc = deps.require_ref::<RustTyPredicatesEnc>(*inner_ty)?;
                         covariant.push(vcx.mk_lazy_expr(
                             "ref_indirect",
@@ -98,17 +100,22 @@ impl TaskEncoder for IndirectPredicatesEnc {
                     // TODO: is this correct??? do we always project into the inner type, regardless of region?
                     let inner_indirect =
                         deps.require_ref::<IndirectPredicatesEnc>((*inner_ty, *proj_region))?;
-                    let inner = inner_indirect.covariant.into_iter().chain(inner_indirect.contravariant).map(|inner_expr| {
-                        vcx.mk_lazy_expr(
-                            "ref_inner_indirect",
-                            &vir::TypeData::Predicate,
-                            Box::new(move |vcx, self_expr| {
-                                inner_expr
-                                    .reify(vcx, deref_access.apply(vcx, [self_expr]))
-                                    .kind
-                            }),
-                        )
-                    }).collect::<Vec<_>>();
+                    let inner = inner_indirect
+                        .covariant
+                        .into_iter()
+                        .chain(inner_indirect.contravariant)
+                        .map(|inner_expr| {
+                            vcx.mk_lazy_expr(
+                                "ref_inner_indirect",
+                                &vir::TypeData::Predicate,
+                                Box::new(move |vcx, self_expr| {
+                                    inner_expr
+                                        .reify(vcx, deref_access.apply(vcx, [self_expr]))
+                                        .kind
+                                }),
+                            )
+                        })
+                        .collect::<Vec<_>>();
                     covariant.extend(inner.clone());
                     contravariant.extend(inner);
                 }
@@ -142,7 +149,13 @@ impl TaskEncoder for IndirectPredicatesEnc {
                 // TODO: recurse into other types
                 _ => (),
             }
-            deps.emit_output_ref(*task_key, IndirectPredicatesEncOutputRef { covariant, contravariant })?;
+            deps.emit_output_ref(
+                *task_key,
+                IndirectPredicatesEncOutputRef {
+                    covariant,
+                    contravariant,
+                },
+            )?;
             Ok(((), ()))
         })
     }

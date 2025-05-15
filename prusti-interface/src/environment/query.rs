@@ -19,8 +19,9 @@ use prusti_rustc_interface::{
     trait_selection::{
         infer::{InferCtxtExt, TyCtxtInferExt},
         traits::{
-            outlives_bounds::InferCtxtExt as BoundsInferCtxtExt, query::evaluate_obligation::InferCtxtExt as QueryInferCtxtExt,
-            ImplSource, Obligation, ObligationCause, SelectionContext,
+            outlives_bounds::InferCtxtExt as BoundsInferCtxtExt,
+            query::evaluate_obligation::InferCtxtExt as QueryInferCtxtExt, ImplSource, Obligation,
+            ObligationCause, SelectionContext,
         },
     },
 };
@@ -183,17 +184,27 @@ impl<'tcx> EnvQuery<'tcx> {
         self.resolve_assoc_types(sig, caller_def_id.into_param())
     }
 
-    pub fn get_liberated_fn_sig(self, def_id: impl IntoParam<ProcedureDefId>, substs: GenericArgsRef<'tcx>) -> ty::FnSig<'tcx> {
+    pub fn get_liberated_fn_sig(
+        self,
+        def_id: impl IntoParam<ProcedureDefId>,
+        substs: GenericArgsRef<'tcx>,
+    ) -> ty::FnSig<'tcx> {
         let def_id = def_id.into_param();
         let sig = self.get_fn_sig(def_id, substs);
         self.tcx.liberate_late_bound_regions(def_id, sig)
     }
 
-    pub fn assumed_wf_types(self, def_id: impl IntoParam<ProcedureDefId>) -> FxIndexSet<ty::Ty<'tcx>> {
+    pub fn assumed_wf_types(
+        self,
+        def_id: impl IntoParam<ProcedureDefId>,
+    ) -> FxIndexSet<ty::Ty<'tcx>> {
         let def_id = def_id.into_param();
         let liberated_sig = self.get_liberated_fn_sig(def_id, self.identity_substs(def_id));
         // TODO: same as `ObligationCtxt::assumed_wf_types` but skips `deeply_normalize` step, is that fine?
-        liberated_sig.inputs_and_output.iter().collect::<FxIndexSet<_>>()
+        liberated_sig
+            .inputs_and_output
+            .iter()
+            .collect::<FxIndexSet<_>>()
     }
 
     pub fn outlives_env(self, def_id: impl IntoParam<ProcedureDefId>) -> OutlivesEnvironment<'tcx> {

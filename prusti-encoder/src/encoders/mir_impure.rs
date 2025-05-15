@@ -1339,7 +1339,7 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                             let borrows = &current_fpcs.statements.last().unwrap().states
                                 [EvalStmtPhase::PostMain];
                             let mut extra_stmts = self
-                                .collect_pcs_succ(&borrows, &current_fpcs.terminator.succs[idx]);
+                                .collect_pcs_succ(borrows, &current_fpcs.terminator.succs[idx]);
                             self.current_fpcs = Some(current_fpcs);
                             extra_stmts.push(self.set_from_to_flag(location.block, target));
 
@@ -1367,7 +1367,7 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                 let borrows =
                     &current_fpcs.statements.last().unwrap().states[EvalStmtPhase::PostMain];
                 let mut otherwise_stmts = self
-                    .collect_pcs_succ(&borrows, &current_fpcs.terminator.succs[otherwise_succ_idx]);
+                    .collect_pcs_succ(borrows, &current_fpcs.terminator.succs[otherwise_succ_idx]);
                 self.current_fpcs = Some(current_fpcs);
                 otherwise_stmts.push(self.set_from_to_flag(location.block, targets.otherwise()));
 

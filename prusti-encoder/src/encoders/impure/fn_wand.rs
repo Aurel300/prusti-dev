@@ -332,14 +332,11 @@ impl TaskEncoder for WandEnc {
             // `b` outlives `a`
             let mut insert_edge = |a, b| {
                 let (v_a, v_b) = (variances[gidx_map[&a]], variances[gidx_map[&b]]);
-                match (v_a, v_b) {
-                    (
+                if let (
                         ty::Variance::Covariant | ty::Variance::Invariant,
                         ty::Variance::Contravariant | ty::Variance::Invariant,
-                    ) => {
-                        edges.push((a, b));
-                    }
-                    _ => (),
+                    ) = (v_a, v_b) {
+                    edges.push((a, b));
                 }
             };
 
@@ -376,7 +373,7 @@ impl TaskEncoder for WandEnc {
 
             let late_bound = late_bound
                 .into_iter()
-                .map(|brk| IndirectKey::Late(brk))
+                .map(IndirectKey::Late)
                 .collect();
 
             let spec = deps.require_local::<MirSpecEnc>((def_id, substs, None, false))?;

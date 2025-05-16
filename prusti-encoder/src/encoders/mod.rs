@@ -10,7 +10,6 @@ mod local_def;
 mod r#type;
 mod r#const;
 mod mono;
-
 // TODO: move `mir_impure` to this dir:
 pub mod impure;
 // pub mod utils;

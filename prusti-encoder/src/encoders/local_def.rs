@@ -72,6 +72,7 @@ impl TaskEncoder for MirLocalDefEnc {
                 ty: vcx.alloc(ty.generic_predicate),
             }
         }
+        
         let trusted = crate::encoders::spec::is_function_trusted(def_id);
         vir::with_vcx(|vcx| {
             let data = if !trusted && let Some(local_def_id) = def_id.as_local() {

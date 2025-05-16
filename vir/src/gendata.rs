@@ -43,6 +43,10 @@ impl<'vir, Curr, Next> BinOpGenData<'vir, Curr, Next> {
                 self.lhs.ty()
             }
             BinOpKind::DivRational => &TypeData::Perm,
+            BinOpKind::SeqIndex => match self.lhs.ty() {
+                TypeData::Seq(elem_ty) => elem_ty,
+                _ => unreachable!(),
+            },
         }
     }
 }

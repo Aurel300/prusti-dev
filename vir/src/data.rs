@@ -63,6 +63,7 @@ pub enum BinOpKind {
     Div,
     DivRational,
     Mod,
+    SeqIndex,
     // ...
 }
 impl From<mir::BinOp> for BinOpKind {

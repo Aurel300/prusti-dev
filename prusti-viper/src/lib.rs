@@ -192,6 +192,7 @@ impl<'vir, 'v> ToViper<'vir, 'v> for vir::BinOp<'vir> {
             vir::BinOpKind::DivRational => ctx.ast.perm_div(lhs, rhs), // TODO: position
             vir::BinOpKind::Mod => ctx.ast.mod_with_pos(lhs, rhs, pos),
             vir::BinOpKind::Implies => ctx.ast.implies_with_pos(lhs, rhs, pos),
+            vir::BinOpKind::SeqIndex => ctx.ast.seq_index(lhs, rhs), // TODO: position
         }
     }
 }

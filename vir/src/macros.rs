@@ -412,11 +412,9 @@ macro_rules! expr {
         ),
         $crate::expr!(@expr_one; $($rhs)*),
     )); } };
-    (@expr($output:ident); acc( [ $outer:expr ]( $($args:tt)* ) ) ) => { { $output.push(vcx!().mk_predicate_app_expr(
-        $outer.apply(vcx!(),
-            $crate::expr!(@expr_list; $($args)*).as_slice(),
-            None,
-        )
+    (@expr($output:ident); acc( [ $outer:expr ]( $($args:tt)* ) ) ) => { { $output.push($outer.expr_apply(
+        vcx!(),
+        $crate::expr!(@expr_list; $($args)*).as_slice(),
     )); } };
     (@expr($output:ident); acc_field( [ $outer:expr ]( $($args:tt)* ) ) ) => { { $output.push(vcx!().mk_acc_field_expr(
         $crate::expr!(@expr_one; $($args)*),
@@ -429,14 +427,24 @@ macro_rules! expr {
             Some(vcx!().mk_wildcard()),
         )
     )); } };
+    (@expr($output:ident); vpr_seq_len( $($args:tt)* ) ) => { { $output.push(vcx!().mk_unary_op_expr(
+        $crate::UnOpKind::SeqLen,
+        $crate::expr!(@expr_one; $($args)*),
+    )); } };
+    (@expr($output:ident); old( $($args:tt)* ) ) => { { $output.push(vcx!().mk_old_expr(
+        $crate::expr!(@expr_one; $($args)*),
+    )); } };
+    (@expr($output:ident); old_lhs( $($args:tt)* ) ) => { { $output.push(vcx!().mk_old_lhs_expr(
+        $crate::expr!(@expr_one; $($args)*),
+    )); } };
     (@expr($output:ident); [ $outer:expr ]( ) ) => { { $output.push($outer.expr_apply(
         vcx!(),
         &[],
     )); } };
-    (@expr($output:ident); [ $outer:expr ]( $($args:tt)* ) ) => { { $output.push($outer.expr_apply(
+    (@expr($output:ident); [ $outer:expr ]( $($args:tt)* ) $($rest:tt)* ) => { { $output.push($outer.expr_apply(
         vcx!(),
         $crate::expr!(@expr_list; $($args)*).as_slice(),
-    )); } };
+    )); $crate::expr!(@expr_done($output); $($rest)*); } };
     (@expr($output:ident); [ $outer:expr ] ) => { { $output.push($outer.expr(vcx!())); } };
     (@expr($output:ident); ..[ $outer:expr ] ) => { { $output.extend($outer.iter().map(|e| e.expr(vcx!()))); } };
     (@expr($output:ident); ( $($lhs:tt)+ ) => ( $($rhs:tt)+ )) => { { $output.push(vcx!().mk_bin_op_expr(
@@ -476,6 +484,7 @@ macro_rules! expr {
         $crate::expr!(@expr_one; $($lhs)*),
         $crate::expr!(@expr_one; $($rhs)*),
     )); } };
+    (@expr($output:ident); 0) => { { $output.push(vcx!().mk_const_expr(vir::ConstData::Int(0))); } };
     (@expr($output:ident); null) => { { $output.push(vcx!().mk_null()); } };
     (@expr($output:ident); true) => { { $output.push(vcx!().mk_bool::<true>()); } };
     (@expr($output:ident); false) => { { $output.push(vcx!().mk_bool::<false>()); } };

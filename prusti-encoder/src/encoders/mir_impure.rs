@@ -507,8 +507,8 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
 
     fn pcg_repack(&mut self, repack_op: &RepackOp<'vir>) {
         match repack_op {
-            RepackOp::Expand(place, _target, capability_kind)
-            | RepackOp::Collapse(place, _target, capability_kind) => {
+            RepackOp::Expand(place, target, capability_kind)
+            | RepackOp::Collapse(place, target, capability_kind) => {
                 if matches!(capability_kind, CapabilityKind::Write) {
                     // Collapsing an already exhaled place is a no-op
                     // TODO: unless it's through a Ref I imagine?
@@ -556,7 +556,30 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                             .unwrap()
                             .apply_cast_if_necessary(self.vcx, proj_app);
                     }*/
-                    self.stmt(self.vcx.mk_unfold_stmt(predicate));
+                    match target.last_projection() {
+                        Some((_, mir::PlaceElem::Index(index_local))) => {
+                            let usize_ty_out = self
+                                .deps
+                                .require_local::<RustTySnapshotsEnc>(self.vcx.tcx().mk_ty_from_kind(ty::TyKind::Uint(ty::UintTy::Usize)))
+                                .unwrap();
+                            let index_args = self.vcx.alloc_slice(&[usize_ty_out.generic_snapshot.specifics.expect_primitive().snap_to_prim.apply(self.vcx, [self.encode_operand_snap(&mir::Operand::Copy(index_local.into()))])]
+                                .into_iter()
+                                .chain(args.into_iter().copied())
+                                .collect::<Vec<_>>());
+                            let unfold_index = place_ty_out
+                                .generic_predicate
+                                .expect_array()
+                                .unfold_index;
+                            self.stmt(
+                                self.vcx.alloc(vir::StmtGenData::new(
+                                    self.vcx.alloc(unfold_index.apply(self.vcx, index_args)),
+                                )),
+                            );
+                        },
+                        _ => {
+                            self.stmt(self.vcx.mk_unfold_stmt(predicate));
+                        }
+                    }
                     for (apply, _) in &casts {
                         self.stmt(apply);
                     }
@@ -564,7 +587,30 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                     for (_, undo) in &casts {
                         self.stmt(undo);
                     }
-                    self.stmt(self.vcx.mk_fold_stmt(predicate));
+                    match target.last_projection() {
+                        Some((_, mir::PlaceElem::Index(index_local))) => {
+                            let usize_ty_out = self
+                                .deps
+                                .require_local::<RustTySnapshotsEnc>(self.vcx.tcx().mk_ty_from_kind(ty::TyKind::Uint(ty::UintTy::Usize)))
+                                .unwrap();
+                            let index_args = self.vcx.alloc_slice(&[usize_ty_out.generic_snapshot.specifics.expect_primitive().snap_to_prim.apply(self.vcx, [self.encode_operand_snap(&mir::Operand::Copy(index_local.into()))])]
+                                .into_iter()
+                                .chain(args.into_iter().copied())
+                                .collect::<Vec<_>>());
+                            let fold_index = place_ty_out
+                                .generic_predicate
+                                .expect_array()
+                                .fold_index;
+                            self.stmt(
+                                self.vcx.alloc(vir::StmtGenData::new(
+                                    self.vcx.alloc(fold_index.apply(self.vcx, index_args)),
+                                )),
+                            );
+                        },
+                        _ => {
+                            self.stmt(self.vcx.mk_fold_stmt(predicate));
+                        }
+                    }
                 }
             }
             RepackOp::Weaken(place, CapabilityKind::Exclusive, CapabilityKind::Write) => {
@@ -740,6 +786,21 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         place: &EncodePlaceResult<'vir>,
     ) -> Vec<(vir::Stmt<'vir>, vir::Stmt<'vir>)> {
         match place.ty.ty.kind() {
+            TyKind::Array(elem_ty, _) => {
+                // TODO: make place_casts take the actual place as argument, so
+                //   that we don't have to fake this:
+                let elem = mir::ProjectionElem::Index(0usize.into());
+                let proj_app = self.encode_place_element(place.ty, elem, place.expr);
+                self.deps
+                    .require_local::<RustTyCastersEnc<CastTypeImpure>>(
+                        *elem_ty,
+                    )
+                    .unwrap()
+                    .cast_to_concrete_if_possible(self.vcx, proj_app)
+                    .into_iter()
+                    .map(|cs| (cs.apply_cast_stmt, cs.unapply_cast_stmt))
+                    .collect()
+            }
             TyKind::Adt(def, _) if def.is_box() => {
                 let proj_app =
                     self.encode_place_element(place.ty, mir::ProjectionElem::Deref, place.expr);
@@ -851,6 +912,24 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                     .generic_predicate
                     .ref_to_args(self.vcx, instantiated_ty, expr);
                 projection_p.apply(self.vcx, proj_args)
+            }
+            mir::ProjectionElem::Index(v) => {
+                let e_ty = self
+                    .deps
+                    .require_ref::<RustTyPredicatesEnc>(place_ty.ty)
+                    .unwrap();
+                let index_access = e_ty
+                    .generic_predicate
+                    .expect_array()
+                    .index_access;
+                let instantiated_ty = self
+                    .deps
+                    .require_local::<LiftedTyEnc<EncodeGenericsAsLifted>>(place_ty.ty)
+                    .unwrap();
+                let proj_args = e_ty
+                    .generic_predicate
+                    .ref_to_args(self.vcx, instantiated_ty, expr);
+                index_access.apply(self.vcx, proj_args)
             }
             // TODO: should all variants start at the same `Ref`?
             mir::ProjectionElem::Downcast(..) => expr,
@@ -1156,7 +1235,6 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                         box kind @ mir::AggregateKind::Array(elem_ty),
                         values,
                     ) => {
-                        //let e_elem_ty = self.deps.require_ref::<RustTySnapshotsEnc>(*elem_ty).unwrap();
                         let generic_enc = self.deps.require_ref::<GenericEnc>(()).unwrap();
                         let e_rvalue_ty = self.deps.require_ref::<RustTyPredicatesEnc>(rvalue_ty).unwrap();
                         let prim = e_rvalue_ty.generic_predicate.expect_array();
@@ -1168,7 +1246,7 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                         ).unwrap();
                         let value_snaps = values.iter().map(|value| self.encode_operand_snap(value)).collect::<Vec<_>>();
                         let casted_values = ty_caster.apply_casts(self.vcx, value_snaps.into_iter());
-                        prim.prim_to_snap.apply(self.vcx, [
+                        prim.snap_data.prim_to_snap.apply(self.vcx, [
                             self.vcx.mk_seq_lit(self.vcx.alloc_slice(&casted_values), &generic_enc.param_snapshot),
                         ])
                     }

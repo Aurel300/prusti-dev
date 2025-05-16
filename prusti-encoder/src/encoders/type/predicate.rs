@@ -8,11 +8,12 @@ use vir::{
 use crate::encoders::GenericEnc;
 
 use super::{
-    domain::DomainDataArray, kinds::primitive::DomainDataPrim, lifted::{generic::LiftedGeneric, ty::LiftedTy}, most_generic_ty::{get_vir_base_name_kind, MostGenericTy}, snapshot::SnapshotEnc
+    kinds::primitive::DomainDataPrim, lifted::{generic::LiftedGeneric, ty::LiftedTy}, most_generic_ty::{get_vir_base_name_kind, MostGenericTy}, snapshot::SnapshotEnc
 };
 
 pub use super::kinds::{
     adt::PredicateEncDataEnum,
+    array::PredicateEncDataArray,
     immref::PredicateEncDataImmRef,
     mutref::PredicateEncDataMutRef,
     structlike::PredicateEncDataStruct,
@@ -30,7 +31,7 @@ pub enum PredicateEncError {
 #[derive(Clone, Copy, Debug)]
 pub enum PredicateEncData<'vir> {
     Never,
-    Array(DomainDataArray<'vir>),
+    Array(PredicateEncDataArray<'vir>),
     Primitive(DomainDataPrim<'vir>),
     // structs, tuples
     Trusted,
@@ -267,7 +268,7 @@ impl<'vir> PredicateBuilder<'vir> {
             unreachable_to_snap: self.unreachable_to_snap.unwrap().1,
             function_snap: self.function_snap.unwrap(),
             ref_to_field_refs: self.functions,
-            method_assign: self.methods[0],
+            methods: self.methods,
         }
     }
 }
@@ -280,7 +281,7 @@ pub struct PredicateEncOutput<'vir> {
     pub unreachable_to_snap: vir::Function<'vir>,
     pub function_snap: vir::Function<'vir>,
     pub ref_to_field_refs: Vec<vir::Function<'vir>>,
-    pub method_assign: vir::Method<'vir>,
+    pub methods: Vec<vir::Method<'vir>>,
 }
 
 impl TaskEncoder for PredicateEnc {
@@ -346,7 +347,7 @@ impl TaskEncoder for PredicateEnc {
                         unreachable_to_snap: dep.unreachable_to_snap,
                         function_snap: dep.ref_to_snap,
                         ref_to_field_refs: vec![],
-                        method_assign,
+                        methods: vec![method_assign],
                     },
                     (),
                 ))

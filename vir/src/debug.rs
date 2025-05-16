@@ -47,6 +47,13 @@ impl<'vir, Curr, Next> Debug for AccFieldGenData<'vir, Curr, Next> {
 
 impl<'vir, Curr, Next> Debug for BinOpGenData<'vir, Curr, Next> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        if self.kind == BinOpKind::SeqIndex {
+            write!(f, "(")?;
+            self.lhs.fmt(f)?;
+            write!(f, ")[")?;
+            self.rhs.fmt(f)?;
+            return write!(f, "]");
+        }
         write!(f, "(")?;
         self.lhs.fmt(f)?;
         write!(
@@ -68,6 +75,7 @@ impl<'vir, Curr, Next> Debug for BinOpGenData<'vir, Curr, Next> {
                 BinOpKind::Div => "\\",
                 BinOpKind::DivRational => "/",
                 BinOpKind::Mod => "%",
+                BinOpKind::SeqIndex => unreachable!(),
             }
         )?;
         self.rhs.fmt(f)?;

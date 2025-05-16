@@ -107,6 +107,13 @@ pub fn test_entrypoint<'tcx>(
         viper_code.push_str(&format!("{:?}\n", output.param_snapshot));
         program_domains.push(output.type_snapshot);
         program_domains.push(output.param_snapshot);
+        // TODO: should these be emitted by PredicateEnc?
+        viper_code.push_str(&format!("{:?}\n", output.ref_to_pred));
+        viper_code.push_str(&format!("{:?}\n", output.ref_to_snap));
+        viper_code.push_str(&format!("{:?}\n", output.unreachable_to_snap));
+        program_predicates.push(output.ref_to_pred);
+        program_functions.push(output.ref_to_snap);
+        program_functions.push(output.unreachable_to_snap);
     }
 
     header(&mut viper_code, "pure generic casts");
@@ -155,8 +162,10 @@ pub fn test_entrypoint<'tcx>(
             viper_code.push_str(&format!("{:?}\n", pred));
             program_predicates.push(pred);
         }
-        viper_code.push_str(&format!("{:?}\n", output.method_assign));
-        program_methods.push(output.method_assign);
+        for method in output.methods {
+            viper_code.push_str(&format!("{:?}\n", method));
+            program_methods.push(method);
+        }
     }
 
     if std::env::var("LOCAL_TESTING").is_ok() {

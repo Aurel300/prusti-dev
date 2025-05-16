@@ -1,6 +1,6 @@
 use crate::encoders::{
     domain::{
-        DomainBuilder, DomainDataEnum, DomainDataStruct, DomainDataVariant, DomainEnc,
+        DomainBuilder, DomainDataStruct, DomainEnc,
         DomainEncOutputRef, DomainEncSpecifics, FieldTy,
     },
     lifted::ty::{EncodeGenericsAsParamTy, LiftedTyEnc},
@@ -13,9 +13,48 @@ use crate::encoders::{
     snapshot::SnapshotEncOutput,
     PredicateEnc,
 };
-use prusti_rustc_interface::middle::ty;
+use prusti_rustc_interface::{
+    middle::ty,
+    span::symbol,
+    abi,
+};
 use task_encoder::{EncodeFullError, TaskEncoder, TaskEncoderDependencies};
-use vir::ToKnownArity;
+use vir::{FunctionIdent, ToKnownArity, UnaryArity};
+
+use super::primitive::DomainDataPrim;
+
+#[derive(Clone, Copy, Debug)]
+pub struct DomainDataEnum<'vir> {
+    pub discr_ty: vir::Type<'vir>,
+    pub discr_prim: DomainDataPrim<'vir>,
+    //pub discr_bounds: DiscrBounds<'vir>,
+    pub snap_to_discr_snap: FunctionIdent<'vir, UnaryArity<'vir>>,
+    pub variants: &'vir [DomainDataVariant<'vir>],
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct DomainDataVariant<'vir> {
+    pub name: symbol::Symbol,
+    pub vid: abi::VariantIdx,
+    pub discr: vir::Expr<'vir>,
+    pub fields: DomainDataStruct<'vir>,
+}
+
+impl<'vir> DomainEncSpecifics<'vir> {
+    pub fn get_enumlike(self) -> Option<Option<DomainDataEnum<'vir>>> {
+        match self {
+            Self::EnumLike(data) => Some(data),
+            _ => None,
+        }
+    }
+    #[track_caller]
+    pub fn expect_enumlike(self) -> Option<DomainDataEnum<'vir>> {
+        match self {
+            Self::EnumLike(data) => data,
+            _ => panic!("expected enum-like, was {self:?}"),
+        }
+    }
+}
 
 pub(crate) fn domain<'vir>(
     task_key: <DomainEnc as TaskEncoder>::TaskKey<'vir>,

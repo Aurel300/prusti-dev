@@ -11,10 +11,7 @@ use vir::{
 use crate::encoders::GenericEnc;
 
 use super::{
-    domain::{DomainDataImmRef, DomainDataMutRef, DomainDataPrim, DomainDataStruct},
-    lifted::{generic::LiftedGeneric, ty::LiftedTy},
-    most_generic_ty::{get_vir_base_name_kind, MostGenericTy},
-    snapshot::SnapshotEnc,
+    domain::{DomainDataImmRef, DomainDataMutRef, DomainDataStruct}, kinds::primitive::DomainDataPrim, lifted::{generic::LiftedGeneric, ty::LiftedTy}, most_generic_ty::{get_vir_base_name_kind, MostGenericTy}, snapshot::SnapshotEnc
 };
 
 /// Takes a `MostGenericTy` and returns various Viper predicates and functions for

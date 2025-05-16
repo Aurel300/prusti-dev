@@ -1,5 +1,5 @@
 use crate::encoders::{
-    domain::{DomainBuilder, DomainDataMutRef, DomainEnc, DomainEncSpecifics},
+    domain::{DomainBuilder, DomainEnc, DomainEncSpecifics},
     predicate::{PredicateBuilder, PredicateEncData, PredicateEncDataMutRef},
     rust_ty_snapshots::RustTySnapshotsEnc,
     snapshot::SnapshotEncOutput,
@@ -7,7 +7,27 @@ use crate::encoders::{
 };
 use prusti_rustc_interface::middle::ty;
 use task_encoder::{EncodeFullError, TaskEncoder, TaskEncoderDependencies};
-use vir::ToKnownArity;
+use vir::{BinaryArity, FunctionIdent, ToKnownArity, UnaryArity};
+
+#[derive(Clone, Copy, Debug)]
+pub struct DomainDataMutRef<'vir> {
+    /// Construct domain from a `Ref` value.
+    pub prim_to_snap: FunctionIdent<'vir, BinaryArity<'vir>>,
+    /// Function to access the referee.
+    pub deref_access: FunctionIdent<'vir, UnaryArity<'vir>>,
+    /// Function to access the snapshot value.
+    pub value_access: FunctionIdent<'vir, UnaryArity<'vir>>,
+}
+
+impl<'vir> DomainEncSpecifics<'vir> {
+    #[track_caller]
+    pub fn expect_mutref(self) -> DomainDataMutRef<'vir> {
+        match self {
+            Self::MutRef(data) => data,
+            _ => panic!("expected mutref"),
+        }
+    }
+}
 
 pub(crate) fn domain<'vir>(
     task_key: <DomainEnc as TaskEncoder>::TaskKey<'vir>,

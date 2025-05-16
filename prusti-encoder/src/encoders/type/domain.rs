@@ -2,16 +2,24 @@
 //   be an indirection in error storage somewhere, maybe even in `task-encoder`?
 #![allow(clippy::result_large_err)]
 
-use prusti_rustc_interface::{
-    middle::ty::{self, IntTy, ParamTy, TyKind, UintTy},
-    span::symbol,
-    target::abi,
-};
+use prusti_rustc_interface::middle::ty::{self, ParamTy, TyKind};
 use task_encoder::{EncodeFullError, EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 use vir::{
     BinaryArity, CallableIdent, DomainAxiomData, DomainFunctionData, DomainIdent, DomainParamData,
     FunctionIdent, NullaryArityAny, ToKnownArity, UnaryArity, UnknownArity,
 };
+use super::{
+    lifted::{
+        ty::{EncodeGenericsAsParamTy, LiftedTy, LiftedTyEnc},
+        ty_constructor::TyConstructorEnc,
+    }, most_generic_ty::{extract_type_params, get_vir_base_name_kind, MostGenericTy}, rust_ty_snapshots::RustTySnapshotsEnc
+};
+
+pub use super::kinds::adt::DomainDataEnum;
+pub use super::kinds::immref::DomainDataImmRef;
+pub use super::kinds::mutref::DomainDataMutRef;
+pub use super::kinds::primitive::DomainDataPrim;
+pub use super::kinds::structlike::DomainDataStruct;
 
 /// You probably never want to use this, use `SnapshotEnc` instead.
 /// Note: there should never be a dependency on `PredicateEnc` inside this
@@ -25,56 +33,6 @@ pub struct FieldFunctions<'vir> {
     /// Snapshot of self as first argument and of field as second. Returns
     /// updated domain of self.
     pub write: FunctionIdent<'vir, BinaryArity<'vir>>,
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct DomainDataPrim<'vir> {
-    pub prim_type: vir::Type<'vir>,
-    /// Snapshot of self as argument. Returns Viper primitive value.
-    pub snap_to_prim: FunctionIdent<'vir, UnaryArity<'vir>>,
-    /// Viper primitive value as argument. Returns domain.
-    pub prim_to_snap: FunctionIdent<'vir, UnaryArity<'vir>>,
-}
-#[derive(Clone, Copy, Debug)]
-pub struct DomainDataImmRef<'vir> {
-    /// Construct domain from a `Ref` value.
-    pub prim_to_snap: FunctionIdent<'vir, BinaryArity<'vir>>,
-    /// Function to access the referee.
-    pub deref_access: FunctionIdent<'vir, UnaryArity<'vir>>,
-    /// Function to access the snapshot value.
-    pub value_access: FunctionIdent<'vir, UnaryArity<'vir>>,
-}
-#[derive(Clone, Copy, Debug)]
-pub struct DomainDataMutRef<'vir> {
-    /// Construct domain from a `Ref` value.
-    pub prim_to_snap: FunctionIdent<'vir, BinaryArity<'vir>>,
-    /// Function to access the referee.
-    pub deref_access: FunctionIdent<'vir, UnaryArity<'vir>>,
-    /// Function to access the snapshot value.
-    pub value_access: FunctionIdent<'vir, UnaryArity<'vir>>,
-}
-#[derive(Clone, Copy, Debug)]
-pub struct DomainDataStruct<'vir> {
-    /// Construct domain from snapshots of fields or for primitive types
-    /// from the single Viper primitive value.
-    pub field_snaps_to_snap: FunctionIdent<'vir, UnknownArity<'vir>>,
-    /// Functions to access the fields.
-    pub field_access: &'vir [FieldFunctions<'vir>],
-}
-#[derive(Clone, Copy, Debug)]
-pub struct DomainDataEnum<'vir> {
-    pub discr_ty: vir::Type<'vir>,
-    pub discr_prim: DomainDataPrim<'vir>,
-    //pub discr_bounds: DiscrBounds<'vir>,
-    pub snap_to_discr_snap: FunctionIdent<'vir, UnaryArity<'vir>>,
-    pub variants: &'vir [DomainDataVariant<'vir>],
-}
-#[derive(Clone, Copy, Debug)]
-pub struct DomainDataVariant<'vir> {
-    pub name: symbol::Symbol,
-    pub vid: abi::VariantIdx,
-    pub discr: vir::Expr<'vir>,
-    pub fields: DomainDataStruct<'vir>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -122,15 +80,6 @@ impl<'vir> DomainEncOutputRef<'vir> {
 }
 
 impl<'vir> task_encoder::OutputRefAny for DomainEncOutputRef<'vir> {}
-
-use super::{
-    lifted::{
-        ty::{EncodeGenericsAsParamTy, LiftedTy, LiftedTyEnc},
-        ty_constructor::TyConstructorEnc,
-    },
-    most_generic_ty::{extract_type_params, get_vir_base_name_kind, MostGenericTy},
-    rust_ty_snapshots::RustTySnapshotsEnc,
-};
 
 pub fn all_outputs<'vir>() -> Vec<vir::Domain<'vir>> {
     DomainEnc::all_outputs().into_iter().flatten().collect()
@@ -218,7 +167,6 @@ impl TaskEncoder for DomainEnc {
 pub(crate) struct DomainBuilder<'vir> {
     pub(crate) vcx: &'vir vir::VirCtxt<'vir>,
     name: Option<&'vir str>,
-    generics: Option<Vec<vir::LocalDecl<'vir>>>,
     domain_ident: Option<vir::DomainIdent<'vir, NullaryArityAny<'vir, DomainParamData<'vir>>>>,
     self_type: Option<vir::Type<'vir>>,
     axioms: Vec<vir::DomainAxiom<'vir>>,
@@ -230,7 +178,6 @@ impl<'vir> DomainBuilder<'vir> {
         DomainBuilder {
             vcx,
             name: None,
-            generics: None,
             domain_ident: None,
             self_type: None,
             axioms: Vec::new(),
@@ -246,10 +193,6 @@ impl<'vir> DomainBuilder<'vir> {
             self.name.expect("name should be set"),
             &[],
         )));
-    }
-
-    pub(crate) fn set_generics(&mut self, generics: Vec<vir::LocalDecl<'vir>>) {
-        self.generics = Some(generics);
     }
 
     pub(crate) fn function(
@@ -316,87 +259,6 @@ impl<'vir> DomainBuilder<'vir> {
     }
 }
 
-// Utility functions
-
-impl<'vir> DomainEncSpecifics<'vir> {
-    #[track_caller]
-    pub fn expect_primitive(self) -> DomainDataPrim<'vir> {
-        match self {
-            Self::Primitive(data) => data,
-            _ => panic!("expected primitive"),
-        }
-    }
-    #[track_caller]
-    pub fn expect_immref(self) -> DomainDataImmRef<'vir> {
-        match self {
-            Self::ImmRef(data) => data,
-            _ => panic!("expected immref"),
-        }
-    }
-    #[track_caller]
-    pub fn expect_mutref(self) -> DomainDataMutRef<'vir> {
-        match self {
-            Self::MutRef(data) => data,
-            _ => panic!("expected mutref"),
-        }
-    }
-    #[track_caller]
-    pub fn expect_structlike(self) -> DomainDataStruct<'vir> {
-        match self {
-            Self::StructLike(data) => data,
-            _ => panic!("expected struct-like (was {self:?}"),
-        }
-    }
-    pub fn get_enumlike(self) -> Option<Option<DomainDataEnum<'vir>>> {
-        match self {
-            Self::EnumLike(data) => Some(data),
-            _ => None,
-        }
-    }
-    #[track_caller]
-    pub fn expect_enumlike(self) -> Option<DomainDataEnum<'vir>> {
-        match self {
-            Self::EnumLike(data) => data,
-            _ => panic!("expected enum-like, was {self:?}"),
-        }
-    }
-}
-impl<'vir> DomainDataPrim<'vir> {
-    pub fn expr_from_bits(&self, ty: ty::Ty<'vir>, value: u128) -> vir::Expr<'vir> {
-        match *self.prim_type {
-            vir::TypeData::Bool => {
-                vir::with_vcx(|vcx| vcx.mk_const_expr(vir::ConstData::Bool(value != 0)))
-            }
-            vir::TypeData::Int => {
-                let (bit_width, signed) = match ty.kind() {
-                    TyKind::Int(IntTy::Isize) => ((std::mem::size_of::<isize>() * 8) as u64, true),
-                    TyKind::Int(ty) => (ty.bit_width().unwrap(), true),
-                    TyKind::Uint(UintTy::Usize) => {
-                        ((std::mem::size_of::<usize>() * 8) as u64, true)
-                    }
-                    TyKind::Uint(ty) => (ty.bit_width().unwrap(), false),
-                    kind => unreachable!("{kind:?}"),
-                };
-                let size = abi::Size::from_bits(bit_width);
-                let negative_value = if signed {
-                    let value = size.sign_extend(value);
-                    Some(value).filter(|value| value.is_negative())
-                } else {
-                    None
-                };
-                match negative_value {
-                    Some(value) => vir::with_vcx(|vcx| {
-                        let value = vcx.mk_const_expr(vir::ConstData::Int(value.unsigned_abs()));
-                        vcx.mk_unary_op_expr(vir::UnOpKind::Neg, value)
-                    }),
-                    None => vir::with_vcx(|vcx| vcx.mk_const_expr(vir::ConstData::Int(value))),
-                }
-            }
-            ref k => unreachable!("{k:?}"),
-        }
-    }
-}
-
 /// Data for encoding field access functions and axioms
 #[derive(Clone)]
 pub(super) struct FieldTy<'vir> {
@@ -404,24 +266,10 @@ pub(super) struct FieldTy<'vir> {
 
     /// The type of encoded field
     pub(super) ty: vir::Type<'vir>,
-
-    /// Information about the Rust type, only defined for fields that correspond
-    /// to actual Rust types. For example, this will be `None` for a Viper
-    /// `Bool` field encoded as part of the snapshot encoding of the rust bool
-    /// type.
-    pub(super) rust_ty_data: Option<LiftedRustTyData<'vir>>,
-}
-
-#[derive(Clone)]
-pub(super) struct LiftedRustTyData<'vir> {
-    /// The representation of the Rust type of the field
-    lifted_ty: LiftedTy<'vir, ParamTy>,
-    /// Takes as input the value of the field, and returns its type
-    typeof_function: FunctionIdent<'vir, UnaryArity<'vir>>,
 }
 
 impl<'vir> FieldTy<'vir> {
-    pub fn mk_field_tys<T: TaskEncoder>(
+    pub(super) fn mk_field_tys<T: TaskEncoder>(
         vcx: &'vir vir::VirCtxt<'vir>,
         deps: &mut TaskEncoderDependencies<'vir, T>,
         variant: &ty::VariantDef,
@@ -436,7 +284,7 @@ impl<'vir> FieldTy<'vir> {
     }
 
     pub(super) fn from_ty<T: TaskEncoder>(
-        vcx: &'vir vir::VirCtxt<'vir>,
+        _vcx: &'vir vir::VirCtxt<'vir>,
         deps: &mut TaskEncoderDependencies<'vir, T>,
         ty: ty::Ty<'vir>,
     ) -> Result<FieldTy<'vir>, EncodeFullError<'vir, T>> {
@@ -444,17 +292,9 @@ impl<'vir> FieldTy<'vir> {
             .require_ref::<RustTySnapshotsEnc>(ty)?
             .generic_snapshot
             .snapshot;
-        let typeof_function = deps
-            .require_ref::<DomainEnc>(extract_type_params(vcx.tcx(), ty).0)?
-            .typeof_function;
-        let lifted_ty = deps.require_local::<LiftedTyEnc<EncodeGenericsAsParamTy>>(ty)?;
         Ok(FieldTy {
             rust_ty: ty,
             ty: vir_ty,
-            rust_ty_data: Some(LiftedRustTyData {
-                lifted_ty,
-                typeof_function,
-            }),
         })
     }
 }

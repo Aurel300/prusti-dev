@@ -11,4 +11,4 @@ pub mod param;
 pub mod primitive;
 pub mod str;
 pub mod tuple;
-mod structlike;
+pub(super) mod structlike;

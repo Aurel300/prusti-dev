@@ -1,5 +1,5 @@
 use crate::encoders::{
-    domain::{DomainBuilder, DomainEnc, DomainEncOutputRef, FieldFunctions, FieldTy},
+    domain::{DomainBuilder, DomainEnc, DomainEncOutputRef, DomainEncSpecifics, FieldFunctions, FieldTy},
     lifted::ty_constructor::TyConstructorEnc,
     predicate::PredicateBuilder,
     rust_ty_predicates::RustTyPredicatesEncOutputRef,
@@ -9,6 +9,25 @@ use crate::encoders::{
 use prusti_rustc_interface::middle::ty::{ParamTy, TyKind};
 use task_encoder::{EncodeFullError, TaskEncoder, TaskEncoderDependencies};
 use vir::{vir_format, FunctionIdent, PredicateIdent, ToKnownArity, UnknownArity};
+
+#[derive(Clone, Copy, Debug)]
+pub struct DomainDataStruct<'vir> {
+    /// Construct domain from snapshots of fields or for primitive types
+    /// from the single Viper primitive value.
+    pub field_snaps_to_snap: FunctionIdent<'vir, UnknownArity<'vir>>,
+    /// Functions to access the fields.
+    pub field_access: &'vir [FieldFunctions<'vir>],
+}
+
+impl<'vir> DomainEncSpecifics<'vir> {
+    #[track_caller]
+    pub fn expect_structlike(self) -> DomainDataStruct<'vir> {
+        match self {
+            Self::StructLike(data) => data,
+            _ => panic!("expected struct-like (was {self:?}"),
+        }
+    }
+}
 
 pub fn domain<'vir>(
     prefix: &str,

@@ -1,12 +1,70 @@
 use crate::encoders::{
-    domain::{DomainBuilder, DomainDataPrim, DomainEnc, DomainEncSpecifics},
+    domain::{DomainBuilder, DomainEnc, DomainEncSpecifics},
     predicate::{PredicateBuilder, PredicateEncData},
     snapshot::SnapshotEncOutput,
     PredicateEnc,
 };
-use prusti_rustc_interface::middle::ty;
+use prusti_rustc_interface::{
+    middle::ty::{self, TyKind},
+    target::abi,
+};
 use task_encoder::{EncodeFullError, TaskEncoder, TaskEncoderDependencies};
-use vir::ToKnownArity;
+use vir::{FunctionIdent, ToKnownArity, UnaryArity};
+
+#[derive(Clone, Copy, Debug)]
+pub struct DomainDataPrim<'vir> {
+    pub prim_type: vir::Type<'vir>,
+    /// Snapshot of self as argument. Returns Viper primitive value.
+    pub snap_to_prim: FunctionIdent<'vir, UnaryArity<'vir>>,
+    /// Viper primitive value as argument. Returns domain.
+    pub prim_to_snap: FunctionIdent<'vir, UnaryArity<'vir>>,
+}
+
+impl<'vir> DomainEncSpecifics<'vir> {
+    #[track_caller]
+    pub fn expect_primitive(self) -> DomainDataPrim<'vir> {
+        match self {
+            Self::Primitive(data) => data,
+            _ => panic!("expected primitive"),
+        }
+    }
+}
+
+impl<'vir> DomainDataPrim<'vir> {
+    pub fn expr_from_bits(&self, ty: ty::Ty<'vir>, value: u128) -> vir::Expr<'vir> {
+        match *self.prim_type {
+            vir::TypeData::Bool => {
+                vir::with_vcx(|vcx| vcx.mk_const_expr(vir::ConstData::Bool(value != 0)))
+            }
+            vir::TypeData::Int => {
+                let (bit_width, signed) = match ty.kind() {
+                    TyKind::Int(ty::IntTy::Isize) => ((std::mem::size_of::<isize>() * 8) as u64, true),
+                    TyKind::Int(ty) => (ty.bit_width().unwrap(), true),
+                    TyKind::Uint(ty::UintTy::Usize) => {
+                        ((std::mem::size_of::<usize>() * 8) as u64, true)
+                    }
+                    TyKind::Uint(ty) => (ty.bit_width().unwrap(), false),
+                    kind => unreachable!("{kind:?}"),
+                };
+                let size = abi::Size::from_bits(bit_width);
+                let negative_value = if signed {
+                    let value = size.sign_extend(value);
+                    Some(value).filter(|value| value.is_negative())
+                } else {
+                    None
+                };
+                match negative_value {
+                    Some(value) => vir::with_vcx(|vcx| {
+                        let value = vcx.mk_const_expr(vir::ConstData::Int(value.unsigned_abs()));
+                        vcx.mk_unary_op_expr(vir::UnOpKind::Neg, value)
+                    }),
+                    None => vir::with_vcx(|vcx| vcx.mk_const_expr(vir::ConstData::Int(value))),
+                }
+            }
+            ref k => unreachable!("{k:?}"),
+        }
+    }
+}
 
 pub(crate) fn domain<'vir>(
     task_key: <DomainEnc as TaskEncoder>::TaskKey<'vir>,

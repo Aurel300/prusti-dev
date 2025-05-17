@@ -214,22 +214,6 @@ pub(crate) fn predicate<'vir>(
     let ref_self_decl = builder.vcx.mk_local_decl_local(ref_self);
     let ref_self_ex = builder.vcx.mk_local_ex_local(ref_self);
 
-     if crate::encoders::spec::is_type_trusted(ty) {
-        let args = &[ref_self_decl]
-            .into_iter()
-            .chain(generic_decls.iter().cloned())
-            .collect::<Vec<_>>();
-        builder.predicate("", &args, None);
-
-        builder.function_snap = Some(
-            builder
-                .mk_function("snap", &args, snap_type, &[], &[], None)
-                .1,
-        );
-
-        return Ok((PredicateEncData::Trusted, None));
-    }
-
     match adt.adt_kind() {
         ty::AdtKind::Struct if adt.is_box() => {
             let snap_data = snap.specifics.expect_structlike();

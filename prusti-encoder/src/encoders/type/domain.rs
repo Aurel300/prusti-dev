@@ -91,7 +91,6 @@ pub enum DomainEncSpecifics<'vir> {
     Opaque,
     Param,
     Never,
-    Trusted,
     Primitive(DomainDataPrim<'vir>),
     ImmRef(DomainDataImmRef<'vir>),
     MutRef(DomainDataMutRef<'vir>),

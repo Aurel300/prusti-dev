@@ -342,6 +342,18 @@ impl<'vir> ExprApply<'vir, crate::Expr<'vir>>
         vcx.mk_predicate_app_expr(self.apply(vcx, args, None))
     }
 }
+impl<'vir, const N: usize> ExprApply<'vir, crate::Expr<'vir>>
+    for crate::PredicateIdent<'vir, crate::KnownArity<'vir, N>>
+{
+    fn expr_apply(
+        &self,
+        vcx: &'vir crate::VirCtxt<'vir>,
+        args: &[crate::Expr<'vir>],
+    ) -> crate::Expr<'vir> {
+        assert_eq!(args.len(), N);
+        vcx.mk_predicate_app_expr(self.apply(vcx, args.try_into().unwrap(), None))
+    }
+}
 impl<'vir> ExprApply<'vir, crate::Expr<'vir>> for crate::Field<'vir> {
     fn expr_apply(
         &self,
@@ -484,7 +496,7 @@ macro_rules! expr {
         $crate::expr!(@expr_one; $($lhs)*),
         $crate::expr!(@expr_one; $($rhs)*),
     )); } };
-    (@expr($output:ident); 0) => { { $output.push(vcx!().mk_const_expr(vir::ConstData::Int(0))); } };
+    (@expr($output:ident); 0) => { { $output.push(vcx!().mk_uint::<0>()); } };
     (@expr($output:ident); null) => { { $output.push(vcx!().mk_null()); } };
     (@expr($output:ident); true) => { { $output.push(vcx!().mk_bool::<true>()); } };
     (@expr($output:ident); false) => { { $output.push(vcx!().mk_bool::<false>()); } };

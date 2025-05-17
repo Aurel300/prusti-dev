@@ -1,6 +1,7 @@
 use prusti_interface::specs::typed::{DefSpecificationMap, ProcedureSpecification};
 use prusti_rustc_interface::{
     //middle::{mir, ty},
+    middle::ty,
     span::def_id::DefId,
 };
 use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
@@ -53,7 +54,7 @@ pub fn is_function_trusted(def_id: DefId) -> bool {
     .unwrap_or_default()
 }
 
-pub fn is_type_trusted(ty: prusti_rustc_interface::middle::ty::Ty) -> bool {
+pub fn is_type_trusted(ty: ty::Ty) -> bool {
     match ty.kind() {
         prusti_rustc_interface::middle::ty::TyKind::Adt(adt_def, _) => {
             with_def_spec(|def_spec| 

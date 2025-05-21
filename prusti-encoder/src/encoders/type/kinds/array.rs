@@ -90,6 +90,7 @@ pub(crate) fn predicate<'vir>(
 
     let snap_type = snap.snapshot;
     let snap_data = snap.specifics.expect_array();
+    let generic_enc = deps.require_ref::<GenericEnc>(())?;
 
     let ref_self = builder.vcx.mk_local("self", &vir::TypeData::Ref);
     let ref_self_decl = builder.vcx.mk_local_decl_local(ref_self);
@@ -115,7 +116,7 @@ pub(crate) fn predicate<'vir>(
         &[vir::expr! { acc_wildcard([self_pred](ref_self, ..[generic_exprs])) }],
         &[vir::expr! { forall i: Int :: { [builder.vcx.mk_bin_op_expr(vir::BinOpKind::SeqIndex, vir::expr! { [snap_data.snap_to_prim]([builder.vcx.mk_result(snap_type)]) }, vir::expr! { i })] }
             (((0) <= (i)) && ((i) < (vpr_seq_len([snap_data.snap_to_prim]([builder.vcx.mk_result(snap_type)])))))
-                ==> (([builder.vcx.mk_bin_op_expr(vir::BinOpKind::SeqIndex, vir::expr! { [snap_data.snap_to_prim]([builder.vcx.mk_result(snap_type)]) }, vir::expr! { i })]) == ([generic_exprs[0]]))
+                ==> (([generic_enc.param_type_function]([builder.vcx.mk_bin_op_expr(vir::BinOpKind::SeqIndex, vir::expr! { [snap_data.snap_to_prim]([builder.vcx.mk_result(snap_type)]) }, vir::expr! { i })])) == ([generic_exprs[0]]))
         }],
         None,
     );
@@ -158,7 +159,6 @@ pub(crate) fn predicate<'vir>(
     let self_val = vir::expr! { [snap_data.snap_to_prim](self_snap) };
     let index = builder.vcx.mk_local("index", &vir::TypeData::Int);
     let index_decl = builder.vcx.mk_local_decl_local(index);
-    let generic_enc = deps.require_ref::<GenericEnc>(())?;
     let index_val = builder.vcx.mk_bin_op_expr(vir::BinOpKind::SeqIndex, self_val, vir::expr! { index });
 
     let unfold_index = builder.method(

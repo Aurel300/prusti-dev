@@ -692,6 +692,11 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 for elem in place.projection {
                     if crossed_ref {
                         use vir::Reify;
+                        let index_expr = if let mir::ProjectionElem::Index(index) = elem {
+                            Some(self.encode_place(mir::Place::from(index).into()).expr.lift())
+                        } else {
+                            None
+                        };
                         let (expr, _) = crate::encoders::mir_pure::encode_place_element(
                             self.vcx,
                             self.deps,
@@ -699,6 +704,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                             elem,
                             result.lift(),
                             None,
+                            index_expr,
                         );
                         result = expr.reify(self.vcx, (self.def_id, &[]));
                     } else {

@@ -535,6 +535,84 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
 
             mir::TerminatorKind::Return => stmt_update,
 
+            // TODO: there is some code duplication between here and SwitchInt
+            mir::TerminatorKind::Assert {
+                cond,
+                expected,
+                target,
+                ..
+            } => {
+                // encode the condition operand
+                let cond_ty = cond.ty(self.body, self.vcx.tcx());
+                assert_eq!(*cond_ty.kind(), ty::TyKind::Bool);
+                let cond_expr = self.encode_operand(&new_curr_ver, cond);
+                let cond_ty_out = self
+                    .deps
+                    .require_local::<RustTySnapshotsEnc>(cond_ty)
+                    .unwrap()
+                    .generic_snapshot
+                    .specifics
+                    .expect_primitive();
+
+                // if cond == expected: walk the rest of the CFG
+                let ok_update = self.encode_cfg(&new_curr_ver, *target, join_point);
+
+                // find locals updated in the "ok" branch, which were also
+                // defined before the branch
+                let mut mod_locals = ok_update.versions.keys()
+                    .filter(|local| new_curr_ver.contains_key(local))
+                    .copied()
+                    .collect::<Vec<_>>();
+                mod_locals.sort();
+                mod_locals.dedup();
+
+                // if cond != expected: update locals to "unreachable"
+                let mut fail_update = Update::new();
+                for local in &mod_locals {
+                    let ty = self.body.local_decls[*local].ty;
+                    let unreachable = self
+                        .deps
+                        .require_ref::<RustTyPredicatesEnc>(ty)
+                        .unwrap()
+                        .generic_predicate
+                        .unreachable_to_snap;
+                    self.bump_version(&mut fail_update, *local, unreachable.apply(self.vcx, []));
+                }
+
+                // create a Viper tuple of the updated locals
+                let tuple_ref = self
+                    .deps
+                    .require_local::<ViperTupleEnc>(mod_locals.len())
+                    .unwrap();
+                let phi_expr = self.vcx.mk_ternary_expr(
+                    self.vcx.mk_bin_op_expr(
+                        vir::BinOpKind::CmpEq,
+                        cond_ty_out.snap_to_prim.apply(self.vcx, [cond_expr]),
+                        cond_ty_out.expr_from_bits(cond_ty, if *expected { 1 } else { 0 }).lift(),
+                    ),
+                    self.reify_branch(&tuple_ref, &mod_locals, &new_curr_ver, ok_update),
+                    self.reify_branch(&tuple_ref, &mod_locals, &new_curr_ver, fail_update),
+                );
+
+                // assign tuple into a `phi` variable
+                let phi_idx = self.phi_ctr;
+                self.phi_ctr += 1;
+                let mut phi_update = Update::new();
+                phi_update.binds.push(UpdateBind::Phi(phi_idx, phi_expr));
+
+                // update locals by destructuring `phi` variable
+                // TODO: maybe this is unnecessary, we could instead use tuple
+                //   access directly instead of the locals going forward?
+                for (elem_idx, local) in mod_locals.iter().enumerate() {
+                    let ty = self.get_ty_for_local(*local);
+                    let expr = self.mk_phi_acc(*local, tuple_ref.clone(), phi_idx, elem_idx, ty);
+                    self.bump_version(&mut phi_update, *local, expr);
+                    new_curr_ver.insert(*local, phi_update.versions[local]);
+                }
+
+                stmt_update.merge(phi_update)
+            }
+
             mir::TerminatorKind::Unreachable => {
                 // update the return place to "unreachable"
                 let mut end_update = Update::new();
@@ -688,7 +766,17 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
             }
             // ThreadLocalRef
             // AddressOf
-            // Len
+            mir::Rvalue::Len(place) => {
+                let place_ty = place.ty(self.body, self.vcx.tcx());
+                let unop_function = self
+                    .deps
+                    .require_ref::<MirBuiltinEnc>(crate::encoders::MirBuiltinEncTask::Len(
+                        place_ty.ty
+                    ))
+                    .unwrap()
+                    .function;
+                unop_function.apply(self.vcx, &[self.encode_place(curr_ver, place)])
+            }
             // Cast
             mir::Rvalue::BinaryOp(op, box (l, r)) => {
                 let l_ty = l.ty(self.body, self.vcx.tcx());
@@ -856,7 +944,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
         let mut place_ref = None;
         // TODO: factor this out (duplication with impure encoder)?
         for elem in place.projection {
-            (expr, place_ref) = self.encode_place_element(place_ty, elem, expr, place_ref);
+            (expr, place_ref) = self.encode_place_element(place_ty, elem, expr, place_ref, curr_ver);
             place_ty = place_ty.projection_ty(self.vcx.tcx(), elem);
         }
         // Can we ever have the use of a projected place?
@@ -886,8 +974,14 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
         elem: mir::PlaceElem<'vir>,
         expr: ExprRet<'vir>,
         place_ref: Option<ExprRet<'vir>>,
+        curr_ver: &HashMap<mir::Local, usize>,
     ) -> (ExprRet<'vir>, Option<ExprRet<'vir>>) {
-        encode_place_element(self.vcx, self.deps, place_ty, elem, expr, place_ref)
+        let index_expr = if let mir::PlaceElem::Index(index) = elem {
+            Some(self.encode_place_with_ref(curr_ver, &mir::Place::from(index)).0)
+        } else {
+            None
+        };
+        encode_place_element(self.vcx, self.deps, place_ty, elem, expr, place_ref, index_expr)
     }
 
     fn encode_prusti_builtin(
@@ -1281,6 +1375,7 @@ pub fn encode_place_element<'vir, 'enc, T: TaskEncoder>(
     elem: mir::PlaceElem<'vir>,
     expr: ExprRet<'vir>,
     place_ref: Option<ExprRet<'vir>>,
+    index_expr: Option<ExprRet<'vir>>,
 ) -> (ExprRet<'vir>, Option<ExprRet<'vir>>) {
     match elem {
         mir::ProjectionElem::Deref => {
@@ -1376,6 +1471,30 @@ pub fn encode_place_element<'vir, 'enc, T: TaskEncoder>(
             let place_ref = place_ref
                 .map(|pr| struct_like.ref_to_field_refs[field_idx.as_usize()].apply(vcx, &[pr]));
             (proj_app, place_ref)
+        }
+        mir::ProjectionElem::Index(..) => {
+            let ty::TyKind::Array(elem_ty, _) = place_ty.ty.kind() else { unreachable!("index but not array"); };
+            let e_ty = deps
+                .require_ref::<RustTyPredicatesEnc>(place_ty.ty)
+                .unwrap();
+            let array_enc = e_ty
+                .generic_predicate
+                .expect_array();
+            let proj_app = array_enc.snap_data.snap_to_prim.apply(vcx, [expr]);
+            let usize_prim = deps
+                .require_local::<RustTySnapshotsEnc>(vcx.tcx().mk_ty_from_kind(ty::TyKind::Uint(ty::UintTy::Usize)))
+                .unwrap()
+                .generic_snapshot
+                .specifics
+                .expect_primitive();
+            let proj_app = vcx.mk_bin_op_expr(vir::BinOpKind::SeqIndex, proj_app, usize_prim.snap_to_prim.apply(vcx, [index_expr.unwrap()]));
+            let proj_app = deps.require_local::<RustTyCastersEnc<CastTypePure>>(*elem_ty)
+                .unwrap()
+                .cast_to_concrete_if_possible(vcx, proj_app);
+            let place_ref = place_ref
+                .map(|pr| array_enc.index_access.apply(vcx, &[pr]));
+            (proj_app, place_ref)
+
         }
         mir::ProjectionElem::Downcast(..) => (expr, place_ref),
         _ => todo!("Unsupported ProjectionElem {:?}", elem),

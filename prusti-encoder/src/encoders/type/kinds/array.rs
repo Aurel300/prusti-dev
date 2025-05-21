@@ -113,7 +113,10 @@ pub(crate) fn predicate<'vir>(
             .collect::<Vec<_>>(),
         snap_type,
         &[vir::expr! { acc_wildcard([self_pred](ref_self, ..[generic_exprs])) }],
-        &[],
+        &[vir::expr! { forall i: Int :: { [builder.vcx.mk_bin_op_expr(vir::BinOpKind::SeqIndex, vir::expr! { [snap_data.snap_to_prim]([builder.vcx.mk_result(snap_type)]) }, vir::expr! { i })] }
+            (((0) <= (i)) && ((i) < (vpr_seq_len([snap_data.snap_to_prim]([builder.vcx.mk_result(snap_type)])))))
+                ==> (([builder.vcx.mk_bin_op_expr(vir::BinOpKind::SeqIndex, vir::expr! { [snap_data.snap_to_prim]([builder.vcx.mk_result(snap_type)]) }, vir::expr! { i })]) == ([generic_exprs[0]]))
+        }],
         None,
     );
     builder.function_snap = Some(snap_func);

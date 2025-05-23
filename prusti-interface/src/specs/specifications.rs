@@ -108,6 +108,10 @@ impl<'tcx> Specifications<'tcx> {
         }
     }
 
+    pub fn get_type_specs(&self) -> &DefSpecificationMap {
+        &self.user_typed_specs
+    }
+
     #[tracing::instrument(level = "trace", skip(self))]
     pub(super) fn get_loop_spec(&self, def_id: &DefId) -> Option<&LoopSpecification> {
         self.user_typed_specs.get_loop_spec(def_id)

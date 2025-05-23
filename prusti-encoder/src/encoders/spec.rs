@@ -27,14 +27,11 @@ thread_local! {
     static DEF_SPEC_MAP: RefCell<Option<DefSpecificationMap>> = RefCell::new(Default::default());
 }
 
-pub fn with_def_spec<F, R>(f: F) -> R
+pub fn with_type_spec<F, R>(f: F) -> R
 where
     F: FnOnce(&DefSpecificationMap) -> R,
 {
-    DEF_SPEC_MAP.with_borrow(|def_spec: &Option<DefSpecificationMap>| {
-        let def_spec = def_spec.as_ref().unwrap();
-        f(def_spec)
-    })
+    vir::with_vcx(|vcx| f(vcx.specs.as_ref().unwrap().borrow().get_type_specs()))
 }
 
 pub fn with_proc_spec<'tcx, F, R>(query: SpecQuery<'tcx>, f: F) -> Option<R>
@@ -62,7 +59,7 @@ pub fn is_function_trusted(def_id: DefId, substs: ty::GenericArgsRef<'_>) -> boo
 
 pub fn is_type_trusted(ty: ty::Ty) -> bool {
     match ty.kind() {
-        prusti_rustc_interface::middle::ty::TyKind::Adt(adt_def, _) => with_def_spec(|def_spec| {
+        prusti_rustc_interface::middle::ty::TyKind::Adt(adt_def, _) => with_type_spec(|def_spec| {
             def_spec
                 .get_type_spec(&adt_def.did())
                 .map(|type_spec| type_spec.trusted.extract_inherit().unwrap_or_default())
@@ -70,10 +67,6 @@ pub fn is_type_trusted(ty: ty::Ty) -> bool {
         }),
         _ => false,
     }
-}
-
-pub fn init_def_spec(def_spec: DefSpecificationMap) {
-    DEF_SPEC_MAP.replace(Some(def_spec));
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]

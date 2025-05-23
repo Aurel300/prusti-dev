@@ -95,11 +95,7 @@ where
         let caller_def_id = Self::get_caller_def_id(&task_key);
         vir::with_vcx(|vcx| {
             let substs = Self::get_substs(vcx, &task_key);
-            let trusted = crate::encoders::with_proc_spec(
-                SpecQuery::GetProcKind(def_id, substs),
-                |def_spec| def_spec.trusted.extract_inherit().unwrap_or_default(),
-            )
-            .unwrap_or_default();
+            let trusted = crate::encoders::is_function_trusted(def_id, substs);
             let local_defs = deps
                 .require_local::<MirLocalDefEnc>((def_id, substs, caller_def_id))
                 .unwrap();

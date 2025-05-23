@@ -1,8 +1,8 @@
 #![feature(rustc_private)]
 #![feature(associated_type_defaults)]
+#![feature(let_chains)]
 #![feature(box_patterns)]
 #![feature(never_type)]
-#![feature(let_chains)]
 #![allow(clippy::needless_lifetimes)]
 
 mod encoders;

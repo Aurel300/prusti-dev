@@ -76,6 +76,7 @@ impl TaskEncoder for MirLocalDefEnc {
             }
         }
 
+        let trusted = crate::encoders::spec::is_function_trusted(def_id, substs);
         vir::with_vcx(|vcx| {
             let data = if let Some(local_def_id) = def_id.as_local()
                 && is_function_with_body(vcx.tcx(), def_id)

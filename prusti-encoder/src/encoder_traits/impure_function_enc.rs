@@ -1,4 +1,4 @@
-use pcg::r#loop::LoopAnalysis;
+use pcg::{borrow_pcg::borrow_checker::r#impl::BorrowCheckerImpl, r#loop::LoopAnalysis};
 use prusti_interface::specs::specifications::SpecQuery;
 use prusti_rustc_interface::middle::mir;
 use task_encoder::{EncodeFullError, TaskEncoder, TaskEncoderDependencies};
@@ -50,16 +50,11 @@ where
     ) -> Result<ImpureFunctionEncOutput<'vir>, EncodeFullError<'vir, Self>> {
         let def_id = Self::get_def_id(&task_key);
         let caller_def_id = Self::get_caller_def_id(&task_key);
-
         vir::with_vcx(|vcx| {
             use mir::visit::Visitor;
 
             let substs = Self::get_substs(vcx, &task_key);
-            let trusted = crate::encoders::with_proc_spec(
-                SpecQuery::GetProcKind(def_id, substs),
-                |proc_spec| proc_spec.trusted.extract_inherit().unwrap_or_default(),
-            )
-            .unwrap_or_default();
+            let trusted = crate::encoders::is_function_trusted(def_id, substs);
 
             let local_defs =
                 deps.require_local::<MirLocalDefEnc>((def_id, substs, caller_def_id))?;
@@ -97,7 +92,7 @@ where
             let mut pres = Vec::new();
             let mut posts = Vec::new();
             let spec = deps.require_local::<MirSpecEnc>((def_id, substs, None, false))?;
-            let wands = deps.require_local::<WandEnc>(WandEncTask { def_id, substs })?;
+            let wands = deps.require_local::<WandEnc>(WandEncTask { def_id })?;
 
             // Add direct resources for inputs and outputs to the pre- and
             // postconditions, respectively. "Direct" here refers to owned
@@ -130,7 +125,8 @@ where
                 let body_with_facts = vcx.body_mut().get_impure_fn_body_with_facts(local_def_id);
 
                 let loop_analysis = LoopAnalysis::find_loops(&body);
-                let fpcs_analysis = pcg::run_pcg(&body_with_facts, vcx.tcx(), None);
+                let bc = BorrowCheckerImpl::new(vcx.tcx(), &body_with_facts);
+                let fpcs_analysis = pcg::run_pcg(&body_with_facts.body, vcx.tcx(), &bc, None);
 
                 let block_count = body.basic_blocks.len();
 

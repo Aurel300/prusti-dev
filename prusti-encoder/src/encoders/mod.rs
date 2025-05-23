@@ -36,5 +36,5 @@ pub use r#const::ConstEnc;
 pub use r#type::*;
 pub use snapshot::SnapshotEnc;
 pub(super) use spec::with_proc_spec;
-pub use spec::{SpecEnc, SpecEncOutput, SpecEncTask, is_function_trusted, is_type_trusted};
+pub use spec::{is_function_trusted, is_type_trusted, SpecEnc, SpecEncOutput, SpecEncTask};
 pub use viper_tuple::{ViperTupleEnc, ViperTupleEncOutput};

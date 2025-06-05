@@ -72,6 +72,10 @@ impl<'tcx> VirCtxt<'tcx> {
         &*self.arena.alloc_slice_copy(val)
     }
 
+    pub fn alloc_slice_wtf<T>(&self, val: &Vec<&'tcx T>) -> &[&'tcx T] {
+        &*self.arena.alloc_slice_copy(val)
+    }
+
     pub fn alloc_array<T: Copy, const N: usize>(&self, val: &[T; N]) -> &[T; N] {
         &*self.arena.alloc(*val)
     }
@@ -82,19 +86,20 @@ impl<'tcx> VirCtxt<'tcx> {
 
     pub fn apply_ty_substs<'vir>(
         &'vir self,
-        ty: Type<'vir>,
+        ty: TypeDyn<'vir>,
         substs: &TySubsts<'vir>,
-    ) -> Type<'vir> {
-        match ty {
-            TypeData::DomainTypeParam(p) => substs.get(p.name).unwrap_or(&ty),
-            TypeData::Domain(name, args) => {
+    ) -> TypeDyn<'vir> {
+        match ty.kind() {
+            TypeKind::DomainTypeParam(p) => substs.get(p.name).unwrap_or(&ty),
+            TypeKind::Domain(name, args) => {
                 let args = args
                     .iter()
                     .map(|t| self.apply_ty_substs(t, substs))
                     .collect::<Vec<_>>();
-                self.alloc(TypeData::Domain(name, self.alloc(args)))
+                let kind = TypeKind::Domain(name, self.alloc(args));
+                self.alloc(TypeData::new(kind))
             }
-            other => other,
+            _ => ty,
         }
     }
 

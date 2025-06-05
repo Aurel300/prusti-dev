@@ -8,7 +8,7 @@ use crate::encoders::{
 };
 use prusti_rustc_interface::middle::ty::{ParamTy, TyKind};
 use task_encoder::{EncodeFullError, TaskEncoder, TaskEncoderDependencies};
-use vir::{vir_format, FunctionIdent, PredicateIdent, ToKnownArity, UnknownArity};
+use vir::{vir_format, CastType, FunctionIdn, HasType, PredicateIdn};
 
 pub fn domain<'vir>(
     prefix: &str,
@@ -20,9 +20,9 @@ pub fn domain<'vir>(
     builder: &mut DomainBuilder<'vir>,
 ) -> Result<
     (
-        FunctionIdent<'vir, UnknownArity<'vir>>,
+        FunctionIdn<'vir, vir::ManySnap, vir::CSnap>,
         &'vir [FieldFunctions<'vir>],
-        Vec<vir::Local<'vir>>,
+        Vec<vir::LocalSnap<'vir>>,
     ),
     EncodeFullError<'vir, DomainEnc>,
 > {
@@ -40,11 +40,7 @@ pub fn domain<'vir>(
         .iter()
         .enumerate()
         .map(|(idx, ty)| {
-            builder.function(
-                &format!("{prefix}read_{idx}"),
-                &[builder.self_type()],
-                ty.ty,
-            )
+            builder.function(&format!("{prefix}read_{idx}"), builder.self_type(), ty.ty)
         })
         .collect::<Vec<_>>();
     let field_writes = fields
@@ -53,7 +49,7 @@ pub fn domain<'vir>(
         .map(|(idx, ty)| {
             builder.function(
                 &format!("{prefix}write_{idx}"),
-                &[builder.self_type(), ty.ty],
+                (builder.self_type(), ty.ty),
                 builder.self_type(),
             )
         })
@@ -92,13 +88,15 @@ pub fn domain<'vir>(
         let ty_cons = deps.require_ref::<TyConstructorEnc>(task_key)?;
         builder.axiom("typeof", vir::expr! {
             forall s: [builder.self_type()] ::
-                {[output_ref.typeof_function](s)}
-                ([output_ref.typeof_function](s)) == ([ty_cons.ty_constructor](..[generics.iter()
+                {[output_ref.typeof_function]((s) as Snap)}
+                ([output_ref.typeof_function]((s) as Snap)) == ([ty_cons.ty_constructor](..[generics.iter()
                     .enumerate()
                     .map(|(param_idx, _)| {
-                        output_ref.ty_param_accessors[param_idx].apply(builder.vcx, [output_ref.typeof_function.apply(builder.vcx, [s])])
+                        vir::expr! { [output_ref.ty_param_accessors[param_idx]]([output_ref.typeof_function]((s) as Snap)) }
+                        // output_ref.ty_param_accessors[param_idx].apply(builder.vcx, [output_ref.typeof_function.apply(builder.vcx, [s])])
                     })
-                    .collect::<Vec<_>>()]))
+                    .collect::<Vec<_>>()
+                    .as_slice()]))
         });
     }
 
@@ -109,8 +107,8 @@ pub fn domain<'vir>(
             &format!("{prefix}cons_read_{idx}"),
             vir::expr! {
                 forall ..[field_vars] ::
-                    {[cons_ident](..[field_vars])}
-                    ([field_reads[idx]]([cons_ident](..[field_vars]))) == ([field_vars[idx]])
+                    {[cons_ident](..[field_vars.as_slice()])}
+                    ([field_reads[idx]]([cons_ident](..[field_vars.as_slice()]))) == ([field_vars[idx]])
             },
         );
         if let TyKind::Param(p) = fields[idx].rust_ty.kind() {
@@ -119,7 +117,7 @@ pub fn domain<'vir>(
             builder.axiom(&format!("{prefix}type_read_{idx}"), vir::expr! {
                 forall s: [builder.self_type()] ::
                     {[field_reads[idx]](s)}
-                    ([generic_enc.param_type_function]([field_reads[idx]](s))) == ([output_ref.ty_param_accessors[param_idx]]([output_ref.typeof_function](s)))
+                    ([generic_enc.param_type_function](([field_reads[idx]](s)) as PSnap)) == ([output_ref.ty_param_accessors[param_idx]]([output_ref.typeof_function]((s) as Snap)))
             });
         }
     }
@@ -146,8 +144,8 @@ pub fn domain<'vir>(
         .into_iter()
         .zip(field_writes)
         .map(|(read, write)| FieldFunctions {
-            read: read.to_known(),
-            write: write.to_known(),
+            read: read,
+            write: write,
         })
         .collect::<Vec<_>>();
 
@@ -163,16 +161,16 @@ pub(crate) fn predicate<'vir>(
     fields: &[RustTyPredicatesEncOutputRef<'vir>],
     task_key: <PredicateEnc as TaskEncoder>::TaskKey<'vir>,
     snap: &SnapshotEncOutput<'vir>,
-    variant_field_snaps_to_snap: FunctionIdent<'vir, UnknownArity<'vir>>,
+    variant_field_snaps_to_snap: FunctionIdn<'vir, vir::ManySnap, vir::CSnap>,
     deps: &mut TaskEncoderDependencies<'vir, PredicateEnc>,
-    generic_decls: &[vir::LocalDecl<'vir>],
-    generic_exprs: &[vir::Expr<'vir>],
+    generic_decls: &[vir::LocalDeclTyVal<'vir>],
+    generic_exprs: &[vir::ExprTyVal<'vir>],
     builder: &mut PredicateBuilder<'vir>,
 ) -> Result<
     (
-        Vec<FunctionIdent<'vir, UnknownArity<'vir>>>,
-        PredicateIdent<'vir, UnknownArity<'vir>>,
-        vir::Expr<'vir>,
+        Vec<FunctionIdn<'vir, (vir::Ref, vir::ManyTyVal), vir::Ref>>,
+        PredicateIdn<'vir, (vir::Ref, vir::ManyTyVal)>,
+        vir::ExprCSnap<'vir>,
     ),
     EncodeFullError<'vir, PredicateEnc>,
 > {
@@ -189,27 +187,43 @@ pub(crate) fn predicate<'vir>(
 
     let snap_self = builder.vcx.mk_local("self", snap_type);
     let snap_self_decl = builder.vcx.mk_local_decl_local(snap_self);
-    let snap_self_ex: vir::Expr = builder.vcx.mk_local_ex_local(snap_self);
+    let snap_self_ex: vir::ExprSnap = builder.vcx.mk_local_ex_local(snap_self);
 
-    let ref_self = builder.vcx.mk_local("self", &vir::TypeData::Ref);
+    let ref_self = builder.vcx.mk_local("self", vir::TYPE_REF);
     let ref_self_decl = builder.vcx.mk_local_decl_local(ref_self);
     let ref_self_ex = builder.vcx.mk_local_ex_local(ref_self);
 
+    let generic_decls_tys = builder.vcx.alloc_slice(
+        generic_decls
+            .iter()
+            .copied()
+            .map(vir::LocalDeclData::ty)
+            .collect::<Vec<_>>()
+            .as_slice(),
+    );
     // Ref-to-Ref function for every field
-    let field_accessors = fields.iter()
+    let field_accessors: Vec<FunctionIdn<'vir, (vir::Ref, vir::ManyTyVal), vir::Ref>> = fields
+        .iter()
         .enumerate()
-        .map(|(idx, _field)| builder.function(
-            &format!("{prefix}field_{idx}"),
-            &[ref_self_decl].into_iter()
-                .chain(generic_decls.iter().cloned())
-                .collect::<Vec<_>>(),
-            &vir::TypeData::Ref,
-            &[], // TODO: should have a read permission here!
-            &[
-                vir::expr! { ((ref_self) == (null)) == (([builder.vcx.mk_result(&vir::TypeData::Ref)]) == (null)) },
-            ],
-            None,
-        ))
+        .map(|(idx, _field)| {
+            builder.function::<(vir::Ref, vir::ManyTyVal), vir::Ref>(
+                &format!("{prefix}field_{idx}"),
+                (ref_self_decl.ty(), generic_decls_tys),
+                vir::TYPE_REF,
+                &[ref_self_decl.as_dyn()]
+                    .into_iter()
+                    .chain(
+                        generic_decls
+                            .iter()
+                            .cloned()
+                            .map(vir::LocalDeclData::as_dyn),
+                    )
+                    .collect::<Vec<_>>(),
+                &[], // TODO: should have a read permission here!
+                &[vir::expr! { ((ref_self) == (null)) == ((result: Ref) == (null)) }],
+                None,
+            )
+        })
         .collect::<Vec<_>>();
 
     // main variant predicate
@@ -217,11 +231,17 @@ pub(crate) fn predicate<'vir>(
     if !prefix.is_empty() {
         pred_name = format!("{prefix}owned");
     }
-    let pred_owned = builder.predicate(
+    let pred_owned = builder.predicate::<(vir::Ref, vir::ManyTyVal)>(
         &pred_name,
-        &[ref_self_decl]
+        (ref_self_decl.ty(), generic_decls_tys),
+        &[ref_self_decl.as_dyn()]
             .into_iter()
-            .chain(generic_decls.iter().cloned())
+            .chain(
+                generic_decls
+                    .iter()
+                    .copied()
+                    .map(vir::LocalDeclData::as_dyn),
+            )
             .collect::<Vec<_>>(),
         Some(
             builder.vcx.mk_conj(
@@ -229,17 +249,7 @@ pub(crate) fn predicate<'vir>(
                     .iter()
                     .zip(&field_accessors)
                     .map(|(field, accessor)| {
-                        field.ref_to_pred(
-                            builder.vcx,
-                            accessor.apply(
-                                builder.vcx,
-                                &[ref_self_ex]
-                                    .into_iter()
-                                    .chain(generic_exprs.iter().cloned())
-                                    .collect::<Vec<_>>(),
-                            ),
-                            None,
-                        )
+                        field.ref_to_pred(builder.vcx, accessor(ref_self_ex, &generic_exprs), None)
                     })
                     .collect::<Vec<_>>(),
             ),
@@ -251,20 +261,11 @@ pub(crate) fn predicate<'vir>(
         .iter()
         .zip(&field_accessors)
         .map(|(field, accessor)| {
-            field.ref_to_snap(
-                builder.vcx,
-                accessor.apply(
-                    builder.vcx,
-                    &[ref_self_ex]
-                        .into_iter()
-                        .chain(generic_exprs.iter().cloned())
-                        .collect::<Vec<_>>(),
-                ),
-            )
+            field.ref_to_snap(builder.vcx, accessor(ref_self_ex, &generic_exprs))
         })
         .collect::<Vec<_>>();
     let variant_snap_expr = vir::expr! {
-        unfolding_wildcard ([pred_owned](ref_self, ..[generic_exprs])) in ([variant_field_snaps_to_snap](..[snap_args]))
+        unfolding ([pred_owned](ref_self, ..[generic_exprs])) in ([variant_field_snaps_to_snap](..[snap_args.as_slice()]))
     };
     /*
     let pred_owned_expr = vir::expr! {
@@ -315,10 +316,10 @@ pub(crate) fn predicate<'vir>(
         "snap",
         &[ref_self_decl],
         snap_type,
-        &[vir::expr! { acc_wildcard([self_pred](ref_self)) }],
+        &[vir::expr! { acc([self_pred](ref_self)) }],
         &[],
         Some(vir::expr! {
-            unfolding_wildcard ([self_pred](ref_self)) in ([snap_data.field_snaps_to_snap](..[snap_args]))
+            unfolding ([self_pred](ref_self)) in ([snap_data.field_snaps_to_snap](..[snap_args]))
         }),
     ).1);
 
@@ -357,7 +358,7 @@ pub(crate) fn predicate<'vir>(
     Ok(PredicateEncData::StructLike(PredicateEncDataStruct {
         snap_data,
         ref_to_field_refs: builder.vcx.alloc_slice(&field_accessors.iter()
-            .map(|f| f.to_known())
+            .map(|f| f)
             .collect::<Vec<_>>()),
     }))
     */

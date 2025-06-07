@@ -31,31 +31,8 @@ pub(crate) fn domain<'vir>(
     let value_ident = builder.function("value", &[builder.self_type()], inner_type);
     let cons_ident = builder.function("cons", &[prim_type, inner_type], builder.self_type());
 
-<<<<<<< HEAD
     let generic_enc = deps.require_ref::<GenericEnc>(())?;
     let ty_type_func = deps.require_ref::<TyConstructorEnc>(task_key)?;
-=======
-    let ref_immutable_cons_func = vir::FunctionIdent::new(
-        vir::ViperIdent::new("s_Ref_immutable_cons"),
-        vir::UnknownArity::new(builder.vcx.alloc_slice(&[prim_type, param_type])),
-        ref_immutable_type,
-    );
-    let ref_immutable_typeof_func = vir::FunctionIdent::new(
-        vir::ViperIdent::new("s_Ref_immutable_typeof"),
-        vir::UnknownArity::new(builder.vcx.alloc_slice(&[ref_immutable_type])),
-        type_type,
-    );
-    let typ_func = vir::FunctionIdent::new(
-        vir::ViperIdent::new("typ"),
-        vir::UnknownArity::new(builder.vcx.alloc_slice(&[param_type])),
-        type_type,
-    );
-    let ref_immutable_type_func = vir::FunctionIdent::new(
-        vir::ViperIdent::new("s_Ref_immutable_type"),
-        vir::UnknownArity::new(builder.vcx.alloc_slice(&[type_type])),
-        type_type,
-    );
->>>>>>> 602b5076dfe (style improvement)
     builder.axiom("deref", vir::expr! {
         forall r: [prim_type], value: [inner_type] :: {[cons_ident](r, value)} ([deref_ident]([cons_ident](r, value))) == (r)
     });

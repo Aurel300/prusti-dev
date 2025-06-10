@@ -39,7 +39,7 @@ pub(crate) fn domain<'vir>(
     builder.axiom("value", vir::expr! {
         forall r: [prim_type], value: [inner_type] :: {[cons_ident](r, value)} ([value_ident]([cons_ident](r, value))) == (value)
     });
-    builder.axiom("ref_immutable_cons_typeof", vir::expr! {
+    builder.axiom("typeof", vir::expr! {
         forall r: [prim_type], p: [inner_type] ::
             {[output_ref.typeof_function]([cons_ident](r, p))}
             ([output_ref.typeof_function]([cons_ident](r, p))) == ([ty_type_func.ty_constructor]([generic_enc.param_type_function](p)))

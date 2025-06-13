@@ -179,16 +179,16 @@ macro_rules! vir_domain_axiom {
         let val_ex = $vcx.mk_local_ex("val", $crate::vir_type!($vcx; $ty));
         let inner = $b.apply($vcx, [val_ex]);
         $vcx.mk_domain_axiom(
-            $vcx.alloc_str(&format!(
-                "ax_inverse_{}_{}",
+            $crate::ViperIdent::new($vcx.alloc_str(&format!(
+                "ax_inverise_{}_{}",
                 $a.name(),
                 $b.name(),
-            )),
+            ))),
             $vcx.mk_forall_expr(
                 $vcx.alloc_slice(&[
                     $vcx.mk_local_decl("val", $crate::vir_type!($vcx; $ty)),
                 ]),
-                $vcx.alloc_slice(&[$vcx.alloc_slice(&[inner])]),
+                $vcx.alloc_slice(&[$vcx.mk_trigger($vcx.alloc_slice(&[inner]))]),
                 $vcx.mk_bin_op_expr(
                     $crate::BinOpKind::CmpEq,
                     $a.apply($vcx, [inner]),

@@ -28,12 +28,18 @@ impl<'vir> LiftedGeneric<'vir> {
 
 impl<'vir> OutputRefAny for LiftedGeneric<'vir> {}
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum LiftedGenericEncTask<'vir> {
+    Param(ty::ParamTy),
+    Const(ty::Const<'vir>),
+}
+
 pub struct LiftedGenericEnc;
 
 impl TaskEncoder for LiftedGenericEnc {
     task_encoder::encoder_cache!(LiftedGenericEnc);
 
-    type TaskDescription<'tcx> = ty::ParamTy;
+    type TaskDescription<'tcx> = LiftedGenericEncTask<'tcx>;
 
     type TaskKey<'tcx> = Self::TaskDescription<'tcx>;
 
@@ -52,11 +58,21 @@ impl TaskEncoder for LiftedGenericEnc {
         deps: &mut task_encoder::TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self> {
         with_vcx(|vcx| {
-            let output_ref = vcx.mk_local_decl(
-                vcx.alloc_str(task_key.name.as_str()),
-                deps.require_ref::<GenericEnc>(())?.type_snapshot,
-            );
-            deps.emit_output_ref(*task_key, LiftedGeneric(output_ref))?;
+            let output_ref = LiftedGeneric(match task_key {
+                LiftedGenericEncTask::Param(param) => vcx.mk_local_decl(
+                    vcx.alloc_str(param.name.as_str()),
+                    deps.require_ref::<GenericEnc>(())?.type_snapshot,
+                ),
+                LiftedGenericEncTask::Const(c) => match c.kind() {
+                    ty::ConstKind::Param(param) => vcx.mk_local_decl(
+                        vcx.alloc_str(param.name.as_str()),
+                        deps.require_ref::<GenericEnc>(())?.type_snapshot,
+                    ),
+                    _ => todo!("lifted generic const {c:?}")
+                }
+                // LiftedGenericEncTask::Const(c) => todo!("lifted generic const {c:?}"),
+            });
+            deps.emit_output_ref(*task_key, output_ref)?;
             Ok(((), ()))
         })
     }

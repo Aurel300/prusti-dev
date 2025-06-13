@@ -2,7 +2,7 @@ use crate::encoders::{
     domain::{
         DomainBuilder, DomainDataStruct, DomainEnc, DomainEncOutputRef, DomainEncSpecifics, FieldTy,
     },
-    lifted::ty::{EncodeGenericsAsParamTy, LiftedTyEnc},
+    lifted::ty::{EncodeGenericsAsParamTy, LiftedTyEnc, LiftedTyEncTask},
     predicate::{PredicateBuilder, PredicateEncData, PredicateEncDataStruct},
     rust_ty_predicates::RustTyPredicatesEnc,
     snapshot::SnapshotEncOutput,
@@ -26,7 +26,7 @@ pub(crate) fn domain<'vir>(
     let generics = params
         .iter()
         .map(|ty| {
-            deps.require_local::<LiftedTyEnc<EncodeGenericsAsParamTy>>(ty)
+            deps.require_local::<LiftedTyEnc<EncodeGenericsAsParamTy>>(LiftedTyEncTask::Ty(ty))
                 .unwrap()
                 .expect_generic()
         })

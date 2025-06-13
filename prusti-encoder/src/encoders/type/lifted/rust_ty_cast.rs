@@ -13,7 +13,7 @@ use super::{
         Casters, CastersEnc, ImpureCastStmts, MakeGenericCastFunction,
     },
     generic::LiftedGeneric,
-    ty::{EncodeGenericsAsLifted, LiftedTy, LiftedTyEnc},
+    ty::{EncodeGenericsAsLifted, LiftedTy, LiftedTyEnc, LiftedTyEncTask},
 };
 
 /// Generates Viper functions to cast between generic and non-generic Viper
@@ -89,7 +89,7 @@ where
             let ty_args = args
                 .iter()
                 .map(|a| {
-                    deps.require_local::<LiftedTyEnc<EncodeGenericsAsLifted>>(*a)
+                    deps.require_local::<LiftedTyEnc<EncodeGenericsAsLifted>>(LiftedTyEncTask::Ty(*a))
                         .unwrap()
                 })
                 .collect::<Vec<_>>();

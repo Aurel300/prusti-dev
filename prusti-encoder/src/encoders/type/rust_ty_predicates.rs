@@ -6,7 +6,7 @@ use crate::encoders::{PredicateEnc, PredicateEncOutputRef};
 use super::{
     lifted::{
         generic::LiftedGeneric,
-        ty::{EncodeGenericsAsLifted, LiftedTy, LiftedTyEnc},
+        ty::{EncodeGenericsAsLifted, LiftedTy, LiftedTyEnc, LiftedTyEncTask},
     },
     most_generic_ty::extract_type_params,
 };
@@ -149,7 +149,7 @@ impl TaskEncoder for RustTyPredicatesEnc {
                 None
             };
             */
-            let ty = deps.require_local::<LiftedTyEnc<EncodeGenericsAsLifted>>(*task_key)?;
+            let ty = deps.require_local::<LiftedTyEnc<EncodeGenericsAsLifted>>(LiftedTyEncTask::Ty(*task_key))?;
             deps.emit_output_ref(
                 *task_key,
                 RustTyPredicatesEncOutputRef {

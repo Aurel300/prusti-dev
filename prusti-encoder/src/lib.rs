@@ -107,6 +107,7 @@ pub fn test_entrypoint<'tcx>(
         viper_code.push_str(&format!("{:?}\n", output.param_snapshot));
         program_domains.push(output.type_snapshot);
         program_domains.push(output.param_snapshot);
+        /*
         // TODO: should these be emitted by PredicateEnc?
         viper_code.push_str(&format!("{:?}\n", output.ref_to_pred));
         viper_code.push_str(&format!("{:?}\n", output.ref_to_snap));
@@ -114,6 +115,7 @@ pub fn test_entrypoint<'tcx>(
         program_predicates.push(output.ref_to_pred);
         program_functions.push(output.ref_to_snap);
         program_functions.push(output.unreachable_to_snap);
+        */
     }
 
     header(&mut viper_code, "pure generic casts");

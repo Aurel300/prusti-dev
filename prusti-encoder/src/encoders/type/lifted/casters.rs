@@ -9,7 +9,7 @@ use crate::encoders::{
 };
 
 use super::{
-    generic::{LiftedGeneric, LiftedGenericEnc},
+    generic::{LiftedGeneric, LiftedGenericEnc, LiftedGenericEncTask},
     ty::LiftedTy,
 };
 
@@ -249,7 +249,7 @@ impl TaskEncoder for CastersEnc<CastTypePure> {
             let ty_params = ty
                 .generics()
                 .into_iter()
-                .map(|g| deps.require_ref::<LiftedGenericEnc>(*g))
+                .map(|g| deps.require_ref::<LiftedGenericEnc>(LiftedGenericEncTask::Param(*g)))
                 .collect::<Result<Vec<_>, _>>()?;
 
             let make_generic_arg_tys = std::iter::once(self_ty)

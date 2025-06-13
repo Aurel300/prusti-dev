@@ -41,14 +41,12 @@ use crate::{
 };
 
 use super::{
-    lifted::{
+    r#const::ConstEncTask, lifted::{
         cast::{CastArgs, CastToEnc},
         casters::CastTypeImpure,
         rust_ty_cast::RustTyCastersEnc,
-        ty::{EncodeGenericsAsLifted, LiftedTyEnc},
-    },
-    rust_ty_predicates::{RustTyPredicatesEnc, RustTyPredicatesEncOutputRef},
-    ConstEnc, MirMonoImpureEnc, MirPolyImpureEnc, WandEncOutput,
+        ty::{EncodeGenericsAsLifted, LiftedTyEnc, LiftedTyEncTask},
+    }, rust_ty_predicates::{RustTyPredicatesEnc, RustTyPredicatesEncOutputRef}, ConstEnc, MirMonoImpureEnc, MirPolyImpureEnc, WandEncOutput
 };
 
 pub struct MirImpureEnc;
@@ -767,7 +765,11 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
 
     fn encode_constant(&mut self, constant: &mir::ConstOperand<'vir>) -> vir::Expr<'vir> {
         self.deps
-            .require_local::<ConstEnc>((constant.const_, 0, self.def_id))
+            .require_local::<ConstEnc>(ConstEncTask::Mir {
+                const_: constant.const_,
+                encoding_depth: 0,
+                def_id: self.def_id,
+            })
             .unwrap()
     }
 
@@ -912,7 +914,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 let projection_p = field_access[field_idx.as_usize()];
                 let instantiated_ty = self
                     .deps
-                    .require_local::<LiftedTyEnc<EncodeGenericsAsLifted>>(place_ty.ty)
+                    .require_local::<LiftedTyEnc<EncodeGenericsAsLifted>>(LiftedTyEncTask::Ty(place_ty.ty))
                     .unwrap();
                 let proj_args = e_ty
                     .generic_predicate
@@ -930,7 +932,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                     .index_access;
                 let instantiated_ty = self
                     .deps
-                    .require_local::<LiftedTyEnc<EncodeGenericsAsLifted>>(place_ty.ty)
+                    .require_local::<LiftedTyEnc<EncodeGenericsAsLifted>>(LiftedTyEncTask::Ty(place_ty.ty))
                     .unwrap();
                 let proj_args = e_ty
                     .generic_predicate
@@ -956,7 +958,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                         let projection_p = field_access[0];
                         let instantiated_ty = self
                             .deps
-                            .require_local::<LiftedTyEnc<EncodeGenericsAsLifted>>(place_ty.ty)
+                            .require_local::<LiftedTyEnc<EncodeGenericsAsLifted>>(LiftedTyEncTask::Ty(place_ty.ty))
                             .unwrap();
                         let proj_args =
                             e_ty.generic_predicate
@@ -967,7 +969,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                         // TODO: unfold? function? use snapshot?
                         let instantiated_ty = self
                             .deps
-                            .require_local::<LiftedTyEnc<EncodeGenericsAsLifted>>(place_ty.ty)
+                            .require_local::<LiftedTyEnc<EncodeGenericsAsLifted>>(LiftedTyEncTask::Ty(place_ty.ty))
                             .unwrap();
                         let deref_args =
                             e_ty.generic_predicate

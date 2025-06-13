@@ -3,7 +3,7 @@ use crate::encoders::{
         DomainBuilder, DomainDataStruct, DomainEnc,
         DomainEncOutputRef, DomainEncSpecifics, FieldTy,
     },
-    lifted::ty::{EncodeGenericsAsParamTy, LiftedTyEnc},
+    lifted::ty::{EncodeGenericsAsParamTy, LiftedTyEnc, LiftedTyEncTask},
     predicate::{
         PredicateBuilder, PredicateEncData, PredicateEncDataStruct,
     },
@@ -147,7 +147,7 @@ pub(crate) fn domain<'vir>(
         .iter()
         .flat_map(ty::GenericArg::as_type)
         .map(|ty| {
-            deps.require_local::<LiftedTyEnc<EncodeGenericsAsParamTy>>(ty)
+            deps.require_local::<LiftedTyEnc<EncodeGenericsAsParamTy>>(LiftedTyEncTask::Ty(ty))
                 .unwrap()
                 .expect_generic()
         })

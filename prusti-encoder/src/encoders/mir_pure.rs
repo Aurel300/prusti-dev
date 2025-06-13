@@ -14,14 +14,11 @@ use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 use vir::add_debug_note;
 // TODO: replace uses of `PredicateEnc` with `SnapshotEnc`
 use super::{
-    lifted::{
+    r#const::ConstEncTask, lifted::{
         aggregate_cast::{AggregateSnapArgsCastEnc, AggregateSnapArgsCastEncTask},
         casters::CastTypePure,
         rust_ty_cast::RustTyCastersEnc,
-    },
-    rust_ty_predicates::RustTyPredicatesEnc,
-    rust_ty_snapshots::RustTySnapshotsEnc,
-    GenericEnc,
+    }, rust_ty_predicates::RustTyPredicatesEnc, rust_ty_snapshots::RustTySnapshotsEnc, GenericEnc
 };
 use crate::{
     encoder_traits::pure_func_app_enc::PureFuncAppEnc,
@@ -899,7 +896,11 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
             }
             mir::Operand::Constant(box constant) => self
                 .deps
-                .require_local::<ConstEnc>((constant.const_, self.encoding_depth, self.def_id))
+                .require_local::<ConstEnc>(ConstEncTask::Mir {
+                    const_: constant.const_,
+                    encoding_depth: self.encoding_depth,
+                    def_id: self.def_id,
+                })
                 .unwrap()
                 .lift(),
         }

@@ -5,7 +5,7 @@ use task_encoder::{EncodeFullResult, TaskEncoder};
 
 use super::{
     generic::LiftedGeneric,
-    ty::{EncodeGenericsAsLifted, LiftedTy, LiftedTyEnc},
+    ty::{EncodeGenericsAsLifted, LiftedTy, LiftedTyEnc, LiftedTyEncTask},
 };
 
 /// Encodes the type parameters to a function application. If we are
@@ -44,12 +44,17 @@ impl TaskEncoder for LiftedFuncAppTyParamsEnc {
             };
             let ty_args = ty_args
                 .iter()
-                .map(|ty| {
-                    deps.require_local::<LiftedTyEnc<EncodeGenericsAsLifted>>(*ty)
-                        .unwrap()
-                })
+                .map(|ty| deps.require_local::<LiftedTyEnc<EncodeGenericsAsLifted>>(LiftedTyEncTask::Ty(*ty)))
+                .collect::<Result<Vec<_>, _>>()?;
+            let const_args = substs
+                .iter()
+                .filter_map(|arg| arg.as_const())
+                .map(|c| deps.require_local::<LiftedTyEnc<EncodeGenericsAsLifted>>(LiftedTyEncTask::Const(c)))
+                .collect::<Result<Vec<_>, _>>()?;
+            let all_args = ty_args.into_iter()
+                .chain(const_args)
                 .collect::<Vec<_>>();
-            Ok((vcx.alloc_slice(&ty_args), ()))
+            Ok((vcx.alloc_slice(&all_args), ()))
         })
     }
 }

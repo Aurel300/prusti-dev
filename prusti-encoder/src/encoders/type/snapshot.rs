@@ -2,7 +2,7 @@ use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 
 use super::{
     domain::{DomainEnc, DomainEncSpecifics},
-    lifted::generic::{LiftedGeneric, LiftedGenericEnc},
+    lifted::generic::{LiftedGeneric, LiftedGenericEnc, LiftedGenericEncTask},
     most_generic_ty::MostGenericTy,
 };
 
@@ -49,7 +49,7 @@ impl TaskEncoder for SnapshotEnc {
             let generics = vcx.alloc_slice(
                 &ty.generics()
                     .into_iter()
-                    .map(|g| deps.require_ref::<LiftedGenericEnc>(*g).unwrap())
+                    .map(|g| deps.require_ref::<LiftedGenericEnc>(LiftedGenericEncTask::Param(*g)).unwrap())
                     .collect::<Vec<_>>(),
             );
             Ok((

@@ -13,7 +13,7 @@ use crate::encoders::{
     domain::DomainEnc,
     lifted::{
         func_def_ty_params::LiftedTyParamsEnc,
-        ty::{EncodeGenericsAsLifted, LiftedTy, LiftedTyEnc},
+        ty::{EncodeGenericsAsLifted, LiftedTy, LiftedTyEnc, LiftedTyEncTask},
     },
     most_generic_ty::extract_type_params,
     GenericEnc, MirLocalDefEnc, MirPureEnc, MirPureEncTask, MirSpecEnc, PureKind,
@@ -60,7 +60,7 @@ where
         ty: Ty<'vir>,
     ) -> Option<ExprGen<'vir, Curr, Next>> {
         let lifted_ty = deps
-            .require_local::<LiftedTyEnc<EncodeGenericsAsLifted>>(ty)
+            .require_local::<LiftedTyEnc<EncodeGenericsAsLifted>>(LiftedTyEncTask::Ty(ty))
             .unwrap();
         match lifted_ty {
             LiftedTy::Generic(generic) => {

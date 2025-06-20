@@ -14,9 +14,11 @@ use pcg::{
     utils::{maybe_old::MaybeOldPlace, CompilerCtxt, HasPlace, Place},
     PcgOutput,
 };
-use prusti_interface::{specs::specifications::SpecQuery, PrustiError};
+use prusti_interface::{specs::{is_spec_fn, specifications::SpecQuery}, PrustiError};
 use prusti_rustc_interface::{
-    data_structures::fx::FxHashMap,
+    abi::FieldIdx,
+    data_structures::fx::{FxHashMap, FxHashSet},
+    index::IndexVec,
     middle::{
         mir,
         ty::{self, GenericArgs, TyKind},
@@ -32,13 +34,11 @@ use crate::{
         pure_func_app_enc::PureFuncAppEnc,
     },
     encoders::{
-        self,
-        lifted::{
-            aggregate_cast::{AggregateSnapArgsCastEnc, AggregateSnapArgsCastEncTask},
+        self, lifted::{
+            aggregate_cast::{AggregateSnapArgsCastEnc, AggregateSnapArgsCastEncTask, AggregateType},
             casters::CastTypePure,
             func_app_ty_params::LiftedFuncAppTyParamsEnc,
-        },
-        FunctionCallTaskDescription, MirBuiltinEnc, WandEnc, WandEncTask,
+        }, FunctionCallTaskDescription, MirBuiltinEnc, SpecBlocksEncOutput, WandEnc, WandEncTask
     },
 };
 
@@ -123,6 +123,7 @@ where
     pub label_ctr: usize,
     pub call_labels: FxHashMap<mir::BasicBlock, (&'vir str, &'vir str)>,
     pub from_to_vars: FxHashMap<mir::BasicBlock, Vec<(mir::BasicBlock, &'vir str)>>,
+    pub spec_blocks: SpecBlocksEncOutput<'vir>,
 
     // for the current basic block
     pub current_fpcs: Option<PcgBasicBlock<'vir>>,
@@ -963,6 +964,14 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
     }
 }
 
+fn as_spec_closure<'tcx>(tcx: ty::TyCtxt<'tcx>, stmt: &mir::Statement<'tcx>) -> Option<(DefId, ty::GenericArgsRef<'tcx>, IndexVec<FieldIdx, mir::Operand<'tcx>>)> {
+    let mir::StatementKind::Assign(assgn) = &stmt.kind else { return None; };
+    let mir::Rvalue::Aggregate(aggr, cl_args) = &assgn.1 else { return None; };
+    let mir::AggregateKind::Closure(cl_def_id, cl_substs) = &**aggr else { return None; };
+    if !is_spec_fn(tcx, *cl_def_id) { return None; }
+    Some((*cl_def_id, cl_substs, cl_args.clone()))
+}
+
 impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<'vir, 'enc, E> {
     fn visit_basic_block_data(&mut self, block: mir::BasicBlock, data: &mir::BasicBlockData<'vir>) {
         // We are verifying the absence of panics, so cleanup block should never
@@ -984,6 +993,21 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
             return;
         }
 
+        // this is a specification-only block, which should not be reached
+        if self.spec_blocks.is_spec_block(block) {
+            self.encoded_blocks.push(self.vcx.mk_cfg_block(
+                self.vcx
+                    .alloc(vir::CfgBlockLabelData::BasicBlock(block.as_usize())),
+                &[],
+                self.vcx.alloc_slice(&[
+                    self.vcx.mk_comment_stmt("spec-only block"),
+                    self.vcx.mk_exhale_stmt(self.vcx.mk_bool::<false>()),
+                ]),
+                self.vcx.mk_assume_false_stmt(),
+            ));
+            return;
+        }
+
         self.current_stmts = Some(Vec::with_capacity(
             data.statements.len(), // TODO: not exact?
         ));
@@ -991,14 +1015,81 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
             self.vcx
                 .alloc(vir::CfgBlockLabelData::BasicBlock(block.as_usize())),
         );
+
         let cfpcs = self.fpcs_analysis.get_all_for_bb(block).unwrap().unwrap();
 
-        // Calculate invariant at loop head
-        let invariant = self
+        // Collect functional specs for invariant
+        // TODO: we are assuming that the invariants are all in the head block
+        /*
+        for stmt in &data.statements {
+            let Some((cl_def_id, cl_substs, cl_args)) = as_spec_closure(self.vcx.tcx(), stmt) else { continue; };
+
+            println!("loop invariant? {cl_def_id:?}");
+
+            let cl_args = self.vcx.alloc_slice(&cl_args.into_iter()
+                .map(|arg| self.encode_operand(&arg))
+                .collect::<Vec<_>>());
+            println!("  args: {cl_args:?}");
+
+            let to_bool = self.deps
+                .require_ref::<RustTyPredicatesEnc>(self.vcx.tcx().types.bool)
+                .unwrap()
+                .generic_predicate
+                .expect_prim()
+                .snap_to_prim;
+            
+            let expr = self.deps
+                .require_local::<crate::encoders::MirPureEnc>(
+                    crate::encoders::MirPureEncTask {
+                        encoding_depth: 0,
+                        kind: crate::encoders::PureKind::Closure,
+                        parent_def_id: cl_def_id,
+                        param_env: self.vcx.tcx().param_env(cl_def_id),
+                        substs: cl_substs,
+                        // TODO: should this be `def_id` or `caller_def_id`
+                        caller_def_id: Some(self.def_id),
+                    },
+                )
+                .unwrap()
+                .expr;
+            use vir::Reify;
+            let expr = expr.reify(self.vcx, (cl_def_id, &cl_args)); // TODO: use cl_args
+            let span = self.vcx.tcx().def_span(cl_def_id);
+            println!("  -> {expr:?}");
+            // self.vcx.with_span(span, |vcx| to_bool.apply(vcx, [expr]))
+
+            // pub fn is_spec_fn(tcx: ty::TyCtxt, def_id: DefId) -> bool {
+            //     let attrs = tcx.get_attrs_unchecked(def_id);
+            //     read_prusti_attr("spec_id", attrs).is_some()
+            // }
+            
+        }
+        */
+
+        // Calculate PCG invariant at loop head
+        let mut invariant = self
             .loop_analysis
             .loop_head_of(block)
             .map(|lh| self.get_loop_inv(lh, &cfpcs))
             .unwrap_or_default();
+
+        // Extend invariant with functional specs
+        if let Some(loop_invariants) = self.spec_blocks.loop_invariants(block) {
+            for (cl_ty, cl_def_id, cl_substs, cl_args) in loop_invariants {
+                println!("loop invariant? {cl_def_id:?}");
+                let e_rvalue_ty = self.deps.require_ref::<RustTyPredicatesEnc>(cl_ty).unwrap();
+                let sl = e_rvalue_ty.generic_predicate.expect_structlike();
+                let field_tys = cl_args.iter()
+                    .map(|field| field.ty(self.local_decls, self.vcx.tcx()))
+                    .collect::<Vec<_>>();
+                let field_snaps = cl_args.iter().map(|field| self.encode_operand_snap(field)).collect::<Vec<_>>();
+                /*
+                let casted_args = ty_caster.apply_casts(self.vcx, field_snaps.into_iter());
+                let expr = sl.snap_data.field_snaps_to_snap.apply(self.vcx, self.vcx.alloc_slice(&casted_args));
+                println!("  -> expr {expr:?}");
+                */
+            }
+        }
 
         self.current_fpcs = Some(cfpcs);
 
@@ -1080,6 +1171,10 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
             }
         }
 
+        //if as_spec_closure(self.vcx.tcx(), statement).is_some() {
+        //    return;
+        //}
+
         match &statement.kind {
             mir::StatementKind::Assign(box (dest, rvalue)) => {
                 // What are we assigning to?
@@ -1145,7 +1240,7 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                     }
 
                     mir::Rvalue::Aggregate(
-                        box kind @ (mir::AggregateKind::Adt(..) | mir::AggregateKind::Tuple),
+                        box kind @ (mir::AggregateKind::Adt(..) | mir::AggregateKind::Tuple | mir::AggregateKind::Closure(..)),
                         fields,
                     ) => {
                         let e_rvalue_ty = self.deps.require_ref::<RustTyPredicatesEnc>(rvalue_ty).unwrap();

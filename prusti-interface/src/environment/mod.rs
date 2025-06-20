@@ -18,9 +18,9 @@ mod diagnostic;
 //pub mod mir_body;
 //pub mod mir_sets;
 pub mod mir_storage;
-//pub mod mir_utils;
+pub mod mir_utils;
 mod name;
-//mod procedure;
+mod procedure;
 mod query;
 
 pub use self::{
@@ -31,6 +31,7 @@ pub use self::{
     //loops::{LoopAnalysisError, PlaceAccess, PlaceAccessKind, ProcedureLoops},
     //loops_utils::*,
     name::EnvName,
+    procedure::build_nonspec_basic_blocks,
     //procedure::{
     //    get_loop_invariant, is_ghost_begin_marker, is_ghost_end_marker, is_loop_invariant_block,
     //    is_loop_variant_block, is_marked_specification_block, BasicBlockIndex, Procedure,

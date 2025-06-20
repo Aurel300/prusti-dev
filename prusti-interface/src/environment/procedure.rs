@@ -4,10 +4,11 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-use super::{body::MirBody, loops, EnvName, EnvQuery};
+use super::{body::MirBody, EnvName, EnvQuery};
 use crate::{
     data::ProcedureDefId,
     environment::{mir_utils::RealEdges, Environment},
+    specs::is_spec_fn,
 };
 use log::{debug, trace};
 use prusti_rustc_interface::{
@@ -232,22 +233,22 @@ fn build_reachable_basic_blocks(mir: &Body, real_edges: &RealEdges) -> FxHashSet
 fn is_spec_closure(env_query: EnvQuery, def_id: def_id::DefId) -> bool {
     crate::utils::has_spec_only_attr(env_query.get_attributes(def_id))
 }
-
-pub fn is_marked_specification_block(env_query: EnvQuery, bb_data: &BasicBlockData) -> bool {
+*/
+pub fn is_marked_specification_block<'tcx>(tcx: TyCtxt<'tcx>, bb_data: &BasicBlockData) -> bool {
     for stmt in &bb_data.statements {
         if let StatementKind::Assign(box (
             _,
             Rvalue::Aggregate(box AggregateKind::Closure(def_id, _), _),
         )) = &stmt.kind
         {
-            if is_spec_closure(env_query, *def_id) {
+            if is_spec_fn(tcx, *def_id) {
                 return true;
             }
         }
     }
     false
 }
-
+/*
 pub fn get_loop_invariant<'tcx>(
     env_query: EnvQuery,
     bb_data: &BasicBlockData<'tcx>,
@@ -306,7 +307,7 @@ fn is_spec_block_kind(env_query: EnvQuery, bb_data: &BasicBlockData, kind: &str)
     }
     false
 }
-
+*/
 #[derive(Debug)]
 struct BasicBlockNode {
     successors: FxHashSet<BasicBlock>,
@@ -351,14 +352,14 @@ fn blocks_dominated_by(mir: &Body, dominator: BasicBlock) -> FxHashSet<BasicBloc
 }
 
 #[tracing::instrument(level = "trace", skip_all)]
-fn get_nonspec_basic_blocks(
-    env_query: EnvQuery,
+fn get_nonspec_basic_blocks<'tcx>(
+    tcx: TyCtxt<'tcx>,
     bb_graph: FxHashMap<BasicBlock, BasicBlockNode>,
     mir: &Body,
 ) -> FxHashSet<BasicBlock> {
     let mut spec_basic_blocks: FxHashSet<BasicBlock> = FxHashSet::default();
     for (bb, _) in bb_graph.iter() {
-        if is_marked_specification_block(env_query, &mir[*bb]) {
+        if is_marked_specification_block(tcx, &mir[*bb]) {
             spec_basic_blocks.insert(*bb);
             spec_basic_blocks.extend(blocks_definitely_leading_to(&bb_graph, *bb).into_iter());
             spec_basic_blocks.extend(blocks_dominated_by(mir, *bb).into_iter());
@@ -374,11 +375,12 @@ fn get_nonspec_basic_blocks(
 }
 
 /// Returns the set of basic blocks that are not used as part of the typechecking of Prusti specifications
-fn build_nonspec_basic_blocks(
-    env_query: EnvQuery,
+pub fn build_nonspec_basic_blocks<'tcx>(
+    tcx: TyCtxt<'tcx>,
     mir: &Body,
-    real_edges: &RealEdges,
 ) -> FxHashSet<BasicBlock> {
+    let real_edges = RealEdges::new(&mir);
+
     let dominators = mir.basic_blocks.dominators();
     let mut loop_heads: FxHashSet<BasicBlock> = FxHashSet::default();
 
@@ -431,6 +433,5 @@ fn build_nonspec_basic_blocks(
         }
     }
 
-    get_nonspec_basic_blocks(env_query, bb_graph, mir)
+    get_nonspec_basic_blocks(tcx, bb_graph, mir)
 }
-*/

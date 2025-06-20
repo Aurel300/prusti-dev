@@ -7,7 +7,7 @@
 use prusti_rustc_interface::middle::mir::{self, TerminatorKind};
 
 use prusti_rustc_interface::index::IndexVec;
-/*
+
 /// A data structure to store the non-virtual CFG edges of a MIR body.
 pub struct RealEdges {
     successors: IndexVec<mir::BasicBlock, Vec<mir::BasicBlock>>,
@@ -46,42 +46,24 @@ impl RealEdges {
 
 fn real_targets(terminator: &mir::Terminator) -> Vec<mir::BasicBlock> {
     match terminator.kind {
-        TerminatorKind::Goto { ref target } | TerminatorKind::Assert { ref target, .. } => {
-            vec![*target]
-        }
+        TerminatorKind::UnwindResume
+        | TerminatorKind::UnwindTerminate(..)
+        | TerminatorKind::Return
+        | TerminatorKind::Unreachable
+        | TerminatorKind::Call { target: None, .. }
+        | TerminatorKind::TailCall { .. }
+        | TerminatorKind::CoroutineDrop => Vec::new(),
+
+        TerminatorKind::Goto { ref target }
+        | TerminatorKind::Assert { ref target, .. }
+        | TerminatorKind::Drop { ref target, .. }
+        | TerminatorKind::Call { target: Some(ref target), .. }
+        | TerminatorKind::Yield { resume: ref target, .. }
+        | TerminatorKind::FalseEdge { real_target: ref target, .. }
+        | TerminatorKind::FalseUnwind { real_target: ref target, .. } => vec![*target],
+
+        TerminatorKind::InlineAsm { ref targets, .. } => targets.to_vec(),
 
         TerminatorKind::SwitchInt { ref targets, .. } => targets.all_targets().to_vec(),
-
-        TerminatorKind::Resume
-        | TerminatorKind::Abort
-        | TerminatorKind::Return
-        | TerminatorKind::GeneratorDrop
-        | TerminatorKind::Unreachable => vec![],
-
-        TerminatorKind::DropAndReplace { ref target, .. }
-        | TerminatorKind::Drop { ref target, .. } => vec![*target],
-
-        TerminatorKind::Call { target, .. } => match target {
-            Some(target) => vec![target],
-            None => vec![],
-        },
-
-        TerminatorKind::FalseEdge {
-            ref real_target, ..
-        } => vec![*real_target],
-
-        TerminatorKind::FalseUnwind {
-            ref real_target, ..
-        } => vec![*real_target],
-
-        TerminatorKind::Yield { ref resume, .. } => vec![*resume],
-
-        TerminatorKind::InlineAsm {
-            ref destination, ..
-        } => match *destination {
-            Some(target) => vec![target],
-            None => vec![],
-        },
     }
 }
-*/

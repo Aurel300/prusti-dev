@@ -6,8 +6,7 @@ use vir::{MethodIdent, UnknownArity, ViperIdent};
 
 use crate::{
     encoders::{
-        lifted::func_def_ty_params::LiftedTyParamsEnc, ImpureEncVisitor, MirImpureEnc,
-        MirLocalDefEnc, MirSpecEnc, WandEnc, WandEncTask,
+        lifted::func_def_ty_params::LiftedTyParamsEnc, ImpureEncVisitor, MirImpureEnc, MirLocalDefEnc, MirSpecEnc, SpecBlocksEnc, WandEnc, WandEncTask
     },
     trait_support::is_function_with_body,
 };
@@ -158,6 +157,8 @@ where
                     vcx.mk_goto_stmt(&vir::CfgBlockLabelData::BasicBlock(0)),
                 ));
 
+                let spec_blocks = deps.require_local::<SpecBlocksEnc>(def_id)?;
+
                 deps.check_cycle()?;
                 let mut visitor = ImpureEncVisitor {
                     monomorphize: MirImpureEnc::monomorphize(),
@@ -176,6 +177,7 @@ where
                     label_ctr: 0,
                     call_labels: Default::default(),
                     from_to_vars: Default::default(),
+                    spec_blocks,
 
                     current_block_label: None,
                     current_fpcs: None,

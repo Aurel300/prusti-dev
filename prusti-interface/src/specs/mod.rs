@@ -322,8 +322,10 @@ impl<'a, 'tcx> SpecCollector<'a, 'tcx> {
             map: self.env.query.hir(),
             result: Vec::new(),
         };
-        for def_id in specs.iter().chain(predicates.iter()) {
-            let body_id = self.env.query.hir().body_owned_by(def_id.expect_local());
+        // for def_id in specs.iter().chain(predicates.iter()) {
+        // let body_id = self.env.query.hir().body_owned_by(def_id.expect_local());
+        for def_id in self.env.query.hir().body_owners() {
+            let body_id = self.env.query.hir().body_owned_by(def_id);
             intravisit::Visitor::visit_nested_body(&mut cl_visitor, body_id.id());
         }
         for def_id in cl_visitor.result {

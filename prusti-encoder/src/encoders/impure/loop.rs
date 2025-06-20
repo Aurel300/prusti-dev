@@ -313,7 +313,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                     {
                         let is_loop_invariant = spec::with_type_spec(|def_spec| {
                             if let Some(loop_spec) = def_spec.get_loop_spec(cl_def_id) {
-                                assert!(!matches!(loop_spec, prusti_interface::specs::typed::LoopSpecification::Invariant(_)), "body_invariant! currently not supported");
+                                assert!(!matches!(loop_spec, prusti_interface::specs::typed::LoopSpecification::BodyInvariant(_)), "body_invariant! currently not supported");
                                 matches!(loop_spec, prusti_interface::specs::typed::LoopSpecification::LoopInvariant(_))
                             } else {
                                 false

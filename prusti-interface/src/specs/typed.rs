@@ -264,7 +264,8 @@ impl ProcedureSpecificationKind {
 
 #[derive(Debug, Clone)]
 pub enum LoopSpecification {
-    Invariant(LocalDefId),
+    BodyInvariant(LocalDefId),        // body_invariant!() - true at call site in loop body
+    LoopInvariant(LocalDefId),    // invariant!() - true at loop head/start and end of iteration
     Variant(LocalDefId),
 }
 

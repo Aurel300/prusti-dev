@@ -420,6 +420,10 @@ pub fn body_variant(tokens: TokenStream) -> TokenStream {
 }
 
 pub fn body_invariant(tokens: TokenStream) -> TokenStream {
+    generate_expression_closure(&AstRewriter::process_body_invariant, tokens)
+}
+
+pub fn loop_invariant_expr(tokens: TokenStream) -> TokenStream {
     generate_expression_closure(&AstRewriter::process_loop_invariant, tokens)
 }
 

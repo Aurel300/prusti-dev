@@ -28,6 +28,9 @@ pub use prusti_contracts_proc_macros::invariant;
 /// A macro for writing a loop body invariant.
 pub use prusti_contracts_proc_macros::body_invariant;
 
+/// A macro to annotate loop invariants (Holds at start and end of the loop)
+pub use prusti_contracts_proc_macros::loop_invariant;
+
 /// A macro for writing assertions using the full prusti specifications
 pub use prusti_contracts_proc_macros::prusti_assert;
 

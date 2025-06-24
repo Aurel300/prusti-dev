@@ -55,7 +55,7 @@ impl<'vir> RustTyGenericCastEncOutput<'vir, CastFunctionsOutputRef<'vir>> {
         &self,
         vcx: &'vir vir::VirCtxt<'tcx>,
         snap: vir::ExprGenSnap<'vir, Curr, Next>,
-    ) -> vir::ExprGenCSnap<'vir, Curr, Next> {
+    ) -> vir::ExprGenSnap<'vir, Curr, Next> {
         CastTypePure::cast_to_concrete_if_possible(&self.cast, vcx, snap, self.ty_args)
     }
 

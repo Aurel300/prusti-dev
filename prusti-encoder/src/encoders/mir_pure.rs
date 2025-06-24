@@ -320,7 +320,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
         idx: usize,
         elem_idx: usize,
         _ty: vir::Type<'vir, T>,
-    ) -> ExprCRet<'vir> {
+    ) -> ExprRet<'vir> {
         let local_ty = self.body.local_decls[local].ty;
         let cast = self
             .deps
@@ -396,7 +396,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                             curr_ver[local]
                         }),
                     ),
-                )
+                ).upcast_ty()
             })
             .collect::<Vec<_>>();
         self.reify_binds(update, tuple_ref.mk_cons(self.vcx, &tuple_args))
@@ -533,7 +533,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                 for (elem_idx, local) in mod_locals.iter().enumerate() {
                     let ty = self.get_ty_for_local(*local);
                     let expr = self.mk_phi_acc(*local, tuple_ref.clone(), phi_idx, elem_idx, ty);
-                    self.bump_version(&mut phi_update, *local, expr.upcast_ty());
+                    self.bump_version(&mut phi_update, *local, expr);
                     new_curr_ver.insert(*local, phi_update.versions[local]);
                 }
 
@@ -1084,7 +1084,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                     // - the qvars
                     .reify(
                         self.vcx,
-                        (cl_def_id, self.vcx.alloc_slice(&reify_args).upcast_ty()),
+                        (cl_def_id, self.vcx.alloc_slice(&reify_args)),
                     )
                     .lift();
 
@@ -1319,7 +1319,7 @@ pub fn encode_place_element<'vir, 'enc, T: TaskEncoder>(
                         .require_local::<RustTyCastersEnc<CastTypePure>>(*inner_ty)
                         .unwrap();
                     let val_expr = cast.cast_to_concrete_if_possible(vcx, val_expr.upcast_ty());
-                    (val_expr.upcast_ty(), place_ref)
+                    (val_expr, place_ref)
                 }
                 TyKind::Ref(_, inner_ty, ty::Mutability::Mut) => {
                     let e_ty = deps
@@ -1376,7 +1376,6 @@ pub fn encode_place_element<'vir, 'enc, T: TaskEncoder>(
                 deps.require_local::<RustTyCastersEnc<CastTypePure>>(ty)
                     .unwrap()
                     .cast_to_concrete_if_possible(vcx, proj_app)
-                    .upcast_ty()
             } else {
                 proj_app
             };

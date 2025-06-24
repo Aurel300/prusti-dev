@@ -22,11 +22,11 @@ impl<'vir> ViperTupleEncOutput<'vir> {
     pub fn mk_cons<'tcx, Curr, Next>(
         &self,
         vcx: &'vir vir::VirCtxt<'tcx>,
-        elems: &[vir::ExprGenPSnap<'vir, Curr, Next>],
+        elems: &[vir::ExprGenSnap<'vir, Curr, Next>],
     ) -> vir::ExprGenSnap<'vir, Curr, Next> {
         self.tuple
-            .map(|t| (t.1.field_snaps_to_snap.gen())(elems.upcast_ty()).upcast_ty())
-            .unwrap_or_else(|| elems[0].upcast_ty())
+            .map(|t| (t.1.field_snaps_to_snap.gen())(elems).upcast_ty())
+            .unwrap_or_else(|| elems[0])
     }
 
     pub fn mk_elem<'tcx, Curr, Next>(

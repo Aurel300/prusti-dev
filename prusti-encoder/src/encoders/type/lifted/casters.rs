@@ -35,7 +35,7 @@ impl CastTypePure {
 
 impl CastType for CastTypePure {
     type CastArgs<'vir, Curr: 'vir, Next: 'vir> = vir::ExprGenSnap<'vir, Curr, Next>;
-    type CastOutput<'vir, Curr: 'vir, Next: 'vir> = vir::ExprGenCSnap<'vir, Curr, Next>;
+    type CastOutput<'vir, Curr: 'vir, Next: 'vir> = vir::ExprGenSnap<'vir, Curr, Next>;
     type ToGeneric<'vir> = MakeGenericCastFunction<'vir>;
     type ToConcrete<'vir> = MakeConcreteCastFunction<'vir>;
     type CastApplicator<'vir> = FunctionIdn<'vir, (vir::Snap, vir::ManyTyVal), vir::Snap>;
@@ -48,11 +48,11 @@ impl CastType for CastTypePure {
     ) -> Self::CastOutput<'vir, Curr, Next> {
         use vir::CastType;
         match casters {
-            CastFunctionsOutputRef::AlreadyGeneric => snap.downcast_ty(),
+            CastFunctionsOutputRef::AlreadyGeneric => snap,
             CastFunctionsOutputRef::Casters { make_concrete, .. } => make_concrete.gen()(
                 snap.downcast_ty(),
                 &ty_args.iter().map(|t| t.expr(vcx)).collect::<Vec<_>>(),
-            ),
+            ).upcast_ty(),
         }
     }
 

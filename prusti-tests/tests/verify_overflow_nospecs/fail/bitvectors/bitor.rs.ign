@@ -1,0 +1,17 @@
+
+/*use prusti_contracts::*;*/
+
+fn bitor_1() {
+    let a = 1u8;
+    let b = a | 2;
+    /*assert*/drop(b == 3);
+}
+
+fn bitor_2() {
+    let a = 1u8;
+    let b = a | 2;
+    /*assert*/drop(b == 1);    // ERRXR: the asserted expression might not hold
+}
+
+fn main() {}
+

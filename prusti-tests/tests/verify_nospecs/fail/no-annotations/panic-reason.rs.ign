@@ -1,0 +1,127 @@
+fn test_panic(x: bool) {
+    panic!();  // ERRXR: panic!(..) statement might be reachable
+}
+
+fn test_assert(x: bool) {
+    /*assert*/drop(false);  // ERRXR: the asserted expression might not hold
+}
+
+fn test_assert_msg(x: bool) {
+    // FIXME: see mir_encoder encode_panic_cause
+    /*assert*/drop(false, "msg");  // ERRXR: panic!(..) statement might be reachable
+}
+
+fn test_debug_assert(x: bool) {
+    /*debug_assert*/drop(false);  // ERRXR: the asserted expression might not hold
+}
+
+fn test_debug_assert_msg(x: bool) {
+    /*debug_assert*/drop(false, "msg");  // ERRXR: the asserted expression might not hold
+}
+
+fn test_unreachable(x: bool) {
+    unreachable!();  // ERRXR: unreachable!(..) statement might be reachable
+}
+
+fn test_unimplemented(x: bool) {
+    /*unimplemented!()*/;  // ERRXR: unimplemented!(..) statement might be reachable
+}
+
+macro_rules! inner_panic {
+    () => {
+        {
+            panic!();  // ERRXR: panic!(..) statement might be reachable
+        }
+    };
+}
+
+fn test_inner_panic(x: bool) {
+    inner_panic!();
+}
+
+macro_rules! inner_panic_msg {
+    () => {
+        {
+            panic!("msg");  // ERRXR: panic!(..) statement might be reachable
+        }
+    };
+}
+
+fn test_inner_panic_msg(x: bool) {
+    inner_panic_msg!();
+}
+
+macro_rules! inner_assert {
+    () => {
+        {
+            /*assert*/drop(false);  // ERRXR: the asserted expression might not hold
+        }
+    };
+}
+
+fn test_inner_assert(x: bool) {
+    inner_/*assert*/drop();
+}
+
+macro_rules! inner_assert_msg {
+    () => {
+        {
+            // FIXME: see mir_encoder encode_panic_cause
+            /*assert*/drop(false, "msg");  // ERRXR: panic!(..) statement might be reachable
+        }
+    };
+}
+
+fn test_inner_assert_msg(x: bool) {
+    inner_assert_msg!();
+}
+
+macro_rules! inner_debug_assert {
+    () => {
+        {
+            /*debug_assert*/drop(false);  // ERRXR: the asserted expression might not hold
+        }
+    };
+}
+
+fn test_inner_debug_assert(x: bool) {
+    inner_/*debug_assert*/drop();
+}
+
+macro_rules! inner_debug_assert_msg {
+    () => {
+        {
+            /*debug_assert*/drop(false, "msg");  // ERRXR: the asserted expression might not hold
+        }
+    };
+}
+
+fn test_inner_debug_assert_msg(x: bool) {
+    inner_debug_assert_msg!();
+}
+
+macro_rules! inner_unreachable {
+    () => {
+        {
+            unreachable!();  // ERRXR: unreachable!(..) statement might be reachable
+        }
+    };
+}
+
+fn test_inner_unreachable(x: bool) {
+    inner_unreachable!();
+}
+
+macro_rules! inner_unimplemented {
+    () => {
+        {
+            /*unimplemented!()*/;  // ERRXR: unimplemented!(..) statement might be reachable
+        }
+    };
+}
+
+fn test_inner_unimplemented(x: bool) {
+    inner_/*unimplemented!()*/;
+}
+
+fn main() {}

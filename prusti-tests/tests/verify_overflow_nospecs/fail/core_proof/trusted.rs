@@ -1,0 +1,53 @@
+
+/*use prusti_contracts::*;*/
+
+/*#[trusted]*/
+struct GenericTrustedBox<T> {
+    value: T,
+}
+
+impl<T> GenericTrustedBox<T> {
+    /*#[trusted]*/
+    fn new(value: T) -> Self {
+        Self {
+            value
+        }
+    }
+    /*#[trusted]*/
+    fn get_value(self) -> T {
+        self.value
+    }
+}
+
+fn test1() {
+    let a = GenericTrustedBox::new(1);
+    let _b = a;
+}
+
+fn test2<T>(a: GenericTrustedBox<T>) -> GenericTrustedBox<T> {
+    let b = a;
+    b
+}
+
+fn test3<T>(a: GenericTrustedBox<T>) -> GenericTrustedBox<T> {
+    let b = a;
+    let c = GenericTrustedBox::new(4);
+    let _d = c;
+    b
+}
+
+fn test4<T>(a: GenericTrustedBox<T>) -> GenericTrustedBox<T> {
+    let b = a;
+    let c = GenericTrustedBox::new(4);
+    let d = c;
+    /*assert*/drop(d.get_value() == 4); // ERRXR: the asserted expression might not hold
+    b
+}
+
+/*#[trusted]*/
+struct Refi32<'a, 'b: 'a> {
+    f: &'a i32,
+    g: &'b i32,
+}
+
+fn main() {}

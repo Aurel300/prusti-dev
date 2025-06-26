@@ -1,0 +1,14 @@
+/*use prusti_contracts::*;*/
+
+#[invariant(false)]
+struct S;
+
+/*#[pure]*/
+/*#[ensures(false)]*/ // ERRXR: postcondition might not hold.
+fn foo(s: &S) {}
+
+fn main() {
+    let s = S;
+    foo(&s);
+    /*assert*/drop(false);
+}

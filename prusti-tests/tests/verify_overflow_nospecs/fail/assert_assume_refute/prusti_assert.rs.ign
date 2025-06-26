@@ -1,0 +1,78 @@
+#![allow(unused)]
+
+/*use prusti_contracts::*;*/
+
+fn assert1() {
+    /*prusti_assert*/drop(true);
+}
+
+fn failing_assert() {
+    /*prusti_assert*/drop(false); // ERRXR
+}
+
+fn assign() {
+    let mut i = 10;
+    /*prusti_assert*/drop(i == 10);
+    i = i * 10;
+    /*prusti_assert*/drop(i == 100);
+    i -= 100;
+    /*prusti_assert*/drop(i == 2); // ERRXR
+}
+
+fn implication(arg: i32) {
+    let x;
+    if arg == 0 {
+        x = 1;
+    } else {
+        x = -1;
+    }
+    /*prusti_assert*/drop((arg == 0 ==> x > 0) && (arg != 0 ==> x < 0));
+}
+
+fn quantifiers() {
+   /*prusti_assert*/drop(forall(|x: u32| x == x));
+}
+
+fn loop_shouldnt_crash() {
+    let mut i = 0;
+    let mut k = 30;
+    while i < 10 {
+        /*body_invariant*/drop(i >= 0 && i < 10);
+        let old_i = i;
+        i += 1;
+        /*prusti_assert*/drop(k > 0);
+        /*prusti_assert*/drop(k < 100);
+        /*prusti_assert*/drop(i > old_i);
+    }
+}
+
+fn assume1() {
+    /*prusti_assume*/drop(true);
+}
+
+fn assume2() {
+    // asserting false after assuming false is valid
+    /*prusti_assume*/drop(false);
+    /*prusti_assert*/drop(false);
+}
+
+fn arg_assumption(x: i32, y: i32) {
+    /*prusti_assume*/drop(x == 4); // Try to avoid non-linear arithmetic.
+    /*prusti_assume*/drop(y > -100 && y < 100);
+
+    let z = x * y;
+    /*prusti_assert*/drop((z > 0) == (y > 0));
+}
+
+fn more_wrong_assumptions() {
+    /*prusti_assume*/drop(1 < 0);
+    /*prusti_assert*/drop(1 > 0);
+    /*prusti_assert*/drop(1 < 0);
+    /*prusti_assert*/drop(false);
+}
+
+fn prusti_syntax_in_assumptions(x: i32) {
+    /*prusti_assume*/drop(x > 0 ==> x > -1);
+}
+
+fn main() {}

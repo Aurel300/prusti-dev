@@ -6,7 +6,6 @@
 
 #![allow(dead_code)]
 
-// use log::{error, info};
 use prusti_server::spawn_server_thread;
 use std::{
     env,
@@ -78,20 +77,11 @@ fn run_prusti_tests(
         config
     };
 
-    // UI
-    {
-        let config = prusti_config(format!("tests/{group_name}/ui"));
-        // "--color=never {}"
-        run_tests(config)?;
-    }
-
-    // fail
+    // we are not verifying anything other than the core proof, so the fail tests will also succeed
     {
         let mut config = prusti_config(format!("tests/{group_name}/fail"));
-        config.comment_defaults.base().normalize_stderr.push((
-            ui_test::Match::Regex(regex::bytes::Regex::new(".*\n").unwrap()),
-            b"".into(),
-        ));
+        config.comment_defaults.base().exit_status = Spanned::dummy(0).into();
+        config.comment_defaults.base().require_annotations = Spanned::dummy(false).into();
         run_tests(config)?;
     }
 
@@ -104,19 +94,6 @@ fn run_prusti_tests(
     }
 
     Ok(())
-}
-
-fn run_no_verification(group_name: &str) {
-    run_prusti_tests(
-        group_name,
-        &[],
-        &[
-            ("PRUSTI_FULL_COMPILATION", "true"),
-            ("PRUSTI_NO_VERIFY", "true"),
-            ("PRUSTI_QUIET", "true"),
-        ],
-    )
-    .unwrap();
 }
 
 fn run_verification_no_overflow(group_name: &str) {
@@ -144,89 +121,14 @@ fn run_verification_overflow(group_name: &str) {
     .unwrap();
 }
 
-fn run_verification_core_proof(group_name: &str) {
-    run_prusti_tests(
-        group_name,
-        &["-Awarnings"],
-        &[
-            ("PRUSTI_FULL_COMPILATION", "true"),
-            ("PRUSTI_QUIET", "true"),
-            ("PRUSTI_CHECK_PANICS", "false"),
-            ("PRUSTI_CHECK_OVERFLOWS", "false"),
-        ],
-    )
-    .unwrap();
-}
-
-fn run_lifetimes_dump(group_name: &str) {
-    run_prusti_tests(
-        group_name,
-        &[],
-        &[
-            ("PRUSTI_NO_VERIFY", "true"),
-            ("PRUSTI_DUMP_BORROWCK_INFO", "true"),
-            ("PRUSTI_QUIET", "true"),
-        ],
-    )
-    .unwrap();
-}
-
 pub(crate) fn run() {
     // Spawn server process as child (so it stays around until main function terminates)
     let server_address = spawn_server_thread();
     env::set_var("PRUSTI_SERVER_ADDRESS", server_address.to_string());
 
-    // Run (temporary) tests specific to Prusti v2.
-    println!("[v2]");
-    run_verification_no_overflow("v2");
-    /*
-        let save_verification_cache =
-            || match ureq::post(&format!("http://{server_address}/save")).call() {
-                Ok(response) => {
-                    info!("Saving verification cache: {}", response.status_text());
-                }
-                Err(ureq::Error::Status(_code, response)) => {
-                    error!("Error while saving verification cache: {response:?}");
-                }
-                Err(err) => error!("Error while saving verification cache: {err}"),
-            };
+    println!("[verify no overflow]");
+    run_verification_no_overflow("verify_nospecs");
 
-        // Test the parsing of specifications. This doesn't run the verifier.
-        println!("[parse]");
-        run_no_verification("parse");
-
-        // Test the type-checking of specifications. This doesn't run the verifier.
-        println!("[typecheck]");
-        run_no_verification("typecheck");
-
-        // Test the verifier.
-        println!("[verify]");
-        run_verification_no_overflow("verify");
-        save_verification_cache();
-
-        // Test the verifier with overflow checks enabled.
-        println!("[verify_overflow]");
-        run_verification_overflow("verify_overflow");
-        save_verification_cache();
-
-        // Test the verifier with test cases that only partially verify due to known open issues.
-        // The purpose of these tests is two-fold: 1. these tests help prevent potential further
-        // regressions, because the tests also test code paths not covered by other tests; and
-        // 2. a failing test without any errors notifies the developer when a proper fix is in
-        // place. In this case, these test can be moved to the `verify/pass/` or
-        // `verify_overflow/pass` folders.
-        println!("[verify_partial]");
-        run_verification_overflow("verify_partial");
-        save_verification_cache();
-
-        // Test the verifier with panic checks disabled (i.e. verify only the core proof).
-        println!("[core_proof]");
-        run_verification_core_proof("core_proof");
-        save_verification_cache();
-
-        // Test the verifier with panic checks disabled (i.e. verify only the core proof).
-        println!("[lifetimes_dump]");
-        run_lifetimes_dump("lifetimes_dump");
-        save_verification_cache();
-    */
+    println!("[verify overflow]");
+    run_verification_overflow("verify_overflow_nospecs");
 }

@@ -1,0 +1,8 @@
+/*use prusti_contracts::*;*/
+
+fn main() {}
+
+
+fn all_equal(a: [i32; 2]) {
+    /*assert*/drop(a[0] == a[1]);  // ERRXR: asserted expression might not hold
+}

@@ -1,0 +1,102 @@
+
+/*use prusti_contracts::*;*/
+
+fn test1() {
+    let mut i = 0;
+    while i < 5 {
+        i += 1;
+    }
+    let mut j = 0;
+    /*assert*/drop(i == j);     // ERRXR: the asserted expression might not hold
+}
+
+fn test2() {
+    let mut i = 0;
+    while i < 5 {
+        /*assert*/drop(i < 5);
+        i += 1;
+    }
+    let mut j = 0;
+    /*assert*/drop(i == j);     // ERRXR: the asserted expression might not hold
+}
+
+fn test3() {
+    let mut i = 0;
+    while i < 5 {
+        /*body_invariant*/drop(i < 5);
+        i += 1;
+    }
+    let mut j = 0;
+    /*assert*/drop(i == j);    // ERRXR: the asserted expression might not hold
+}
+
+fn test4(v: &mut[i32]) {
+    let mut zero_num_start = 0;
+    let mut i = 0;
+    while i < v.len() {
+        /*assert*/drop(i < v.len());
+        i += 1;
+    }
+}
+
+fn test5(v: &mut[i32]) {
+    let mut zero_num_start = 0;
+    let mut i = 0;
+    while i < v.len() {
+        if v[i] == 0 {
+            zero_num_start += 1; // ERRXR: attempt to add with overflow
+        }
+        i += 1;
+    }
+}
+
+fn test6(v: &mut[i32]) {
+    let mut zero_num_start = 0;
+    let mut i = 0;
+    while i < v.len() {
+        /*body_invariant*/drop(i < v.len());
+        if v[i] == 0 {
+            zero_num_start += 1;
+        }
+        i += 1;
+    }
+    let mut zero_num_end = 0;
+    let mut i = 0;
+    while i < v.len() {
+        /*body_invariant*/drop(i < v.len());
+        if v[i] == 0 {
+            zero_num_end += 1;
+        }
+        i += 1;
+    }
+    /*assert*/drop(zero_num_start == zero_num_end);    // ERRXR: the asserted expression might not hold
+}
+
+fn test7(v: &mut [i32], start: usize, mid: usize, end: usize) {
+    let mut u = start;
+    while u < mid {
+        /*body_invariant*/drop(u < mid);
+        u += 1;
+    }
+    /*assert*/drop(!(u < mid));
+}
+
+fn test8(v: &mut [i32], start: usize, mid: usize, end: usize) {
+    let mut u = start;
+    while u < mid {
+        /*body_invariant*/drop(u < mid);
+        u += 1;
+        /*assert*/drop(u < mid);   // ERRXR: the asserted expression might not hold
+    }
+}
+
+fn test9(v: &mut [i32], start: usize, mid: usize, end: usize) {
+    let mut u = start;
+    while u < mid {
+        /*body_invariant*/drop(u < mid);
+        u += 1;
+    }
+    /*assert*/drop(u == mid);  // ERRXR: the asserted expression might not hold
+}
+
+fn main() {}

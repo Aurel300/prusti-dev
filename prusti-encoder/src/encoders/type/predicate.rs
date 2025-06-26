@@ -66,6 +66,7 @@ pub struct PredicateEncDataMutRef<'vir> {
 #[derive(Clone, Copy, Debug)]
 pub enum PredicateEncData<'vir> {
     Never,
+    Opaque,
     Primitive(DomainDataPrim<'vir>),
     // structs, tuples
     Trusted,
@@ -625,7 +626,16 @@ impl TaskEncoder for PredicateEnc {
                     None,
                 ),
                 TyKind::Param(_) => unreachable!(),
-                _ => return Ok(None),
+                _ => (
+                    super::kinds::opaque::predicate(
+                        *task_key,
+                        snap.clone(),
+                        deps,
+                        &generic_decls, &generic_exprs,
+                        &mut builder,
+                    )?,
+                    None,
+                )
             };
 
             deps.emit_output_ref(

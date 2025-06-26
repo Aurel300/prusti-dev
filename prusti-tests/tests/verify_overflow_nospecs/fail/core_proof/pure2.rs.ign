@@ -1,0 +1,22 @@
+//
+// This test is executed only with Silicon because we have a matching
+// loop that gets triggered by Carbon.
+
+/*use prusti_contracts::*;*/
+
+/*#[pure]*/
+/*#[requires(n >= 0)]*/
+/*#[ensures(result <= n)]*/
+#[terminates(Int::new_usize(n))]
+fn count(n: usize) -> usize {
+    if n == 0 { 0 }
+    else { count(n-1) + 1 }
+}
+
+// This is expected to fail because the gas is set to 2 and proving this
+// requires unfolding 3 times. If this succeeded, then it would indicate
+// that we have a matching loop.
+/*#[ensures(count(3) == 3)]*/ // ERRXR: postcondition might not hold.
+fn test6() {}
+
+fn main() {}

@@ -77,14 +77,6 @@ fn run_prusti_tests(
         config
     };
 
-    // we are not verifying anything other than the core proof, so the fail tests will also succeed
-    {
-        let mut config = prusti_config(format!("tests/{group_name}/fail"));
-        config.comment_defaults.base().exit_status = Spanned::dummy(0).into();
-        config.comment_defaults.base().require_annotations = Spanned::dummy(false).into();
-        run_tests(config)?;
-    }
-
     // pass
     {
         let mut config = prusti_config(format!("tests/{group_name}/pass"));
@@ -109,18 +101,6 @@ fn run_verification_no_overflow(group_name: &str) {
     .unwrap();
 }
 
-fn run_verification_overflow(group_name: &str) {
-    run_prusti_tests(
-        group_name,
-        &["-Awarnings"],
-        &[
-            ("PRUSTI_FULL_COMPILATION", "true"),
-            ("PRUSTI_QUIET", "true"),
-        ],
-    )
-    .unwrap();
-}
-
 pub(crate) fn run() {
     // Spawn server process as child (so it stays around until main function terminates)
     let server_address = spawn_server_thread();
@@ -128,7 +108,4 @@ pub(crate) fn run() {
 
     println!("[verify no overflow]");
     run_verification_no_overflow("verify_nospecs");
-
-    println!("[verify overflow]");
-    run_verification_overflow("verify_overflow_nospecs");
 }

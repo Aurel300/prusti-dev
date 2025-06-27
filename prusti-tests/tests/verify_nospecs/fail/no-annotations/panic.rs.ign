@@ -1,3 +1,0 @@
-fn main() {
-    panic!();  // ERRXR: panic!(..) statement might be reachable
-}

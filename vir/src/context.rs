@@ -72,10 +72,6 @@ impl<'tcx> VirCtxt<'tcx> {
         &*self.arena.alloc_slice_copy(val)
     }
 
-    pub fn alloc_slice_wtf<T>(&self, val: &Vec<&'tcx T>) -> &[&'tcx T] {
-        &*self.arena.alloc_slice_copy(val)
-    }
-
     pub fn alloc_array<T: Copy, const N: usize>(&self, val: &[T; N]) -> &[T; N] {
         &*self.arena.alloc(*val)
     }

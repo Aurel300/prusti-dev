@@ -512,7 +512,6 @@ impl<'tcx> VirCtxt<'tcx> {
         msg: &'vir str,
         ty: Type<'vir, T>,
     ) -> ExprGen<'vir, Curr, Next, T> {
-        // let ty = unsafe { Type::new_unchecked(&TypeKind::Unsupported(UnsupportedType { name: "todo expr has no type" })) };
         self.alloc(ExprGenData::new_with_ty(
             self.alloc(ExprKindGenData::Todo(msg)),
             ty,

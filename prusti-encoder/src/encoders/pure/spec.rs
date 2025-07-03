@@ -70,7 +70,7 @@ impl TaskEncoder for MirSpecEnc {
                     .map(|local| local_defs.locals[local].impure_snap)
                     .collect()
             };
-            let all_args = vcx.alloc_slice_wtf(&all_args);
+            let all_args = vcx.alloc_slice(&all_args);
             let pre_args = if pure {
                 &all_args[..all_args.len() - 1]
             } else {

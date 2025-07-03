@@ -148,18 +148,6 @@ macro_rules! vir_type {
     ($vcx:expr; Perm) => {
         $crate::TYPE_PERM
     };
-    // ($vcx:expr; Uint($bit_width:expr)) => {
-    //     $vcx.alloc($crate::TypeData::Int {
-    //         signed: false,
-    //         bit_width: $bit_width,
-    //     })
-    // };
-    // ($vcx:expr; Int($bit_width:expr)) => {
-    //     $vcx.alloc($crate::TypeData::Int {
-    //         signed: true,
-    //         bit_width: $bit_width,
-    //     })
-    // };
     ($vcx:expr; [ $ty:expr ]) => {
         $ty
     };
@@ -450,16 +438,7 @@ macro_rules! expr_inner {
         $args
     };
     (@expr_tuple; $($other:tt)+ ) => { $crate::expr_inner!(@expr_one; $($other)*) };
-    // (@expr_tuple; , ( $($first:tt)+ ) $($rest:tt)*) => { $crate::expr_inner!(@expr_one; $($first)*), $crate::expr_inner!(@expr_iter; $($rest)*) };
-    // (@expr_tuple; ,   $ident:ident    $($rest:tt)*) => { $crate::expr_inner!(@expr_one; $ident), $crate::expr_inner!(@expr_iter; $($rest)*) };
-    // // (@expr_tuple; , ..[ $outer:expr ] ) => { $crate::expr_inner!(@expr_list; ..[ $outer ]) };
-    // (@expr_tuple; , [ $($inner:tt)* ] $($rest:tt)*) => { $crate::expr_inner!(@expr_list; $($inner)*), $crate::expr_inner!(@expr_iter; $($rest)*) };
-    // (@expr_tuple; , $($last:tt)+) => { $crate::expr_inner!(@expr_one; $($last)*) };
-    // (@expr_tuple; $($tokens:tt)*) => { compile_error!(concat!("VIR malformed expression list: `" , stringify!($($tokens)*), "`")) };
 
-    // (@expr_args; $($args:tt),+ ) => {
-    //     ($($crate::expr_inner!(@expr_tuple; $args), )*)
-    // };
     (@expr_args; $one:tt , $two:tt , $three:tt , $four:tt , $five:tt, $six:tt, $seven:tt, $eight:tt , $($tail:tt)+ ) => {
         compile_error!(concat!("VIR malformed arg, only up to 8 args supported: `", stringify!($one, $two, $three, $four, $five, $six, $seven, $eight), "`, but have tail: `", stringify!($($tail)*), "`"))
     };
@@ -491,20 +470,6 @@ macro_rules! expr_inner {
     (@expr_args; $tokens:tt*) => {
         compile_error!(concat!("VIR malformed arg: `" , stringify!($($tokens)*), "`. Expected `ident/(...)` for single arg or `[...]` for many args"))
     };
-
-    // (@expr_arg; $ident:ident) => {
-    //     $crate::expr_inner!(@expr_one; $ident)
-    // };
-    // (@expr_arg; ( $($e:tt)* )) => {
-    //     $crate::expr_inner!(@expr_one; $($e)*)
-    // };
-    // (@expr_arg; [ ]) => { &[] };
-    // (@expr_arg; [ $(args:tt)* ]) => {
-    //     &$crate::expr_inner!(@expr_list; $($args)*)
-    // };
-    // (@expr_arg; $tokens:tt*) => {
-    //     compile_error!(concat!("VIR malformed arg: `" , stringify!($($tokens)*), "`. Expected `ident/(...)` for single arg or `[...]` for many args"))
-    // };
 
     (@expr_list; ) => { Vec::<$crate::Expr<_>>::new() };
     (@expr_list; $($args:tt)+ ) => {

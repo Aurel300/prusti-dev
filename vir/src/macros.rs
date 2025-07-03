@@ -378,7 +378,7 @@ macro_rules! expr_inner {
             $crate::expr_inner!(@expr_args; $($args)*),
         )
     } };
-    (@expr_one; acc_field( ( $($args:tt)+ ).[ $outer:expr ] ) ) => { vcx!().mk_acc_field_expr(
+    (@expr_one; acc( ( $($args:tt)+ ).[ $outer:expr ] ) ) => { vcx!().mk_acc_field_expr(
         $crate::expr_inner!(@expr_one; $($args)*),
         $outer,
         None,
@@ -433,7 +433,7 @@ macro_rules! expr_inner {
 
     (@expr_tuple; ( $($inner:tt)+ )) => { $crate::expr_inner!(@expr_one; $($inner)*) };
     (@expr_tuple; [ $($inner:tt)* ]) => { &$crate::expr_inner!(@expr_list; $($inner)*) };
-    // TODO: remove this
+    // This case lets us use `[fn](..[&args_vec])` instead of `[fn]([..[&args_vec]])`
     (@expr_tuple; ..[ $args:expr ]) => {
         $args
     };

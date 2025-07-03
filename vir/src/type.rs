@@ -90,6 +90,7 @@ macro_rules! impl_exp_type {
     };
 }
 
+// TODO: we could also have an `Impure` supertype of `Bool` which can contain `acc`s.
 impl_exp_type!(Bool[TYPE_BOOL = Bool] => Prim | Dyn, "The Viper `Bool` type");
 impl_exp_type!(Int[TYPE_INT = Int] => Prim | Dyn, "The Viper `Int` type");
 impl_exp_type!(Perm[TYPE_PERM = Perm] => Prim | Dyn, "The Viper `Perm` type (reals)");

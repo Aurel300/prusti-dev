@@ -87,7 +87,7 @@ pub(crate) fn predicate<'vir>(
         "",
         ref_self_decl.ty(),
         &[ref_self_decl.as_dyn()],
-        Some(vir::expr! { acc_field((ref_self).[ref_field]) }),
+        Some(vir::expr! { acc((ref_self).[ref_field]) }),
     );
 
     // Ref-to-snap

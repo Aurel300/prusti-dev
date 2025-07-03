@@ -111,7 +111,7 @@ pub(crate) fn predicate<'vir>(
             .chain(generic_decls.iter().copied().map(vir::LocalDeclData::as_dyn))
             .collect::<Vec<_>>(),
         Some(vir::expr! {
-            (acc_field((ref_self).[ref_field]))
+            (acc((ref_self).[ref_field]))
             && (([generic.param_type_function]([snap_data.value_access]([ref_field](ref_self)))) == ([generic_exprs[0]]))
         }), // TODO: use generic args?
     );

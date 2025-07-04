@@ -83,9 +83,8 @@ impl TaskEncoder for GenericEnc {
         vir::with_vcx(|vcx| {
             let t = vcx.mk_local_ex("t", vir::TYPE_TYVAL);
             let ref_to_snap = vcx.mk_function(
-                "p_Param_snap",
-                vir::vir_arg_list! { vcx; self: Ref, t: Type },
-                vir::vir_type! { vcx; s_Param },
+                ref_to_snap,
+                vir::vir_arg_tuple! { vcx; self: Ref, t: Type },
                 vcx.alloc_slice(&[vcx.mk_predicate_app_expr(ref_to_pred(
                     vcx.mk_local_ex("self", vir::TYPE_REF),
                     t,
@@ -97,10 +96,9 @@ impl TaskEncoder for GenericEnc {
             );
 
             // unreachable_to_snap
-            let name = unreachable_to_snap.name();
             let false_ = vcx.alloc_slice(&[vcx.mk_bool::<false>()]);
             let unreachable_to_snap =
-                vcx.mk_function(name.to_str(), &[], vir::TYPE_PSNAP, false_, false_, None);
+                vcx.mk_function(unreachable_to_snap, (), false_, false_, None);
             Ok((
                 GenericEncOutput {
                     param_snapshot: vir::vir_domain! { vcx; domain s_Param {

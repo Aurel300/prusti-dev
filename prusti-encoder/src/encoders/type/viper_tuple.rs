@@ -21,7 +21,7 @@ impl<'vir> ViperTupleEncOutput<'vir> {
 
     pub fn mk_cons<'tcx, Curr, Next>(
         &self,
-        vcx: &'vir vir::VirCtxt<'tcx>,
+        _vcx: &'vir vir::VirCtxt<'tcx>,
         elems: &[vir::ExprGenSnap<'vir, Curr, Next>],
     ) -> vir::ExprGenSnap<'vir, Curr, Next> {
         self.tuple
@@ -31,7 +31,7 @@ impl<'vir> ViperTupleEncOutput<'vir> {
 
     pub fn mk_elem<'tcx, Curr, Next>(
         &self,
-        vcx: &'vir vir::VirCtxt<'tcx>,
+        _vcx: &'vir vir::VirCtxt<'tcx>,
         tuple: vir::ExprGenSnap<'vir, Curr, Next>,
         elem: usize,
     ) -> vir::ExprGenSnap<'vir, Curr, Next> {

@@ -80,10 +80,6 @@ pub(crate) fn predicate<'vir>(
     let snap_type = snap.snapshot.downcast_ty::<vir::CSnap>();
     let snap_data = snap.specifics.expect_structlike();
 
-    //let snap_self = builder.vcx.mk_local("self", snap_type);
-    //let snap_self_decl = builder.vcx.mk_local_decl_local(snap_self);
-    //let snap_self_ex: vir::Expr = builder.vcx.mk_local_ex_local(snap_self);
-
     let ref_self = builder.vcx.mk_local("self", vir::TYPE_REF);
     let ref_self_decl = builder.vcx.mk_local_decl_local(ref_self);
     //let ref_self_ex = builder.vcx.mk_local_ex_local(ref_self);
@@ -122,15 +118,7 @@ pub(crate) fn predicate<'vir>(
                 "snap",
                 (ref_self_decl.ty(), generic_decl_tys),
                 snap_type,
-                &[ref_self_decl.as_dyn()]
-                    .into_iter()
-                    .chain(
-                        generic_decls
-                            .iter()
-                            .copied()
-                            .map(vir::LocalDeclData::as_dyn),
-                    )
-                    .collect::<Vec<_>>(),
+                (ref_self_decl, generic_decls),
                 &[vir::expr! { acc([self_pred](ref_self, ..[generic_exprs])) }],
                 &[],
                 Some(snap_expr),

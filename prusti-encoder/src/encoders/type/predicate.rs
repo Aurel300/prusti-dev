@@ -256,7 +256,7 @@ impl<'vir> PredicateBuilder<'vir> {
     pub(crate) fn predicate_ident<A: vir::Arity>(
         &mut self,
         name: &str,
-        args: A::P<'vir>,
+        args: A::Tys<'vir>,
     ) -> vir::PredicateIdn<'vir, A> {
         let name = self.ident_str(name);
         let ident = vir::PredicateIdn::new(vir::ViperIdent::new(name), args);
@@ -266,14 +266,14 @@ impl<'vir> PredicateBuilder<'vir> {
     pub(crate) fn predicate<A: vir::Arity>(
         &mut self,
         name: &str,
-        args: A::P<'vir>,
-        params: &[vir::LocalDeclDyn<'vir>],
+        args: A::Tys<'vir>,
+        params: A::Locals<'_, 'vir>,
         expr: Option<vir::ExprBool<'vir>>,
     ) -> vir::PredicateIdn<'vir, A> {
         let ident = self.predicate_ident(name, args);
         self.predicates.push(
             self.vcx
-                .mk_predicate(ident, self.vcx.alloc_slice(params), expr),
+                .mk_predicate(ident, params, expr),
         );
         ident
     }
@@ -281,7 +281,7 @@ impl<'vir> PredicateBuilder<'vir> {
     pub(crate) fn function_ident<A: vir::Arity, T: vir::CompType>(
         &mut self,
         name: &str,
-        args: A::P<'vir>,
+        args: A::Tys<'vir>,
         ret: vir::Type<'vir, T>,
     ) -> vir::FunctionIdn<'vir, A, T> {
         let name = self.ident_str(name);
@@ -292,9 +292,9 @@ impl<'vir> PredicateBuilder<'vir> {
     pub(crate) fn mk_function<A: vir::Arity, T: vir::CompType>(
         &self,
         name: &str,
-        args: A::P<'vir>,
+        args: A::Tys<'vir>,
         ret: vir::Type<'vir, T>,
-        params: &[vir::LocalDeclDyn<'vir>],
+        params: A::Locals<'_, 'vir>,
         pres: &[vir::ExprBool<'vir>],
         posts: &[vir::ExprBool<'vir>],
         expr: Option<vir::Expr<'vir, T>>,
@@ -304,9 +304,8 @@ impl<'vir> PredicateBuilder<'vir> {
         (
             ident,
             self.vcx.mk_function(
-                name,
-                self.vcx.alloc_slice(params),
-                ret,
+                ident,
+                params,
                 self.vcx.alloc_slice(pres),
                 self.vcx.alloc_slice(posts),
                 expr,
@@ -317,9 +316,9 @@ impl<'vir> PredicateBuilder<'vir> {
     pub(crate) fn function<A: vir::Arity, T: vir::CompType>(
         &mut self,
         name: &str,
-        args: A::P<'vir>,
+        args: A::Tys<'vir>,
         ret: vir::Type<'vir, T>,
-        params: &[vir::LocalDeclDyn<'vir>],
+        params: A::Locals<'_, 'vir>,
         pres: &[vir::ExprBool<'vir>],
         posts: &[vir::ExprBool<'vir>],
         expr: Option<vir::Expr<'vir, T>>,
@@ -332,9 +331,9 @@ impl<'vir> PredicateBuilder<'vir> {
     pub(crate) fn method<A: vir::Arity>(
         &mut self,
         name: &str,
-        args: A::P<'vir>,
+        args: A::Tys<'vir>,
         rets: &[vir::LocalDeclDyn<'vir>],
-        params: &[vir::LocalDeclDyn<'vir>],
+        params: A::Locals<'_, 'vir>,
         pres: &[vir::ExprBool<'vir>],
         posts: &[vir::ExprBool<'vir>],
     ) -> vir::MethodIdn<'vir, A> {
@@ -346,7 +345,7 @@ impl<'vir> PredicateBuilder<'vir> {
         );
         self.methods.push(self.vcx.mk_method(
             ident,
-            self.vcx.alloc_slice(params),
+            params,
             self.vcx.alloc_slice(rets),
             self.vcx.alloc_slice(pres),
             self.vcx.alloc_slice(posts),
@@ -498,7 +497,7 @@ impl TaskEncoder for PredicateEnc {
                 "unreachable",
                 (),
                 snap_type,
-                &[],
+                (),
                 &[vcx.mk_bool::<false>()],
                 &[vcx.mk_bool::<false>()], // TODO: is this necessary?
                 None,
@@ -511,11 +510,7 @@ impl TaskEncoder for PredicateEnc {
                 "assign",
                 (ref_self_decl.ty(), generic_decl_tys, snap_type.upcast_ty()),
                 &[],
-                &[ref_self_decl.as_dyn()]
-                    .into_iter()
-                    .chain(generic_decls.iter().copied().map(vir::LocalDeclData::as_dyn))
-                    .chain([vcx.mk_local_decl_local(value).as_dyn()])
-                    .collect::<Vec<_>>(),
+                (ref_self_decl, generic_decls.as_slice(), vcx.mk_local_decl_local(value).upcast_ty()),
                 &[],
                 &[
                     vir::expr! { [self_pred_ident](ref_self, ..[generic_exprs.as_slice()]) },
@@ -523,20 +518,12 @@ impl TaskEncoder for PredicateEnc {
                 ],
             );
 
-            if crate::encoders::spec::is_type_trusted(task_key.ty()) {
-                let args = &[ref_self_decl.as_dyn()]
-                    .into_iter()
-                    .chain(
-                        generic_decls
-                            .iter()
-                            .copied()
-                            .map(vir::LocalDeclData::as_dyn),
-                    )
-                    .collect::<Vec<_>>();
+            if crate::encoders::is_type_trusted(task_key.ty()) {
+                let args = (ref_self_decl, generic_decls.as_slice());
                 builder.predicate::<(vir::Ref, vir::ManyTyVal)>(
                     "",
                     (ref_self_decl.ty(), generic_decl_tys),
-                    &args,
+                    args,
                     None,
                 );
                 builder.function_snap = Some(
@@ -545,7 +532,7 @@ impl TaskEncoder for PredicateEnc {
                             "snap",
                             (ref_self_decl.ty(), generic_decl_tys),
                             snap_type,
-                            &args,
+                            args,
                             &[],
                             &[],
                             None,
@@ -695,10 +682,7 @@ fn mk_method_assign<'vir>(
 
     let self_pred_app = vcx.mk_predicate_app_expr(ref_to_pred(self_arg, &generic_args)(None));
 
-    let mut assign_args = vec![self_local.as_dyn()];
-    assign_args.extend(generics.iter().copied().map(vir::LocalDeclData::as_dyn));
-    assign_args.push(self_new_local.as_dyn());
-    let assign_args = vcx.alloc_slice(&assign_args);
+    let assign_args = (self_local, generics.as_slice(), self_new_local);
 
     let posts = vcx.alloc_slice(&[
         self_pred_app,

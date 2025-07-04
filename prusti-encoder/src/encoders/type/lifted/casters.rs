@@ -282,11 +282,7 @@ impl TaskEncoder for CastersEnc<CastTypePure> {
             let make_generic_arg = vcx.mk_local_decl("self", self_ty);
             let make_generic_expr = vcx.mk_local_ex(make_generic_arg.name, make_generic_arg.ty);
 
-            let make_generic_arg_decls = vcx.alloc_slice(
-                &std::iter::once(make_generic_arg.as_dyn())
-                    .chain(ty_params.iter().map(|t| t.decl().as_dyn()))
-                    .collect::<Vec<_>>(),
-            );
+            let ty_params_vec = ty_params.iter().map(|t| t.decl()).collect::<Vec<_>>();
 
             let make_concrete_ty_param_exprs =
                 ty_params.iter().map(|t| t.expr(vcx)).collect::<Vec<_>>();
@@ -309,9 +305,8 @@ impl TaskEncoder for CastersEnc<CastTypePure> {
             };
 
             let make_generic = vcx.mk_function(
-                make_generic_ident.name().to_str(),
-                make_generic_arg_decls,
-                generic_ref.param_snapshot,
+                make_generic_ident,
+                (make_generic_arg, &ty_params_vec),
                 &[],
                 vcx.alloc_slice(&[
                     mk_type_spec(make_generic_result, &ty_params_from_snap),
@@ -328,11 +323,6 @@ impl TaskEncoder for CastersEnc<CastTypePure> {
                 make_concrete_snap_arg_decl.name,
                 make_concrete_snap_arg_decl.ty,
             );
-            let make_concrete_arg_decls = vcx.alloc_slice(
-                &std::iter::once(make_concrete_snap_arg_decl.as_dyn())
-                    .chain(ty_params.iter().map(|t| t.decl().as_dyn()))
-                    .collect::<Vec<_>>(),
-            );
 
             let make_concrete_pre =
                 mk_type_spec(make_concrete_snap_arg_expr, &make_concrete_ty_param_exprs);
@@ -347,9 +337,8 @@ impl TaskEncoder for CastersEnc<CastTypePure> {
             );
 
             let make_concrete = vcx.mk_function(
-                make_concrete_ident.name().to_str(),
-                make_concrete_arg_decls,
-                self_ty,
+                make_concrete_ident,
+                (make_concrete_snap_arg_decl, &ty_params_vec),
                 vcx.alloc_slice(&[make_concrete_pre]),
                 vcx.alloc_slice(&[make_concrete_post]),
                 None,
@@ -420,12 +409,7 @@ impl TaskEncoder for CastersEnc<CastTypeImpure> {
                 .iter()
                 .map(|decl| vcx.mk_local_ex(decl.name, decl.ty))
                 .collect::<Vec<_>>();
-            let decls = vcx.alloc_slice(
-                &[self_decl.as_dyn()]
-                    .into_iter()
-                    .chain(arg_ty_decls.iter().copied().map(vir::LocalDeclData::as_dyn))
-                    .collect::<Vec<_>>(),
-            );
+            let decls = (self_decl, arg_ty_decls.as_slice());
 
             let concrete_predicate = (predicate_ref.ref_to_pred)(self_expr, &arg_ty_exprs)(None);
 

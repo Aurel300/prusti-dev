@@ -112,7 +112,7 @@ impl<'vir> DomainEncOutputRef<'vir> {
     /// the `idx`th type parameter of it's type.
     pub fn ty_param_from_snap(
         &self,
-        vcx: &'vir vir::VirCtxt,
+        _vcx: &'vir vir::VirCtxt,
         idx: usize,
         snap: vir::ExprCSnap<'vir>,
     ) -> vir::ExprTyVal<'vir> {
@@ -247,7 +247,7 @@ impl<'vir> DomainBuilder<'vir> {
     pub(crate) fn function<A: Arity, T: CompType>(
         &mut self,
         name: &str,
-        args: A::P<'vir>,
+        args: A::Tys<'vir>,
         ret: Type<'vir, T>,
     ) -> FunctionIdn<'vir, A, T> {
         let name = vir::vir_format!(

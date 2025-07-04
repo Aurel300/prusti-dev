@@ -86,7 +86,7 @@ pub(crate) fn predicate<'vir>(
     let self_pred = builder.predicate::<vir::Ref>(
         "",
         ref_self_decl.ty(),
-        &[ref_self_decl.as_dyn()],
+        (ref_self_decl,),
         Some(vir::expr! { acc((ref_self).[ref_field]) }),
     );
 
@@ -97,7 +97,7 @@ pub(crate) fn predicate<'vir>(
                 "snap",
                 ref_self_decl.ty(),
                 snap_type,
-                &[ref_self_decl.as_dyn()],
+                (ref_self_decl,),
                 &[vir::expr! { acc([self_pred](ref_self)) }],
                 &[],
                 Some(vir::expr! {
@@ -112,7 +112,7 @@ pub(crate) fn predicate<'vir>(
         "deref",
         ref_self_decl.ty(),
         vir::TYPE_REF,
-        &[ref_self_decl.as_dyn()],
+        (ref_self_decl,),
         &[vir::expr! { acc([self_pred](ref_self)) }],
         &[],
         Some(vir::expr! {

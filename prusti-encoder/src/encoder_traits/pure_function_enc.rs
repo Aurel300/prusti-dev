@@ -1,10 +1,8 @@
-use prusti_interface::specs::specifications::SpecQuery;
 use prusti_rustc_interface::{
     middle::{
         mir,
         ty::{self, Ty},
     },
-    span::def_id::DefId,
 };
 use task_encoder::{EncodeFullError, TaskEncoder, TaskEncoderDependencies};
 use vir::{CastType, ExprGenBool, ExprGenSnap, FunctionIdn, Reify, ViperIdent};
@@ -114,15 +112,14 @@ where
 
             let spec = deps.require_local::<MirSpecEnc>((def_id, substs, None, true))?;
 
-            let mut func_args = ty_arg_decls
+            let func_tyval_args = ty_arg_decls
                 .iter()
-                .map(|arg| arg.decl().upcast_ty())
+                .map(|arg| arg.decl())
                 .collect::<Vec<_>>();
 
-            func_args.extend((1..=local_defs.arg_count).map(mir::Local::from).map(|arg| {
+            let func_args = (1..=local_defs.arg_count).map(mir::Local::from).map(|arg| {
                 vcx.mk_local_decl_local(local_defs.locals[arg].local_snap)
-                    .upcast_ty()
-            }));
+            }).collect::<Vec<_>>();
 
             let expr = if trusted {
                 None
@@ -188,9 +185,8 @@ where
 
             Ok(MirFunctionEncOutput {
                 function: vcx.mk_function(
-                    function_ident.to_str(),
-                    vcx.alloc_slice(&func_args),
-                    return_type.snapshot,
+                    function_ref,
+                    (&func_tyval_args, &func_args),
                     vcx.alloc_slice(&pres),
                     vcx.alloc_slice(&posts),
                     expr,

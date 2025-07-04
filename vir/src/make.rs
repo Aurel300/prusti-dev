@@ -594,15 +594,17 @@ impl<'tcx> VirCtxt<'tcx> {
         })
     }
 
-    pub fn mk_function<'vir, Curr, Next, T: CompType>(
+    pub fn mk_function<'vir, Curr, Next, A: Arity, T: CompType>(
         &'vir self,
-        name: &'vir str, // TODO: identifiers
-        args: &'vir [LocalDeclDyn<'vir>],
-        ret: Type<'vir, T>,
+        ident: FunctionIdn<'vir, A, T>,
+        args: A::Locals<'_, 'vir>,
         pres: &'vir [ExprGenBool<'vir, Curr, Next>],
         posts: &'vir [ExprGenBool<'vir, Curr, Next>],
         expr: Option<ExprGen<'vir, Curr, Next, T>>,
     ) -> FunctionGen<'vir, Curr, Next> {
+        let name = ident.name().to_str();
+        let ret = ident.result();
+        let args = A::locals(self, args);
         // TODO: Typecheck pre and post conditions
         if let Some(body) = expr {
             if body.ty() != ret {
@@ -636,9 +638,10 @@ impl<'tcx> VirCtxt<'tcx> {
     pub fn mk_predicate<'vir, Curr, Next, A: Arity + Debug>(
         &'vir self,
         ident: PredicateIdn<'vir, A>,
-        args: &'vir [LocalDeclDyn<'vir>],
+        args: A::Locals<'_, 'vir>,
         expr: Option<ExprGenBool<'vir, Curr, Next>>,
     ) -> PredicateGen<'vir, Curr, Next> {
+        let args = A::locals(self, args);
         A::types_match(ident.arity(), args, ident.debug_info());
         self.mk_predicate_unchecked(ident.name().to_str(), args, expr)
     }
@@ -831,12 +834,13 @@ impl<'tcx> VirCtxt<'tcx> {
     pub fn mk_method<'vir, Curr, Next, A: Arity>(
         &'vir self,
         ident: MethodIdn<'vir, A>,
-        args: &'vir [LocalDeclDyn<'vir>],
+        args: A::Locals<'_, 'vir>,
         rets: &'vir [LocalDeclDyn<'vir>],
         pres: &'vir [ExprGenBool<'vir, Curr, Next>],
         posts: &'vir [ExprGenBool<'vir, Curr, Next>],
         blocks: Option<&'vir [CfgBlockGen<'vir, Curr, Next>]>, // first one is the entrypoint
     ) -> MethodGen<'vir, Curr, Next> {
+        let args = A::locals(self, args);
         A::types_match(ident.arity(), args, ident.debug_info());
         self.mk_method_unchecked(ident.name().to_str(), args, rets, pres, posts, blocks)
     }

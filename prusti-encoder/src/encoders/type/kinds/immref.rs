@@ -107,9 +107,7 @@ pub(crate) fn predicate<'vir>(
     let self_pred = builder.predicate::<(vir::Ref, vir::ManyTyVal)>(
         "",
         (ref_self_decl.ty(), generic_tys),
-        &[ref_self_decl.as_dyn()].into_iter()
-            .chain(generic_decls.iter().copied().map(vir::LocalDeclData::as_dyn))
-            .collect::<Vec<_>>(),
+    (ref_self_decl, generic_decls),
         Some(vir::expr! {
             (acc((ref_self).[ref_field]))
             && (([generic.param_type_function]([snap_data.value_access]([ref_field](ref_self)))) == ([generic_exprs[0]]))
@@ -121,9 +119,7 @@ pub(crate) fn predicate<'vir>(
         "snap",
         (ref_self_decl.ty(), generic_tys),
         snap_type,
-        &[ref_self_decl.as_dyn()].into_iter()
-            .chain(generic_decls.iter().copied().map(vir::LocalDeclData::as_dyn))
-            .collect::<Vec<_>>(),
+        (ref_self_decl, generic_decls),
         &[vir::expr! { acc([self_pred](ref_self, ..[generic_exprs])) }],
         &[vir::expr! { ([generic.param_type_function]([snap_data.value_access](result: [snap_type]))) == ([generic_exprs[0]]) }],
         Some(vir::expr! {
@@ -136,9 +132,7 @@ pub(crate) fn predicate<'vir>(
         "deref",
         (ref_self_decl.ty(), generic_tys),
         vir::TYPE_REF,
-        &[ref_self_decl.as_dyn()].into_iter()
-            .chain(generic_decls.iter().copied().map(vir::LocalDeclData::as_dyn))
-            .collect::<Vec<_>>(),
+        (ref_self_decl, generic_decls),
         &[vir::expr! { acc([self_pred](ref_self, ..[generic_exprs])) }],
         &[],
         Some(vir::expr! {

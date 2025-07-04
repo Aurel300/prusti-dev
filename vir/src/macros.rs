@@ -44,6 +44,13 @@ macro_rules! vir_arg_list {
     }};
 }
 
+#[macro_export]
+macro_rules! vir_arg_tuple {
+    ($vcx:expr; $( $name:tt : $ty:tt ),* $(,)? ) => {
+        ($( $crate::vir_local_decl!($vcx; $name : $ty), )*)
+    };
+}
+
 /*
 #[macro_export]
 macro_rules! vir_expr_list {
@@ -147,6 +154,9 @@ macro_rules! vir_type {
     };
     ($vcx:expr; Perm) => {
         $crate::TYPE_PERM
+    };
+    ($vcx:expr; Type) => {
+        $crate::TYPE_TYVAL
     };
     ($vcx:expr; [ $ty:expr ]) => {
         $ty
@@ -304,24 +314,24 @@ pub trait ExprApply<'vir, A: core::marker::Tuple, Ty: CompType> {
     fn expr_apply(self, vcx: &'vir crate::VirCtxt, args: A) -> crate::Expr<'vir, Ty>;
 }
 
-impl<'a, 'vir, A: crate::Arity, R: CompType> ExprApply<'vir, A::A<'a, 'vir, !, !>, R>
+impl<'a, 'vir, A: crate::Arity, R: CompType> ExprApply<'vir, A::Exprs<'a, 'vir, !, !>, R>
     for crate::FunctionIdn<'vir, A, R>
 {
     fn expr_apply(
         self,
         _vcx: &'vir crate::VirCtxt,
-        args: A::A<'a, 'vir, !, !>,
+        args: A::Exprs<'a, 'vir, !, !>,
     ) -> crate::Expr<'vir, R> {
         self.call_once(args)
     }
 }
-impl<'a, 'vir, A: crate::Arity> ExprApply<'vir, A::A<'a, 'vir, !, !>, crate::Bool>
+impl<'a, 'vir, A: crate::Arity> ExprApply<'vir, A::Exprs<'a, 'vir, !, !>, crate::Bool>
     for crate::PredicateIdn<'vir, A>
 {
     fn expr_apply(
         self,
         vcx: &'vir crate::VirCtxt,
-        args: A::A<'a, 'vir, !, !>,
+        args: A::Exprs<'a, 'vir, !, !>,
     ) -> crate::ExprBool<'vir> {
         vcx.mk_predicate_app_expr(self.call_once(args)(None))
     }

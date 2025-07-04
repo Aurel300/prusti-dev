@@ -1,6 +1,6 @@
 use prusti_rustc_interface::middle::ty;
 use task_encoder::{EncodeFullError, TaskEncoder, TaskEncoderDependencies};
-use vir::{CastType, HasType};
+use vir::HasType;
 
 use crate::encoders::{
     domain::{DomainBuilder, DomainEnc, DomainEncSpecifics},
@@ -36,7 +36,7 @@ pub(crate) fn predicate<'vir>(
     builder.predicate::<vir::Ref>(
         "",
         ref_self_decl.ty(),
-        &[ref_self_decl.as_dyn()],
+        (ref_self_decl,),
         Some(vir::expr! { false }),
     );
 
@@ -47,7 +47,7 @@ pub(crate) fn predicate<'vir>(
                 "snap",
                 ref_self_decl.ty(),
                 snap_type,
-                &[ref_self_decl.as_dyn()],
+                (ref_self_decl,),
                 &[], // &[vir::expr! { false }],
                 &[],
                 None,

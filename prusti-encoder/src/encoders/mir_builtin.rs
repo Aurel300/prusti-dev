@@ -134,9 +134,8 @@ impl MirBuiltinEnc {
         }
 
         Ok(vcx.mk_function(
-            name.to_str(),
-            vcx.alloc_slice(&[vcx.mk_local_decl("arg", e_ty_snap).as_dyn()]),
-            e_ty_snap,
+            function,
+            (vcx.mk_local_decl("arg", e_ty_snap),),
             &[],
             &[],
             Some(val),
@@ -319,12 +318,11 @@ impl MirBuiltinEnc {
         };
         let val = (prim_res_ty.prim_to_snap)(val);
         Ok(vcx.mk_function(
-            name.to_str(),
-            vcx.alloc_slice(&[
-                vcx.mk_local_decl("arg1", e_l_ty_snap).as_dyn(),
-                vcx.mk_local_decl("arg2", e_r_ty_snap).as_dyn(),
-            ]),
-            e_res_ty_snap,
+            function,
+            (
+                vcx.mk_local_decl("arg1", e_l_ty_snap),
+                vcx.mk_local_decl("arg2", e_r_ty_snap),
+            ),
             vcx.alloc_slice(&pres),
             &[],
             Some(val),
@@ -437,12 +435,11 @@ impl MirBuiltinEnc {
         let inner_let = vcx.mk_let_expr(wrapped_val_str, wrapped_val_exp, tuple);
 
         Ok(vcx.mk_function(
-            name.to_str(),
-            vcx.alloc_slice(&[
-                vcx.mk_local_decl("arg1", e_l_ty_snap).as_dyn(),
-                vcx.mk_local_decl("arg2", e_r_ty_snap).as_dyn(),
-            ]),
-            e_res_ty_snap,
+            function,
+            (
+                vcx.mk_local_decl("arg1", e_l_ty_snap),
+                vcx.mk_local_decl("arg2", e_r_ty_snap),
+            ),
             &[],
             &[],
             Some(vcx.mk_let_expr(val_str, val_exp, inner_let)),

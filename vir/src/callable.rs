@@ -82,9 +82,9 @@ impl<'a, 'vir, T: CompType, R: CompType> FnOnce<(&'a [crate::Type<'vir, T>],)>
 
 pub trait CallableIdn<'vir, A: Arity> {
     fn name(&self) -> ViperIdent<'vir>;
-    fn arity(&self) -> A::P<'vir>;
+    fn arity(&self) -> A::Tys<'vir>;
     fn debug_info(&self) -> DebugInfo<'vir>;
-    fn cast_args<A1: Arity>(self, args: A1::P<'vir>) -> impl CallableIdn<'vir, A1>;
+    fn cast_args<A1: Arity>(self, args: A1::Tys<'vir>) -> impl CallableIdn<'vir, A1>;
 }
 
 // Function Identifier
@@ -92,7 +92,7 @@ pub trait CallableIdn<'vir, A: Arity> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FunctionIdn<'vir, A: Arity, R: CompType> {
     idn: ViperIdent<'vir>,
-    args: A::P<'vir>,
+    args: A::Tys<'vir>,
     result_ty: Type<'vir, R>,
     debug_info: DebugInfo<'vir>,
 }
@@ -101,14 +101,14 @@ impl<'vir, A: Arity, R: CompType> CallableIdn<'vir, A> for FunctionIdn<'vir, A, 
     fn name(&self) -> ViperIdent<'vir> {
         self.idn
     }
-    fn arity(&self) -> A::P<'vir> {
+    fn arity(&self) -> A::Tys<'vir> {
         self.args
     }
     fn debug_info(&self) -> DebugInfo<'vir> {
         self.debug_info
     }
     #[allow(refining_impl_trait)]
-    fn cast_args<A1: Arity>(self, args: A1::P<'vir>) -> FunctionIdn<'vir, A1, R> {
+    fn cast_args<A1: Arity>(self, args: A1::Tys<'vir>) -> FunctionIdn<'vir, A1, R> {
         A::types_match(self.args, &A1::params(args), self.debug_info);
         FunctionIdn {
             idn: self.idn,
@@ -126,7 +126,7 @@ pub struct FunctionIdnGen<'vir, Curr: 'vir, Next: 'vir, A: Arity, R: CompType> {
 }
 
 impl<'vir, A: Arity, R: CompType> FunctionIdn<'vir, A, R> {
-    pub fn new(idn: ViperIdent<'vir>, args: A::P<'vir>, result_ty: Type<'vir, R>) -> Self {
+    pub fn new(idn: ViperIdent<'vir>, args: A::Tys<'vir>, result_ty: Type<'vir, R>) -> Self {
         Self {
             idn,
             args,
@@ -146,7 +146,7 @@ impl<'vir, A: Arity, R: CompType> FunctionIdn<'vir, A, R> {
         self.result_ty
     }
 
-    pub fn cast_ty<A1: Arity, R1: CompType>(self, args: A1::P<'vir>) -> FunctionIdn<'vir, A1, R1> {
+    pub fn cast_ty<A1: Arity, R1: CompType>(self, args: A1::Tys<'vir>) -> FunctionIdn<'vir, A1, R1> {
         let self_ = self.cast_args::<A1>(args);
         FunctionIdn {
             idn: self_.idn,
@@ -157,18 +157,18 @@ impl<'vir, A: Arity, R: CompType> FunctionIdn<'vir, A, R> {
     }
 }
 
-impl<'a, 'vir, A: Arity, R: CompType> FnOnce<A::A<'a, 'vir, !, !>> for FunctionIdn<'vir, A, R> {
+impl<'a, 'vir, A: Arity, R: CompType> FnOnce<A::Exprs<'a, 'vir, !, !>> for FunctionIdn<'vir, A, R> {
     type Output = crate::Expr<'vir, R>;
-    extern "rust-call" fn call_once(self, args: A::A<'a, 'vir, !, !>) -> Self::Output {
+    extern "rust-call" fn call_once(self, args: A::Exprs<'a, 'vir, !, !>) -> Self::Output {
         self.gen().call_once(args)
     }
 }
 
-impl<'a, 'vir, Curr: 'vir, Next: 'vir, A: Arity, R: CompType> FnOnce<A::A<'a, 'vir, Curr, Next>>
+impl<'a, 'vir, Curr: 'vir, Next: 'vir, A: Arity, R: CompType> FnOnce<A::Exprs<'a, 'vir, Curr, Next>>
     for FunctionIdnGen<'vir, Curr, Next, A, R>
 {
     type Output = crate::ExprGen<'vir, Curr, Next, R>;
-    extern "rust-call" fn call_once(self, args: A::A<'a, 'vir, Curr, Next>) -> Self::Output {
+    extern "rust-call" fn call_once(self, args: A::Exprs<'a, 'vir, Curr, Next>) -> Self::Output {
         with_vcx(|vcx| {
             let args = A::args(vcx, args);
             A::types_match(self.inner.args, args, self.inner.debug_info);
@@ -182,7 +182,7 @@ impl<'a, 'vir, Curr: 'vir, Next: 'vir, A: Arity, R: CompType> FnOnce<A::A<'a, 'v
 #[derive(Debug, Clone, Copy)]
 pub struct MethodIdn<'vir, A: Arity> {
     idn: ViperIdent<'vir>,
-    args: A::P<'vir>,
+    args: A::Tys<'vir>,
     debug_info: DebugInfo<'vir>,
 }
 // pub type MethodIdnAny<'vir> = MethodIdn<'vir, &'vir [crate::TypeDyn<'vir>]>;
@@ -191,14 +191,14 @@ impl<'vir, A: Arity> CallableIdn<'vir, A> for MethodIdn<'vir, A> {
     fn name(&self) -> ViperIdent<'vir> {
         self.idn
     }
-    fn arity(&self) -> A::P<'vir> {
+    fn arity(&self) -> A::Tys<'vir> {
         self.args
     }
     fn debug_info(&self) -> DebugInfo<'vir> {
         self.debug_info
     }
     #[allow(refining_impl_trait)]
-    fn cast_args<A1: Arity>(self, args: A1::P<'vir>) -> MethodIdn<'vir, A1> {
+    fn cast_args<A1: Arity>(self, args: A1::Tys<'vir>) -> MethodIdn<'vir, A1> {
         A::types_match(self.args, &A1::params(args), self.debug_info);
         MethodIdn {
             idn: self.idn,
@@ -214,7 +214,7 @@ pub struct MethodIdnGen<'vir, Curr: 'vir, Next: 'vir, A: Arity> {
 }
 
 impl<'vir, A: Arity> MethodIdn<'vir, A> {
-    pub fn new(idn: ViperIdent<'vir>, args: A::P<'vir>) -> Self {
+    pub fn new(idn: ViperIdent<'vir>, args: A::Tys<'vir>) -> Self {
         Self {
             idn,
             args,
@@ -229,17 +229,17 @@ impl<'vir, A: Arity> MethodIdn<'vir, A> {
         }
     }
 }
-impl<'a, 'vir, A: Arity> FnOnce<A::A<'a, 'vir, !, !>> for MethodIdn<'vir, A> {
+impl<'a, 'vir, A: Arity> FnOnce<A::Exprs<'a, 'vir, !, !>> for MethodIdn<'vir, A> {
     type Output = StmtKindGenData<'vir, !, !>;
-    extern "rust-call" fn call_once(self, args: A::A<'a, 'vir, !, !>) -> Self::Output {
+    extern "rust-call" fn call_once(self, args: A::Exprs<'a, 'vir, !, !>) -> Self::Output {
         self.gen().call_once(args)
     }
 }
-impl<'a, 'vir, Curr: 'vir, Next: 'vir, A: Arity> FnOnce<A::A<'a, 'vir, Curr, Next>>
+impl<'a, 'vir, Curr: 'vir, Next: 'vir, A: Arity> FnOnce<A::Exprs<'a, 'vir, Curr, Next>>
     for MethodIdnGen<'vir, Curr, Next, A>
 {
     type Output = StmtKindGenData<'vir, Curr, Next>;
-    extern "rust-call" fn call_once(self, args: A::A<'a, 'vir, Curr, Next>) -> Self::Output {
+    extern "rust-call" fn call_once(self, args: A::Exprs<'a, 'vir, Curr, Next>) -> Self::Output {
         with_vcx(|vcx| {
             let args = A::args(vcx, args);
             A::types_match(self.inner.args, args, self.inner.debug_info);
@@ -257,7 +257,7 @@ impl<'a, 'vir, Curr: 'vir, Next: 'vir, A: Arity> FnOnce<A::A<'a, 'vir, Curr, Nex
 #[derive(Debug, Clone, Copy)]
 pub struct PredicateIdn<'vir, A: Arity> {
     idn: ViperIdent<'vir>,
-    args: A::P<'vir>,
+    args: A::Tys<'vir>,
     debug_info: DebugInfo<'vir>,
 }
 // pub type PredicateIdnAny<'vir> = PredicateIdn<'vir, &'vir [crate::TypeDyn<'vir>]>;
@@ -266,14 +266,14 @@ impl<'vir, A: Arity> CallableIdn<'vir, A> for PredicateIdn<'vir, A> {
     fn name(&self) -> ViperIdent<'vir> {
         self.idn
     }
-    fn arity(&self) -> A::P<'vir> {
+    fn arity(&self) -> A::Tys<'vir> {
         self.args
     }
     fn debug_info(&self) -> DebugInfo<'vir> {
         self.debug_info
     }
     #[allow(refining_impl_trait)]
-    fn cast_args<A1: Arity>(self, args: A1::P<'vir>) -> PredicateIdn<'vir, A1> {
+    fn cast_args<A1: Arity>(self, args: A1::Tys<'vir>) -> PredicateIdn<'vir, A1> {
         A::types_match(self.args, &A1::params(args), self.debug_info);
         PredicateIdn {
             idn: self.idn,
@@ -289,7 +289,7 @@ pub struct PredicateIdnGen<'a, 'vir, Curr: 'vir, Next: 'vir, A: Arity> {
 }
 
 impl<'vir, A: Arity> PredicateIdn<'vir, A> {
-    pub fn new(idn: ViperIdent<'vir>, args: A::P<'vir>) -> Self {
+    pub fn new(idn: ViperIdent<'vir>, args: A::Tys<'vir>) -> Self {
         Self {
             idn,
             args,
@@ -299,7 +299,7 @@ impl<'vir, A: Arity> PredicateIdn<'vir, A> {
 
     pub fn call<'a, Curr, Next>(
         self,
-        args: A::A<'a, 'vir, Curr, Next>,
+        args: A::Exprs<'a, 'vir, Curr, Next>,
     ) -> PredicateIdnCurry<'vir, Curr, Next> {
         self.gen().call_once(args)
     }
@@ -312,18 +312,18 @@ impl<'vir, A: Arity> PredicateIdn<'vir, A> {
     }
 }
 
-impl<'a, 'vir, A: Arity> FnOnce<A::A<'a, 'vir, !, !>> for PredicateIdn<'vir, A> {
+impl<'a, 'vir, A: Arity> FnOnce<A::Exprs<'a, 'vir, !, !>> for PredicateIdn<'vir, A> {
     type Output = PredicateIdnCurry<'vir, !, !>;
-    extern "rust-call" fn call_once(self, args: A::A<'a, 'vir, !, !>) -> Self::Output {
+    extern "rust-call" fn call_once(self, args: A::Exprs<'a, 'vir, !, !>) -> Self::Output {
         self.gen().call_once(args)
     }
 }
 
-impl<'a, 'vir, Curr: 'vir, Next: 'vir, A: Arity> FnOnce<A::A<'a, 'vir, Curr, Next>>
+impl<'a, 'vir, Curr: 'vir, Next: 'vir, A: Arity> FnOnce<A::Exprs<'a, 'vir, Curr, Next>>
     for PredicateIdnGen<'a, 'vir, Curr, Next, A>
 {
     type Output = PredicateIdnCurry<'vir, Curr, Next>;
-    extern "rust-call" fn call_once(self, args: A::A<'a, 'vir, Curr, Next>) -> Self::Output {
+    extern "rust-call" fn call_once(self, args: A::Exprs<'a, 'vir, Curr, Next>) -> Self::Output {
         let args = with_vcx(|vcx| A::args(vcx, args));
         A::types_match(self.inner.args, args, self.inner.debug_info);
         PredicateIdnCurry {
@@ -386,26 +386,36 @@ pub trait Arg:
     /// The argument type that this must be called with. Either a single expr
     /// with a known type (e.g. `ExprSnap`) or a slice of exprs with the same
     /// type (e.g. `&'a [ExprDyn]`).
-    type A<'a, 'vir: 'a, Curr: 'vir, Next: 'vir>;
-    type P<'vir>: Copy + Debug;
+    type Expr<'a, 'vir: 'a, Curr: 'vir, Next: 'vir>;
+    type Local<'a, 'vir: 'a>;
+    type Ty<'vir>: Copy + Debug;
     type T: CompType;
     fn args<'a, 'vir: 'a, Curr: 'vir, Next: 'vir>(
-        args: Self::A<'a, 'vir, Curr, Next>,
+        args: Self::Expr<'a, 'vir, Curr, Next>,
     ) -> impl Borrow<[ExprGen<'vir, Curr, Next, Self::T>]>;
-    fn params<'a, 'vir>(param: &'a Self::P<'vir>) -> &'a [Type<'vir, Self::T>];
+    fn locals<'a, 'vir: 'a>(
+        locals: Self::Local<'a, 'vir>,
+    ) -> impl Borrow<[LocalDecl<'vir, Self::T>]>;
+    fn params<'a, 'vir>(param: &'a Self::Ty<'vir>) -> &'a [Type<'vir, Self::T>];
 }
 
 impl<T: CompType> Arg for T {
-    type A<'a, 'vir: 'a, Curr: 'vir, Next: 'vir> = ExprGen<'vir, Curr, Next, T>;
-    type P<'vir> = Type<'vir, T>;
+    type Expr<'a, 'vir: 'a, Curr: 'vir, Next: 'vir> = ExprGen<'vir, Curr, Next, T>;
+    type Local<'a, 'vir: 'a> = LocalDecl<'vir, T>;
+    type Ty<'vir> = Type<'vir, T>;
     type T = T;
 
     fn args<'a, 'vir: 'a, Curr: 'vir, Next: 'vir>(
-        args: Self::A<'a, 'vir, Curr, Next>,
+        args: Self::Expr<'a, 'vir, Curr, Next>,
     ) -> impl Borrow<[ExprGen<'vir, Curr, Next, Self::T>]> {
         [args]
     }
-    fn params<'a, 'vir>(param: &'a Self::P<'vir>) -> &'a [Type<'vir, Self::T>] {
+    fn locals<'a, 'vir: 'a>(
+        locals: Self::Local<'a, 'vir>,
+    ) -> impl Borrow<[LocalDecl<'vir, Self::T>]> {
+        [locals]
+    }
+    fn params<'a, 'vir>(param: &'a Self::Ty<'vir>) -> &'a [Type<'vir, Self::T>] {
         core::slice::from_ref(param)
     }
 }
@@ -414,15 +424,21 @@ impl<T: CompType> Arg for T {
 // about the type `([T], ...)` where an `?Sized` is not the last element of the
 // tuple (we cannot implement `Arity` for this tuple).
 impl<T: CompType> Arg for Many<T> {
-    type A<'a, 'vir: 'a, Curr: 'vir, Next: 'vir> = &'a [ExprGen<'vir, Curr, Next, T>];
-    type P<'vir> = &'vir [Type<'vir, T>];
+    type Expr<'a, 'vir: 'a, Curr: 'vir, Next: 'vir> = &'a [ExprGen<'vir, Curr, Next, T>];
+    type Local<'a, 'vir: 'a> = &'a [LocalDecl<'vir, T>];
+    type Ty<'vir> = &'vir [Type<'vir, T>];
     type T = T;
     fn args<'a, 'vir: 'a, Curr: 'vir, Next: 'vir>(
-        args: Self::A<'a, 'vir, Curr, Next>,
+        args: Self::Expr<'a, 'vir, Curr, Next>,
     ) -> impl Borrow<[ExprGen<'vir, Curr, Next, Self::T>]> {
         args
     }
-    fn params<'a, 'vir>(param: &'a Self::P<'vir>) -> &'vir [Type<'vir, Self::T>] {
+    fn locals<'a, 'vir: 'a>(
+        locals: Self::Local<'a, 'vir>,
+    ) -> impl Borrow<[LocalDecl<'vir, Self::T>]> {
+        locals
+    }
+    fn params<'a, 'vir>(param: &'a Self::Ty<'vir>) -> &'vir [Type<'vir, Self::T>] {
         param
     }
 }
@@ -452,12 +468,13 @@ pub trait Arity:
 {
     /// The arguments that this will be called with, must be a tuple. For
     /// example `(ExprSnap, &'a [ExprTyVal], ExprPerm)`.
-    type A<'a, 'vir: 'a, Curr: 'vir, Next: 'vir>: core::marker::Tuple;
-    type P<'vir>: Copy + Debug;
+    type Exprs<'a, 'vir: 'a, Curr: 'vir, Next: 'vir>: core::marker::Tuple;
+    type Locals<'a, 'vir: 'a>: core::marker::Tuple;
+    type Tys<'vir>: Copy + Debug;
 
     /// Check that the arguments are of the correct type.
     fn types_match<'vir, T: CompType, E: HasType<'vir, T>>(
-        params: Self::P<'vir>,
+        params: Self::Tys<'vir>,
         args: &[&'vir E],
         debug_info: DebugInfo<'vir>,
     ) {
@@ -480,13 +497,18 @@ pub trait Arity:
         }
     }
 
-    /// Convert the arguments to
+    /// Convert the arguments to usable slice.
     fn args<'a, 'vir: 'a, Curr: 'vir, Next: 'vir>(
         vcx: &'vir VirCtxt,
-        args: Self::A<'a, 'vir, Curr, Next>,
+        args: Self::Exprs<'a, 'vir, Curr, Next>,
     ) -> &'vir [ExprGenDyn<'vir, Curr, Next>];
 
-    fn params<'vir>(params: Self::P<'vir>) -> Vec<TypeDyn<'vir>>;
+    fn locals<'a, 'vir: 'a>(
+        vcx: &'vir VirCtxt,
+        locals: Self::Locals<'a, 'vir>,
+    ) -> &'vir [LocalDeclDyn<'vir>];
+
+    fn params<'vir>(params: Self::Tys<'vir>) -> Vec<TypeDyn<'vir>>;
 }
 
 // pub trait KnownArity<'vir>: Arity<'vir> {
@@ -499,10 +521,11 @@ macro_rules! tuple_arity {
     ($($g:ident),*) => {
         #[sealed]
         impl<$($g: Arg),*> Arity for ($($g),*) {
-            type A<'a, 'vir: 'a, Curr: 'vir, Next: 'vir> = ($($g::A<'a, 'vir, Curr, Next>),*);
-            type P<'vir> = ($($g::P<'vir>),*);
+            type Exprs<'a, 'vir: 'a, Curr: 'vir, Next: 'vir> = ($($g::Expr<'a, 'vir, Curr, Next>),*);
+            type Locals<'a, 'vir: 'a> = ($($g::Local<'a, 'vir>),*);
+            type Tys<'vir> = ($($g::Ty<'vir>),*);
             #[allow(unused_variables)]
-            fn args<'a, 'vir: 'a, Curr: 'vir, Next: 'vir>(vcx: &'vir VirCtxt, args: Self::A<'a, 'vir, Curr, Next>) -> &'vir [ExprGenDyn<'vir, Curr, Next>] {
+            fn args<'a, 'vir: 'a, Curr: 'vir, Next: 'vir>(vcx: &'vir VirCtxt, args: Self::Exprs<'a, 'vir, Curr, Next>) -> &'vir [ExprGenDyn<'vir, Curr, Next>] {
                 let a = core::iter::empty();
                 $(
                     let t = $g::args(args.${index()});
@@ -510,7 +533,16 @@ macro_rules! tuple_arity {
                 )*
                 vcx.alloc_slice(&a.collect::<Vec<_>>())
             }
-            fn params<'vir>(params: Self::P<'vir>) -> Vec<TypeDyn<'vir>> {
+            #[allow(unused_variables)]
+            fn locals<'a, 'vir: 'a>(vcx: &'vir VirCtxt, locals: Self::Locals<'a, 'vir>) -> &'vir [LocalDeclDyn<'vir>] {
+                let a = core::iter::empty();
+                $(
+                    let t = $g::locals(locals.${index()});
+                    let a = a.chain(t.borrow().as_dyn().iter().copied());
+                )*
+                vcx.alloc_slice(&a.collect::<Vec<_>>())
+            }
+            fn params<'vir>(params: Self::Tys<'vir>) -> Vec<TypeDyn<'vir>> {
                 [$($g::params(&params.${index()}).as_dyn()),*]
                     .into_iter()
                     .flatten()
@@ -533,33 +565,48 @@ tuple_arity_many!(A, B, C, D, E, F, G, H, I, J, K, L);
 
 #[sealed]
 impl<T: Arg> Arity for T {
-    type A<'a, 'vir: 'a, Curr: 'vir, Next: 'vir> = (T::A<'a, 'vir, Curr, Next>,);
-    type P<'vir> = T::P<'vir>;
+    type Exprs<'a, 'vir: 'a, Curr: 'vir, Next: 'vir> = (T::Expr<'a, 'vir, Curr, Next>,);
+    type Locals<'a, 'vir: 'a> = (T::Local<'a, 'vir>,);
+    type Tys<'vir> = T::Ty<'vir>;
 
     fn args<'a, 'vir: 'a, Curr: 'vir, Next: 'vir>(
         vcx: &'vir VirCtxt,
-        args: Self::A<'a, 'vir, Curr, Next>,
+        args: Self::Exprs<'a, 'vir, Curr, Next>,
     ) -> &'vir [ExprGenDyn<'vir, Curr, Next>] {
         let t = T::args(args.0);
         vcx.alloc_slice(t.borrow().as_dyn())
     }
-    fn params<'vir>(params: Self::P<'vir>) -> Vec<TypeDyn<'vir>> {
+    fn locals<'a, 'vir: 'a>(
+        vcx: &'vir VirCtxt,
+        locals: Self::Locals<'a, 'vir>,
+    ) -> &'vir [LocalDeclDyn<'vir>] {
+        let t = T::locals(locals.0);
+        vcx.alloc_slice(t.borrow().as_dyn())
+    }
+    fn params<'vir>(params: Self::Tys<'vir>) -> Vec<TypeDyn<'vir>> {
         <T as Arg>::params(&params).as_dyn().to_vec()
     }
 }
 
 #[sealed]
 impl Arity for () {
-    type A<'a, 'vir: 'a, Curr: 'vir, Next: 'vir> = ();
-    type P<'vir> = ();
+    type Exprs<'a, 'vir: 'a, Curr: 'vir, Next: 'vir> = ();
+    type Locals<'a, 'vir: 'a> = ();
+    type Tys<'vir> = ();
 
     fn args<'a, 'vir: 'a, Curr: 'vir, Next: 'vir>(
         _vcx: &'vir VirCtxt,
-        _args: Self::A<'a, 'vir, Curr, Next>,
+        _args: Self::Exprs<'a, 'vir, Curr, Next>,
     ) -> &'vir [ExprGenDyn<'vir, Curr, Next>] {
         &[]
     }
-    fn params<'vir>(_params: Self::P<'vir>) -> Vec<TypeDyn<'vir>> {
+    fn locals<'a, 'vir: 'a>(
+        _vcx: &'vir VirCtxt,
+        _locals: Self::Locals<'a, 'vir>,
+    ) -> &'vir [LocalDeclDyn<'vir>] {
+        &[]
+    }
+    fn params<'vir>(_params: Self::Tys<'vir>) -> Vec<TypeDyn<'vir>> {
         Vec::new()
     }
 }

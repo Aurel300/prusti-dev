@@ -152,15 +152,7 @@ pub(crate) fn predicate<'vir>(
                 "snap",
                 (ref_self_decl.ty(), generic_decls_tys),
                 snap_type,
-                &[ref_self_decl.as_dyn()]
-                    .into_iter()
-                    .chain(
-                        generic_decls
-                            .iter()
-                            .copied()
-                            .map(vir::LocalDeclData::as_dyn),
-                    )
-                    .collect::<Vec<_>>(),
+                (ref_self_decl, generic_decls),
                 &[vir::expr! { acc([self_pred](ref_self, ..[generic_exprs])) }],
                 &[],
                 Some(snap_expr),

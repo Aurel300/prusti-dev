@@ -8,7 +8,7 @@ use crate::encoders::{
 };
 use prusti_rustc_interface::middle::ty::{ParamTy, TyKind};
 use task_encoder::{EncodeFullError, TaskEncoder, TaskEncoderDependencies};
-use vir::{vir_format, CastType, FunctionIdn, HasType, PredicateIdn};
+use vir::{vir_format, FunctionIdn, HasType, PredicateIdn};
 
 pub fn domain<'vir>(
     prefix: &str,
@@ -159,10 +159,10 @@ pub fn domain<'vir>(
 pub(crate) fn predicate<'vir>(
     prefix: &str,
     fields: &[RustTyPredicatesEncOutputRef<'vir>],
-    task_key: <PredicateEnc as TaskEncoder>::TaskKey<'vir>,
-    snap: &SnapshotEncOutput<'vir>,
+    _task_key: <PredicateEnc as TaskEncoder>::TaskKey<'vir>,
+    _snap: &SnapshotEncOutput<'vir>,
     variant_field_snaps_to_snap: FunctionIdn<'vir, vir::ManySnap, vir::CSnap>,
-    deps: &mut TaskEncoderDependencies<'vir, PredicateEnc>,
+    _deps: &mut TaskEncoderDependencies<'vir, PredicateEnc>,
     generic_decls: &[vir::LocalDeclTyVal<'vir>],
     generic_exprs: &[vir::ExprTyVal<'vir>],
     builder: &mut PredicateBuilder<'vir>,
@@ -182,12 +182,6 @@ pub(crate) fn predicate<'vir>(
         .map(|f| deps.require_ref::<RustTyPredicatesEnc>(f.ty(builder.vcx.tcx(), params)).unwrap())
         .collect::<Vec<_>>();
     */
-
-    let snap_type = snap.snapshot;
-
-    let snap_self = builder.vcx.mk_local("self", snap_type);
-    let snap_self_decl = builder.vcx.mk_local_decl_local(snap_self);
-    let snap_self_ex: vir::ExprSnap = builder.vcx.mk_local_ex_local(snap_self);
 
     let ref_self = builder.vcx.mk_local("self", vir::TYPE_REF);
     let ref_self_decl = builder.vcx.mk_local_decl_local(ref_self);
@@ -210,15 +204,7 @@ pub(crate) fn predicate<'vir>(
                 &format!("{prefix}field_{idx}"),
                 (ref_self_decl.ty(), generic_decls_tys),
                 vir::TYPE_REF,
-                &[ref_self_decl.as_dyn()]
-                    .into_iter()
-                    .chain(
-                        generic_decls
-                            .iter()
-                            .cloned()
-                            .map(vir::LocalDeclData::as_dyn),
-                    )
-                    .collect::<Vec<_>>(),
+                (ref_self_decl, generic_decls),
                 &[], // TODO: should have a read permission here!
                 &[vir::expr! { ((ref_self) == (null)) == ((result: Ref) == (null)) }],
                 None,
@@ -234,15 +220,7 @@ pub(crate) fn predicate<'vir>(
     let pred_owned = builder.predicate::<(vir::Ref, vir::ManyTyVal)>(
         &pred_name,
         (ref_self_decl.ty(), generic_decls_tys),
-        &[ref_self_decl.as_dyn()]
-            .into_iter()
-            .chain(
-                generic_decls
-                    .iter()
-                    .copied()
-                    .map(vir::LocalDeclData::as_dyn),
-            )
-            .collect::<Vec<_>>(),
+        (ref_self_decl, generic_decls),
         Some(
             builder.vcx.mk_conj(
                 &fields

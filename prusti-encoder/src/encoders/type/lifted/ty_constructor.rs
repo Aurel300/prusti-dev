@@ -19,7 +19,7 @@ pub struct TyConstructorEncOutputRef<'vir> {
 }
 
 impl<'vir> TyConstructorEncOutputRef<'vir> {
-    pub fn arity(&self) -> <vir::ManyTyVal as Arity>::P<'vir> {
+    pub fn arity(&self) -> <vir::ManyTyVal as Arity>::Tys<'vir> {
         self.ty_constructor.arity()
     }
 
@@ -76,7 +76,7 @@ impl TaskEncoder for TyConstructorEnc {
                 generic_ref.type_snapshot,
             );
             functions.push(vcx.mk_domain_function(type_function_ident, false));
-            let ty_arg_decls: Vec<vir::LocalDeclDyn<'vir>> = args
+            let ty_arg_decls: Vec<vir::LocalDeclTyVal<'vir>> = args
                 .iter()
                 .enumerate()
                 .map(|(idx, _)| {
@@ -84,12 +84,11 @@ impl TaskEncoder for TyConstructorEnc {
                         vcx.alloc_str(&format!("arg_{}", idx)),
                         generic_ref.type_snapshot,
                     )
-                    .as_dyn()
                 })
                 .collect();
             let ty_arg_exprs: Vec<vir::ExprTyVal<'vir>> = ty_arg_decls
                 .iter()
-                .map(|decl| vcx.mk_local_ex(decl.name, decl.ty).downcast_ty())
+                .map(|decl| vcx.mk_local_ex(decl.name, decl.ty))
                 .collect::<Vec<_>>();
             let func_app = type_function_ident(ty_arg_exprs.as_slice());
 
@@ -117,7 +116,7 @@ impl TaskEncoder for TyConstructorEnc {
             )?;
 
             let axiom_qvars = vcx.alloc_slice(&ty_arg_decls);
-            let axiom_triggers = vcx.alloc_slice(&[vcx.mk_trigger(&[func_app.as_dyn()])]);
+            let axiom_triggers = vcx.alloc_slice(&[vcx.mk_trigger(&[func_app])]);
             for (accessor_function, ty_arg) in ty_accessor_functions.iter().zip(ty_arg_exprs.iter())
             {
                 functions.push(vcx.mk_domain_function(*accessor_function, false));

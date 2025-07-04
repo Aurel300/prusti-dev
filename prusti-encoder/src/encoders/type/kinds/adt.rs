@@ -206,11 +206,6 @@ pub(crate) fn predicate<'vir>(
 
     let snap_type = snap.snapshot.downcast_ty::<vir::CSnap>();
 
-    // TODO: why are these not used?
-    let snap_self = builder.vcx.mk_local("self", snap_type);
-    let snap_self_decl = builder.vcx.mk_local_decl_local(snap_self);
-    let snap_self_ex: vir::ExprCSnap = builder.vcx.mk_local_ex_local(snap_self);
-
     let ref_self = builder.vcx.mk_local("self", vir::TYPE_REF);
     let ref_self_decl = builder.vcx.mk_local_decl_local(ref_self);
     let ref_self_ex = builder.vcx.mk_local_ex_local(ref_self);
@@ -251,15 +246,7 @@ pub(crate) fn predicate<'vir>(
                         "snap",
                         (ref_self_decl.ty(), generic_tys),
                         snap_type,
-                        &[ref_self_decl.as_dyn()]
-                            .into_iter()
-                            .chain(
-                                generic_decls
-                                    .iter()
-                                    .copied()
-                                    .map(vir::LocalDeclData::as_dyn),
-                            )
-                            .collect::<Vec<_>>(),
+                        (ref_self_decl, generic_decls),
                         &[vir::expr! { acc([self_pred](ref_self, ..[generic_exprs])) }],
                         &[],
                         Some(snap_expr),
@@ -335,15 +322,7 @@ pub(crate) fn predicate<'vir>(
                         "snap",
                         (ref_self_decl.ty(), generic_tys),
                         snap_type,
-                        &[ref_self_decl.as_dyn()]
-                            .into_iter()
-                            .chain(
-                                generic_decls
-                                    .iter()
-                                    .copied()
-                                    .map(vir::LocalDeclData::as_dyn),
-                            )
-                            .collect::<Vec<_>>(),
+                        (ref_self_decl, generic_decls),
                         &[vir::expr! { acc([self_pred](ref_self, ..[generic_exprs])) }],
                         &[],
                         Some(snap_expr),
@@ -405,7 +384,7 @@ pub(crate) fn predicate<'vir>(
                 "field_discr",
                 ref_self_decl.ty(),
                 vir::TYPE_REF,
-                &[ref_self_decl.as_dyn()],
+                (ref_self_decl,),
                 &[],
                 &[vir::expr! { ((ref_self) == (null)) == ((result: Ref) == (null)) }],
                 None,
@@ -468,15 +447,7 @@ pub(crate) fn predicate<'vir>(
             let self_pred = builder.predicate::<(vir::Ref, vir::ManyTyVal)>(
                 "",
                 (ref_self_decl.ty(), generic_tys),
-                &[ref_self_decl.as_dyn()]
-                    .into_iter()
-                    .chain(
-                        generic_decls
-                            .iter()
-                            .copied()
-                            .map(vir::LocalDeclData::as_dyn),
-                    )
-                    .collect::<Vec<_>>(),
+                (ref_self_decl, generic_decls),
                 Some(vir::expr! {
                     ([discr_ty_out.ref_to_pred(builder.vcx, fdisc_func(ref_self_ex), None)])
                     && (([builder.vcx.mk_disj(&variants.iter()
@@ -494,9 +465,7 @@ pub(crate) fn predicate<'vir>(
                 (ref_self_decl.ty(),
                     generic_tys),
                 snap_type,
-                &[ref_self_decl.as_dyn()].into_iter()
-                    .chain(generic_decls.iter().copied().map(vir::LocalDeclData::as_dyn))
-                    .collect::<Vec<_>>(),
+                (ref_self_decl, generic_decls),
                 &[vir::expr! { acc([self_pred](ref_self, ..[generic_exprs])) }],
                 &[],
                 Some(vir::expr! {

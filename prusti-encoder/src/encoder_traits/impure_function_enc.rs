@@ -1,10 +1,9 @@
 use std::alloc::Global;
 
 use pcg::{borrow_checker::r#impl::BorrowCheckerImpl, r#loop::LoopAnalysis};
-use prusti_interface::specs::specifications::SpecQuery;
 use prusti_rustc_interface::middle::mir;
 use task_encoder::{EncodeFullError, TaskEncoder, TaskEncoderDependencies};
-use vir::{CastType, MethodIdn, ViperIdent};
+use vir::{MethodIdn, ViperIdent};
 
 use crate::{
     encoders::{
@@ -107,7 +106,7 @@ where
             let mut args = Vec::with_capacity(arg_count + substs.len());
             for arg_idx in 0..arg_count {
                 let name_p = local_defs.locals[arg_idx.into()].local.name;
-                args.push(vir::vir_local_decl! { vcx; [name_p] : Ref }.as_dyn());
+                args.push(vir::vir_local_decl! { vcx; [name_p] : Ref });
                 if arg_idx != 0 {
                     pres.push(local_defs.locals[arg_idx.into()].impure_pred);
                 }
@@ -220,8 +219,6 @@ where
                 None
             };
 
-            args.extend(param_ty_decls.iter().map(|d| d.as_dyn()));
-
             // Add functional specification as the last pre- and postconditions.
             pres.extend(spec.pres);
             posts.extend(spec.posts);
@@ -229,7 +226,7 @@ where
             Ok(ImpureFunctionEncOutput {
                 method: vcx.mk_method(
                     method_ref,
-                    vcx.alloc_slice(&args),
+                    (&args, &param_ty_decls),
                     &[],
                     vcx.alloc_slice(&pres),
                     vcx.alloc_slice(&posts),

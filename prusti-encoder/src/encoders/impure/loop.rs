@@ -31,8 +31,8 @@ use crate::{
     CastTypePure,
 };
 
-type ExprInput<'vir> = (DefId, &'vir [vir::Expr<'vir>]);
-type ExprRet<'vir> = vir::ExprGen<'vir, ExprInput<'vir>, vir::ExprKind<'vir>>;
+type ExprInput<'vir> = (DefId, &'vir [vir::ExprSnap<'vir>]);
+type ExprRet<'vir> = vir::ExprGenBool<'vir, ExprInput<'vir>, vir::ExprKind<'vir>>;
 
 pub(super) enum WandOldOuter<'vir> {
     LetBind(Vec<(&'vir str, vir::ExprSnap<'vir>)>),
@@ -300,7 +300,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
 
     fn build_loop_invariants_map(
         &mut self,
-    ) -> std::collections::HashMap<LoopId, Vec<vir::Expr<'vir>>> {
+    ) -> std::collections::HashMap<LoopId, Vec<vir::ExprBool<'vir>>> {
         let mut loop_invariants_map = std::collections::HashMap::new();
 
         for (block_idx, block_data) in self.body.basic_blocks.iter_enumerated() {
@@ -329,11 +329,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                                     *cl_args,
                                     &upvar_operands.raw,
                                 );
-                                let concrete_expr = unsafe {
-                                    std::mem::transmute::<ExprRet<'_>, vir::ExprGen<'_, !, !>>(
-                                        invariant_expr,
-                                    )
-                                };
+                                let concrete_expr = invariant_expr;
 
                                 loop_invariants_map
                                     .entry(innermost_loop_id)
@@ -354,7 +350,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         cl_def_id: DefId,
         _cl_args: ty::GenericArgsRef<'vir>,
         upvar_operands: &[mir::Operand<'vir>],
-    ) -> ExprRet<'vir> {
+    ) -> vir::ExprBool<'vir> {
         let tcx = self.vcx.tcx();
         let closure_ty = tcx.type_of(cl_def_id).instantiate_identity();
 
@@ -436,14 +432,12 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 .deps
                 .require_local::<RustTySnapshotsEnc>(upvar_ref_rust_ty)
                 .unwrap();
-            let field_s_ref_immutable_expr = s_ref_imm_enc_for_field
+            let field_s_ref_immutable_expr = (s_ref_imm_enc_for_field
                 .generic_snapshot
                 .specifics
                 .expect_immref()
-                .prim_to_snap
-                .apply(
-                    self.vcx,
-                    [original_place_viper_ref, param_for_snap_original],
+                .prim_to_snap)(
+                    original_place_viper_ref, param_for_snap_original
                 );
 
             fields_for_closure_struct.push(field_s_ref_immutable_expr);
@@ -454,12 +448,11 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             .require_local::<RustTySnapshotsEnc>(closure_ty)
             .unwrap();
         let closure_struct_val_expr = vir::with_vcx(|vcx| {
-            closure_struct_snapshots_enc
+            (closure_struct_snapshots_enc
                 .generic_snapshot
                 .specifics
                 .expect_structlike()
-                .field_snaps_to_snap
-                .apply(vcx, vcx.alloc_slice(&fields_for_closure_struct))
+                .field_snaps_to_snap)(vcx.alloc_slice(&fields_for_closure_struct.iter().map(|f| f.upcast_ty()).collect::<Vec<_>>()))
         });
 
         let closure_caster = self
@@ -467,7 +460,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             .require_local::<RustTyCastersEnc<CastTypePure>>(closure_ty)
             .unwrap();
         let closure_struct_as_param_expr =
-            closure_caster.cast_to_generic_if_necessary(self.vcx, closure_struct_val_expr);
+            closure_caster.cast_to_generic_if_necessary(self.vcx, closure_struct_val_expr.upcast_ty());
         let outer_ref_to_closure_rust_ty = tcx.mk_ty_from_kind(ty::TyKind::Ref(
             tcx.lifetimes.re_erased,
             closure_ty,
@@ -478,14 +471,14 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             .require_local::<RustTySnapshotsEnc>(outer_ref_to_closure_rust_ty)
             .unwrap();
 
-        let final_reify_arg0 = outer_s_ref_imm_enc
+        let final_reify_arg0 = (outer_s_ref_imm_enc
             .generic_snapshot
             .specifics
             .expect_immref()
-            .prim_to_snap
-            .apply(self.vcx, [self.vcx.mk_null(), closure_struct_as_param_expr]);
+            .prim_to_snap)(self.vcx.mk_null(), closure_struct_as_param_expr);
 
-        let mut reify_args = vec![final_reify_arg0];
+        let final_reify_arg0_generic = final_reify_arg0.upcast_ty();
+        let mut reify_args = vec![final_reify_arg0_generic];
         reify_args.extend(
             qvars
                 .iter()
@@ -507,7 +500,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
 
         let reified_body = body
             .reify(self.vcx, (cl_def_id, self.vcx.alloc_slice(&reify_args)))
-            .lift();
+            .downcast_ty();
 
         let bool_snapshots_enc = self
             .deps
@@ -521,9 +514,8 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         self.vcx.mk_forall_expr(
             qvars,
             &[],
-            bool_primitive_enc
-                .snap_to_prim
-                .apply(self.vcx, [reified_body]),
+            (bool_primitive_enc
+                .snap_to_prim)(reified_body).downcast_ty(),
         )
     }
 }

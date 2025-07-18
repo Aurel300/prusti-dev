@@ -220,7 +220,7 @@ struct Enc<'vir: 'enc, 'enc> {
     body: &'enc mir::Body<'vir>,
     rev_doms: rev_doms::ReverseDominators,
     deps: &'enc mut TaskEncoderDependencies<'vir, MirPureEnc>,
-    // Always holds the next version to be used for a local.
+    /// Always holds the next version to be used for a local.
     version_ctr: IndexVec<mir::Local, usize>,
     phi_ctr: usize,
     old_mode: bool,
@@ -1144,9 +1144,9 @@ mod rev_doms {
             let no_succ_blocks = blocks
                 .iter_enumerated()
                 .filter(|(_, data)| {
-                    /* The below prevents e.g. a SwitchInt with a branch going to
-                       an Unreachable terminator from having a join point, so do
-                       not treat such terminators as return blocks. */
+                    /* The commented line below prevents e.g. a SwitchInt with a branch
+                       going to an Unreachable terminator from having a join point, so
+                       do not treat such terminators as return blocks. */
                     // data.terminator().successors().next().is_none()
                     matches!(data.terminator().kind, mir::TerminatorKind::Return | mir::TerminatorKind::UnwindResume)
                 })

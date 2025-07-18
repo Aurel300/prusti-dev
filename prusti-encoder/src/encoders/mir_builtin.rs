@@ -86,6 +86,12 @@ impl TaskEncoder for MirBuiltinEnc {
             }
         })
     }
+
+    fn all_outputs<'vir>() -> Self::Output<'vir>
+        where
+            Self: 'vir {
+        Self::all_outputs_local()
+    }
 }
 
 // TODO: this function is also useful for the type encoder, extract?

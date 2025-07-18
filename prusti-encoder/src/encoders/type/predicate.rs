@@ -661,6 +661,12 @@ impl TaskEncoder for PredicateEnc {
             unsupported_type => todo!("type not supported: {unsupported_type:?}"),
         }
     }
+
+    fn all_outputs<'vir>() -> Self::Output<'vir>
+        where
+            Self: 'vir {
+        Self::all_outputs_local()
+    }
 }
 
 fn mk_method_assign<'vir>(

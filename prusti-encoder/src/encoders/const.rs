@@ -116,4 +116,10 @@ impl TaskEncoder for ConstEnc {
         };
         Ok((res, ()))
     }
+
+    fn all_outputs<'vir>() -> Self::Output<'vir>
+        where
+            Self: 'vir {
+        Self::all_outputs_local()
+    }
 }

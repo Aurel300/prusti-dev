@@ -49,6 +49,11 @@ pub trait TaskEncoder {
     where
         Self: 'vir;
 
+    /// The output that is used in the final Viper program.
+    type Output<'vir> = Vec<Self::OutputFullLocal<'vir>>
+    where
+        Self: 'vir;
+
     type EnqueueingError: Clone + std::fmt::Debug = ();
     type EncodingError: Clone + std::fmt::Debug;
 
@@ -375,7 +380,7 @@ pub trait TaskEncoder {
         deps: &mut TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self>;
 
-    fn all_outputs<'vir>() -> Vec<Self::OutputFullLocal<'vir>>
+    fn all_outputs_local<'vir>() -> Vec<Self::OutputFullLocal<'vir>>
     where
         Self: 'vir,
     {
@@ -383,15 +388,19 @@ pub trait TaskEncoder {
             cache
                 .borrow()
                 .iter()
-                .flat_map(|(_, cache_state)| {
+                .map(|(_, cache_state)| {
                     if let TaskEncoderCacheState::Encoded { output_local, .. } = cache_state {
-                        Some(output_local)
+                        output_local
                     } else {
-                        None
+                        panic!("task encoder not completed")
                     }
                 })
                 .cloned()
                 .collect()
         })
     }
+
+    fn all_outputs<'vir>() -> Self::Output<'vir>
+    where
+        Self: 'vir;
 }

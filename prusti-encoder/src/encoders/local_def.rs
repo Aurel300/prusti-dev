@@ -133,6 +133,12 @@ impl TaskEncoder for MirLocalDefEnc {
             Ok((data, ()))
         })
     }
+
+    fn all_outputs<'vir>() -> Self::Output<'vir>
+        where
+            Self: 'vir {
+        Self::all_outputs_local()
+    }
 }
 
 impl<'vir> Index<mir::Local> for MirLocalDefEncOutput<'vir> {

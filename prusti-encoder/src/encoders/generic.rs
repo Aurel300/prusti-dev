@@ -23,7 +23,6 @@ impl<'vir> task_encoder::OutputRefAny for GenericEncOutputRef<'vir> {}
 
 #[derive(Clone, Debug)]
 pub struct GenericEncOutput<'vir> {
-    pub type_snapshot: vir::Domain<'vir>,
     pub ref_to_pred: vir::Predicate<'vir>,
     pub param_snapshot: vir::Domain<'vir>,
     pub ref_to_snap: vir::Function<'vir>,
@@ -107,12 +106,17 @@ impl TaskEncoder for GenericEnc {
                         }
                     },
                     ref_to_pred: vir::vir_predicate! { vcx; predicate p_Param(self_p: Ref, t: Type) },
-                    type_snapshot: vir::vir_domain! { vcx; domain Type { } },
                     ref_to_snap,
                     unreachable_to_snap,
                 },
                 (),
             ))
         })
+    }
+
+    fn all_outputs<'vir>() -> Self::Output<'vir>
+        where
+            Self: 'vir {
+        Self::all_outputs_local()
     }
 }

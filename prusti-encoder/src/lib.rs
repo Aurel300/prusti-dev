@@ -104,9 +104,7 @@ pub fn test_entrypoint<'tcx>(
 
     header(&mut viper_code, "generics");
     for output in crate::encoders::GenericEnc::all_outputs() {
-        viper_code.push_str(&format!("{:?}\n", output.type_snapshot));
         viper_code.push_str(&format!("{:?}\n", output.param_snapshot));
-        program_domains.push(output.type_snapshot);
         program_domains.push(output.param_snapshot);
     }
 
@@ -141,10 +139,11 @@ pub fn test_entrypoint<'tcx>(
     }
 
     header(&mut viper_code, "type constructors");
-    for output in TyConstructorEnc::all_outputs() {
-        viper_code.push_str(&format!("{:?}\n", output.domain));
-        program_domains.push(output.domain);
-    }
+    let (adt, domain) = TyConstructorEnc::all_outputs();
+    viper_code.push_str(&format!("{:?}\n", adt));
+    viper_code.push_str(&format!("{:?}\n", domain));
+    program_adts.push(adt);
+    program_domains.push(domain);
 
     header(&mut viper_code, "types");
     for output in crate::encoders::PredicateEnc::all_outputs() {

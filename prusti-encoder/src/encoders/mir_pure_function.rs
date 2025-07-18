@@ -45,4 +45,10 @@ impl TaskEncoder for MirFunctionEnc {
     ) -> EncodeFullResult<'vir, Self> {
         Ok((<Self as PureFunctionEnc>::encode(*task_key, deps)?, ()))
     }
+
+    fn all_outputs<'vir>() -> Self::Output<'vir>
+        where
+            Self: 'vir {
+        Self::all_outputs_local()
+    }
 }

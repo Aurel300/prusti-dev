@@ -140,6 +140,12 @@ impl TaskEncoder for LiftedTyEnc<EncodeGenericsAsLifted> {
             Ok((result, ()))
         })
     }
+
+    fn all_outputs<'vir>() -> Self::Output<'vir>
+        where
+            Self: 'vir {
+        Self::all_outputs_local()
+    }
 }
 
 /// Generics are represented using  Rust [`ParamTy`] values. This allows for
@@ -182,5 +188,11 @@ impl TaskEncoder for LiftedTyEnc<EncodeGenericsAsParamTy> {
             };
             Ok((result, ()))
         })
+    }
+
+    fn all_outputs<'vir>() -> Self::Output<'vir>
+        where
+            Self: 'vir {
+        Self::all_outputs_local()
     }
 }

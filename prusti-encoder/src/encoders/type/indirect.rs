@@ -164,4 +164,10 @@ impl TaskEncoder for IndirectPredicatesEnc {
             Ok(((), ()))
         })
     }
+
+    fn all_outputs<'vir>() -> Self::Output<'vir>
+        where
+            Self: 'vir {
+        Self::all_outputs_local()
+    }
 }

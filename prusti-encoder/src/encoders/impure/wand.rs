@@ -1,9 +1,14 @@
 use pcg::{
     borrow_pcg::{
-        borrow_pcg_edge::{BorrowPcgEdgeLike, BorrowPcgEdgeRef}, edge::{abstraction::AbstractionType, kind::BorrowPcgEdgeKind}, graph::BorrowsGraph, region_projection::RegionProjection, state::BorrowsState, unblock_graph::UnblockGraph, AbstractionInputTarget, AbstractionOutputTarget
+        borrow_pcg_edge::{BorrowPcgEdgeLike, BorrowPcgEdgeRef},
+        edge::{abstraction::AbstractionType, kind::BorrowPcgEdgeKind},
+        graph::BorrowsGraph,
+        state::BorrowsState,
+        unblock_graph::UnblockGraph,
+        AbstractionInputTarget, AbstractionOutputTarget,
     },
     pcg::PCGNode,
-    utils::{maybe_old::MaybeOldPlace, maybe_remote::MaybeRemotePlace},
+    utils::maybe_remote::MaybeRemotePlace,
 };
 use task_encoder::TaskEncoder;
 

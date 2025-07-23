@@ -1,5 +1,5 @@
 use crate::encoders::{
-    domain::{DomainBuilder, DomainEnc, DomainEncOutputRef, FieldTy},
+    domain::{AdtBuilder, FieldTy},
     predicate::PredicateBuilder,
     rust_ty_predicates::RustTyPredicatesEncOutputRef,
     snapshot::SnapshotEncOutput, PredicateEnc,
@@ -11,7 +11,7 @@ use vir::{vir_format, CastType, FunctionIdn, HasType, PredicateIdn};
 pub fn domain<'vir>(
     prefix: &str,
     fields: &[FieldTy<'vir>],
-    builder: &mut DomainBuilder<'vir>,
+    builder: &mut AdtBuilder<'vir>,
     discr: Option<vir::ExprCSnap<'vir>>,
 ) -> (
     FunctionIdn<'vir, vir::ManySnap, vir::CSnap>,

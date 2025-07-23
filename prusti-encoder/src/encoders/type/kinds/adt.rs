@@ -1,7 +1,6 @@
 use crate::encoders::{
     domain::{
-        DomainBuilder, DomainDataEnum, DomainDataStruct, DomainDataVariant, DomainEnc,
-        DomainEncOutputRef, DomainEncSpecifics, FieldTy,
+        AdtBuilder, DomainDataEnum, DomainDataStruct, DomainDataVariant, DomainEnc, DomainEncOutputRef, DomainEncSpecifics, FieldTy, PureTypeBuilder, PureTypeCommon
     },
     lifted::ty::{EncodeGenericsAsParamTy, LiftedTyEnc},
     predicate::{
@@ -21,8 +20,9 @@ pub(crate) fn domain<'vir>(
     task_key: <DomainEnc as TaskEncoder>::TaskKey<'vir>,
     output_ref: &DomainEncOutputRef<'vir>,
     deps: &mut TaskEncoderDependencies<'vir, DomainEnc>,
-    builder: &mut DomainBuilder<'vir>,
-) -> Result<DomainEncSpecifics<'vir>, EncodeFullError<'vir, DomainEnc>> {
+    builder: PureTypeCommon<'vir>,
+) -> Result<(DomainEncSpecifics<'vir>, PureTypeBuilder<'vir>), EncodeFullError<'vir, DomainEnc>> {
+    let mut builder = AdtBuilder::new(builder);
     let ty = task_key.ty();
     let ty_kind = ty.kind();
     let ty::TyKind::Adt(adt, params) = ty_kind else {
@@ -54,27 +54,27 @@ pub(crate) fn domain<'vir>(
                     deps,
                     generics[0].to_ty(builder.vcx.tcx()),
                 )?],
-                builder,
+                &mut builder,
                 None,
             );
 
-            Ok(DomainEncSpecifics::StructLike(DomainDataStruct {
+            Ok((DomainEncSpecifics::StructLike(DomainDataStruct {
                 field_snaps_to_snap,
                 field_access,
-            }))
+            }), Ok(builder)))
         }
         ty::AdtKind::Struct => {
             let variant = adt.non_enum_variant();
             let fields = FieldTy::mk_field_tys(builder.vcx, deps, variant, params)?;
 
             let (field_snaps_to_snap, field_access) = super::structlike::domain(
-                "", &fields, builder, None,
+                "", &fields, &mut builder, None,
             );
 
-            Ok(DomainEncSpecifics::StructLike(DomainDataStruct {
+            Ok((DomainEncSpecifics::StructLike(DomainDataStruct {
                 field_snaps_to_snap,
                 field_access,
-            }))
+            }), Ok(builder)))
         }
         ty::AdtKind::Enum => {
             use prusti_rustc_interface::middle::ty::util::IntTypeExt;
@@ -104,7 +104,7 @@ pub(crate) fn domain<'vir>(
                     let (field_snaps_to_snap, field_access) = super::structlike::domain(
                         &format!("{var_idx_num}_"),
                         &fields,
-                        builder,
+                        &mut builder,
                         Some(discr),
                     );
 
@@ -123,13 +123,13 @@ pub(crate) fn domain<'vir>(
             // discriminant can only have the selected values
             let snap_to_discr_snap = builder.build_discr_fn(discr_ty.snapshot.downcast_ty());
 
-            Ok(DomainEncSpecifics::EnumLike(Some(DomainDataEnum {
+            Ok((DomainEncSpecifics::EnumLike(Some(DomainDataEnum {
                 discr_ty: discr_ty.snapshot,
                 discr_prim,
                 //pub discr_bounds: DiscrBounds<'vir>,
                 snap_to_discr_snap,
                 variants: builder.vcx.alloc_slice(&variants), //pub variants: &'vir [DomainDataVariant<'vir>],
-            })))
+            })), Ok(builder)))
 
             /*
             let variants = if variants.is_empty() {

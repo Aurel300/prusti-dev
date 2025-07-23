@@ -1,5 +1,5 @@
 use crate::encoders::{
-    domain::{DomainBuilder, DomainDataMutRef, DomainEnc, DomainEncSpecifics},
+    domain::{AdtBuilder, DomainDataMutRef, DomainEnc, DomainEncSpecifics, PureTypeBuilder, PureTypeCommon},
     predicate::{PredicateBuilder, PredicateEncData, PredicateEncDataMutRef, RefToIndirectPred},
     rust_ty_snapshots::RustTySnapshotsEnc,
     snapshot::SnapshotEncOutput,
@@ -12,8 +12,9 @@ use vir::{CastType, HasType};
 pub(crate) fn domain<'vir>(
     task_key: <DomainEnc as TaskEncoder>::TaskKey<'vir>,
     deps: &mut TaskEncoderDependencies<'vir, DomainEnc>,
-    builder: &mut DomainBuilder<'vir>,
-) -> Result<DomainEncSpecifics<'vir>, EncodeFullError<'vir, DomainEnc>> {
+    builder: PureTypeCommon<'vir>,
+) -> Result<(DomainEncSpecifics<'vir>, PureTypeBuilder<'vir>), EncodeFullError<'vir, DomainEnc>> {
+    let mut builder = AdtBuilder::new(builder);
     let ty = task_key.ty();
     let ty_kind = ty.kind();
     let ty::TyKind::Ref(_, inner_ty, ty::Mutability::Mut) = ty_kind else {
@@ -24,11 +25,11 @@ pub(crate) fn domain<'vir>(
     let inner_type = inner_ty_out.generic_snapshot.snapshot.downcast_ty();
     let (field_snaps_to_snap, field_access) = builder.constructor("", (vir::TYPE_REF, inner_type), None);
 
-    Ok(DomainEncSpecifics::MutRef(DomainDataMutRef {
+    Ok((DomainEncSpecifics::MutRef(DomainDataMutRef {
         prim_to_snap: field_snaps_to_snap,
         deref_access: field_access[0].downcast_ty(),
         value_access: field_access[1].downcast_ty(),
-    }))
+    }), Ok(builder)))
 }
 
 pub(crate) fn predicate<'vir>(

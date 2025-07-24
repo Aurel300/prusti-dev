@@ -199,6 +199,9 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         vcx: &'vir vir::VirCtxt<'vir>,
         at: SnapshotLocation,
     ) -> vir::OldLabel<'vir> {
+        if let SnapshotLocation::Start(bb) | SnapshotLocation::Loop(bb) = at {
+            return vir::OldLabel::Block(vir::CfgBlockLabelData::BasicBlock(bb.as_usize()));
+        }
         let label_identifier = match at {
             SnapshotLocation::Start(_) => "start",
             SnapshotLocation::Prepare(_) => "prepare",
@@ -208,22 +211,15 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             SnapshotLocation::Loop(_) => "loop",
             SnapshotLocation::BeforeRefReassignment(_) => "before_ref_reassignment",
         };
-        match at {
-            SnapshotLocation::Start(bb) | SnapshotLocation::Loop(bb) => {
-                vir::OldLabel::Block(vir::CfgBlockLabelData::BasicBlock(bb.as_usize()))
-            }
-            other => {
-                let location = other.location();
-                let label = vir::vir_format!(
-                    vcx,
-                    "_{}_{}_{}",
-                    label_identifier,
-                    location.block.index(),
-                    location.statement_index
-                );
-                vir::OldLabel::Label(label)
-            }
-        }
+        let location = at.location();
+        let label = vir::vir_format!(
+            vcx,
+            "_{}_{}_{}",
+            label_identifier,
+            location.block.index(),
+            location.statement_index
+        );
+        vir::OldLabel::Label(label)
     }
 
     fn mk_wand_outer<T: vir::CompType>(

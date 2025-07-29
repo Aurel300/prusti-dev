@@ -26,6 +26,7 @@ use prusti_rustc_interface::{
     span::def_id::DefId,
     target::abi,
 };
+use prusti_utils::config;
 use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 use vir::{CastType, CompType};
 
@@ -1607,6 +1608,35 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                             self.vcx.mk_assume_false_stmt()
                         })
                     })
+            }
+            // If we are not checking for overflows, encode an overflow-checking
+            // assertion as a goto.
+            mir::TerminatorKind::Assert {
+                msg,
+                target,
+                ..
+            } if !config::check_overflows() && matches!(**msg, mir::AssertMessage::Overflow(..) | mir::AssertMessage::OverflowNeg(..)) => {
+                const REAL_TARGET_SUCC_IDX: usize = 0;
+                // Ensure that the terminator succ that we use for the repacks is the correct one
+                assert_eq!(
+                    &self.current_fpcs.as_ref().unwrap().terminator.succs[REAL_TARGET_SUCC_IDX]
+                        .block(),
+                    target
+                );
+                let current_fpcs = self.current_fpcs.take().unwrap();
+                let borrows =
+                    current_fpcs.statements.last().unwrap().states[EvalStmtPhase::PostMain].clone();
+                self.pcs_succ(
+                    &borrows,
+                    &current_fpcs.terminator.succs[REAL_TARGET_SUCC_IDX],
+                );
+                self.current_fpcs = Some(current_fpcs);
+                let set_flag = self.set_from_to_flag(location.block, *target);
+                self.stmt(set_flag);
+                self.vcx.mk_goto_stmt(
+                    self.vcx
+                        .alloc(vir::CfgBlockLabelData::BasicBlock(target.as_usize())),
+                )
             }
             mir::TerminatorKind::Assert {
                 cond,

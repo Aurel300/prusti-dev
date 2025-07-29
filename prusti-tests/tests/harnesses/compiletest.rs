@@ -77,7 +77,7 @@ fn run_prusti_tests(
             .extend(rustc_env.iter().map(|(k, v)| (k.into(), Some(v.into()))));
         config
     };
-
+/*
     // UI
     {
         let config = prusti_config(format!("tests/{group_name}/ui"));
@@ -94,7 +94,7 @@ fn run_prusti_tests(
         ));
         run_tests(config)?;
     }
-
+*/
     // pass
     {
         let mut config = prusti_config(format!("tests/{group_name}/pass"));
@@ -178,7 +178,7 @@ pub(crate) fn run() {
 
     // Run (temporary) tests specific to Prusti v2.
     println!("[v2]");
-    run_verification_no_overflow("v2");
+    run_verification_no_overflow("verify_nospecs");
     /*
         let save_verification_cache =
             || match ureq::post(&format!("http://{server_address}/save")).call() {

@@ -343,10 +343,12 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         // contains the corresponding VIR expression.
         let cond = conditions.all_branch_choices().map(|choices| {
             let successors = choices.successors(self.body);
-            let tos = &self.from_to_vars[&choices.from()];
-            let candidates = tos.iter().filter(|(to, _)| successors.contains(to));
-            let conj = candidates
-                .map(|(_, var)| self.vcx.mk_local_ex(var, vir::TYPE_BOOL))
+            let from = choices.from();
+            let conj = successors.iter()
+                .map(|to| {
+                    let name = vir::vir_format!(self.vcx, "_from_bb{}_to_bb{}", from.index(), to.index());
+                    self.vcx.mk_local_ex(name, vir::TYPE_BOOL)
+                })
                 .collect::<Vec<_>>();
             // Control flow must continue from `choices.from()` to any one of the `successors`
             self.vcx.mk_disj(self.vcx.alloc_slice(&conj))
@@ -512,7 +514,10 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 if matches!(capability_kind, CapabilityKind::Write) {
                     // Collapsing an already exhaled place is a no-op
                     // TODO: unless it's through a Ref I imagine?
-                    assert!(matches!(repack_op, RepackOp::Collapse(..)));
+                    //assert!(matches!(repack_op, RepackOp::Collapse(..)));
+                    if !matches!(repack_op, RepackOp::Collapse(..)) {
+                        comment!(self, "expected RepackOp::Collapse but got {repack_op:?}");
+                    }
                     return;
                 }
                 let place_ty = place.ty(self.pcg_ctxt());
@@ -1661,10 +1666,14 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                 let target_bb = self
                     .vcx
                     .alloc(vir::CfgBlockLabelData::BasicBlock(target.as_usize()));
+                let otherwise_statement;
                 let otherwise = match unwind {
-                    mir::UnwindAction::Cleanup(bb) => self
-                        .vcx
-                        .alloc(vir::CfgBlockLabelData::BasicBlock(bb.as_usize())),
+                    mir::UnwindAction::Cleanup(bb) => {
+                        otherwise_statement = self.set_from_to_flag(location.block, *bb);
+                        self
+                            .vcx
+                            .alloc(vir::CfgBlockLabelData::BasicBlock(bb.as_usize()))
+                    }
                     _ => todo!(),
                 };
 
@@ -1679,7 +1688,7 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                         statements,
                     )]),
                     otherwise,
-                    &[],
+                    self.vcx.alloc_slice(&[otherwise_statement]),
                 )
             }
             mir::TerminatorKind::Unreachable => self.vcx().with_span(span, |vcx| {

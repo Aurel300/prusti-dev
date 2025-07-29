@@ -201,6 +201,13 @@ impl<'tcx> crate::VirCtxt<'tcx> {
         }
     }
 
+    pub const fn mk_int_neghack<'vir>(&'vir self) -> ExprInt<'vir> {
+        const_expr!(&ExprKindGenData::UnOp(&UnOpData {
+            kind: UnOpKind::Neg,
+            expr: const_expr!(&ExprKindGenData::Const(&ConstData::Int(170141183460469231731687303715884105728u128)), Int => TypePrim),
+        }), Int => TypeInt)
+    }
+
     pub const fn mk_uint<'vir, const VALUE: u128>(&'vir self) -> ExprInt<'vir> {
         const_expr!(&ExprKindGenData::<(), !>::Const(&ConstData::Int(VALUE)), Int => TypeInt)
     }

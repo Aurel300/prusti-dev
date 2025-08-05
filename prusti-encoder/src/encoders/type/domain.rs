@@ -7,7 +7,7 @@ use std::ops::Deref;
 use prusti_rustc_interface::{
     middle::ty::{self, IntTy, ParamTy, TyKind, UintTy},
     span::symbol,
-    target::abi,
+    abi,
 };
 use task_encoder::{EncodeFullError, EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 use vir::{
@@ -519,6 +519,7 @@ impl<'vir> DomainDataPrim<'vir> {
                         ((std::mem::size_of::<usize>() * 8) as u64, true)
                     }
                     TyKind::Uint(ty) => (ty.bit_width().unwrap(), false),
+                    TyKind::Char => (32, false),
                     kind => unreachable!("{kind:?}"),
                 };
                 let size = abi::Size::from_bits(bit_width);

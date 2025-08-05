@@ -24,8 +24,9 @@ use prusti_rustc_interface::{
         ty::{self, GenericArgs, TyKind},
     },
     span::def_id::DefId,
-    target::abi,
+    abi,
 };
+use prusti_utils::config;
 use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 use vir::{CastType, CompType};
 
@@ -169,7 +170,7 @@ impl<'vir, E: TaskEncoder> PureFuncAppEnc<'vir, E> for ImpureEncVisitor<'vir, '_
 
 pub(crate) struct EncodePlaceResult<'vir> {
     pub(crate) expr: vir::ExprRef<'vir>,
-    pub(crate) ty: mir::tcx::PlaceTy<'vir>,
+    pub(crate) ty: mir::PlaceTy<'vir>,
 }
 
 macro_rules! comment {
@@ -343,10 +344,12 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         // contains the corresponding VIR expression.
         let cond = conditions.all_branch_choices().map(|choices| {
             let successors = choices.successors(self.body);
-            let tos = &self.from_to_vars[&choices.from()];
-            let candidates = tos.iter().filter(|(to, _)| successors.contains(to));
-            let conj = candidates
-                .map(|(_, var)| self.vcx.mk_local_ex(var, vir::TYPE_BOOL))
+            let from = choices.from();
+            let conj = successors.iter()
+                .map(|to| {
+                    let name = vir::vir_format!(self.vcx, "_from_bb{}_to_bb{}", from.index(), to.index());
+                    self.vcx.mk_local_ex(name, vir::TYPE_BOOL)
+                })
                 .collect::<Vec<_>>();
             // Control flow must continue from `choices.from()` to any one of the `successors`
             self.vcx.mk_disj(self.vcx.alloc_slice(&conj))
@@ -512,7 +515,10 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 if matches!(capability_kind, CapabilityKind::Write) {
                     // Collapsing an already exhaled place is a no-op
                     // TODO: unless it's through a Ref I imagine?
-                    assert!(matches!(repack_op, RepackOp::Collapse(..)));
+                    //assert!(matches!(repack_op, RepackOp::Collapse(..)));
+                    if !matches!(repack_op, RepackOp::Collapse(..)) {
+                        comment!(self, "expected RepackOp::Collapse but got {repack_op:?}");
+                    }
                     return;
                 }
                 let place_ty = place.ty(self.pcg_ctxt());
@@ -629,7 +635,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 // coincides with taking a snapshot of the heap accesses we
                 // have performed thus far, or, if the local variable itself is
                 // a shared reference, it happens immediately.
-                let mut place_ty = mir::tcx::PlaceTy::from_ty(self.local_decls[place.local].ty);
+                let mut place_ty = mir::PlaceTy::from_ty(self.local_decls[place.local].ty);
                 let mut encoded_place = mir::Place::from(place.local);
                 let (mut crossed_ref, mut result) =
                     if matches!(place_ty.ty.kind(), TyKind::Ref(_, _, ty::Mutability::Not)) {
@@ -638,10 +644,10 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                             .require_ref::<RustTyPredicatesEnc>(place_ty.ty)
                             .unwrap();
                         let snap_val = ty_out
-                            .ref_to_snap(self.vcx, self.local_defs.locals[place.local].local_ex);
+                            .ref_to_snap(self.vcx, self.local_defs[place.local].local_ex);
                         (true, snap_val.as_dyn())
                     } else {
-                        (false, self.local_defs.locals[place.local].local_ex.as_dyn())
+                        (false, self.local_defs[place.local].local_ex.as_dyn())
                     };
                 for elem in place.projection {
                     if crossed_ref {
@@ -725,9 +731,9 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
     }
 
     pub(crate) fn encode_place(&mut self, place: Place<'vir>) -> EncodePlaceResult<'vir> {
-        let mut place_ty = mir::tcx::PlaceTy::from_ty(self.local_decls[place.local].ty);
+        let mut place_ty = mir::PlaceTy::from_ty(self.local_decls[place.local].ty);
         let mut encoded_place = mir::Place::from(place.local);
-        let mut result = self.local_defs.locals[place.local].local_ex;
+        let mut result = self.local_defs[place.local].local_ex;
         // TODO: factor this out (duplication with pure encoder)?
         for &elem in place.projection {
             result = self.encode_place_element(place_ty, elem, result);
@@ -819,7 +825,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
     ) -> (
         EncodePlaceResult<'vir>,
         vir::ExprSnap<'vir>,
-        mir::tcx::PlaceTy<'vir>,
+        mir::PlaceTy<'vir>,
         RustTyPredicatesEncOutputRef<'vir>,
     ) {
         let ty = (*place).ty(self.local_decls, self.vcx.tcx());
@@ -833,7 +839,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
 
     fn encode_place_element(
         &mut self,
-        place_ty: mir::tcx::PlaceTy<'vir>,
+        place_ty: mir::PlaceTy<'vir>,
         elem: mir::PlaceElem<'vir>,
         expr: vir::ExprRef<'vir>,
     ) -> vir::ExprRef<'vir> {
@@ -1603,6 +1609,35 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                         })
                     })
             }
+            // If we are not checking for overflows, encode an overflow-checking
+            // assertion as a goto.
+            mir::TerminatorKind::Assert {
+                msg,
+                target,
+                ..
+            } if !config::check_overflows() && matches!(**msg, mir::AssertMessage::Overflow(..) | mir::AssertMessage::OverflowNeg(..)) => {
+                const REAL_TARGET_SUCC_IDX: usize = 0;
+                // Ensure that the terminator succ that we use for the repacks is the correct one
+                assert_eq!(
+                    &self.current_fpcs.as_ref().unwrap().terminator.succs[REAL_TARGET_SUCC_IDX]
+                        .block(),
+                    target
+                );
+                let current_fpcs = self.current_fpcs.take().unwrap();
+                let borrows =
+                    current_fpcs.statements.last().unwrap().states[EvalStmtPhase::PostMain].clone();
+                self.pcs_succ(
+                    &borrows,
+                    &current_fpcs.terminator.succs[REAL_TARGET_SUCC_IDX],
+                );
+                self.current_fpcs = Some(current_fpcs);
+                let set_flag = self.set_from_to_flag(location.block, *target);
+                self.stmt(set_flag);
+                self.vcx.mk_goto_stmt(
+                    self.vcx
+                        .alloc(vir::CfgBlockLabelData::BasicBlock(target.as_usize())),
+                )
+            }
             mir::TerminatorKind::Assert {
                 cond,
                 expected,
@@ -1649,7 +1684,16 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                     }
                     mir::AssertMessage::MisalignedPointerDereference { .. } => {
                         "misaligned pointer may be dereferenced"
-                    } // mir::AssertMessage::NullPointerDereference => "",
+                    }
+                    mir::AssertKind::ResumedAfterDrop(..) => {
+                        "execution may continue after drop"
+                    }
+                    mir::AssertKind::NullPointerDereference => {
+                        "null pointer may be dereferenced"
+                    }
+                    mir::AssertKind::InvalidEnumConstruction(..) => {
+                        "invalid enum construction may occur"
+                    }
                 };
                 self.vcx().with_span(span, |vcx| {
                     vcx.handle_error("exhale.failed:assertion.false", move |_| {
@@ -1661,10 +1705,14 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                 let target_bb = self
                     .vcx
                     .alloc(vir::CfgBlockLabelData::BasicBlock(target.as_usize()));
+                let otherwise_statement;
                 let otherwise = match unwind {
-                    mir::UnwindAction::Cleanup(bb) => self
-                        .vcx
-                        .alloc(vir::CfgBlockLabelData::BasicBlock(bb.as_usize())),
+                    mir::UnwindAction::Cleanup(bb) => {
+                        otherwise_statement = self.set_from_to_flag(location.block, *bb);
+                        self
+                            .vcx
+                            .alloc(vir::CfgBlockLabelData::BasicBlock(bb.as_usize()))
+                    }
                     _ => todo!(),
                 };
 
@@ -1679,7 +1727,7 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                         statements,
                     )]),
                     otherwise,
-                    &[],
+                    self.vcx.alloc_slice(&[otherwise_statement]),
                 )
             }
             mir::TerminatorKind::Unreachable => self.vcx().with_span(span, |vcx| {

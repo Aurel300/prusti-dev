@@ -24,6 +24,12 @@ pub fn ensures(_attr: TokenStream, tokens: TokenStream) -> TokenStream {
 
 #[cfg(not(feature = "prusti"))]
 #[proc_macro_attribute]
+pub fn async_invariant(_attr: TokenStream, tokens: TokenStream) -> TokenStream {
+    tokens
+}
+
+#[cfg(not(feature = "prusti"))]
+#[proc_macro_attribute]
 pub fn after_expiry(_attr: TokenStream, tokens: TokenStream) -> TokenStream {
     tokens
 }
@@ -130,6 +136,12 @@ pub fn body_variant(_tokens: TokenStream) -> TokenStream {
     TokenStream::new()
 }
 
+#[cfg(not(feature = "prusti"))]
+#[proc_macro]
+pub fn suspension_point(tokens: TokenStream) -> TokenStream {
+    tokens
+}
+
 // ----------------------
 // --- PRUSTI ENABLED ---
 
@@ -146,6 +158,12 @@ pub fn requires(attr: TokenStream, tokens: TokenStream) -> TokenStream {
 #[proc_macro_attribute]
 pub fn ensures(attr: TokenStream, tokens: TokenStream) -> TokenStream {
     rewrite_prusti_attributes(SpecAttributeKind::Ensures, attr.into(), tokens.into()).into()
+}
+
+#[cfg(feature = "prusti")]
+#[proc_macro_attribute]
+pub fn async_invariant(attr: TokenStream, tokens: TokenStream) -> TokenStream {
+    rewrite_prusti_attributes(SpecAttributeKind::AsyncInvariant, attr.into(), tokens.into()).into()
 }
 
 #[cfg(feature = "prusti")]
@@ -271,6 +289,12 @@ pub fn terminates(attr: TokenStream, tokens: TokenStream) -> TokenStream {
 #[proc_macro]
 pub fn body_variant(tokens: TokenStream) -> TokenStream {
     prusti_specs::body_variant(tokens.into()).into()
+}
+
+#[cfg(feature = "prusti")]
+#[proc_macro]
+pub fn suspension_point(tokens: TokenStream) -> TokenStream {
+    prusti_specs::suspension_point(tokens.into()).into()
 }
 
 // Ensure that you've also crated a transparent `#[cfg(not(feature = "prusti"))]`

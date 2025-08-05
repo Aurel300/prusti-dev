@@ -966,7 +966,7 @@ impl<'tcx> VirCtxt<'tcx> {
             (i16::BITS, true) => self.mk_int::<{ i16::MIN as i128 }>(),
             (i32::BITS, true) => self.mk_int::<{ i32::MIN as i128 }>(),
             (i64::BITS, true) => self.mk_int::<{ i64::MIN as i128 }>(),
-            (i128::BITS, true) => self.mk_int_neghack(), // self.mk_int::<{ i128::MIN }>(),
+            (i128::BITS, true) => self.mk_int::<{ i128::MIN }>(),
             (_, true) => unreachable!(),
         }
     }

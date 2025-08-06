@@ -169,12 +169,6 @@ impl TaskEncoder for MirPureEnc {
 
         Ok((MirPureEncOutput { expr }, ()))
     }
-
-    fn all_outputs<'vir>() -> Self::Output<'vir>
-        where
-            Self: 'vir {
-        Self::all_outputs_local()
-    }
 }
 
 #[derive(Debug, Default)]

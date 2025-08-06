@@ -63,10 +63,4 @@ impl TaskEncoder for SnapshotEnc {
             ))
         })
     }
-
-    fn all_outputs<'vir>() -> Self::Output<'vir>
-        where
-            Self: 'vir {
-        Self::all_outputs_local()
-    }
 }

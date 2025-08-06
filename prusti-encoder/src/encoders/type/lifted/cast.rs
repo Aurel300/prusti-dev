@@ -213,12 +213,6 @@ impl TaskEncoder for CastToEnc<CastTypePure> {
         deps.emit_output_ref(*task_key, output_ref)?;
         Ok(((), ()))
     }
-
-    fn all_outputs<'vir>() -> Self::Output<'vir>
-        where
-            Self: 'vir {
-        Self::all_outputs_local()
-    }
 }
 
 impl TaskEncoder for CastToEnc<CastTypeImpure> {
@@ -239,11 +233,5 @@ impl TaskEncoder for CastToEnc<CastTypeImpure> {
         let output_ref = Self::encode_cast(*task_key, deps);
         deps.emit_output_ref(*task_key, output_ref)?;
         Ok(((), ()))
-    }
-
-    fn all_outputs<'vir>() -> Self::Output<'vir>
-        where
-            Self: 'vir {
-        Self::all_outputs_local()
     }
 }

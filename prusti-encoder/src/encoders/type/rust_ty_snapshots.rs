@@ -54,10 +54,4 @@ impl TaskEncoder for RustTySnapshotsEnc {
             Ok((RustTySnapshotsEncOutput { generic_snapshot }, ()))
         })
     }
-
-    fn all_outputs<'vir>() -> Self::Output<'vir>
-        where
-            Self: 'vir {
-        Self::all_outputs_local()
-    }
 }

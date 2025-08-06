@@ -130,12 +130,6 @@ impl TaskEncoder for SpecEnc {
             ))
         })
     }
-
-    fn all_outputs<'vir>() -> Self::Output<'vir>
-        where
-            Self: 'vir {
-        Self::all_outputs_local()
-    }
 }
 
 fn get_spec_items<'vir, T: Copy>(

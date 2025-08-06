@@ -350,10 +350,12 @@ impl TaskEncoder for CastersEnc<CastTypePure> {
         })
     }
 
-    fn all_outputs<'vir>() -> Self::Output<'vir>
-        where
-            Self: 'vir {
-        Self::all_outputs_local()
+    fn emit_outputs<'vir>(program: &mut task_encoder::Program<'vir>) {
+        for output in Self::all_outputs_local() {
+            for function in output {
+                program.add_function(function);
+            }
+        }
     }
 }
 
@@ -464,9 +466,11 @@ impl TaskEncoder for CastersEnc<CastTypeImpure> {
         })
     }
 
-    fn all_outputs<'vir>() -> Self::Output<'vir>
-        where
-            Self: 'vir {
-        Self::all_outputs_local()
+    fn emit_outputs<'vir>(program: &mut task_encoder::Program<'vir>) {
+        for output in Self::all_outputs_local() {
+            for method in output {
+                program.add_method(method);
+            }
+        }
     }
 }

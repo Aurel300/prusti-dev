@@ -104,20 +104,19 @@ pub struct DomainEncOutputRef<'vir> {
 
 impl<'vir> task_encoder::OutputRefAny for DomainEncOutputRef<'vir> {}
 
-pub fn all_outputs<'vir>() -> (
-    Vec<vir::Domain<'vir>>,
-    Vec<(vir::Adt<'vir>, Option<vir::Function<'vir>>)>,
-) {
-    let mut domains = Vec::new();
-    let mut adts = Vec::new();
-    for output in DomainEnc::all_outputs() {
+pub fn emit_outputs<'vir>(program: &mut task_encoder::Program<'vir>) {
+    for output in DomainEnc::all_outputs_local() {
         match output {
-            DomainEncOutput::Domain(domain) => domains.push(domain),
-            DomainEncOutput::Adt { adt, discr_fn } => adts.push((adt, discr_fn)),
+            DomainEncOutput::Domain(domain) => program.add_domain(domain),
+            DomainEncOutput::Adt { adt, discr_fn } => {
+                program.add_adt(adt);
+                if let Some(discr_fn) = discr_fn {
+                    program.add_function(discr_fn);
+                }
+            }
             DomainEncOutput::None => {}
         }
     }
-    (domains, adts)
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -197,12 +196,6 @@ impl TaskEncoder for DomainEnc {
             };
             Ok((PureTypeCommon::build(builder), specifics))
         })
-    }
-
-    fn all_outputs<'vir>() -> Self::Output<'vir>
-        where
-            Self: 'vir {
-        Self::all_outputs_local()
     }
 }
 

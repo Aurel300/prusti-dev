@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use prusti_rustc_interface::middle::ty::{GenericArgsRef, Ty, TyKind};
-use task_encoder::{EncodeFullResult, TaskEncoder};
+use task_encoder::{EncodeFullResult, Program, TaskEncoder};
 
 use super::{
     generic::LiftedGeneric,
@@ -53,10 +53,8 @@ impl TaskEncoder for LiftedFuncAppTyParamsEnc {
         })
     }
 
-    fn all_outputs<'vir>() -> Self::Output<'vir>
-        where
-            Self: 'vir {
-        Self::all_outputs_local()
+    fn emit_outputs<'vir>(program: &mut Program<'vir>) {
+        let outputs = Self::all_outputs_local();
     }
 }
 

@@ -104,12 +104,6 @@ impl TaskEncoder for MirImpureEnc {
         };
         Ok((output, ()))
     }
-
-    fn all_outputs<'vir>() -> Self::Output<'vir>
-        where
-            Self: 'vir {
-        Self::all_outputs_local()
-    }
 }
 
 pub struct ImpureEncVisitor<'vir, 'enc, E: TaskEncoder>

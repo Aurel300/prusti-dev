@@ -65,8 +65,6 @@ impl TaskEncoder for TyConstructorEnc {
 
     type OutputFullLocal<'vir> = TyConstructorEncOutput<'vir>;
 
-    type Output<'vir> = (vir::Adt<'vir>, vir::Domain<'vir>);
-
     type EncodingError = ();
 
     fn task_to_key<'vir>(task: &Self::TaskDescription<'vir>) -> Self::TaskKey<'vir> {
@@ -130,9 +128,7 @@ impl TaskEncoder for TyConstructorEnc {
         })
     }
 
-    fn all_outputs<'vir>() -> Self::Output<'vir>
-        where
-            Self: 'vir {
+    fn emit_outputs<'vir>(program: &mut task_encoder::Program<'vir>) {
         let all = Self::all_outputs_local();
         vir::with_vcx(|vcx| {
             let mut typeof_fns = Vec::new();
@@ -147,8 +143,9 @@ impl TaskEncoder for TyConstructorEnc {
                 .chain([unknown])
                 .collect::<Vec<_>>();
             let adt = vcx.mk_adt(vir::ViperIdent::new("Type"), &[], vcx.alloc_slice(&constructors));
+            program.add_adt(adt);
             let domain = vcx.mk_domain(vir::ViperIdent::new("TypeOf"), &[], &[], vcx.alloc_slice(&typeof_fns));
-            (adt, domain)
+            program.add_domain(domain);
         })
     }
 }

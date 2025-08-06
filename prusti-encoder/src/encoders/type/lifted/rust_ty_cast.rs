@@ -123,12 +123,6 @@ impl TaskEncoder for RustTyCastersEnc<CastTypePure> {
         deps.emit_output_ref(*task_key, ())?;
         Ok((Self::encode(task_key, deps), ()))
     }
-
-    fn all_outputs<'vir>() -> Self::Output<'vir>
-        where
-            Self: 'vir {
-        Self::all_outputs_local()
-    }
 }
 
 impl TaskEncoder for RustTyCastersEnc<CastTypeImpure> {
@@ -152,11 +146,5 @@ impl TaskEncoder for RustTyCastersEnc<CastTypeImpure> {
     ) -> EncodeFullResult<'vir, Self> {
         deps.emit_output_ref(*task_key, ())?;
         Ok((Self::encode(task_key, deps), ()))
-    }
-
-    fn all_outputs<'vir>() -> Self::Output<'vir>
-        where
-            Self: 'vir {
-        Self::all_outputs_local()
     }
 }

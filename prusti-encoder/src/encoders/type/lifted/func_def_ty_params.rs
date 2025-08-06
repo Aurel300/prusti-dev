@@ -41,12 +41,6 @@ impl TaskEncoder for LiftedTyParamsEnc {
             Ok((vcx.alloc_slice(&ty_args), ()))
         })
     }
-
-    fn all_outputs<'vir>() -> Self::Output<'vir>
-        where
-            Self: 'vir {
-        Self::all_outputs_local()
-    }
 }
 
 fn unique(iter: impl IntoIterator<Item = ParamTy>) -> impl Iterator<Item = ParamTy> {

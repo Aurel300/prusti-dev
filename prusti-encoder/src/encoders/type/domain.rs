@@ -183,10 +183,6 @@ impl DomainEnc {
 
 impl<'vir> task_encoder::OutputRefAny for DomainEncOutputRef<'vir> {}
 
-pub fn emit_outputs<'vir>(program: &mut task_encoder::Program<'vir>) {
-    DomainEnc::emit_outputs(program);
-}
-
 impl TaskEncoder for DomainEnc {
     task_encoder::encoder_cache!(DomainEnc);
 

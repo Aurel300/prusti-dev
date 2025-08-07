@@ -431,10 +431,6 @@ impl PredicateEnc {
     }
 }
 
-pub fn emit_outputs<'vir>(program: &mut task_encoder::Program<'vir>) {
-    PredicateEnc::emit_outputs(program);
-}
-
 impl TaskEncoder for PredicateEnc {
     task_encoder::encoder_cache!(PredicateEnc);
 

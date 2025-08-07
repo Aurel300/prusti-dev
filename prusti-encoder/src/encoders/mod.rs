@@ -13,8 +13,6 @@ mod mono;
 pub mod impure;
 
 pub use mir_pure_function::MirFunctionEnc as PureFunctionEnc;
-pub use domain::emit_outputs as DomainEnc_emit_outputs;
-pub use predicate::emit_outputs as PredicateEnc_emit_outputs;
 pub use impure::fn_wand::{WandEnc, WandEncOutput, WandEncTask};
 pub use local_def::*;
 pub use mir_builtin::{MirBuiltinEnc, MirBuiltinEncTask};

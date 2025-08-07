@@ -293,4 +293,8 @@ impl TaskEncoder for TyImpureEnc {
     fn task_to_key<'vir>(task: &Self::TaskDescription<'vir>) -> Self::TaskKey<'vir> {
         *task
     }
+
+    fn emit_outputs<'vir>(program: &mut task_encoder::Program<'vir>) {
+        PredicateEnc::emit_outputs(program)
+    }
 }

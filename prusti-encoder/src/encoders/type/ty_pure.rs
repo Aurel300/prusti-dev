@@ -107,6 +107,10 @@ impl TaskEncoder for TyPureEnc {
             Ok((TyPureEncOutput { inner, output, params }, ()))
         })
     }
+
+    fn emit_outputs<'vir>(program: &mut task_encoder::Program<'vir>) {
+        DomainEnc::emit_outputs(program)
+    }
 }
 
 impl<'vir> TyPureEncOutputRef<'vir> {

@@ -84,17 +84,14 @@ pub fn test_entrypoint<'tcx>(
     CastersEnc::<CastTypeImpure>::emit_outputs(&mut program);
     
     program.header("snapshots");
-    crate::encoders::DomainEnc_emit_outputs(&mut program);
+    crate::encoders::TyPureEnc::emit_outputs(&mut program);
 
     program.header("predicates");
-    crate::encoders::PredicateEnc_emit_outputs(&mut program);
+    crate::encoders::TyImpureEnc::emit_outputs(&mut program);
 
     program.header("type constructors");
     TyConstructorEnc::emit_outputs(&mut program);
     TypeOfEnc::emit_outputs(&mut program);
-
-    program.header("types");
-    crate::encoders::TyImpureEnc::emit_outputs(&mut program);
 
     if std::env::var("LOCAL_TESTING").is_ok() {
         std::fs::write("local-testing/simple.vpr", program.code()).unwrap();

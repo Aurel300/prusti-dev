@@ -11,10 +11,10 @@ use prusti_rustc_interface::{
 };
 use task_encoder::{EncodeFullError, EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 use vir::{
-    AdtDestructor, Arity, CallableIdn, CastType, CompType, DomainAxiomData, DomainIdnCSnap, FunctionIdn, Type
+    AdtDestructor, Arity, CallableIdn, CastType, CompType, DomainAxiomData, DomainIdnCSnap, DomainIdnSnap, FunctionIdn, Type
 };
 
-use crate::encoders::lifted::ty_constructor::TyConstructorEnc;
+use crate::encoders::lifted::{ty_constructor::TyConstructorEnc, TypeOfEnc};
 
 use super::{
     most_generic_ty::{extract_type_params, get_vir_base_name_kind, MostGenericTy},
@@ -73,22 +73,6 @@ impl<'vir> DomainDataStruct<'vir> {
             field_access,
         }
     }
-
-    // /// Obtain `f_tys` by using `deps.require_local::<RustTyCastersEnc<CastTypePure>>(expected_field_ty)`.
-    // pub fn field_snaps_to_snap<Curr, Next>(
-    //     &self,
-    //     mut snaps: Vec<vir::ExprGenSnap<'vir, Curr, Next>>,
-    //     f_tys: &[GenericCasterPure<'vir>],
-    // ) -> vir::ExprGenCSnap<'vir, Curr, Next> {
-    //     assert_eq!(snaps.len(), f_tys.len());
-    //     assert_eq!(snaps.len(), self.field_access.len());
-    //     for ((snap, f_ty), fa) in snaps.iter_mut().zip(f_tys).zip(self.field_access) {
-    //         if fa.is_generic {
-    //             *snap = vir::with_vcx(|vcx| f_ty.cast_to_generic_if_necessary(vcx, *snap).upcast_ty());
-    //         }
-    //     }
-    //     self.field_snaps_to_snap.gen()(&snaps)
-    // }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -188,6 +172,13 @@ pub enum DomainEncLocalKind<'vir> {
         adt: vir::Adt<'vir>,
         discr_fn: Option<vir::Function<'vir>>,
     },
+}
+
+impl DomainEnc {
+    pub fn generic_domain<'vir, E: TaskEncoder + 'vir + ?Sized>(deps: &mut TaskEncoderDependencies<'vir, E>) -> vir::TypePSnap<'vir> {
+        let output = deps.require_ref::<DomainEnc>(MostGenericTy::param()).unwrap();
+        (output.domain)().downcast_ty()
+    }
 }
 
 impl<'vir> task_encoder::OutputRefAny for DomainEncOutputRef<'vir> {}
@@ -295,8 +286,8 @@ pub(crate) struct PureTypeCommon<'vir> {
     pub(crate) vcx: &'vir vir::VirCtxt<'vir>,
     name: Option<&'vir str>,
     generics: Option<Vec<vir::LocalDeclTyVal<'vir>>>,
-    domain_ident: Option<vir::DomainIdnCSnap<'vir>>,
-    self_type: Option<vir::TypeCSnap<'vir>>,
+    domain_ident: Option<vir::DomainIdnSnap<'vir>>,
+    self_type: Option<vir::TypeSnap<'vir>>,
     unreachable_to_snap: Option<FunctionIdn<'vir, (), vir::Snap>>,
 }
 
@@ -354,13 +345,14 @@ impl<'vir> PureTypeCommon<'vir> {
     pub(crate) fn set_name(&mut self, name: &str) {
         let name = vir::vir_format!(self.vcx, "s_{name}");
         self.name = Some(name);
-        let domain_ident = DomainIdnCSnap::new(vir::ViperIdent::new(name));
+        let domain_ident = DomainIdnSnap::new(vir::ViperIdent::new(name));
         self.domain_ident = Some(domain_ident);
-        self.self_type = Some(domain_ident());
+        let vty = domain_ident();
+        self.self_type = Some(vty);
         self.unreachable_to_snap = Some(FunctionIdn::new(
             vir::ViperIdent::new(vir::vir_format!(self.vcx, "{name}_unreachable")),
             (),
-            self.self_type().upcast_ty(),
+            vty,
         ));
     }
 
@@ -369,7 +361,7 @@ impl<'vir> PureTypeCommon<'vir> {
     }
 
     pub(crate) fn self_type(&self) -> vir::TypeCSnap<'vir> {
-        self.self_type.expect("name should be set")
+        self.self_type.expect("name should be set").downcast_ty()
     }
 
     pub(crate) fn output_ref(&self, base_name: String) -> DomainEncOutputRef<'vir> {

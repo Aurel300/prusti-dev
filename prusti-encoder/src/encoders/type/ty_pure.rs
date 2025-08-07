@@ -97,6 +97,12 @@ impl TaskEncoder for TyPureEnc {
             for arg in args {
                 params.push(deps.require_local::<RustTyCastersEnc<CastTypePure>>(arg)?);
             }
+            // TODO: mutable references are unsound since they both hold the
+            // inner value in the `p_Ref_mut` predicate as well as the separate
+            // indirect predicate.
+            if let ty::TyKind::Ref(_, inner_ty, ty::Mutability::Mut) = task_key.kind() {
+                params.push(deps.require_local::<RustTyCastersEnc<CastTypePure>>(*inner_ty)?);
+            }
             let output = deps.require_dep::<DomainEnc>(generic_ty)?;
             Ok((TyPureEncOutput { inner, output, params }, ()))
         })

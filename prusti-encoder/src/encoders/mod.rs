@@ -1,4 +1,3 @@
-mod generic;
 mod mir_builtin;
 mod mir_pure;
 mod mir_poly_impure;
@@ -13,23 +12,16 @@ mod mono;
 // TODO: move `mir_impure` to this dir:
 pub mod impure;
 
-cfg_if::cfg_if! {
-    if #[cfg(feature = "mono_function_encoding")] {
-        pub use mono::mir_pure_function::MirMonoFunctionEnc as PureFunctionEnc;
-    } else {
-        pub use mir_pure_function::MirFunctionEnc as PureFunctionEnc;
-    }
-}
-
+pub use mir_pure_function::MirFunctionEnc as PureFunctionEnc;
 pub use domain::emit_outputs as DomainEnc_emit_outputs;
-pub use generic::GenericEnc;
+pub use predicate::emit_outputs as PredicateEnc_emit_outputs;
 pub use impure::fn_wand::{WandEnc, WandEncOutput, WandEncTask};
 pub use local_def::*;
 pub use mir_builtin::{MirBuiltinEnc, MirBuiltinEncTask};
 pub use mir_impure::{ImpureEncVisitor, MirImpureEnc};
 pub use mir_poly_impure::MirPolyImpureEnc;
 pub use mir_pure::{MirPureEnc, MirPureEncTask, PureKind};
-pub use mono::{mir_impure::MirMonoImpureEnc, task_description::*};
+pub use mono::task_description::*;
 pub use predicate::{PredicateEncOutput, PredicateEncOutputRef};
 pub use pure::spec::MirSpecEnc;
 pub use r#const::ConstEnc;

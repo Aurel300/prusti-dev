@@ -73,14 +73,8 @@ impl<'tcx> MostGenericTy<'tcx> {
         self.0.kind()
     }
 
-    pub fn tuple(arity: usize) -> Self {
-        let tuple = vir::with_vcx(|vcx| {
-            let new_tys = vcx.tcx().mk_type_list_from_iter(
-                (0..arity).map(|index| to_placeholder(vcx.tcx(), Some(index))),
-            );
-            vcx.tcx().mk_ty_from_kind(ty::TyKind::Tuple(new_tys))
-        });
-        MostGenericTy(tuple)
+    pub fn param() -> Self {
+        vir::with_vcx(|vcx| MostGenericTy(to_placeholder(vcx.tcx(), None)))
     }
 
     pub fn ty(&self) -> ty::Ty<'tcx> {

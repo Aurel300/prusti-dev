@@ -16,7 +16,6 @@ use vir::{add_debug_note, CastType, CompType};
 use super::{
     ty_impure::TyImpureEnc,
     ty_pure::TyPureEnc,
-    GenericEnc,
 };
 use crate::{
     encoder_traits::pure_func_app_enc::PureFuncAppEnc,
@@ -128,7 +127,6 @@ impl TaskEncoder for MirPureEnc {
 
             let expr_inner = Enc::new(
                 vcx,
-                cfg!(feature = "mono_function_encoding"),
                 task_key.0,
                 def_id,
                 &body,
@@ -206,7 +204,6 @@ impl<'vir> Update<'vir> {
 }
 
 struct Enc<'vir: 'enc, 'enc> {
-    monomorphize: bool,
     vcx: &'vir vir::VirCtxt<'vir>,
     encoding_depth: usize,
     def_id: DefId,
@@ -250,16 +247,11 @@ impl<'vir, 'enc> PureFuncAppEnc<'vir, MirPureEnc> for Enc<'vir, 'enc> {
     ) -> vir::ExprGenSnap<'vir, Self::Curr, Self::Next> {
         self.encode_operand(args, operand)
     }
-
-    fn monomorphize(&self) -> bool {
-        self.monomorphize
-    }
 }
 
 impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
     fn new(
         vcx: &'vir vir::VirCtxt<'vir>,
-        monomorphize: bool,
         encoding_depth: usize,
         def_id: DefId,
         body: &'enc mir::Body<'vir>,
@@ -271,7 +263,6 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
         );
         let rev_doms = rev_doms::ReverseDominators::new(&body.basic_blocks);
         Self {
-            monomorphize,
             vcx,
             encoding_depth,
             def_id,
@@ -564,15 +555,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                     )
                     .unwrap_or_default();
                     let sig = self.vcx().tcx().fn_sig(def_id);
-                    let sig = if self.monomorphize {
-                        let typing_env =
-                            ty::TypingEnv::post_analysis(self.vcx().tcx(), self.def_id);
-                        self.vcx()
-                            .tcx()
-                            .instantiate_and_normalize_erasing_regions(arg_tys, typing_env, sig)
-                    } else {
-                        sig.instantiate_identity()
-                    };
+                    let sig = sig.instantiate_identity();
                     if is_pure {
                         self.encode_pure_func_app(
                             def_id,

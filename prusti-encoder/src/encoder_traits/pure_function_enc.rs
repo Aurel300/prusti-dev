@@ -9,12 +9,10 @@ use vir::{CastType, ExprGenBool, ExprGenSnap, FunctionIdn, Reify, ViperIdent};
 
 use crate::encoders::{
     lifted::{
-        func_def_ty_params::LiftedTyParamsEnc,
-        ty::{EncodeGenericsAsLifted, LiftedTy, LiftedTyEnc},
-        ty_constructor::TyConstructorEnc,
+        EncodeGenericsAsLifted, LiftedTy, LiftedTyEnc, LiftedTyParamsEnc, TyConstructorEnc, TypeOfEnc
     },
     most_generic_ty::extract_type_params,
-    GenericEnc, MirLocalDefEnc, MirPureEnc, MirPureEncTask, MirSpecEnc, PureKind, TyPureEnc,
+    MirLocalDefEnc, MirPureEnc, MirPureEncTask, MirSpecEnc, PureKind, TyPureEnc,
 };
 
 use super::function_enc::FunctionEnc;
@@ -57,30 +55,29 @@ where
         arg: ExprGenSnap<'vir, Curr, Next>, // Snapshot encoded argument
         ty: Ty<'vir>,
     ) -> Option<ExprGenBool<'vir, Curr, Next>> {
+        let mg_ty = extract_type_params(vcx.tcx(), ty).0;
+        let typeof_ref = deps
+            .require_ref::<TypeOfEnc>(mg_ty)
+            .unwrap();
+        let typeof_call = typeof_ref.typeof_function.call()(arg);
+
         let lifted_ty = deps
             .require_local::<LiftedTyEnc<EncodeGenericsAsLifted>>(ty)
             .unwrap();
-        match lifted_ty {
-            LiftedTy::Generic(generic) => {
-                let generic_enc = deps.require_ref::<GenericEnc>(()).unwrap();
-                Some(vcx.mk_eq_expr(
-                    generic_enc.param_type_function.call()(arg.downcast_ty()),
-                    generic.expr(vcx),
-                ))
-            }
+        let expected = match lifted_ty {
+            LiftedTy::Generic(generic) => generic.expr(vcx),
             // When the instantiated type constructor doesn't take any
             // arguments, the type of the argument is known by the
             // definition of its `typeof_funtion`, therefore it's not
             // necessary to include an explicit assertion
-            LiftedTy::Instantiated { args, .. } if !args.is_empty() => {
-                let ty = extract_type_params(vcx.tcx(), ty).0;
-                let domain_ref = deps
-                    .require_ref::<TyConstructorEnc>(ty)
-                    .unwrap();
-                Some(vcx.mk_eq_expr(domain_ref.typeof_function.call()(arg.downcast_ty()), lifted_ty.expr(vcx)))
-            }
-            _ => None,
-        }
+            LiftedTy::Instantiated { args, .. } if !args.is_empty() => lifted_ty.expr(vcx),
+            _ => return None,
+        };
+
+        Some(vcx.mk_eq_expr(
+            typeof_call,
+            expected,
+        ))
     }
 
     fn encode<'vir>(

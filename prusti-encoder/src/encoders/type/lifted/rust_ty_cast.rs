@@ -10,7 +10,7 @@ use super::{
     cast::Cast,
     casters::{
         CastFunctionsOutputRef, CastMethodsOutputRef, CastType, CastTypeImpure, CastTypePure,
-        Casters, CastersEnc, ImpureCastStmts, MakeGenericCastFunction,
+        Casters, CastersEnc, MakeGenericCastFunction,
     },
     generic::LiftedGeneric,
     ty::{EncodeGenericsAsLifted, LiftedTy, LiftedTyEnc},
@@ -47,9 +47,17 @@ impl<'vir> RustTyGenericCastEncOutput<'vir, CastMethodsOutputRef<'vir>> {
     pub fn cast_to_concrete_if_possible<'tcx, Curr, Next>(
         &self,
         vcx: &'vir vir::VirCtxt<'tcx>,
-        snap: vir::ExprGenRef<'vir, Curr, Next>,
-    ) -> Option<ImpureCastStmts<'vir, Curr, Next>> {
-        CastTypeImpure::cast_to_concrete_if_possible(&self.cast, vcx, snap, self.ty_args)
+        e_ref: vir::ExprGenRef<'vir, Curr, Next>,
+    ) -> Option<vir::StmtGen<'vir, Curr, Next>> {
+        CastTypeImpure::cast_to_concrete_if_possible(&self.cast, vcx, e_ref, self.ty_args)
+    }
+
+    pub fn cast_to_generic_if_necessary<'tcx, Curr, Next>(
+        &self,
+        vcx: &'vir vir::VirCtxt<'tcx>,
+        e_ref: vir::ExprGenRef<'vir, Curr, Next>,
+    ) -> Option<vir::StmtGen<'vir, Curr, Next>> {
+        CastTypeImpure::cast_to_generic_if_necessary(&self.cast, vcx, e_ref, self.ty_args)
     }
 }
 

@@ -30,12 +30,16 @@ pub struct TyImpureEncOutputRef<'vir> {
     pub ty: LiftedTy<'vir, LiftedGeneric<'vir>>,
 
     pub f_ty: GenericCasterPure<'vir>,
-    pub params: Vec<GenericCasterImpure<'vir>>,
+
+    params: Vec<GenericCasterImpure<'vir>>,
 }
 
-pub struct TyImpureDataStruct<'vir> {
-    inner: PredicateEncDataStruct<'vir>,
+pub struct TyImpureDataStruct<'a, 'vir> {
+    params: &'a [GenericCasterImpure<'vir>],
     ty_args: Vec<vir::ExprTyVal<'vir>>,
+
+    ref_to_pred: vir::PredicateIdn<'vir, (vir::Ref, vir::ManyTyVal)>,
+    inner: Option<PredicateEncDataStruct<'vir>>,
 }
 
 pub struct TyImpureDataEnum<'vir> {
@@ -109,38 +113,11 @@ impl<'vir> TyImpureEncOutputRef<'vir> {
         expr
     }
 
-    pub fn ref_to_indirect_pred<'tcx>(
-        &self,
-        vcx: &'vir vir::VirCtxt<'tcx>,
-        self_ref: vir::ExprRef<'vir>,
-        _perm: Option<vir::ExprPerm<'vir>>,
-        // TODO: make this a function of a lifetime being projected?
-        // lifetime: ty::Region<'tcx>,
-    ) -> Option<(vir::ExprBool<'vir>, vir::ExprBool<'vir>)> {
-        use vir::Reify;
-        self.indirect_predicate
-            .map(|(pre, post)| (pre.reify(vcx, self_ref), post.reify(vcx, self_ref)))
-        //.map(|pred| vcx.mk_predicate_app_expr(pred.apply(vcx, self.ref_to_ty_args(vcx, self_ref), perm)))
-    }
-
-    fn ref_to_pred_app_variant_opt(
-        &self,
-        vid: Option<abi::VariantIdx>,
-        self_ref: vir::ExprRef<'vir>,
-        perm: Option<vir::ExprPerm<'vir>>,
-    ) -> vir::PredicateApp<'vir> {
-        let ty_params = vir::with_vcx(|vcx| self.ref_to_ty_args(vcx));
-        self.generic_predicate.expect_pred_variant_opt(vid)(self_ref, &ty_params)(perm)
-    }
-
-    fn get_variant_opt(&self, vid: Option<abi::VariantIdx>) -> Option<TyImpureDataStruct<'vir>> {
-        let inner = *self.generic_predicate.get_variant_opt(vid)?;
+    pub fn expect_variant_opt(&self, vid: Option<abi::VariantIdx>) -> TyImpureDataStruct<'_, 'vir> {
+        let ref_to_pred = self.generic_predicate.get_ref_to_pred(vid);
+        let inner = self.generic_predicate.get_variant_opt(vid).copied();
         let ty_args = self.ref_to_ty_args(vir::with_vcx(|vcx| vcx));
-        Some(TyImpureDataStruct { inner, ty_args })
-    }
-
-    pub fn expect_variant_opt(&self, vid: Option<abi::VariantIdx>) -> TyImpureDataStruct<'vir> {
-        self.get_variant_opt(vid).unwrap()
+        TyImpureDataStruct { ty_args, params: &self.params, ref_to_pred, inner }
     }
 
     pub fn get_enumlike(&self) -> Option<Option<TyImpureDataEnum<'vir>>> {
@@ -164,26 +141,69 @@ impl<'vir> TyImpureEncOutputRef<'vir> {
         TyImpureDataMutRef { inner, ty_args }
     }
 
-    pub fn fold(&self, self_ref: vir::ExprRef<'vir>, perm: Option<vir::ExprPerm<'vir>>, vid: Option<abi::VariantIdx>) -> Vec<vir::Stmt<'vir>> {
-        self.get_variant_opt(vid).into_iter().flat_map(|data| data.inner.snap_data.field_access.iter().filter_map(|field| {
-            field.generic_idx.map(|generic_idx| self.params[generic_idx as usize])
-        }));
-        let fold = vir::with_vcx(|vcx| vcx.mk_fold_stmt(self.ref_to_pred_app(vcx, self_ref, perm)));
-        todo!()
-    }
-
-    /// Arguments to `ref_to_pred` and `ref_to_snap`.
+    /// Constructs arguments for [`PredicateEncOutputRef::ref_to_pred`] and
+    /// [`PredicateEncOutputRef::ref_to_snap`]. Takes as input a Ref representing
+    /// the self, and the encoded Rust type (see [`LiftedTy`]). The arguments to the
+    /// function are the type arguments of the lifted type.
     fn ref_to_ty_args<'tcx>(&self, vcx: &'vir vir::VirCtxt<'tcx>) -> Vec<vir::ExprTyVal<'vir>> {
-        self.generic_predicate.ref_to_ty_args(vcx, self.ty)
+        self.ty.arg_exprs(vcx)
     }
 }
 
-impl<'vir> TyImpureDataStruct<'vir> {
+impl<'vir> TyImpureDataStruct<'_, 'vir> {
     pub fn field<Curr, Next>(&self, field: abi::FieldIdx, self_ref: vir::ExprGenRef<'vir, Curr, Next>) -> vir::ExprGenRef<'vir, Curr, Next> {
         let ty_args = (&*self.ty_args) as *const [vir::ExprTyVal<'vir>] as *const [vir::ExprGenTyVal<'vir, Curr, Next>];
         // TODO: remove unsafe
         let ty_args = unsafe { &*ty_args };
-        self.inner.ref_to_field_refs[field.index()].call()(self_ref, ty_args)
+        self.inner.expect("field of enum with no variant").ref_to_field_refs[field.index()].call()(self_ref, ty_args)
+    }
+
+    pub fn fold(
+        &self,
+        self_ref: vir::ExprRef<'vir>,
+        perm: Option<vir::ExprPerm<'vir>>,
+    ) -> impl Iterator<Item = vir::Stmt<'vir>> + '_ {
+        vir::with_vcx(|vcx| {
+            let to_gen = self.generic_fields(self_ref).filter_map(|(f_ref, param)| {
+                param.cast_to_generic_if_necessary(vcx, f_ref)
+            });
+
+            let pred_app = self.ref_to_pred_app(self_ref, perm);
+            let fold = vir::with_vcx(|vcx| vcx.mk_fold_stmt(pred_app));
+            to_gen.chain([fold])
+        })
+    }
+
+    pub fn unfold(
+        &self,
+        self_ref: vir::ExprRef<'vir>,
+        perm: Option<vir::ExprPerm<'vir>>,
+    ) -> impl Iterator<Item = vir::Stmt<'vir>> + '_ {
+        vir::with_vcx(|vcx| {
+            let to_con = self.generic_fields(self_ref).filter_map(|(f_ref, param)| {
+                param.cast_to_concrete_if_possible(vcx, f_ref)
+            });
+
+            let pred_app = self.ref_to_pred_app(self_ref, perm);
+            let unfold = vir::with_vcx(|vcx| vcx.mk_unfold_stmt(pred_app));
+            [unfold].into_iter().chain(to_con)
+        })
+    }
+
+    fn generic_fields(&self, self_ref: vir::ExprRef<'vir>) -> impl Iterator<Item = (vir::ExprRef<'vir>, GenericCasterImpure<'vir>)> + '_ {
+        self.inner.into_iter().flat_map(|inner| {
+            assert_eq!(inner.ref_to_field_refs.len(), inner.snap_data.field_access.len());
+            let fields = inner.ref_to_field_refs.iter().zip(inner.snap_data.field_access);
+            fields.filter_map(|(f_ref, f)| f.generic_idx.map(|idx| (f_ref.call()(self_ref, &self.ty_args), self.params[idx as usize])))
+        })
+    }
+
+    fn ref_to_pred_app(
+        &self,
+        self_ref: vir::ExprRef<'vir>,
+        perm: Option<vir::ExprPerm<'vir>>,
+    ) -> vir::PredicateApp<'vir> {
+        (self.ref_to_pred)(self_ref, &self.ty_args)(perm)
     }
 }
 
@@ -245,10 +265,13 @@ impl TaskEncoder for TyImpureEnc {
             */
             let ty = deps.require_local::<LiftedTyEnc<EncodeGenericsAsLifted>>(*task_key)?;
             let f_ty = deps.require_local::<RustTyCastersEnc<CastTypePure>>(*task_key)?;
-            let mut params = Vec::new();
-            for arg in args {
-                params.push(deps.require_local::<RustTyCastersEnc<CastTypeImpure>>(arg)?);
-            }
+            let params = args
+                        .iter()
+                        .map(|arg| {
+                            deps.require_local::<RustTyCastersEnc<CastTypeImpure>>(*arg)
+                                .unwrap()
+                        })
+                        .collect();
             deps.emit_output_ref(
                 *task_key,
                 TyImpureEncOutputRef {

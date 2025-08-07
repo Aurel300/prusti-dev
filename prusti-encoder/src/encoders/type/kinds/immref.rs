@@ -1,6 +1,5 @@
 use crate::encoders::{
-    domain::{AdtBuilder, DomainDataImmRef, DomainEnc, DomainEncOutput, DomainEncOutputRef, DomainEncSpecifics, PureTypeBuilder, PureTypeCommon},
-    predicate::{PredicateBuilder, PredicateEnc, PredicateEncData, PredicateEncDataImmRef, RefToIndirectPred}, GenericEnc,
+    domain::{AdtBuilder, DomainDataImmRef, DomainEnc, DomainEncOutput, DomainEncOutputRef, DomainEncSpecifics, PureTypeBuilder, PureTypeCommon}, lifted::TypeOfEnc, predicate::{PredicateBuilder, PredicateEnc, PredicateEncData, PredicateEncDataImmRef, RefToIndirectPred}
 };
 use prusti_rustc_interface::middle::ty;
 use task_encoder::{EncodeFullError, TaskEncoder, TaskEncoderDependencies};
@@ -51,7 +50,7 @@ pub(crate) fn predicate<'vir>(
     //let ref_self_ex = builder.vcx.mk_local_ex_local(ref_self);
 
     let snap_data = snap.specifics.expect_immref();
-    let generic = deps.require_ref::<GenericEnc>(())?;
+    let generic_typeof = TypeOfEnc::generic_typeof(deps);
 
     // fields
     let ref_field = builder.field("val", snap_type);
@@ -63,7 +62,7 @@ pub(crate) fn predicate<'vir>(
     (ref_self_decl, &builder.generic_decls),
         Some(vir::expr! {
             (acc((ref_self).[ref_field]))
-            && (([generic.param_type_function]([snap_data.value_access]([ref_field](ref_self)))) == ([builder.generic_exprs[0]]))
+            && (([generic_typeof]([snap_data.value_access]([ref_field](ref_self)))) == ([builder.generic_exprs[0]]))
         }), // TODO: use generic args?
     );
 
@@ -74,7 +73,7 @@ pub(crate) fn predicate<'vir>(
         snap_type,
         (ref_self_decl, &builder.generic_decls),
         &[vir::expr! { acc([self_pred](ref_self, ..[&builder.generic_exprs])) }],
-        &[vir::expr! { ([generic.param_type_function]([snap_data.value_access](result: [snap_type]))) == ([builder.generic_exprs[0]]) }],
+        &[vir::expr! { ([generic_typeof]([snap_data.value_access](result: [snap_type]))) == ([builder.generic_exprs[0]]) }],
         Some(vir::expr! {
             unfolding ([self_pred](ref_self, ..[&builder.generic_exprs])) in ([ref_field](ref_self))
         }),

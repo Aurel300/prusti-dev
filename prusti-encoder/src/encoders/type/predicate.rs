@@ -10,7 +10,7 @@ use vir::{
     VirCtxt,
 };
 
-use crate::encoders::{domain::DomainEnc, generic::GenericEncOutputRef, r#type::lifted::generic::LiftedGeneric, GenericEnc};
+use crate::encoders::{domain::DomainEnc, r#type::lifted::generic::LiftedGeneric};
 
 use super::{
     domain::{DomainDataImmRef, DomainDataMutRef, DomainDataPrim, DomainDataStruct},
@@ -80,7 +80,7 @@ pub enum PredicateEncData<'vir> {
 pub type RefToIndirectPred<'vir> = i32; //vir::ExprGen<'vir, vir::Expr<'vir>, vir::ExprKind<'vir>>;
 
 // TODO: should output refs actually be references to structs...?
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct PredicateEncOutputRef<'vir> {
     /// Constructs the Viper predicate application.
     pub ref_to_pred: PredicateIdn<'vir, (vir::Ref, vir::ManyTyVal)>,
@@ -104,18 +104,6 @@ pub struct PredicateEncOutputRef<'vir> {
 impl<'vir> task_encoder::OutputRefAny for PredicateEncOutputRef<'vir> {}
 
 impl<'vir> PredicateEncOutputRef<'vir> {
-    /// Constructs arguments for [`PredicateEncOutputRef::ref_to_pred`] and
-    /// [`PredicateEncOutputRef::ref_to_snap`]. Takes as input a Ref representing
-    /// the self, and the encoded Rust type (see [`LiftedTy`]). The arguments to the
-    /// function are the type arguments of the lifted type.
-    pub fn ref_to_ty_args<'tcx>(
-        &self,
-        vcx: &'vir vir::VirCtxt<'tcx>,
-        instantiated_ty: LiftedTy<'vir, LiftedGeneric<'vir>>,
-    ) -> Vec<vir::ExprTyVal<'vir>> {
-        instantiated_ty.arg_exprs(vcx)
-    }
-
     #[track_caller]
     pub fn expect_prim(&self) -> DomainDataPrim<'vir> {
         match self.specifics {
@@ -185,25 +173,28 @@ impl<'vir> PredicateEncOutputRef<'vir> {
         vid.map(|vid| self.expect_variant(vid).predicate)
             .unwrap_or(self.ref_to_pred)
     }
-    #[track_caller]
-    pub(super) fn get_variant_opt(
+
+    pub fn get_ref_to_pred(
+        &self,
+        vid: Option<abi::VariantIdx>,
+    ) -> PredicateIdn<'vir, (vir::Ref, vir::ManyTyVal)> {
+        vid.map(|vid| {
+                let data = self.expect_enumlike().expect("empty enum");
+                data.variants[vid.as_usize()].predicate
+        }).unwrap_or(self.ref_to_pred)
+    }
+
+    /// Returns `None` if the `vid` is `None` and this is an enum.
+    pub fn get_variant_opt(
         &self,
         vid: Option<abi::VariantIdx>,
     ) -> Option<&PredicateEncDataStruct<'vir>> {
         match vid {
             None => self.get_structlike(),
             Some(vid) => {
-                Some(&self.get_enumlike()?.expect("empty enum").variants[vid.as_usize()].fields)
+                Some(&self.expect_enumlike().expect("empty enum").variants[vid.as_usize()].fields)
             }
         }
-    }
-    #[track_caller]
-    pub(super) fn expect_variant_opt(
-        &self,
-        vid: Option<abi::VariantIdx>,
-    ) -> &PredicateEncDataStruct<'vir> {
-        self.get_variant_opt(vid)
-            .expect("expected variant opt")
     }
 }
 
@@ -247,6 +238,29 @@ impl<'vir> PredicateBuilder<'vir> {
                 function_snap: None,
             },
         }
+    }
+
+    fn set_opaque(&mut self, snapshot: vir::TypeSnap<'vir>, ref_self_decl: &vir::LocalDeclRef<'vir>) {
+        // TODO: breakout to separate file
+        self.inner.predicate::<(vir::Ref, vir::ManyTyVal)>(
+            "",
+            (ref_self_decl.ty(), self.generic_tys),
+            (ref_self_decl, &self.generic_decls),
+            None,
+        );
+        self.function_snap = Some(
+            self
+                .mk_function::<(vir::Ref, vir::ManyTyVal), _>(
+                    "snap",
+                    (ref_self_decl.ty(), self.generic_tys),
+                    snapshot,
+                    (ref_self_decl, &self.generic_decls),
+                    &[],
+                    &[],
+                    None,
+                )
+                .1,
+        );
     }
 }
 
@@ -411,6 +425,16 @@ pub struct PredicateEncOutput<'vir> {
     pub method_assign: vir::Method<'vir>,
 }
 
+impl PredicateEnc {
+    pub fn generic_predicate<'vir, E: TaskEncoder + 'vir + ?Sized>(deps: &mut TaskEncoderDependencies<'vir, E>) -> PredicateEncOutputRef<'vir> {
+        deps.require_ref::<PredicateEnc>(MostGenericTy::param()).unwrap()
+    }
+}
+
+pub fn emit_outputs<'vir>(program: &mut task_encoder::Program<'vir>) {
+    PredicateEnc::emit_outputs(program);
+}
+
 impl TaskEncoder for PredicateEnc {
     task_encoder::encoder_cache!(PredicateEnc);
 
@@ -433,92 +457,30 @@ impl TaskEncoder for PredicateEnc {
         let snap = deps.require_dep::<DomainEnc>(*task_key)?;
         let snapshot = (snap.domain)();
 
-        if let TyKind::Param(..) = task_key.kind() {
-            let generic_output_ref = deps.require_ref::<GenericEnc>(())?;
-            let method_assign = vir::with_vcx(|vcx| {
-                MethodIdn::new(
-                    vir::ViperIdent::new("assign_p_Param"),
-                    (
-                        vir::TYPE_REF,
-                        vcx.alloc_slice(&[generic_output_ref.type_snapshot]),
-                        generic_output_ref.param_snapshot.upcast_ty(),
-                    ),
-                )
-            });
-            let GenericEncOutputRef {
-                ref_to_pred,
-                ref_to_snap,
-                unreachable_to_snap,
-                ..
-            } = generic_output_ref;
-            let (rtp, rts) = (ref_to_pred.arity(), ref_to_snap.arity());
-            let (rtp, rts) = vir::with_vcx(|vcx| {
-                (
-                    (rtp.0, vcx.alloc_slice(&[rtp.1])),
-                    (rts.0, vcx.alloc_slice(&[rts.1])),
-                )
-            });
-            let (ref_to_pred, ref_to_snap) = (ref_to_pred.cast_args(rtp), ref_to_snap.cast_ty(rts));
-            deps.emit_output_ref(
-                *task_key,
-                PredicateEncOutputRef {
-                    ref_to_pred,
-                    ref_to_snap,
-                    method_assign,
-                    snapshot,
-                    specifics: PredicateEncData::Param,
-                    generics: &[],
-                    ref_to_indirect_pred: None,
-                },
-            )?;
-            let dep = deps.require_local::<GenericEnc>(())?;
-            return vir::with_vcx(|vcx| {
-                let method_assign = mk_method_assign(
-                    vcx,
-                    method_assign,
-                    vec![vcx.mk_local_decl("t", generic_output_ref.type_snapshot)],
-                    snapshot,
-                    ref_to_pred,
-                    ref_to_snap,
-                );
-                Ok((
-                    PredicateEncOutput {
-                        fields: vec![],
-                        predicates: vec![dep.ref_to_pred],
-                        function_snap: dep.ref_to_snap,
-                        ref_to_field_refs: vec![],
-                        method_assign,
-                    },
-                    (),
-                ))
-            });
-        }
-
         if let Some(res) = vir::with_vcx(|vcx| {
             let mut builder = PredicateBuilder::new(vcx, *task_key);
 
             let base_name = get_vir_base_name_kind(task_key.kind(), vcx);
             builder.set_name(&base_name);
 
-            let snap_type = snapshot.downcast_ty::<vir::CSnap>();
             let ref_self = vcx.mk_local("self", vir::TYPE_REF);
             let ref_self_decl = vcx.mk_local_decl_local(ref_self);
 
             let self_pred_ident =
                 builder.inner.predicate_ident("", (ref_self_decl.ty(), builder.generic_tys));
-            let snap_func_ident = builder.inner.function_ident::<(vir::Ref, vir::ManyTyVal), vir::CSnap>(
+            let snap_func_ident = builder.inner.function_ident::<(vir::Ref, vir::ManyTyVal), vir::Snap>(
                 "snap",
                 (ref_self_decl.ty(), builder.generic_tys),
-                snap_type,
+                snapshot,
             );
 
             // assign method
-            let value = vcx.mk_local("value", snap_type);
+            let value = vcx.mk_local("value", snapshot);
             let method_assign = builder.inner.method(
                 "assign",
-                (ref_self_decl.ty(), builder.generic_tys, snap_type.upcast_ty()),
+                (ref_self_decl.ty(), builder.generic_tys, snapshot),
                 &[],
-                (ref_self_decl, builder.generic_decls.as_slice(), vcx.mk_local_decl_local(value).upcast_ty()),
+                (ref_self_decl, builder.generic_decls.as_slice(), vcx.mk_local_decl_local(value)),
                 &[],
                 &[
                     vir::expr! { [self_pred_ident](ref_self, ..[builder.generic_exprs.as_slice()]) },
@@ -528,26 +490,7 @@ impl TaskEncoder for PredicateEnc {
 
             let (specifics, ref_to_indirect_pred) = match task_key.kind() {
                 _ if crate::encoders::spec::is_type_trusted(task_key.ty()) => {
-                    // TODO: breakout to separate file
-                    builder.inner.predicate::<(vir::Ref, vir::ManyTyVal)>(
-                        "",
-                        (ref_self_decl.ty(), builder.generic_tys),
-                        (ref_self_decl, &builder.generic_decls),
-                        None,
-                    );
-                    builder.function_snap = Some(
-                        builder
-                            .mk_function::<(vir::Ref, vir::ManyTyVal), _>(
-                                "snap",
-                                (ref_self_decl.ty(), builder.generic_tys),
-                                snap_type,
-                                (ref_self_decl, &builder.generic_decls),
-                                &[],
-                                &[],
-                                None,
-                            )
-                            .1,
-                    );
+                    builder.set_opaque(snapshot, &ref_self_decl);
                     (PredicateEncData::Trusted, None)
                 }
                 TyKind::Bool
@@ -606,7 +549,10 @@ impl TaskEncoder for PredicateEnc {
                     super::kinds::str::predicate(*task_key, snap.clone(), deps, &mut builder)?,
                     None,
                 ),
-                TyKind::Param(_) => unreachable!(),
+                TyKind::Param(_) => {
+                    builder.set_opaque(snapshot, &ref_self_decl);
+                    (PredicateEncData::Param, None)
+                }
                 _ => return Ok(None),
             };
 
@@ -616,7 +562,7 @@ impl TaskEncoder for PredicateEnc {
                     ref_to_pred: self_pred_ident,
                     ref_to_snap: snap_func_ident.cast_ty(snap_func_ident.arity()),
                     method_assign,
-                    snapshot: snap_type.upcast_ty(),
+                    snapshot,
                     specifics,
                     generics: vcx.alloc_slice(&builder.generic_decls),
                     ref_to_indirect_pred,

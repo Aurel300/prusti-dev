@@ -405,26 +405,28 @@ impl<'vir> AdtBuilder<'vir> {
             param.ty,
             ty,
         );
-        let expr = if let Some(df) = self.discr_fn {
+        let (expr, posts) = if let Some(df) = self.discr_fn {
             let DiscrFnBuilder::Building { acc, .. } = df else {
                 panic!("discriminant function already built");
             };
-            Some(acc)
+            (Some(acc), &[][..])
         } else {
-            // We get here if we didn't add any constructors to the ADT. Viper
-            // forbids this (see silver#693, silver#696), so here we will just
-            // add a dummy constructor that won't actually be used by the
-            // encoders.
+            // We get here if we didn't add any constructors to the ADT (i.e.
+            // this is an empty enum = uninhabitable type). Viper forbids this
+            // (see silver#693, silver#696), so here we will just add a dummy
+            // constructor that won't actually be used by the encoders. Instead
+            // we encode the uninhabitability by adding an `ensures false` to
+            // the discriminant function.
             let self_name = self.name.expect("name should be set");
             let name = vir::vir_format!(self.vcx, "{self_name}_DummyConstructor",);
             self.constructors.push(self.vcx.mk_adt_constructor::<(), !, vir::Dyn>(name, &[]));
-            None
+            (None, self.vcx.alloc_slice(&[self.vcx.mk_bool::<false>()]))
         };
         let built_fn = self.vcx.mk_function(
             ident,
             (param,),
             &[],
-            &[],
+            posts,
             None,
             expr,
         );

@@ -4,12 +4,11 @@ use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 use vir::{CallableIdn, FunctionIdn, MethodIdn};
 
 use crate::encoders::{
-    domain::DomainEnc, lifted::ty_constructor::TyConstructorEnc, most_generic_ty::MostGenericTy,
-    GenericEnc, PredicateEnc,
+    domain::DomainEnc, lifted::{generic::LiftedGenericEnc, ty_constructor::TyConstructorEnc}, most_generic_ty::MostGenericTy, predicate::PredicateEnc, GenericEnc
 };
 
 use super::{
-    generic::{LiftedGeneric, LiftedGenericEnc},
+    generic::{LiftedGeneric},
     ty::LiftedTy,
 };
 
@@ -172,7 +171,7 @@ where
 #[allow(type_alias_bounds)]
 pub type Casters<'vir, T: CastType> = CastersEncOutputRef<T::ToGeneric<'vir>, T::ToConcrete<'vir>>;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub enum CastersEncOutputRef<G, C> {
     Casters { make_generic: G, make_concrete: C },
     AlreadyGeneric,

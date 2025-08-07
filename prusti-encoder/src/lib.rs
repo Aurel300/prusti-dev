@@ -94,7 +94,7 @@ pub fn test_entrypoint<'tcx>(
     TyConstructorEnc::emit_outputs(&mut program);
 
     program.header("types");
-    crate::encoders::PredicateEnc::emit_outputs(&mut program);
+    crate::encoders::TyImpureEnc::emit_outputs(&mut program);
 
     if std::env::var("LOCAL_TESTING").is_ok() {
         std::fs::write("local-testing/simple.vpr", program.code()).unwrap();

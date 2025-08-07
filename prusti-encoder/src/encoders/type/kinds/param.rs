@@ -12,18 +12,5 @@ pub(crate) fn domain<'vir>(
     deps: &mut TaskEncoderDependencies<'vir, DomainEnc>,
     builder: PureTypeCommon<'vir>,
 ) -> Result<(DomainEncSpecifics<'vir>, PureTypeBuilder<'vir>), EncodeFullError<'vir, DomainEnc>> {
-    let ty = task_key.ty();
-    let ty_kind = ty.kind();
-    assert!(matches!(ty_kind, ty::TyKind::Param(..)));
-
-    let base_name = get_vir_base_name_kind(&ty_kind, builder.vcx);
-    let out = deps.require_ref::<GenericEnc>(())?;
-    deps.emit_output_ref(
-        task_key,
-        DomainEncOutputRef {
-            base_name,
-            domain: out.domain_param_name.cast_ty(),
-        },
-    )?;
     Ok((DomainEncSpecifics::Param, Err(DomainBuilder::new(builder))))
 }

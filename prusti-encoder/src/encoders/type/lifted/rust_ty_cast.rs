@@ -16,13 +16,16 @@ use super::{
     ty::{EncodeGenericsAsLifted, LiftedTy, LiftedTyEnc},
 };
 
+pub type GenericCasterPure<'vir> = RustTyGenericCastEncOutput<'vir, CastFunctionsOutputRef<'vir>>;
+pub type GenericCasterImpure<'vir> = RustTyGenericCastEncOutput<'vir, CastMethodsOutputRef<'vir>>;
+
 /// Generates Viper functions to cast between generic and non-generic Viper
 /// representations of a Rust value. See [`CastersEnc`] for more details. The
 /// type parameter `T` indicates the cast type, it should be either
 /// [`CastTypePure`] or [`CastTypeImpure`].
 pub struct RustTyCastersEnc<T>(PhantomData<T>);
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct RustTyGenericCastEncOutput<'vir, T> {
     pub cast: T,
     // Type arguments required by the cast function
@@ -106,7 +109,7 @@ impl TaskEncoder for RustTyCastersEnc<CastTypePure> {
 
     type TaskDescription<'vir> = ty::Ty<'vir>;
 
-    type OutputFullLocal<'vir> = RustTyGenericCastEncOutput<'vir, CastFunctionsOutputRef<'vir>>;
+    type OutputFullLocal<'vir> = GenericCasterPure<'vir>;
 
     type TaskKey<'tcx> = Self::TaskDescription<'tcx>;
 

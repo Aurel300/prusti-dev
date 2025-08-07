@@ -125,6 +125,33 @@ impl<'tcx> MostGenericTy<'tcx> {
             other => todo!("generics for {:?}", other),
         }
     }
+
+    fn generic_locals<'a, 'vir>(&self, vcx: &'vir vir::VirCtxt<'a>) -> impl Iterator<Item = vir::LocalTyVal<'vir>> + use<'vir, 'tcx, 'a> {
+        self.generics()
+            .into_iter()
+            .map(|ty| vcx.mk_local(
+                vcx.alloc_str(ty.name.as_str()),
+                vir::TYPE_TYVAL,
+            ))
+    }
+
+    pub fn generic_decls<'vir>(&self, vcx: &'vir vir::VirCtxt) -> Vec<vir::LocalDeclTyVal<'vir>> {
+        self.generic_locals(vcx)
+            .map(|local| vcx.mk_local_decl_local(local))
+            .collect::<Vec<_>>()
+    }
+
+    pub fn generic_exprs<'vir>(&self, vcx: &'vir vir::VirCtxt) -> Vec<vir::ExprTyVal<'vir>> {
+        self.generic_locals(vcx)
+            .map(|local| vcx.mk_local_ex_local(local))
+            .collect::<Vec<_>>()
+    }
+
+    pub fn generic_tys<'vir>(&self, vcx: &'vir vir::VirCtxt) -> Vec<vir::TypeTyVal<'vir>> {
+        self.generic_locals(vcx)
+            .map(|local| local.ty)
+            .collect::<Vec<_>>()
+    }
 }
 
 impl<'tcx> From<MostGenericTy<'tcx>> for ty::Ty<'tcx> {

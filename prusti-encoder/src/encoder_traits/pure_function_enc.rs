@@ -14,7 +14,7 @@ use crate::encoders::{
         ty_constructor::TyConstructorEnc,
     },
     most_generic_ty::extract_type_params,
-    GenericEnc, MirLocalDefEnc, MirPureEnc, MirPureEncTask, MirSpecEnc, PureKind,
+    GenericEnc, MirLocalDefEnc, MirPureEnc, MirPureEncTask, MirSpecEnc, PureKind, TyPureEnc,
 };
 
 use super::function_enc::FunctionEnc;
@@ -73,8 +73,9 @@ where
             // definition of its `typeof_funtion`, therefore it's not
             // necessary to include an explicit assertion
             LiftedTy::Instantiated { args, .. } if !args.is_empty() => {
+                let ty = extract_type_params(vcx.tcx(), ty).0;
                 let domain_ref = deps
-                    .require_ref::<TyConstructorEnc>(extract_type_params(vcx.tcx(), ty).0)
+                    .require_ref::<TyConstructorEnc>(ty)
                     .unwrap();
                 Some(vcx.mk_eq_expr(domain_ref.typeof_function.call()(arg.downcast_ty()), lifted_ty.expr(vcx)))
             }
@@ -103,11 +104,11 @@ where
             let ty_args = vcx.alloc_slice(&ty_args);
             let snap_args = (1..=local_defs.arg_count)
                 .map(mir::Local::from)
-                .map(|def_idx| local_defs[def_idx].ty.snapshot);
+                .map(|def_idx| local_defs[def_idx].ty.snapshot());
             let snap_args = vcx.alloc_slice(&snap_args.collect::<Vec<_>>());
             let return_type = local_defs[mir::RETURN_PLACE].ty;
             let function_ref =
-                FunctionIdn::new(function_ident, (ty_args, snap_args), return_type.snapshot);
+                FunctionIdn::new(function_ident, (ty_args, snap_args), return_type.snapshot());
             deps.emit_output_ref(task_key, MirFunctionEncOutputRef { function_ref })?;
 
             let spec = deps.require_local::<MirSpecEnc>((def_id, substs, None, true))?;
@@ -137,9 +138,9 @@ where
                     .expr;
                 let expr = expr.reify(vcx, (def_id, spec.pre_args));
                 assert!(
-                    expr.ty() == return_type.snapshot,
+                    expr.ty() == return_type.snapshot(),
                     "expected {:?}, got {:?}",
-                    return_type.snapshot,
+                    return_type.snapshot(),
                     expr.ty()
                 );
                 Some(expr)
@@ -158,7 +159,7 @@ where
                 .collect::<Vec<_>>();
             let type_preconditions = input_tys.iter().enumerate().filter_map(|(idx, ty)| {
                 let vir_arg = local_defs[mir::Local::from(idx + 1)];
-                let vir_arg = vcx.mk_local_ex(vir_arg.local.name, vir_arg.ty.snapshot);
+                let vir_arg = vcx.mk_local_ex(vir_arg.local.name, vir_arg.ty.snapshot());
                 Self::mk_type_assertion(vcx, deps, vir_arg, *ty)
             });
 
@@ -175,7 +176,7 @@ where
             let type_postcondition = Self::mk_type_assertion(
                 vcx,
                 deps,
-                vcx.mk_result(return_type.snapshot),
+                vcx.mk_result(return_type.snapshot()),
                 sig.output().skip_binder(),
             );
             let mut posts = spec.posts;

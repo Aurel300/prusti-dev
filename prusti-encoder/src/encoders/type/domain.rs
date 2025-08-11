@@ -417,6 +417,7 @@ impl<'vir> AdtBuilder<'vir> {
             // constructor that won't actually be used by the encoders. Instead
             // we encode the uninhabitability by adding an `ensures false` to
             // the discriminant function.
+            // TODO: https://github.com/Aurel300/prusti-dev/pull/89#discussion_r2263306839
             let self_name = self.name.expect("name should be set");
             let name = vir::vir_format!(self.vcx, "{self_name}_DummyConstructor",);
             self.constructors.push(self.vcx.mk_adt_constructor::<(), !, vir::Dyn>(name, &[]));

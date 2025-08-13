@@ -210,18 +210,6 @@ impl TaskEncoder for DomainEnc {
         vir::with_vcx(|vcx| {
             let mut builder = PureTypeCommon::new(vcx);
 
-            // if matches!(task_key.kind(), TyKind::Param(_)) {
-            //     let (oref, specifics) = super::kinds::param::domain(*task_key, deps, builder)?;
-            //     deps.emit_output_ref(
-            //         *task_key,
-            //         oref.clone(),
-            //     )?;
-            //     return Ok((PureTypeCommon::build(builder), DomainEncOutput {
-            //         inner: oref,
-            //         specifics,
-            //     }));
-            // }
-
             let base_name = get_vir_base_name_kind(task_key.kind(), builder.vcx);
             builder.set_name(&base_name);
             let output_ref = builder.output_ref(base_name);
@@ -290,7 +278,6 @@ pub(crate) struct PureTypeCommon<'vir> {
 pub(crate) struct DomainBuilder<'vir> {
     axioms: Vec<vir::DomainAxiom<'vir>>,
     functions: Vec<vir::DomainFunction<'vir>>,
-    // e_functions: Vec<vir::Function<'vir>>,
     inner: PureTypeCommon<'vir>,
 }
 
@@ -400,7 +387,7 @@ impl<'vir> PureTypeCommon<'vir> {
                     builder.vcx.alloc_slice(builder.axioms.as_slice()),
                     builder.vcx.alloc_slice(builder.functions.as_slice()),
                 );
-                DomainEncLocalKind::Domain { domain }//, functions: builder.e_functions }
+                DomainEncLocalKind::Domain { domain }
             }
             Ok(builder) => {
                 let Some(domain_ident) = builder.domain_ident else {
@@ -426,7 +413,6 @@ impl<'vir> DomainBuilder<'vir> {
         DomainBuilder {
             axioms: Vec::new(),
             functions: Vec::new(),
-            // e_functions: Vec::new(),
             inner,
         }
     }
@@ -561,31 +547,6 @@ impl<'vir> DomainBuilder<'vir> {
         self.functions.push(self.vcx.mk_domain_function(ident, false));
         ident
     }
-
-    // pub(crate) fn e_function<A: Arity, T: CompType>(
-    //     &mut self,
-    //     name: &str,
-    //     args: A::Tys<'vir>,
-    //     ret: Type<'vir, T>,
-    //     pres: &[vir::ExprBool<'vir>],
-    //     posts: &[vir::ExprBool<'vir>],
-    // ) -> FunctionIdn<'vir, A, T> {
-    //     let name = vir::vir_format!(
-    //         self.vcx,
-    //         "{}_{name}",
-    //         self.name.expect("name should be set")
-    //     );
-    //     let ident = FunctionIdn::new(vir::ViperIdent::new(name), args, ret);
-    //     let args = A::params(ident.arity()).into_iter().enumerate().map(|(i, ty)|
-    //         self.vcx.mk_local_decl(vir::vir_format!(self.vcx, "_{i}"), ty)
-    //     ).collect::<Vec<_>>();
-    //     let args = self.vcx.alloc_slice(&args);
-    //     let pres = self.vcx.alloc_slice(pres);
-    //     let posts = self.vcx.alloc_slice(posts);
-    //     self.e_functions
-    //         .push(self.vcx.mk_function_raw(ident, args, pres, posts, None));
-    //     ident
-    // }
 
     pub(crate) fn axiom(&mut self, name: &str, expr: vir::ExprBool<'vir>) {
         let name = vir::vir_format!(

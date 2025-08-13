@@ -179,8 +179,8 @@ impl<'vir> PredicateEncOutputRef<'vir> {
         vid: Option<abi::VariantIdx>,
     ) -> PredicateIdn<'vir, (vir::Ref, vir::ManyTyVal)> {
         vid.map(|vid| {
-                let data = self.expect_enumlike().expect("empty enum");
-                data.variants[vid.as_usize()].predicate
+            let data = self.expect_enumlike().expect("empty enum");
+            data.variants[vid.as_usize()].predicate
         }).unwrap_or(self.ref_to_pred)
     }
 
@@ -203,10 +203,11 @@ pub(crate) struct PredicateBuilder<'vir> {
     pub(crate) generic_exprs: Vec<vir::ExprTyVal<'vir>>,
     pub(crate) generic_tys: &'vir [vir::TypeTyVal<'vir>],
 
-    pub(crate) inner: PredicateBuilt<'vir>,
+    pub(crate) inner: PredicateBuilderInner<'vir>,
 }
 
-pub(crate) struct PredicateBuilt<'vir> {
+/// Holds everything built up to this point.
+pub(crate) struct PredicateBuilderInner<'vir> {
     pub(crate) vcx: &'vir vir::VirCtxt<'vir>,
     name: Option<&'vir str>,
 
@@ -228,7 +229,7 @@ impl<'vir> PredicateBuilder<'vir> {
             generic_decls,
             generic_exprs,
             generic_tys: vcx.alloc_slice(&generic_tys),
-            inner: PredicateBuilt {
+            inner: PredicateBuilderInner {
                 vcx,
                 name: None,
                 fields: Vec::new(),
@@ -265,7 +266,7 @@ impl<'vir> PredicateBuilder<'vir> {
 }
 
 impl<'vir> Deref for PredicateBuilder<'vir> {
-    type Target = PredicateBuilt<'vir>;
+    type Target = PredicateBuilderInner<'vir>;
     fn deref(&self) -> &Self::Target {
         &self.inner
     }
@@ -277,7 +278,7 @@ impl<'vir> DerefMut for PredicateBuilder<'vir> {
     }
 }
 
-impl<'vir> PredicateBuilt<'vir> {
+impl<'vir> PredicateBuilderInner<'vir> {
     pub(crate) fn set_name(&mut self, name: &str) {
         let name = vir::vir_format!(self.vcx, "p_{name}");
         self.name = Some(name);

@@ -414,17 +414,9 @@ impl MirBuiltinEnc {
         };
         let overflowed_snap = bool_cons(overflowed);
         // `tuple(prim_to_snap(wrapped_val), wrapped_val != val)`
-        // let f_tys = [rvalue_pure_ty, bool_ty].into_iter().map(|ty| {
-        //     deps.require_local::<RustTyCastersEnc<CastTypePure>>(ty).unwrap()
-        // }).collect::<Vec<_>>();
-            // deps.require_local::<AggregateSnapArgsCastEnc>(AggregateSnapArgsCastEncTask {
-            //     tys: vec![rvalue_pure_ty, bool_ty],
-            //     aggregate_type: AggregateType::Tuple,
-            // })?;
         let tuple =
             e_res_ty.expect_structlike().field_snaps_to_snap(
                 vec![wrapped_val_snap.upcast_ty(), overflowed_snap.upcast_ty()],
-                // &f_tys
             );
         // `let wrapped_val == (val ..) in $tuple`
         let inner_let = vcx.mk_let_expr(wrapped_val_str, wrapped_val_exp, tuple);

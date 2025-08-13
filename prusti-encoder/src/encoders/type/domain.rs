@@ -20,7 +20,7 @@ use super::{
     most_generic_ty::{extract_type_params, get_vir_base_name_kind, MostGenericTy},
 };
 
-/// You probably never want to use this, use `SnapshotEnc` instead.
+/// You probably never want to use this, use `TyPureEnc` instead.
 /// Note: there should never be a dependency on `PredicateEnc` inside this
 /// encoder!
 pub(super) struct DomainEnc;

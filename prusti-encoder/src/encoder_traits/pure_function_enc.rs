@@ -55,9 +55,9 @@ where
         arg: ExprGenSnap<'vir, Curr, Next>, // Snapshot encoded argument
         ty: Ty<'vir>,
     ) -> Option<ExprGenBool<'vir, Curr, Next>> {
-        let mg_ty = extract_type_params(vcx.tcx(), ty).0;
+        let generic_ty = extract_type_params(vcx.tcx(), ty).0;
         let typeof_ref = deps
-            .require_ref::<TypeOfEnc>(mg_ty)
+            .require_ref::<TypeOfEnc>(generic_ty)
             .unwrap();
         let typeof_call = typeof_ref.typeof_function.call()(arg);
 

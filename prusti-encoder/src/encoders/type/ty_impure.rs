@@ -14,6 +14,9 @@ use super::{
     most_generic_ty::extract_type_params,
 };
 
+/// Encodes a type into the predicate representation. Takes an arbitrary Rust
+/// `Ty` and provides a wrapper around the results of the `PredicateEnc` encoder.
+/// This wrapper handles all the generic casts required (e.g. when fold/unfolding).
 pub struct TyImpureEnc;
 
 #[derive(Clone)]
@@ -66,7 +69,6 @@ impl<'vir> TyImpureEncOutputRef<'vir> {
         self_ref: vir::ExprRef<'vir>,
         self_new_snap: vir::ExprSnap<'vir>,
     ) -> vir::Stmt<'vir> {
-        //assert_eq!(self_ref.ty(), &TypeData::Ref);
         assert_eq!(
             self.snapshot(),
             self_new_snap.ty(),
@@ -81,10 +83,12 @@ impl<'vir> TyImpureEncOutputRef<'vir> {
         )))
     }
 
+    /// The snapshot type.
     pub fn snapshot(&self) -> vir::TypeSnap<'vir> {
         self.generic_predicate.snapshot
     }
 
+    /// Constructs the Viper predicate application expression.
     pub fn ref_to_pred<'tcx>(
         &self,
         vcx: &'vir vir::VirCtxt<'tcx>,
@@ -94,6 +98,7 @@ impl<'vir> TyImpureEncOutputRef<'vir> {
         vcx.mk_predicate_app_expr(self.ref_to_pred_app(vcx, self_ref, perm))
     }
 
+    /// Constructs the Viper predicate application.
     pub fn ref_to_pred_app<'tcx>(
         &self,
         vcx: &'vir vir::VirCtxt<'tcx>,
@@ -103,6 +108,7 @@ impl<'vir> TyImpureEncOutputRef<'vir> {
         (self.generic_predicate.ref_to_pred)(self_ref, &self.ref_to_ty_args(vcx))(perm)
     }
 
+    /// Calls the predicate (heap) dependent snapshot construction function.
     pub fn ref_to_snap<'tcx>(
         &self,
         vcx: &'vir vir::VirCtxt<'tcx>,
@@ -113,6 +119,7 @@ impl<'vir> TyImpureEncOutputRef<'vir> {
         expr
     }
 
+    /// Get the struct specifics (or enum variant if specified), panics if not a struct.
     pub fn expect_variant_opt(&self, vid: Option<abi::VariantIdx>) -> TyImpureDataStruct<'_, 'vir> {
         let ref_to_pred = self.generic_predicate.get_ref_to_pred(vid);
         let inner = self.generic_predicate.get_variant_opt(vid).copied();
@@ -120,6 +127,8 @@ impl<'vir> TyImpureEncOutputRef<'vir> {
         TyImpureDataStruct { ty_args, params: &self.params, ref_to_pred, inner }
     }
 
+    /// Optionally get the enum specifics, `None` if not an enum. The inner
+    /// option is a `None` if this is an empty enum (uninhabited).
     pub fn get_enumlike(&self) -> Option<Option<TyImpureDataEnum<'vir>>> {
         self.generic_predicate
             .get_enumlike()
@@ -129,12 +138,14 @@ impl<'vir> TyImpureEncOutputRef<'vir> {
             }))
     }
 
+    /// Get the immref specifics, panics if not immref.
     pub fn expect_immref(&self) -> TyImpureDataImmRef<'vir> {
         let inner = self.generic_predicate.expect_immref();
         let ty_args = self.ref_to_ty_args(vir::with_vcx(|vcx| vcx));
         TyImpureDataImmRef { inner, ty_args }
     }
 
+    /// Get the mutref specifics, panics if not mutref.
     pub fn expect_mutref(&self) -> TyImpureDataMutRef<'vir> {
         let inner = self.generic_predicate.expect_mutref();
         let ty_args = self.ref_to_ty_args(vir::with_vcx(|vcx| vcx));
@@ -151,6 +162,7 @@ impl<'vir> TyImpureEncOutputRef<'vir> {
 }
 
 impl<'vir> TyImpureDataStruct<'_, 'vir> {
+    /// Get the (Ref) address of a field.
     pub fn field<Curr, Next>(&self, field: abi::FieldIdx, self_ref: vir::ExprGenRef<'vir, Curr, Next>) -> vir::ExprGenRef<'vir, Curr, Next> {
         let ty_args = (&*self.ty_args) as *const [vir::ExprTyVal<'vir>] as *const [vir::ExprGenTyVal<'vir, Curr, Next>];
         // TODO: remove unsafe
@@ -158,6 +170,7 @@ impl<'vir> TyImpureDataStruct<'_, 'vir> {
         self.inner.expect("field of enum with no variant").ref_to_field_refs[field.index()].call()(self_ref, ty_args)
     }
 
+    /// Fold the predicate (including generic casts).
     pub fn fold(
         &self,
         self_ref: vir::ExprRef<'vir>,
@@ -174,6 +187,7 @@ impl<'vir> TyImpureDataStruct<'_, 'vir> {
         })
     }
 
+    /// Unfold the predicate (including generic casts).
     pub fn unfold(
         &self,
         self_ref: vir::ExprRef<'vir>,

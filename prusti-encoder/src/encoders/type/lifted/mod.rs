@@ -13,10 +13,15 @@ pub(super) mod r#typeof;
 pub use {
     func_app_ty_params::LiftedFuncAppTyParamsEnc,
     func_def_ty_params::LiftedTyParamsEnc,
-    // TODO: these should not be public
-    cast::{CastArgs, CastToEnc},
-    casters::{CastTypePure, CastTypeImpure, CastersEnc},
     ty_constructor::TyConstructorEnc,
     r#typeof::TypeOfEnc,
+};
+
+// TODO: these should probably not be public, generics stuff should be wrapped
+// within an api of the relevant encoder (e.g. the api of the domain/predicate
+// encoder) rather than handled by the client of the encoders.
+pub use {
+    cast::{CastArgs, CastToEnc},
+    casters::{CastTypePure, CastTypeImpure, CastersEnc},
     ty::*,
 };

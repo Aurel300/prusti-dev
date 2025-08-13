@@ -627,13 +627,6 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                     .require_local::<TyPureEnc>(rvalue_ty)
                     .unwrap();
                 let (snap, place_ref) = self.encode_place_with_ref(curr_ver, place);
-                // let place_ty = place.ty(self.body, self.vcx.tcx()).ty;
-                // let cast = self
-                //     .deps
-                //     .require_local::<RustTyCastersEnc<CastTypePure>>(place_ty)
-                //     .unwrap();
-                // // The snapshot of the referenced value should be encoded as a generic `Param`
-                // let snap = cast.cast_to_generic_if_necessary(self.vcx, snap);
                 if kind.mutability().is_mut() {
                     let e_rvalue_ty = rvalue_snapshot_encoding
                         .expect_mutref();

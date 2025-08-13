@@ -43,6 +43,9 @@ pub struct TyPureDataEnum<'vir> {
     data: DomainDataEnum<'vir>,
 }
 
+/// Encodes a type into the snapshot representation. Takes an arbitrary Rust
+/// `Ty` and provides a wrapper around the results of the `DomainEnc` encoder.
+/// This wrapper handles all the generic casts required.
 pub struct TyPureEnc;
 
 #[derive(Clone, Debug)]

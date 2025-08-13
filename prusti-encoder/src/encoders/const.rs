@@ -68,7 +68,6 @@ impl TaskEncoder for ConstEnc {
                     }),
                     ConstValue::ZeroSized => {
                         let s = kind.expect_structlike();
-                        // assert_eq!(s.field_snaps_to_snap.arity().len(), 0);
                         s.field_snaps_to_snap(Vec::new())
                     }
                     // Encode `&str` constants to an opaque domain. If we ever want to perform string reasoning

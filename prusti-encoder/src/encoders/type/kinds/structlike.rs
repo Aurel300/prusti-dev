@@ -9,28 +9,48 @@ use vir::{vir_format, CastType, FunctionIdn, HasType, PredicateIdn};
 pub fn domain<'vir>(
     prefix: &str,
     fields: &[FieldTy<'vir>],
+    generics: &[LiftedGeneric<'vir>],
     builder: &mut AdtBuilder<'vir>,
     discr: Option<vir::ExprCSnap<'vir>>,
 ) -> (
-    FunctionIdn<'vir, vir::ManySnap, vir::CSnap>,
+    FunctionIdn<'vir, (vir::ManySnap, vir::ManyTyVal), vir::CSnap>,
     &'vir [DomainDataField<'vir>],
+    &'vir [vir::AdtDestructor<'vir, vir::CSnap, vir::TyVal>],
 ) {
     let field_tys = builder.vcx.alloc_slice(&fields.iter().map(|f| f.ty).collect::<Vec<_>>());
     let (cons, des) = builder.constructor(prefix, field_tys, discr);
-    assert_eq!(des.len(), fields.len());
+    assert_eq!(snap_fields.len(), fields.len());
     let des = des.iter().zip(fields).map(|(d, ty)| {
         DomainDataField::new(d.downcast_ty(), ty.rust_ty)
     }).collect::<Vec<_>>();
     (cons, builder.vcx.alloc_slice(&des))
+    /*
+    let generic_tys = builder.vcx.alloc_slice(
+        generics.iter().map(LiftedGeneric::ty).collect::<Vec<_>>().as_slice(),
+    );
+    let (cons, des) = builder.constructor(prefix, (field_tys, generic_tys), discr);
+    let (snap_fields, gen_fields) = builder.vcx.alloc_slice(&des).split_at(fields.len());
+    (cons, snap_fields.downcast_ty(), gen_fields.downcast_ty())
+    */
 }
 
 pub(crate) fn predicate<'vir>(
     prefix: &str,
+<<<<<<< HEAD
     fields: &[TyImpureEncOutputRef<'vir>],
     task_key: <PredicateEnc as TaskEncoder>::TaskKey<'vir>,
     snap: &DomainEncOutput<'vir>,
     dds: DomainDataStruct<'vir>,
     deps: &mut TaskEncoderDependencies<'vir, PredicateEnc>,
+=======
+    fields: &[RustTyPredicatesEncOutputRef<'vir>],
+    _task_key: <PredicateEnc as TaskEncoder>::TaskKey<'vir>,
+    _snap: &SnapshotEncOutput<'vir>,
+    variant_field_snaps_to_snap: FunctionIdn<'vir, (vir::ManySnap, vir::ManyTyVal), vir::CSnap>,
+    _deps: &mut TaskEncoderDependencies<'vir, PredicateEnc>,
+    generic_decls: &[vir::LocalDeclTyVal<'vir>],
+    generic_exprs: &[vir::ExprTyVal<'vir>],
+>>>>>>> 288981271d8 (Add generic types to snapshots)
     builder: &mut PredicateBuilder<'vir>,
 ) -> Result<
     (
@@ -101,7 +121,7 @@ pub(crate) fn predicate<'vir>(
         })
         .collect::<Vec<_>>();
     let variant_snap_expr = vir::expr! {
-        unfolding ([pred_owned](ref_self, ..[&builder.generic_exprs])) in ([dds.field_snaps_to_snap](..[snap_args.as_slice()]))
+        unfolding ([pred_owned](ref_self, ..[&builder.generic_exprs])) in ([dds.field_snaps_to_snap](..[snap_args.as_slice()], ..[&builder.generic_exprs]))
     };
     /*
     let pred_owned_expr = vir::expr! {

@@ -26,7 +26,7 @@ pub(crate) fn domain<'vir>(
     let generics = params
         .iter()
         .map(|ty| {
-            deps.require_local::<LiftedTyEnc<EncodeGenericsAsParamTy>>(LiftedTyEncTask::Ty(ty))
+            deps.require_local::<LiftedTyEnc<EncodeGenericsAsLifted>>(LiftedTyEncTask::Ty(ty))
                 .unwrap()
                 .expect_generic()
         })
@@ -37,13 +37,14 @@ pub(crate) fn domain<'vir>(
         .map(|ty| FieldTy::from_ty(deps, ty))
         .collect::<Result<Vec<_>, _>>()?;
 
-    let (field_snaps_to_snap, field_access) = super::structlike::domain(
-        "", &fields, &mut builder, None,
+    let (field_snaps_to_snap, field_access, ty_param_accessors) = super::structlike::domain(
+        "", &fields, &generics, &mut builder, None,
     );
 
     Ok((DomainEncSpecifics::StructLike(DomainDataStruct::new(
         field_snaps_to_snap,
         field_access,
+        ty_param_accessors,
     )), Ok(builder)))
 
     /*

@@ -58,19 +58,23 @@ pub struct DomainDataMutRef<'vir> {
 pub struct DomainDataStruct<'vir> {
     /// Construct domain from snapshots of fields or for primitive types
     /// from the single Viper primitive value.
-    pub(super) field_snaps_to_snap: FunctionIdn<'vir, vir::ManySnap, vir::CSnap>,
+    pub field_snaps_to_snap: FunctionIdn<'vir, (vir::ManySnap, vir::ManyTyVal), vir::CSnap>,
     /// Functions to access the fields.
     pub field_access: &'vir [DomainDataField<'vir>],
+    /// Functions to access the type parameters.
+    pub ty_param_accessors: &'vir [AdtDestructor<'vir, vir::CSnap, vir::TyVal>],
 }
 
 impl<'vir> DomainDataStruct<'vir> {
     pub fn new(
         field_snaps_to_snap: FunctionIdn<'vir, vir::ManySnap, vir::CSnap>,
         field_access: &'vir [DomainDataField<'vir>],
+        ty_param_accessors: &'vir [AdtDestructor<'vir, vir::CSnap, vir::TyVal>],
     ) -> Self {
         DomainDataStruct {
             field_snaps_to_snap,
             field_access,
+            ty_param_accessors,
         }
     }
 }

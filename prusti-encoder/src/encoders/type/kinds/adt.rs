@@ -30,7 +30,7 @@ pub(crate) fn domain<'vir>(
         .iter()
         .flat_map(ty::GenericArg::as_type)
         .map(|ty| {
-            deps.require_local::<LiftedTyEnc<EncodeGenericsAsParamTy>>(LiftedTyEncTask::Ty(ty))
+            deps.require_local::<LiftedTyEnc<EncodeGenericsAsLifted>>(LiftedTyEncTask::Ty(ty))
                 .unwrap()
                 .expect_generic()
         })
@@ -45,12 +45,13 @@ pub(crate) fn domain<'vir>(
                 rust_ty_data: None,
             }], task_key, output_ref, &generics, deps, builder)?;
             */
-            let (field_snaps_to_snap, field_access) = super::structlike::domain(
+            let (field_snaps_to_snap, field_access, ty_param_accessors) = super::structlike::domain(
                 "",
                 &[FieldTy::from_ty(
                     deps,
-                    generics[0].to_ty(builder.vcx.tcx()),
+                    params[0].expect_ty(),
                 )?],
+                &generics,
                 &mut builder,
                 None,
             );
@@ -58,19 +59,21 @@ pub(crate) fn domain<'vir>(
             Ok((DomainEncSpecifics::StructLike(DomainDataStruct::new(
                 field_snaps_to_snap,
                 field_access,
+                ty_param_accessors,
             )), Ok(builder)))
         }
         ty::AdtKind::Struct => {
             let variant = adt.non_enum_variant();
             let fields = FieldTy::mk_field_tys(builder.vcx, deps, variant, params)?;
 
-            let (field_snaps_to_snap, field_access) = super::structlike::domain(
-                "", &fields, &mut builder, None,
+            let (field_snaps_to_snap, field_access, ty_param_accessors) = super::structlike::domain(
+                "", &fields, &generics, &mut builder, None,
             );
 
             Ok((DomainEncSpecifics::StructLike(DomainDataStruct::new(
                 field_snaps_to_snap,
                 field_access,
+                ty_param_accessors,
             )), Ok(builder)))
         }
         ty::AdtKind::Enum => {
@@ -97,9 +100,10 @@ pub(crate) fn domain<'vir>(
 
                     let fields = FieldTy::mk_field_tys(builder.vcx, deps, variant, params)?;
 
-                    let (field_snaps_to_snap, field_access) = super::structlike::domain(
+                    let (field_snaps_to_snap, field_access, ty_param_accessors) = super::structlike::domain(
                         &format!("{var_idx_num}_"),
                         &fields,
+                        &generics,
                         &mut builder,
                         Some(discr),
                     );
@@ -111,6 +115,7 @@ pub(crate) fn domain<'vir>(
                         fields: DomainDataStruct::new(
                             field_snaps_to_snap,
                             field_access,
+                            ty_param_accessors,
                         ),
                     })
                 })

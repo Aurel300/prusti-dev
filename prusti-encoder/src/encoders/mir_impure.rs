@@ -813,7 +813,7 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                     &[],
                     &[],
                     self.vcx
-                        .mk_dummy_stmt(vir::vir_format!(self.vcx, "cleanup block",)),
+                        .mk_dummy_stmt(vir::vir_format!(self.vcx, "cleanup block")),
                 ),
             );
             return;
@@ -1472,7 +1472,7 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                 expected,
                 msg,
                 target,
-                unwind,
+                ..
             } => {
                 const REAL_TARGET_SUCC_IDX: usize = 0;
                 // Ensure that the terminator succ that we use for the repacks is the correct one
@@ -1530,34 +1530,12 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                     });
                     self.stmt(self.vcx.mk_exhale_stmt(assert));
                 });
-
+                let set_flag = self.set_from_to_flag(location.block, *target);
+                self.stmt(set_flag);
                 let target_bb = self
                     .vcx
                     .alloc(vir::CfgBlockLabelData::BasicBlock(target.as_usize()));
-                let otherwise_statement;
-                let otherwise = match unwind {
-                    mir::UnwindAction::Cleanup(bb) => {
-                        otherwise_statement = self.set_from_to_flag(location.block, *bb);
-                        self
-                            .vcx
-                            .alloc(vir::CfgBlockLabelData::BasicBlock(bb.as_usize()))
-                    }
-                    _ => todo!(),
-                };
-
-                let statements = self.set_from_to_flag(location.block, *target);
-                let statements = self.vcx.alloc_slice(&[statements]);
-
-                self.vcx.mk_goto_if_stmt(
-                    enc.as_dyn(),
-                    self.vcx.alloc_slice(&[self.vcx.mk_goto_if_target(
-                        expected.as_dyn(),
-                        target_bb,
-                        statements,
-                    )]),
-                    otherwise,
-                    self.vcx.alloc_slice(&[otherwise_statement]),
-                )
+                self.vcx.mk_goto_stmt(target_bb)
             }
             mir::TerminatorKind::Unreachable => self.vcx().with_span(span, |vcx| {
                 vcx.handle_error("exhale.failed:assertion.false", move |_| {

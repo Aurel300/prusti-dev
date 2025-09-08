@@ -1,3 +1,4 @@
+use prusti_interface::PrustiError;
 use prusti_rustc_interface::span::def_id::DefId;
 use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 
@@ -41,8 +42,42 @@ impl TaskEncoder for MirPolyImpureEnc {
     }
 
     fn emit_outputs<'vir>(program: &mut task_encoder::Program<'vir>) {
-        for output in Self::all_outputs_local() {
+        let (outputs, errored) = Self::all_outputs_local();
+        for output in outputs {
             program.add_method(output.method);
+        }
+        for (error_key, output_ref) in errored {
+            vir::with_vcx(|vcx| {
+                use vir::CallableIdn;
+                let span = vcx.tcx().def_span(error_key);
+                let method_stub = vcx.mk_method(
+                    output_ref.method_ref,
+                    (
+                        vcx.alloc_slice(&output_ref.method_ref.arity().0.iter()
+                            .enumerate()
+                            .map(|(idx, ty)| vcx.mk_local_decl(vir::vir_format!(vcx, "_0_{idx}"), ty))
+                            .collect::<Vec<_>>()),
+                        vcx.alloc_slice(&output_ref.method_ref.arity().1.iter()
+                            .enumerate()
+                            .map(|(idx, ty)| vcx.mk_local_decl(vir::vir_format!(vcx, "_1_{idx}"), ty))
+                            .collect::<Vec<_>>()),
+                    ),
+                    &[],
+                    vcx.alloc_slice(&[
+                        // TODO: the strange false == true expression is constructed
+                        //   here because a const bool false doesn't get a span attached
+                        //   to it. (Maybe we don't need the const bool optimisation.)
+                        // TODO: this should instead be a span + error handler at the
+                        //   call site. We should change this once there is an encoder
+                        //   for method calls, which will encode a call to a stub method
+                        //   differently (if it can know that it failed?).
+                        vcx.with_span(span, |vcx| vcx.mk_eq_expr(vcx.mk_bool::<false>(), vcx.mk_bool::<true>())),
+                    ]),
+                    &[],
+                    None,
+                );
+                program.add_method(method_stub);
+            });
         }
     }
 }

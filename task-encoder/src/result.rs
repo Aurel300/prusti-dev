@@ -58,7 +58,7 @@ impl<'vir, E: TaskEncoder + 'vir + ?Sized> std::fmt::Debug for EncodeFullError<'
 pub enum TaskEncoderError<E: TaskEncoder + ?Sized> {
     EnqueueingError(<E as TaskEncoder>::EnqueueingError),
     EncodingError(<E as TaskEncoder>::EncodingError),
-    // TODO: error of another task encoder?
+    DependencyError, // TODO: should this have any value attached?
     CyclicError,
 }
 
@@ -71,6 +71,7 @@ where
         match self {
             Self::EncodingError(err) => helper.field("EncodingError", err),
             Self::EnqueueingError(err) => helper.field("EnqueueingError", err),
+            Self::DependencyError => helper.field("DependencyError", &""),
             Self::CyclicError => helper.field("CyclicError", &""),
         };
         helper.finish()
@@ -83,6 +84,7 @@ impl<E: TaskEncoder + ?Sized> Clone for TaskEncoderError<E> {
         match self {
             Self::EncodingError(err) => Self::EncodingError(err.clone()),
             Self::EnqueueingError(err) => Self::EnqueueingError(err.clone()),
+            Self::DependencyError => Self::DependencyError,
             Self::CyclicError => Self::CyclicError,
         }
     }

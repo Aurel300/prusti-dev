@@ -179,7 +179,12 @@ pub trait TaskEncoder {
         // same task was (recursively) requested from the same encoder, before
         // its first invocation reached a call to `emit_output_ref`.
         // TODO: we should still make sure that *some* progress is done, because an actual cyclic dependency could cause a stack overflow?
-        Self::encode(task, false)?;
+        let encode_res = Self::encode(task, false);
+        match encode_res {
+            Ok(_)
+            | Err(TaskEncoderError::DependencyError) => (), // pass, check for output ref
+            Err(err) => return Err(err),
+        }
 
         let task_key_clone = task_key.clone();
         if let Some(output_ref) =
@@ -312,7 +317,7 @@ pub trait TaskEncoder {
                     }
                 })
             }
-            Err(EncodeFullError::DependencyError) => todo!(),
+            Err(EncodeFullError::DependencyError) => Err(TaskEncoderError::DependencyError),
             Err(EncodeFullError::EncodingError(err, maybe_output_dep)) => {
                 Self::with_cache(|cache| {
                     cache.borrow_mut().insert(
@@ -442,23 +447,41 @@ pub trait TaskEncoder {
         deps: &mut TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self>;
 
-    fn all_outputs_local<'vir>() -> Vec<Self::OutputFullLocal<'vir>>
+    #[track_caller]
+    fn all_outputs_local_no_errors<'vir>() -> Vec<Self::OutputFullLocal<'vir>>
+    where
+        Self: 'vir,
+    {
+        let (outputs, errored) = Self::all_outputs_local();
+        assert!(errored.is_empty());
+        outputs
+    }
+
+    fn all_outputs_local<'vir>() -> (
+        Vec<Self::OutputFullLocal<'vir>>,
+        Vec<(Self::TaskKey<'vir>, Self::OutputRef<'vir>)>,
+    )
     where
         Self: 'vir,
     {
         Self::with_cache(|cache| {
-            cache
-                .borrow()
-                .iter()
-                .map(|(_, cache_state)| {
-                    if let TaskEncoderCacheState::Encoded { output_local, .. } = cache_state {
-                        output_local
-                    } else {
-                        panic!("task encoder not completed")
+            let mut outputs = Vec::new();
+            let mut errored = Vec::new();
+            for (key, cache_state) in cache.borrow().iter() {
+                match cache_state {
+                    TaskEncoderCacheState::Encoded { output_local, .. } => {
+                        outputs.push(output_local.clone());
                     }
-                })
-                .cloned()
-                .collect()
+                    TaskEncoderCacheState::Started { output_ref }
+                    | TaskEncoderCacheState::ErrorEncode { output_ref, .. } => {
+                        errored.push((key.clone(), output_ref.clone()));
+                    },
+                    //TaskEncoderCacheState::Enqueued => todo!(),
+                    //TaskEncoderCacheState::ErrorEnqueue { error } => todo!(),
+                    _ => panic!("task encoder not completed"),
+                }
+            }
+            (outputs, errored)
         })
     }
 

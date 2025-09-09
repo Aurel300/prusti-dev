@@ -21,6 +21,7 @@ pub struct ImpureFunctionEncError;
 #[derive(Clone, Debug)]
 pub struct ImpureFunctionEncOutputRef<'vir> {
     pub method_ref: MethodIdn<'vir, (vir::ManyRef, vir::ManyTyVal)>,
+    pub should_be_verified: bool,
 }
 impl<'vir> task_encoder::OutputRefAny for ImpureFunctionEncOutputRef<'vir> {}
 
@@ -89,7 +90,17 @@ where
                     .collect::<Vec<_>>(),
             );
             let method_ref = MethodIdn::new(method_name, (ref_args, ty_args));
-            deps.emit_output_ref(task_key, ImpureFunctionEncOutputRef { method_ref })?;
+
+            // Do not encode the method body if it is external, trusted, just
+            // a call stub, or a trait function without a default implementation
+            let local_def_id = def_id
+                .as_local()
+                .filter(|_| !trusted && is_function_with_body(vcx.tcx(), def_id));
+
+            deps.emit_output_ref(task_key, ImpureFunctionEncOutputRef {
+                method_ref,
+                should_be_verified: local_def_id.is_some(),
+            })?;
 
             let arg_defs =
                 deps.require_local::<MirLocalDefEnc>((def_id, substs, caller_def_id, false))?;
@@ -121,11 +132,6 @@ where
             posts.extend(wands.indirect_posts(vcx, &arg_defs, deps));
             posts.extend(wands.wand_posts(vcx, &arg_defs, deps));
 
-            // Do not encode the method body if it is external, trusted, just
-            // a call stub, or a trait function without a default implementation
-            let local_def_id = def_id
-                .as_local()
-                .filter(|_| !trusted && is_function_with_body(vcx.tcx(), def_id));
             let blocks = if let Some(local_def_id) = local_def_id {
                 let body_with_facts = vcx.body_mut().get_impure_fn_body_with_facts(local_def_id);
                 let body = &body_with_facts.body;

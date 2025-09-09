@@ -76,6 +76,9 @@ impl TaskEncoder for MirPolyImpureEnc {
                     &[],
                     None,
                 );
+                if output_ref.should_be_verified {
+                    vcx.emit_early_error(PrustiError::verification("method was not verified", span.into()));
+                }
                 program.add_method(method_stub);
             });
         }

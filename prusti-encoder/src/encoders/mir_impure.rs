@@ -15,7 +15,7 @@ use pcg::{
     r#loop::LoopAnalysis,
     pcg::{EvalStmtPhase, Pcg, PcgNode, PcgSuccessor},
     results::PcgBasicBlock,
-    utils::{CompilerCtxt, HasPlace, Place, maybe_old::MaybeOldPlace},
+    utils::{CompilerCtxt, HasPlace, Place, maybe_old::MaybeLabelledPlace},
 };
 use prusti_interface::{PrustiError, specs::specifications::SpecQuery};
 use prusti_rustc_interface::{
@@ -253,8 +253,8 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             return;
         };
         let (place, old) = match base {
-            MaybeOldPlace::Current(place) => (place, None),
-            MaybeOldPlace::Labelled(snap) => {
+            MaybeLabelledPlace::Current(place) => (place, None),
+            MaybeLabelledPlace::Labelled(snap) => {
                 // We shouldn't be unfolding old places?
                 debug_assert!(!unfold);
                 (
@@ -462,8 +462,8 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 &mut to_skip,
             ),
             //RenamePlace {
-            //    old: MaybeOldPlace<'tcx>,
-            //    new: MaybeOldPlace<'tcx>,
+            //    old: MaybeLabelledPlace<'tcx>,
+            //    new: MaybeLabelledPlace<'tcx>,
             //},
             _ => comment!(self, "(ignoring)"),
         }

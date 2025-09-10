@@ -13,7 +13,7 @@ use pcg::{
     },
     free_pcs::{CapabilityKind, RepackOp},
     r#loop::LoopAnalysis,
-    pcg::{EvalStmtPhase, PCGNode, Pcg, PcgNode, PcgSuccessor},
+    pcg::{EvalStmtPhase, Pcg, PcgNode, PcgSuccessor},
     results::PcgBasicBlock,
     utils::{CompilerCtxt, HasPlace, Place, maybe_old::MaybeOldPlace},
 };

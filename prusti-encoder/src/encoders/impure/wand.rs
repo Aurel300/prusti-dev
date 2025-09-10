@@ -10,7 +10,7 @@ use pcg::{
         state::BorrowsState,
         unblock_graph::UnblockGraph,
     },
-    pcg::PCGNode,
+    pcg::PcgNode,
     utils::maybe_remote::MaybeRemotePlace,
 };
 use task_encoder::TaskEncoder;
@@ -92,7 +92,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
     fn create_package_script(
         &mut self,
         borrows_state: &BorrowsState<'vir>,
-        rhs: impl Into<PCGNode<'vir>>,
+        rhs: impl Into<PcgNode<'vir>>,
         old_outer: &mut WandOldOuter<'vir>,
     ) -> Vec<vir::Stmt<'vir>> {
         let ug = UnblockGraph::for_node(rhs, borrows_state, self.pcg_ctxt());

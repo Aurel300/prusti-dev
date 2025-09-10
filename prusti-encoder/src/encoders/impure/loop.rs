@@ -39,13 +39,13 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         // self.stmt(self.vcx.mk_comment_stmt(
         //     vir::vir_format!(self.vcx, "_borrows: {:#?}", borrows),
         // ));
-        for cap_local in state.owned_pcg().locals().iter() {
+        for cap_local in state.owned_pcg().iter() {
             if cap_local.is_unallocated() {
                 continue;
             }
             let cap = cap_local.get_allocated();
-            for place in cap.leaves(self.pcg_ctxt()).iter() {
-                if !state.capabilities().is_exclusive(*place) {
+            for place in cap.leaf_places(self.pcg_ctxt()).iter() {
+                if !state.capabilities().is_exclusive(*place, self.pcg_ctxt()) {
                     continue;
                 }
                 let (place_res, snap, _, _) = self.encode_place_snap(*place);

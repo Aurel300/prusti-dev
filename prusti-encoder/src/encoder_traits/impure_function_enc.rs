@@ -1,6 +1,6 @@
 use std::alloc::Global;
 
-use pcg::{borrow_checker::r#impl::BorrowCheckerImpl, r#loop::LoopAnalysis};
+use pcg::{borrow_checker::r#impl::{BorrowCheckerImpl, NllBorrowCheckerImpl}, r#loop::LoopAnalysis};
 use prusti_rustc_interface::middle::mir;
 use task_encoder::{EncodeFullError, TaskEncoder, TaskEncoderDependencies};
 use vir::{MethodIdn, ViperIdent};

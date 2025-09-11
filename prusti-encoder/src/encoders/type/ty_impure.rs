@@ -252,6 +252,8 @@ impl TaskEncoder for TyImpureEnc {
 
     type EncodingError = ();
 
+    const ENCODER_NAME: &'static str = "impure type encoder";
+
     fn do_encode_full<'vir>(
         task_key: &Self::TaskKey<'vir>,
         deps: &mut TaskEncoderDependencies<'vir, Self>,

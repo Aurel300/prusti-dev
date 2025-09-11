@@ -78,6 +78,8 @@ impl TaskEncoder for TyPureEnc {
 
     type EncodingError = ();
 
+    const ENCODER_NAME: &'static str = "pure type encoder";
+
     fn task_to_key<'vir>(task: &Self::TaskDescription<'vir>) -> Self::TaskKey<'vir> {
         *task
     }

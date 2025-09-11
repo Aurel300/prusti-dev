@@ -55,11 +55,12 @@ where
         vir::with_vcx(|vcx| {
             use mir::visit::Visitor;
 
+            let span = vcx.tcx().def_span(def_id);
             let substs = Self::get_substs(vcx, &task_key);
             let trusted = crate::encoders::is_function_trusted(def_id, substs);
 
             let arg_defs =
-                deps.require_ref::<MirLocalDefEnc>((def_id, substs, caller_def_id, false))?;
+                deps.require_ref_spanned::<MirLocalDefEnc>((def_id, substs, caller_def_id, false), span)?;
 
             // Argument count for the Viper method:
             // - one (`Ref`) for the return place;
@@ -79,7 +80,7 @@ where
             let method_name = Self::mk_method_ident(vcx, &task_key);
             let ref_args = vcx.alloc_slice(&vec![vir::TYPE_REF; arg_count]);
             let param_ty_decls = deps
-                .require_local::<LiftedTyParamsEnc>(substs)?
+                .require_local_spanned::<LiftedTyParamsEnc>(substs, span)?
                 .iter()
                 .map(|g| g.decl())
                 .collect::<Vec<_>>();
@@ -103,15 +104,15 @@ where
             })?;
 
             let arg_defs =
-                deps.require_local::<MirLocalDefEnc>((def_id, substs, caller_def_id, false))?;
+                deps.require_local_spanned::<MirLocalDefEnc>((def_id, substs, caller_def_id, false), span)?;
 
             // Method contract. We will need to emit pre- and postconditions for
             // the permissions, the functional spec, and (in the postcondition)
             // wands in case of a reborrowing function.
             let mut pres = Vec::new();
             let mut posts = Vec::new();
-            let spec = deps.require_local::<MirSpecEnc>((def_id, substs, None, false))?;
-            let wands = deps.require_local::<WandEnc>(WandEncTask { def_id })?;
+            let spec = deps.require_local_spanned::<MirSpecEnc>((def_id, substs, None, false), span)?;
+            let wands = deps.require_local_spanned::<WandEnc>(WandEncTask { def_id }, span)?;
 
             // Add direct resources for inputs and outputs to the pre- and
             // postconditions, respectively. "Direct" here refers to owned
@@ -136,7 +137,7 @@ where
                 let body_with_facts = vcx.body_mut().get_impure_fn_body_with_facts(local_def_id);
                 let body = &body_with_facts.body;
                 let local_defs =
-                    deps.require_local::<MirLocalDefEnc>((def_id, substs, caller_def_id, true))?;
+                    deps.require_local_spanned::<MirLocalDefEnc>((def_id, substs, caller_def_id, true), span)?;
 
                 let loop_analysis = LoopAnalysis::find_loops(&body);
                 let bc = NllBorrowCheckerImpl::new(vcx.tcx(), &body_with_facts);

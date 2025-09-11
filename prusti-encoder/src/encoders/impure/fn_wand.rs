@@ -325,6 +325,8 @@ impl TaskEncoder for WandEnc {
 
     type EncodingError = WandEncError;
 
+    const ENCODER_NAME: &'static str = "wand encoder";
+
     fn task_to_key<'vir>(task: &Self::TaskDescription<'vir>) -> Self::TaskKey<'vir> {
         WandEncTask {
             def_id: task.def_id,

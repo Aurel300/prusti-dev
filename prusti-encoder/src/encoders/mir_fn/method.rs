@@ -1,66 +1,122 @@
 use std::alloc::Global;
 
-use pcg::{borrow_checker::r#impl::{BorrowCheckerImpl, NllBorrowCheckerImpl}, r#loop::LoopAnalysis};
-use prusti_rustc_interface::middle::mir;
-use task_encoder::{EncodeFullError, TaskEncoder, TaskEncoderDependencies};
-use vir::{MethodIdn, ViperIdent};
+use pcg::{borrow_checker::r#impl::NllBorrowCheckerImpl, r#loop::LoopAnalysis};
+use prusti_rustc_interface::{middle::{ty, mir}, span::def_id::DefId};
+use task_encoder::{EncodeFullResult, OutputRefAny, TaskEncoder, TaskEncoderDependencies};
+use vir::MethodIdn;
 
-use crate::{
-    encoders::{
-        ty::lifted::LiftedTyParamsEnc, ImpureEncVisitor,
-        MirLocalDefEnc, MirSpecEnc, WandEnc, WandEncTask,
-    },
-    trait_support::is_function_with_body,
-};
+use crate::{encoders::{mir_fn::{CallTaskDescription, RustSignature}, ty::{generics::{GArgCaster, GArgsCastEnc, GArgsTy, GArgsTyEnc, GParams, GenericParamsEnc}, RustTyDecompose}, Impure, ImpureEncVisitor, MirLocalDefEnc, MirSpecEnc, WandEnc, WandEncTask}, trait_support::is_function_with_body};
 
-use super::function_enc::FunctionEnc;
+// Method wrapper
 
-#[derive(Clone, Debug)]
-pub struct ImpureFunctionEncError;
+pub struct MethodCallEnc;
 
-#[derive(Clone, Debug)]
-pub struct ImpureFunctionEncOutputRef<'vir> {
-    pub method_ref: MethodIdn<'vir, (vir::ManyRef, vir::ManyTyVal)>,
-    pub should_be_verified: bool,
-}
-impl<'vir> task_encoder::OutputRefAny for ImpureFunctionEncOutputRef<'vir> {}
-
-#[derive(Clone, Debug)]
-pub struct ImpureFunctionEncOutput<'vir> {
-    pub method: vir::Method<'vir>,
+#[derive(Debug, Clone)]
+pub struct MethodCallEncOutput<'vir> {
+    method: MethodEncOutputRef<'vir>,
+    ty_args: GArgsTy<'vir>,
+    inputs: Vec<GArgCaster<'vir, Impure>>,
+    output: GArgCaster<'vir, Impure>,
 }
 
-const ENCODE_REACH_BB: bool = false;
+impl<'vir> MethodCallEncOutput<'vir> {
+    pub fn call(&self, mut args: Vec<vir::ExprRef<'vir>>, ret: vir::ExprRef<'vir>) -> Vec<vir::Stmt<'vir>> {
+        assert_eq!(self.inputs.len(), args.len());
+        let generics = args.iter().zip(self.inputs.iter());
+        let mut stmts: Vec<_> = generics.filter_map(|(arg, caster)| {
+            caster.cast_to_callee_ctx(*arg)
+        }).collect();
 
-pub trait ImpureFunctionEnc
-where
-    Self: 'static
-        + Sized
-        + FunctionEnc
-        + for<'vir> TaskEncoder<OutputRef<'vir> = ImpureFunctionEncOutputRef<'vir>>,
-{
-    /// Generates the identifier for the method; for a monomorphic encoding,
-    /// this should be a name including (mangled) type arguments
-    fn mk_method_ident<'vir>(
-        vcx: &'vir vir::VirCtxt<'vir>,
+        args.insert(0, ret);
+        let call = (self.method.method_ref)(&args, self.ty_args.get_ty(), self.ty_args.get_const());
+        let call = vir::with_vcx(|vcx| vcx.alloc(vir::StmtGenData::new(vcx.alloc(call))));
+        stmts.push(call);
+
+        let result = self.output.cast_to_caller_ctx(ret);
+        if let Some(result) = result {
+            stmts.push(result);
+        }
+        stmts
+    }
+}
+
+impl TaskEncoder for MethodCallEnc {
+    task_encoder::encoder_cache!(MethodCallEnc);
+    type TaskDescription<'tcx> = CallTaskDescription<'tcx>;
+    type OutputFullDependency<'vir> = MethodCallEncOutput<'vir>;
+
+    fn task_to_key<'vir>(task: &Self::TaskDescription<'vir>) -> Self::TaskKey<'vir> {
+        *task
+    }
+
+    fn do_encode_full<'vir>(
         task_key: &Self::TaskKey<'vir>,
-    ) -> ViperIdent<'vir>;
-
-    fn encode<'vir>(
-        task_key: Self::TaskKey<'vir>,
         deps: &mut TaskEncoderDependencies<'vir, Self>,
-    ) -> Result<ImpureFunctionEncOutput<'vir>, EncodeFullError<'vir, Self>> {
-        let def_id = Self::get_def_id(&task_key);
-        let caller_def_id = Self::get_caller_def_id(&task_key);
+    ) -> EncodeFullResult<'vir, Self> {
+        deps.emit_output_ref(*task_key, ()).unwrap();
+        let method_ref = deps.require_ref::<MethodEnc>(task_key.callee).unwrap();
+        let tcx = vir::with_vcx(|vcx| vcx.tcx());
+        let signature = RustSignature::new(tcx, task_key.callee);
+        let ty_args = deps.require_dep::<GArgsTyEnc>(task_key.gargs).unwrap();
+        let inputs = signature.inputs.iter().map(|ty| {
+            let normalized = ty.decompose_compare_normalize(tcx, signature.gparams, task_key.gargs);
+            deps.require_dep::<GArgsCastEnc<Impure>>(normalized).unwrap()
+        }).collect();
+        let normalized = signature.output.decompose_compare_normalize(tcx, signature.gparams, task_key.gargs);
+        let output = deps.require_dep::<GArgsCastEnc<Impure>>(normalized).unwrap();
+        Ok(((), MethodCallEncOutput { method: method_ref, ty_args, inputs, output }))
+    }
+
+    fn emit_outputs<'vir>(program: &mut task_encoder::Program<'vir>) {
+        MethodEnc::emit_outputs(program);
+    }
+}
+
+// Method encoder
+
+pub(super) struct MethodEnc;
+
+#[derive(Debug, Clone)]
+pub(super) struct MethodEncOutputRef<'vir> {
+    method_ref: MethodIdn<'vir, (vir::ManyRef, vir::ManyTyVal, vir::ManyCSnap)>,
+}
+
+impl<'vir> OutputRefAny for MethodEncOutputRef<'vir> {}
+
+#[derive(Debug, Clone, Copy)]
+pub(super) struct MethodEncOutput<'vir> {
+    method: vir::Method<'vir>,
+}
+
+#[derive(Clone, Debug)]
+pub enum MethodEncError {}
+
+impl TaskEncoder for MethodEnc {
+    task_encoder::encoder_cache!(MethodEnc);
+    type TaskDescription<'tcx> = DefId;
+
+    type OutputRef<'vir> = MethodEncOutputRef<'vir>;
+    type OutputFullLocal<'vir> = MethodEncOutput<'vir>;
+
+    type EncodingError = MethodEncError;
+
+    fn task_to_key<'vir>(task: &Self::TaskDescription<'vir>) -> Self::TaskKey<'vir> {
+        *task
+    }
+
+    fn do_encode_full<'vir>(
+        task_key: &Self::TaskKey<'vir>,
+        deps: &mut TaskEncoderDependencies<'vir, Self>,
+    ) -> EncodeFullResult<'vir, Self> {
+        let def_id = *task_key;
         vir::with_vcx(|vcx| {
             use mir::visit::Visitor;
 
             let span = vcx.tcx().def_span(def_id);
-            let substs = Self::get_substs(vcx, &task_key);
-            let trusted = crate::encoders::is_function_trusted(def_id, substs);
+            let trusted = crate::encoders::is_function_trusted(def_id);
 
             let arg_defs =
-                deps.require_ref_spanned::<MirLocalDefEnc>((def_id, substs, caller_def_id, false), span)?;
+                deps.require_ref_spanned::<MirLocalDefEnc>((def_id, false), span)?;
 
             // Argument count for the Viper method:
             // - one (`Ref`) for the return place;
@@ -77,42 +133,24 @@ where
 
             // Create the identifier and use it as an output ref. This is what
             // is used when other methods call this one.
-            let method_name = Self::mk_method_ident(vcx, &task_key);
+            let method_name = vir::vir_format_identifier!(vcx, "m_{}", vcx.tcx().def_path_str(def_id));
             let ref_args = vcx.alloc_slice(&vec![vir::TYPE_REF; arg_count]);
-            let param_ty_decls = deps
-                .require_local_spanned::<LiftedTyParamsEnc>(substs, span)?
-                .iter()
-                .map(|g| g.decl())
-                .collect::<Vec<_>>();
-            let ty_args = vcx.alloc_slice(
-                &param_ty_decls
-                    .iter()
-                    .map(|decl| decl.ty)
-                    .collect::<Vec<_>>(),
-            );
-            let method_ref = MethodIdn::new(method_name, (ref_args, ty_args));
-
-            // Do not encode the method body if it is external, trusted, just
-            // a call stub, or a trait function without a default implementation
-            let local_def_id = def_id
-                .as_local()
-                .filter(|_| !trusted && is_function_with_body(vcx.tcx(), def_id));
-
-            deps.emit_output_ref(task_key, ImpureFunctionEncOutputRef {
-                method_ref,
-                should_be_verified: local_def_id.is_some(),
-            })?;
+            let params = GParams::from(def_id);
+            let generics = deps.require_dep_spanned::<GenericParamsEnc>(params, span)?;
+            let method_ref = MethodIdn::new(method_name, (ref_args, generics.ty_args(), generics.const_args()));
+            deps.emit_output_ref(def_id, MethodEncOutputRef { method_ref })?;
 
             let arg_defs =
-                deps.require_local_spanned::<MirLocalDefEnc>((def_id, substs, caller_def_id, false), span)?;
+                deps.require_dep_spanned::<MirLocalDefEnc>((def_id, false), span)?;
 
             // Method contract. We will need to emit pre- and postconditions for
             // the permissions, the functional spec, and (in the postcondition)
             // wands in case of a reborrowing function.
             let mut pres = Vec::new();
             let mut posts = Vec::new();
-            let spec = deps.require_local_spanned::<MirSpecEnc>((def_id, substs, None, false), span)?;
-            let wands = deps.require_local_spanned::<WandEnc>(WandEncTask { def_id }, span)?;
+            let substs = ty::GenericArgs::identity_for_item(vcx.tcx(), def_id);
+            let spec = deps.require_dep_spanned::<MirSpecEnc>((def_id, substs, None, false), span)?;
+            let wands = deps.require_dep_spanned::<WandEnc>(WandEncTask { def_id }, span)?;
 
             // Add direct resources for inputs and outputs to the pre- and
             // postconditions, respectively. "Direct" here refers to owned
@@ -133,11 +171,16 @@ where
             posts.extend(wands.indirect_posts(vcx, &arg_defs, deps));
             posts.extend(wands.wand_posts(vcx, &arg_defs, deps));
 
+            // Do not encode the method body if it is external, trusted, just
+            // a call stub, or a trait function without a default implementation
+            let local_def_id = def_id
+                .as_local()
+                .filter(|_| !trusted && is_function_with_body(vcx.tcx(), def_id));
             let blocks = if let Some(local_def_id) = local_def_id {
                 let body_with_facts = vcx.body_mut().get_impure_fn_body_with_facts(local_def_id);
                 let body = &body_with_facts.body;
                 let local_defs =
-                    deps.require_local_spanned::<MirLocalDefEnc>((def_id, substs, caller_def_id, true), span)?;
+                    deps.require_dep_spanned::<MirLocalDefEnc>((def_id, true), span)?;
 
                 let loop_analysis = LoopAnalysis::find_loops(&body);
                 let bc = NllBorrowCheckerImpl::new(vcx.tcx(), &body_with_facts);
@@ -157,7 +200,8 @@ where
                         vcx.mk_local_decl_stmt(vir::vir_local_decl! { vcx; [name_p] : Ref }, None),
                     )
                 }
-                if ENCODE_REACH_BB {
+                // TODO: what is this for?
+                if false {
                     start_stmts.extend((0..block_count).map(|block| {
                         let name = vir::vir_format!(vcx, "_reach_bb{block}");
                         vcx.mk_local_decl_stmt(
@@ -203,7 +247,7 @@ where
                 start_stmts.extend(visitor.from_to_vars.iter().flat_map(|(_, v)| v.iter()).map(
                     |(_, v)| {
                         vcx.mk_local_decl_stmt(
-                            vir::vir_local_decl! { vcx; [v] : Bool },
+                            v,
                             Some(vcx.mk_bool::<false>()),
                         )
                     },
@@ -233,16 +277,22 @@ where
             pres.extend(spec.pres);
             posts.extend(spec.posts);
 
-            Ok(ImpureFunctionEncOutput {
+            Ok((MethodEncOutput {
                 method: vcx.mk_method(
                     method_ref,
-                    (&args, &param_ty_decls),
+                    (&args, generics.ty_decls(), generics.const_decls()),
                     &[],
                     vcx.alloc_slice(&pres),
                     vcx.alloc_slice(&posts),
                     blocks.map(|blocks| vcx.alloc_slice(&blocks)),
                 ),
-            })
+            }, ()))
         })
+    }
+
+    fn emit_outputs<'vir>(program: &mut task_encoder::Program<'vir>) {
+        for output in Self::all_outputs_local_no_errors() {
+            program.add_method(output.method);
+        }
     }
 }

@@ -14,19 +14,48 @@ use vir::{
     AdtDestructor, Arity, CastType, CompType, DomainAxiomData, DomainIdnSnap, FunctionIdn, Type
 };
 
-use crate::encoders::ty::{most_generic_ty::MostGenericTyEnc};
+use crate::encoders::Pure;
 
 use super::{
-    most_generic_ty::{get_vir_base_name_kind, MostGenericTy},
+    generics::{GenericParams, GenericParamsEnc},
+    data::*,
+    RustTy, ViperTyDatas,
 };
 
-/// You probably never want to use this, use `TyPureEnc` instead.
-/// Note: there should never be a dependency on `PredicateEnc` inside this
-/// encoder!
-pub(super) struct DomainEnc;
+pub(super) type PureTyDatas = ViperTyDatas<Pure>;
 
-#[derive(Clone, Copy, Debug)]
-pub struct DomainDataPrim<'vir> {
+impl<'vir> TyDatas<'vir> for PureTyDatas {
+    type TyData = TyPureRef<'vir>;
+    type OpaqueData = TyPureOpaqueData<'vir>;
+    type PrimitiveData = TyPurePrimData<'vir>;
+    type ImmRefData = TyPureImmRefData<'vir>;
+    type MutRefData = TyPureMutRefData<'vir>;
+    type FieldData = TyPureFieldData<'vir>;
+    type StructData = TyPureStructData<'vir>;
+    type VariantData = TyPureVariantData<'vir>;
+    type EnumData = TyPureEnumData<'vir>;
+}
+
+pub type TyPure<'vir> = Ty<'vir, PureTyDatas>;
+pub type TyPureData<'vir> = TyData<'vir, PureTyDatas>;
+pub type TyPureSpecifics<'vir> = TySpecifics<'vir, PureTyDatas>;
+pub type TyPureParam<'vir> = <PureTyDatas as TyDatas<'vir>>::ParamData;
+pub type TyPureOpaque<'vir> = <PureTyDatas as TyDatas<'vir>>::OpaqueData;
+pub type TyPurePrimitive<'vir> = <PureTyDatas as TyDatas<'vir>>::PrimitiveData;
+pub type TyPureImmRef<'vir> = <PureTyDatas as TyDatas<'vir>>::ImmRefData;
+pub type TyPureMutRef<'vir> = <PureTyDatas as TyDatas<'vir>>::MutRefData;
+pub type TyPureStruct<'vir> = StructData<'vir, PureTyDatas>;
+pub type TyPureEnum<'vir> = EnumData<'vir, PureTyDatas>;
+
+#[derive(Debug, Clone, Copy)]
+pub struct TyPureOpaqueData<'vir> {
+    /// Some arbitrary value of this type. Should probably be removed
+    /// eventually, but used for now in e.g. the str-const encoding.
+    pub arbitrary: FunctionIdn<'vir, (), vir::CSnap>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct TyPurePrimData<'vir> {
     pub prim_type: vir::TypePrim<'vir>,
     /// Snapshot of self as argument. Returns Viper primitive value.
     pub snap_to_prim: FunctionIdn<'vir, vir::CSnap, vir::Prim>,
@@ -34,136 +63,71 @@ pub struct DomainDataPrim<'vir> {
     pub prim_to_snap: FunctionIdn<'vir, vir::Prim, vir::CSnap>,
 }
 
-#[derive(Clone, Copy, Debug)]
-pub struct DomainDataImmRef<'vir> {
+#[derive(Debug, Clone, Copy)]
+pub struct TyPureImmRefData<'vir> {
     /// Construct domain from a `Ref` value.
-    pub prim_to_snap: FunctionIdn<'vir, (vir::Ref, vir::PSnap), vir::CSnap>,
+    pub(super) prim_to_snap: FunctionIdn<'vir, (vir::Ref, vir::PSnap), vir::CSnap>,
     /// Function to access the referee.
-    pub deref_access: AdtDestructor<'vir, vir::CSnap, vir::Ref>,
+    pub(super) deref_access: AdtDestructor<'vir, vir::CSnap, vir::Ref>,
     /// Function to access the snapshot value.
-    pub value_access: AdtDestructor<'vir, vir::CSnap, vir::PSnap>,
+    pub(super) value_access: AdtDestructor<'vir, vir::CSnap, vir::PSnap>,
 }
 
-#[derive(Clone, Copy, Debug)]
-pub struct DomainDataMutRef<'vir> {
+#[derive(Debug, Clone, Copy)]
+pub struct TyPureMutRefData<'vir> {
     /// Construct domain from a `Ref` value.
-    pub prim_to_snap: FunctionIdn<'vir, (vir::Ref, vir::PSnap), vir::CSnap>,
+    pub(super) prim_to_snap: FunctionIdn<'vir, (vir::Ref, vir::PSnap), vir::CSnap>,
     /// Function to access the referee.
-    pub deref_access: AdtDestructor<'vir, vir::CSnap, vir::Ref>,
+    pub(super) deref_access: AdtDestructor<'vir, vir::CSnap, vir::Ref>,
     /// Function to access the snapshot value.
-    pub value_access: AdtDestructor<'vir, vir::CSnap, vir::PSnap>,
+    pub(super) value_access: AdtDestructor<'vir, vir::CSnap, vir::PSnap>,
 }
 
-#[derive(Clone, Copy, Debug)]
-pub struct DomainDataStruct<'vir> {
+#[derive(Debug, Clone, Copy)]
+pub struct TyPureStructData<'vir> {
     /// Construct domain from snapshots of fields or for primitive types
     /// from the single Viper primitive value.
     pub(super) field_snaps_to_snap: FunctionIdn<'vir, vir::ManySnap, vir::CSnap>,
-    /// Functions to access the fields.
-    pub field_access: &'vir [DomainDataField<'vir>],
 }
 
-impl<'vir> DomainDataStruct<'vir> {
-    pub fn new(
-        field_snaps_to_snap: FunctionIdn<'vir, vir::ManySnap, vir::CSnap>,
-        field_access: &'vir [DomainDataField<'vir>],
-    ) -> Self {
-        DomainDataStruct {
-            field_snaps_to_snap,
-            field_access,
-        }
-    }
+#[derive(Debug, Clone, Copy)]
+pub struct TyPureFieldData<'vir> {
+    pub(super) read: AdtDestructor<'vir, vir::CSnap, vir::Snap>,
 }
 
-#[derive(Clone, Copy, Debug)]
-pub struct DomainDataField<'vir> {
-    pub read: AdtDestructor<'vir, vir::CSnap, vir::Snap>,
-    pub generic_idx: Option<u32>,
-}
-
-impl<'vir> DomainDataField<'vir> {
-    pub fn new(
-        read: AdtDestructor<'vir, vir::CSnap, vir::Snap>,
-        ty: ty::Ty<'vir>,
-    ) -> Self {
-        Self {
-            read,
-            generic_idx: if let TyKind::Param(ParamTy { index, .. }) = ty.kind() {
-                Some(*index)
-            } else {
-                None
-            }
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct DomainDataEnum<'vir> {
-    pub discr_ty: vir::TypeSnap<'vir>,
-    pub discr_prim: DomainDataPrim<'vir>,
-    //pub discr_bounds: DiscrBounds<'vir>,
+#[derive(Debug, Clone, Copy)]
+pub struct TyPureEnumData<'vir> {
+    pub(super) discr_ty: vir::TypeSnap<'vir>,
+    pub(super) discr_prim: TyPurePrimitive<'vir>,
     pub snap_to_discr_snap: FunctionIdn<'vir, vir::CSnap, vir::CSnap>,
-    pub variants: &'vir [DomainDataVariant<'vir>],
 }
-#[derive(Clone, Copy, Debug)]
-pub struct DomainDataVariant<'vir> {
-    pub name: symbol::Symbol,
-    pub vid: abi::VariantIdx,
+
+#[derive(Debug, Clone, Copy)]
+pub struct TyPureVariantData<'vir> {
     pub discr: vir::ExprCSnap<'vir>,
-    pub fields: DomainDataStruct<'vir>,
 }
 
-#[derive(Clone, Copy, Debug)]
-pub enum DiscrBounds<'vir> {
-    Range {
-        lower: vir::ExprInt<'vir>,
-        upper: vir::ExprInt<'vir>,
-    },
-    Explicit(&'vir [vir::ExprInt<'vir>]),
-}
+/// You probably never want to use this, use `TyUsePureEnc` instead.
+/// Note: there should never be a dependency on `TyImpureEnc` inside this
+/// encoder!
+pub(super) type TyPureEnc = super::TyEnc<Pure>;
 
-#[derive(Clone, Copy, Debug)]
-pub enum DomainEncSpecifics<'vir> {
-    Opaque,
-    Param,
-    Never,
-    Primitive(DomainDataPrim<'vir>),
-    ImmRef(DomainDataImmRef<'vir>),
-    MutRef(DomainDataMutRef<'vir>),
-    // structs, tuples
-    StructLike(DomainDataStruct<'vir>),
-    EnumLike(Option<DomainDataEnum<'vir>>),
-}
-
-#[derive(Clone, Debug)]
-pub struct DomainEncOutputRef<'vir> {
-    pub base_name: String,
+#[derive(Debug, Clone, Copy)]
+pub struct TyPureRef<'vir> {
     pub domain: vir::DomainIdnSnap<'vir>,
-    pub unreachable_to_snap: FunctionIdn<'vir, (), vir::Snap>,
+    pub unreachable_to_snap: FunctionIdn<'vir, vir::ManyTyVal, vir::Snap>,
 }
 
-#[derive(Clone, Debug)]
-pub struct DomainEncOutput<'vir> {
-    pub inner: DomainEncOutputRef<'vir>,
-    pub specifics: DomainEncSpecifics<'vir>,
-}
-
-impl<'vir> Deref for DomainEncOutput<'vir> {
-    type Target = DomainEncOutputRef<'vir>;
-    fn deref(&self) -> &Self::Target {
-        &self.inner
-    }
-}
+impl<'vir> task_encoder::OutputRefAny for TyPureRef<'vir> {}
 
 #[derive(Debug, Clone, Copy)]
-pub struct DomainEncLocal<'vir> {
+pub struct TyPureEncLocal<'vir> {
     pub unreachable_to_snap: vir::Function<'vir>,
-    pub kind: DomainEncLocalKind<'vir>,
+    pub kind: TyPureEncLocalKind<'vir>,
 }
 
 #[derive(Debug, Clone, Copy)]
-pub enum DomainEncLocalKind<'vir> {
-    None,
+pub enum TyPureEncLocalKind<'vir> {
     Domain {
         domain: vir::Domain<'vir>,
         // functions: Vec<vir::Function<'vir>>,
@@ -174,30 +138,25 @@ pub enum DomainEncLocalKind<'vir> {
     },
 }
 
-impl DomainEnc {
-    pub fn generic_domain<'vir, E: TaskEncoder + 'vir + ?Sized>(deps: &mut TaskEncoderDependencies<'vir, E>) -> vir::TypePSnap<'vir> {
-        let output = deps.require_ref::<DomainEnc>(MostGenericTy::param()).unwrap();
-        (output.domain)().downcast_ty()
-    }
+#[derive(Debug, Clone, Copy)]
+pub enum TyPureEncError {
+    Unimplemented,
 }
 
-impl<'vir> task_encoder::OutputRefAny for DomainEncOutputRef<'vir> {}
+impl TaskEncoder for TyPureEnc {
+    task_encoder::encoder_cache!(TyPureEnc);
+    type TaskDescription<'vir> = RustTy<'vir>;
 
-impl TaskEncoder for DomainEnc {
-    task_encoder::encoder_cache!(DomainEnc);
-
-    type TaskDescription<'vir> = MostGenericTy<'vir>;
-
-    type OutputRef<'vir> = DomainEncOutputRef<'vir>;
-    type OutputFullDependency<'vir> = DomainEncOutput<'vir>;
+    type OutputRef<'vir> = TyPureRef<'vir>;
+    type OutputFullDependency<'vir> = TyPure<'vir>;
 
     /// A domain is not encoded here for Param types, the relevant domains are
     /// encoded in [`GenericEnc`]. The reason we do not encode the domain for
     /// `Param` types here is because we don't want [`GenericEnc`] to depend on
     /// this encoder: doing so would create a cyclic dependency.
-    type OutputFullLocal<'vir> = DomainEncLocal<'vir>;
+    type OutputFullLocal<'vir> = TyPureEncLocal<'vir>;
 
-    type EncodingError = ();
+    type EncodingError = TyPureEncError;
 
     fn task_to_key<'vir>(task: &Self::TaskDescription<'vir>) -> Self::TaskKey<'vir> {
         *task
@@ -207,100 +166,132 @@ impl TaskEncoder for DomainEnc {
         task_key: &Self::TaskKey<'vir>,
         deps: &mut TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self> {
-        vir::with_vcx(|vcx| {
-            let mut builder = PureTypeCommon::new(vcx);
+        // TODO: remove this line
+        let task_key: &RustTy<'vir> = task_key;
 
-            let base_name = get_vir_base_name_kind(task_key.kind(), builder.vcx);
-            builder.set_name(&base_name);
-            let output_ref = builder.output_ref(base_name);
+        vir::with_vcx(|vcx| {
+            let mut builder = TyPureBuilder::new(deps, vcx, *task_key);
+            let output_ref = builder.output_ref();
             deps.emit_output_ref(*task_key, output_ref.clone())?;
 
-            let (specifics, builder) = match task_key.kind() {
-                TyKind::Bool
-                | TyKind::Char
-                | TyKind::Int(_)
-                | TyKind::Uint(_) => {
-                    super::kinds::primitive::domain(*task_key, deps, builder)?
+            let specifics = match &task_key.specifics {
+                TySpecifics::Param(param) => {
+                    let builder = builder.set_domain_builder();
+                    TySpecifics::Param(super::kinds::param::ty_pure(param, deps, builder)?)
                 }
-                TyKind::Closure(..) => {
-                    super::kinds::closure::domain(*task_key, &output_ref, deps, builder)?
+                TySpecifics::Opaque(opaque) => {
+                    let builder = builder.set_domain_builder();
+                    TySpecifics::Opaque(super::kinds::opaque::ty_pure(opaque, deps, builder)?)
                 }
-                TyKind::Adt(adt, _) if !adt.is_union() => {
-                    super::kinds::adt::domain(*task_key, &output_ref, deps, builder)?
+                TySpecifics::Primitive(prim) => {
+                    let builder = builder.set_domain_builder();
+                    TySpecifics::Primitive(super::kinds::primitive::ty_pure(prim, deps, builder)?)
                 }
-                TyKind::Tuple(..) => {
-                    super::kinds::tuple::domain(*task_key, &output_ref, deps, builder)?
+                TySpecifics::ImmRef(immref) => {
+                    let builder = builder.set_adt_builder();
+                    TySpecifics::ImmRef(super::kinds::immref::ty_pure(immref, deps, builder)?)
                 }
-                TyKind::Never => super::kinds::never::domain(*task_key, deps, builder)?,
-                TyKind::Ref(_, _, ty::Mutability::Not) => {
-                    super::kinds::immref::domain(*task_key, &output_ref, deps, builder)?
+                TySpecifics::MutRef(mutref) => {
+                    let builder = builder.set_adt_builder();
+                    TySpecifics::MutRef(super::kinds::mutref::ty_pure(mutref, deps, builder)?)
                 }
-                TyKind::Ref(_, _, ty::Mutability::Mut) => {
-                    super::kinds::mutref::domain(*task_key, deps, builder)?
+                TySpecifics::StructLike(structlike) => {
+                    let builder = builder.set_adt_builder();
+                    TySpecifics::StructLike(super::kinds::structlike::ty_pure(task_key, structlike, deps, builder)?)
                 }
-                TyKind::Param(_) => super::kinds::param::domain(*task_key, deps, builder)?,
-                TyKind::Str => super::kinds::str::domain(*task_key, deps, builder)?,
-                _kind => super::kinds::opaque::domain(*task_key, deps, builder)?,
+                TySpecifics::EnumLike(enumlike) => {
+                    let builder = builder.set_adt_builder();
+                    TySpecifics::EnumLike(super::kinds::enumlike::ty_pure(task_key, enumlike, deps, builder)?)
+                }
             };
-            Ok((PureTypeCommon::build(builder), DomainEncOutput { inner: output_ref, specifics }))
+            let output = TyPureData::new(output_ref, specifics).alloc();
+            Ok((builder.build(), output))
         })
     }
 
     fn emit_outputs<'vir>(program: &mut task_encoder::Program<'vir>) {
-        for output in Self::all_outputs_local_no_errors() {
+        for output in TyPureEnc::all_outputs_local_no_errors() {
             program.add_function(output.unreachable_to_snap);
             match output.kind {
-                DomainEncLocalKind::Domain {
+                TyPureEncLocalKind::Domain {
                     domain
                 } => program.add_domain(domain),
-                DomainEncLocalKind::Adt { adt, discr_fn } => {
+                TyPureEncLocalKind::Adt { adt, discr_fn } => {
                     program.add_adt(adt);
                     if let Some(discr_fn) = discr_fn {
                         program.add_function(discr_fn);
                     }
                 }
-                DomainEncLocalKind::None => {}
             }
         }
     }
 }
 
-pub(crate) struct PureTypeCommon<'vir> {
-    pub(crate) vcx: &'vir vir::VirCtxt<'vir>,
-    name: Option<&'vir str>,
-    generics: Option<Vec<vir::LocalDeclTyVal<'vir>>>,
-    domain_ident: Option<vir::DomainIdnSnap<'vir>>,
-    self_type: Option<vir::TypeSnap<'vir>>,
-    unreachable_to_snap: Option<FunctionIdn<'vir, (), vir::Snap>>,
-}
+pub(crate) struct DomainBuilder<'vir>(TyPureBuilder<'vir>);
 
-pub(crate) struct DomainBuilder<'vir> {
-    axioms: Vec<vir::DomainAxiom<'vir>>,
-    functions: Vec<vir::DomainFunction<'vir>>,
-    inner: PureTypeCommon<'vir>,
+impl<'vir> DomainBuilder<'vir> {
+    pub(crate) fn data(&mut self) -> &mut DomainBuilderData<'vir> {
+        match &mut self.0.data {
+            BuilderData::Domain(data) => data,
+            _ => panic!("not a Domain builder"),
+        }
+    }
 }
 
 impl<'vir> Deref for DomainBuilder<'vir> {
-    type Target = PureTypeCommon<'vir>;
+    type Target = TyPureBuilder<'vir>;
     fn deref(&self) -> &Self::Target {
-        &self.inner
+        &self.0
     }
 }
 
-pub(crate) struct AdtBuilder<'vir> {
-    constructors: Vec<vir::AdtConstructor<'vir>>,
-    discr_fn: Option<DiscrFnBuilder<'vir>>,
-    inner: PureTypeCommon<'vir>,
+#[repr(transparent)]
+pub(crate) struct AdtBuilder<'vir>(TyPureBuilder<'vir>);
+
+impl<'vir> AdtBuilder<'vir> {
+    pub(crate) fn data(&mut self) -> &mut AdtBuilderData<'vir> {
+        match &mut self.0.data {
+            BuilderData::Adt(data) => data,
+            _ => panic!("not an ADT builder"),
+        }
+    }
 }
 
 impl<'vir> Deref for AdtBuilder<'vir> {
-    type Target = PureTypeCommon<'vir>;
+    type Target = TyPureBuilder<'vir>;
     fn deref(&self) -> &Self::Target {
-        &self.inner
+        &self.0
     }
 }
 
-pub(crate) type PureTypeBuilder<'vir> = Result<AdtBuilder<'vir>, DomainBuilder<'vir>>;
+pub(crate) struct TyPureBuilder<'vir> {
+    pub(crate) vcx: &'vir vir::VirCtxt<'vir>,
+    name: &'vir str,
+    generics: Option<Vec<vir::LocalDeclTyVal<'vir>>>,
+    domain_ident: vir::DomainIdnSnap<'vir>,
+    self_type: vir::TypeSnap<'vir>,
+    unreachable_to_snap: FunctionIdn<'vir, vir::ManyTyVal, vir::Snap>,
+    pub(super) params: GenericParams<'vir>,
+    data: BuilderData<'vir>,
+}
+
+pub enum BuilderData<'vir> {
+    Adt(AdtBuilderData<'vir>),
+    Domain(DomainBuilderData<'vir>),
+    None,
+}
+
+#[derive(Default)]
+pub(crate) struct AdtBuilderData<'vir> {
+    constructors: Vec<vir::AdtConstructor<'vir>>,
+    discr_fn: Option<DiscrFnBuilder<'vir>>,
+}
+
+#[derive(Default)]
+pub(crate) struct DomainBuilderData<'vir> {
+    axioms: Vec<vir::DomainAxiom<'vir>>,
+    functions: Vec<vir::DomainFunction<'vir>>,
+}
 
 #[derive(Clone, Copy)]
 enum DiscrFnBuilder<'vir> {
@@ -312,30 +303,27 @@ enum DiscrFnBuilder<'vir> {
     Built(vir::Function<'vir>),
 }
 
-impl<'vir> PureTypeCommon<'vir> {
-    pub(crate) fn new(vcx: &'vir vir::VirCtxt<'vir>) -> Self {
-        PureTypeCommon {
-            vcx,
-            name: None,
-            generics: None,
-            domain_ident: None,
-            self_type: None,
-            unreachable_to_snap: None,
-        }
-    }
-
-    pub(crate) fn set_name(&mut self, name: &str) {
-        let name = vir::vir_format!(self.vcx, "s_{name}");
-        self.name = Some(name);
+impl<'vir> TyPureBuilder<'vir> {
+    pub(crate) fn new<E: TaskEncoder>(deps: &mut TaskEncoderDependencies<'vir, E>, vcx: &'vir vir::VirCtxt<'vir>, ty: RustTy<'vir>) -> Self {
+        let params = deps.require_dep::<GenericParamsEnc>(ty.params).unwrap();
+        let name = vir::vir_format!(vcx, "s_{}", ty.name());
         let domain_ident = DomainIdnSnap::new(vir::ViperIdent::new(name));
-        self.domain_ident = Some(domain_ident);
-        let vty = domain_ident();
-        self.self_type = Some(vty);
-        self.unreachable_to_snap = Some(FunctionIdn::new(
-            vir::ViperIdent::new(vir::vir_format!(self.vcx, "{name}_unreachable")),
-            (),
-            vty,
-        ));
+        let self_type = domain_ident();
+        let unreachable_to_snap = FunctionIdn::new(
+            vir::ViperIdent::new(vir::vir_format!(vcx, "{name}_unreachable")),
+            params.ty_args(),
+            self_type,
+        );
+        TyPureBuilder {
+            vcx,
+            name,
+            generics: None,
+            domain_ident,
+            self_type,
+            unreachable_to_snap,
+            params,
+            data: BuilderData::None,
+        }
     }
 
     pub(crate) fn set_generics(&mut self, generics: Vec<vir::LocalDeclTyVal<'vir>>) {
@@ -343,89 +331,90 @@ impl<'vir> PureTypeCommon<'vir> {
     }
 
     pub(crate) fn self_type(&self) -> vir::TypeCSnap<'vir> {
-        self.self_type.expect("name should be set").downcast_ty()
+        self.self_type.downcast_ty()
     }
 
-    pub(crate) fn output_ref(&self, base_name: String) -> DomainEncOutputRef<'vir> {
-        DomainEncOutputRef {
-            base_name,
-            domain: self.domain_ident.expect("name should be set").cast_ty(),
-            unreachable_to_snap: self.unreachable_to_snap.expect("unreachable_to_snap should be set"),
+    pub(crate) fn output_ref(&self) -> TyPureRef<'vir> {
+        TyPureRef {
+            domain: self.domain_ident.cast_ty(),
+            unreachable_to_snap: self.unreachable_to_snap,
         }
     }
 
-    pub(crate) fn build(builder: PureTypeBuilder<'vir>) -> DomainEncLocal<'vir> {
-        let unreachable_to_snap = builder.as_ref().map_or_else(|d| d.unreachable_to_snap, |a| a.unreachable_to_snap).expect("unreachable_to_snap should be set");
+    pub(crate) fn set_domain_builder(&mut self) -> &mut DomainBuilder<'vir> {
+        match &mut self.data {
+            BuilderData::Adt(_) => panic!("already an ADT builder"),
+            BuilderData::Domain(_) => {}
+            data@BuilderData::None => {
+                *data = BuilderData::Domain(DomainBuilderData::default());
+            }
+        }
+        // SAFETY: `DomainBuilder` is repr transparent
+        let builder = self as *mut Self as *mut DomainBuilder<'vir>;
+        unsafe { &mut *builder }
+    }
+
+    pub(crate) fn set_adt_builder(&mut self) -> &mut AdtBuilder<'vir> {
+        match &mut self.data {
+            BuilderData::Domain(_) => panic!("already a Domain builder"),
+            BuilderData::Adt(_) => {}
+            data@BuilderData::None => {
+                *data = BuilderData::Adt(AdtBuilderData::default());
+            }
+        }
+        // SAFETY: `AdtBuilder` is repr transparent
+        let builder = self as *mut Self as *mut AdtBuilder<'vir>;
+        unsafe { &mut *builder }
+    }
+
+    pub(crate) fn build(self) -> TyPureEncLocal<'vir> {
         let unreachable_to_snap = vir::with_vcx(|vcx| {
             let false_ = vcx.alloc_array(&[vcx.mk_bool::<false>()]);
             vcx.mk_function(
-                unreachable_to_snap,
-                (),
+                self.unreachable_to_snap,
+                (self.params.ty_decls(),),
                 false_,
                 false_,
                 None,
                 None,
             )
         });
-        let kind = Self::build_kind(builder);
-        DomainEncLocal {
+        let kind = self.build_kind();
+        TyPureEncLocal {
             unreachable_to_snap,
             kind,
         }
     }
 
-    pub(crate) fn build_kind(builder: PureTypeBuilder<'vir>) -> DomainEncLocalKind<'vir> {
-        match builder {
-            Err(builder) => {
-                let Some(domain_ident) = builder.domain_ident else {
-                    return DomainEncLocalKind::None;
-                };
-                let domain = builder.vcx.mk_domain(
-                    domain_ident.name(),
+    fn build_kind(self) -> TyPureEncLocalKind<'vir> {
+        match self.data {
+            BuilderData::Domain(data) => {
+                let domain = self.vcx.mk_domain(
+                    self.domain_ident.name(),
                     &[],
-                    builder.vcx.alloc_slice(builder.axioms.as_slice()),
-                    builder.vcx.alloc_slice(builder.functions.as_slice()),
+                    self.vcx.alloc_slice( data.axioms.as_slice()),
+                    self.vcx.alloc_slice(data.functions.as_slice()),
                 );
-                DomainEncLocalKind::Domain { domain }
+                TyPureEncLocalKind::Domain { domain }
             }
-            Ok(builder) => {
-                let Some(domain_ident) = builder.domain_ident else {
-                    return DomainEncLocalKind::None;
-                };
-                let adt = builder
+            BuilderData::Adt(data) => {
+                let adt = self
                     .vcx
-                    .mk_adt(domain_ident.name(), &[], builder.vcx.alloc_slice(builder.constructors.as_slice()));
-                let discr_fn = builder.discr_fn.map(|df| {
+                    .mk_adt(self.domain_ident.name(), &[], self.vcx.alloc_slice(data.constructors.as_slice()));
+                let discr_fn = data.discr_fn.map(|df| {
                     let DiscrFnBuilder::Built(df) = df else {
                         panic!("discriminant function not built");
                     };
                     df
                 });
-                DomainEncLocalKind::Adt { adt, discr_fn }
+                TyPureEncLocalKind::Adt { adt, discr_fn }
             }
-        }
-    }
-}
-
-impl<'vir> DomainBuilder<'vir> {
-    pub(crate) fn new(inner: PureTypeCommon<'vir>) -> Self {
-        DomainBuilder {
-            axioms: Vec::new(),
-            functions: Vec::new(),
-            inner,
+            BuilderData::None => unreachable!("no builder data"),
         }
     }
 }
 
 impl<'vir> AdtBuilder<'vir> {
-    pub(crate) fn new(inner: PureTypeCommon<'vir>) -> Self {
-        AdtBuilder {
-            constructors: Vec::new(),
-            discr_fn: None,
-            inner,
-        }
-    }
-
     pub(crate) fn constructor<A: vir::Arity>(
         &mut self,
         prefix: &str,
@@ -438,10 +427,10 @@ impl<'vir> AdtBuilder<'vir> {
         let name = format!("{prefix}cons");
         let self_ty = self.self_type();
         assert!(
-            self.discr_fn.is_none() || discr.is_some(),
+            self.data().discr_fn.is_none() || discr.is_some(),
             "discr was passed previously, but now it wasn't"
         );
-        let self_name = self.name.expect("name should be set");
+        let self_name = self.name;
         let name = vir::vir_format!(self.vcx, "{self_name}_{name}",);
         let locals = self.vcx.alloc_slice(
             &A::params(fields)
@@ -453,14 +442,15 @@ impl<'vir> AdtBuilder<'vir> {
                 })
                 .collect::<Vec<_>>(),
         );
-        self.constructors.push(self.vcx.mk_adt_constructor(name, locals));
+        let constructor = self.vcx.mk_adt_constructor(name, locals);
+        self.data().constructors.push(constructor);
         let ident = FunctionIdn::new(
             vir::ViperIdent::new(name),
             fields,
             self_ty,
         );
         if let Some(discr) = discr {
-            let df = self.discr_fn.take().map(|df| {
+            let df = self.data().discr_fn.take().map(|df| {
                 let DiscrFnBuilder::Building { param, recv, acc } = df else {
                     panic!("discriminant function was already built");
                 };
@@ -469,12 +459,15 @@ impl<'vir> AdtBuilder<'vir> {
                         .mk_ternary_expr(self.vcx.mk_adt_discriminator_expr(recv, name), discr, acc);
                 DiscrFnBuilder::Building { param, recv, acc }
             });
-            let df = df.unwrap_or_else(|| DiscrFnBuilder::Building {
-                param: self.vcx.mk_local_decl("self", self_ty),
-                recv: self.vcx.mk_local_ex("self", self_ty),
-                acc: discr,
+            let df = df.unwrap_or_else(|| {
+                let param = self.vcx.mk_local_decl("self", self_ty);
+                DiscrFnBuilder::Building {
+                    param,
+                    recv: self.vcx.mk_local_ex(param),
+                    acc: discr,
+                }
             });
-            self.discr_fn = Some(df)
+            self.data().discr_fn = Some(df)
         }
         (
             ident,
@@ -494,12 +487,12 @@ impl<'vir> AdtBuilder<'vir> {
             vir::ViperIdent::new(vir::vir_format!(
                 self.vcx,
                 "{}_discr",
-                self.name.expect("name should be set")
+                self.name
             )),
             param.ty,
             ty,
         );
-        let (expr, posts) = if let Some(df) = self.discr_fn {
+        let (expr, posts) = if let Some(df) = self.data().discr_fn {
             let DiscrFnBuilder::Building { acc, .. } = df else {
                 panic!("discriminant function already built");
             };
@@ -512,9 +505,10 @@ impl<'vir> AdtBuilder<'vir> {
             // we encode the uninhabitability by adding an `ensures false` to
             // the discriminant function.
             // TODO: https://github.com/Aurel300/prusti-dev/pull/89#discussion_r2263306839
-            let self_name = self.name.expect("name should be set");
+            let self_name = self.name;
             let name = vir::vir_format!(self.vcx, "{self_name}_DummyConstructor",);
-            self.constructors.push(self.vcx.mk_adt_constructor::<(), !, vir::Dyn>(name, &[]));
+            let constructor = self.vcx.mk_adt_constructor::<(), !, vir::Dyn>(name, &[]);
+            self.data().constructors.push(constructor);
             (None, self.vcx.alloc_slice(&[self.vcx.mk_bool::<false>()]))
         };
         let built_fn = self.vcx.mk_function(
@@ -525,7 +519,7 @@ impl<'vir> AdtBuilder<'vir> {
             None,
             expr,
         );
-        self.discr_fn = Some(DiscrFnBuilder::Built(built_fn));
+        self.data().discr_fn = Some(DiscrFnBuilder::Built(built_fn));
         ident
     }
 }
@@ -540,10 +534,11 @@ impl<'vir> DomainBuilder<'vir> {
         let name = vir::vir_format!(
             self.vcx,
             "{}_{name}",
-            self.name.expect("name should be set")
+            self.name
         );
         let ident = FunctionIdn::new(vir::ViperIdent::new(name), args, ret);
-        self.functions.push(self.vcx.mk_domain_function(ident, false));
+        let function = self.vcx.mk_domain_function(ident, false);
+        self.data().functions.push(function);
         ident
     }
 
@@ -551,68 +546,14 @@ impl<'vir> DomainBuilder<'vir> {
         let name = vir::vir_format!(
             self.vcx,
             "{}_ax_{name}",
-            self.name.expect("name should be set")
+            self.name
         );
-        self.axioms.push(self.vcx.alloc(DomainAxiomData { name, expr }));
+        let axiom = self.vcx.alloc(DomainAxiomData { name, expr });
+        self.data().axioms.push(axiom);
     }
 }
 
-// Utility functions
-
-impl<'vir> DomainEncSpecifics<'vir> {
-    #[track_caller]
-    pub fn expect_primitive(self) -> DomainDataPrim<'vir> {
-        match self {
-            Self::Primitive(data) => data,
-            _ => panic!("expected primitive"),
-        }
-    }
-    #[track_caller]
-    pub fn expect_immref(self) -> DomainDataImmRef<'vir> {
-        match self {
-            Self::ImmRef(data) => data,
-            _ => panic!("expected immref"),
-        }
-    }
-    #[track_caller]
-    pub fn expect_mutref(self) -> DomainDataMutRef<'vir> {
-        match self {
-            Self::MutRef(data) => data,
-            _ => panic!("expected mutref"),
-        }
-    }
-    #[track_caller]
-    pub fn expect_structlike(self) -> DomainDataStruct<'vir> {
-        match self {
-            Self::StructLike(data) => data,
-            _ => panic!("expected struct-like (was {self:?}"),
-        }
-    }
-    pub fn get_enumlike(self) -> Option<Option<DomainDataEnum<'vir>>> {
-        match self {
-            Self::EnumLike(data) => Some(data),
-            _ => None,
-        }
-    }
-    pub fn get_variant_any(self, vid: abi::VariantIdx) -> DomainDataStruct<'vir> {
-        match self {
-            Self::StructLike(s) => {
-                assert_eq!(vid, abi::FIRST_VARIANT);
-                s
-            }
-            Self::EnumLike(e) => e.as_ref().unwrap().variants[vid.as_usize()].fields,
-            _ => panic!("expected structlike or enumlike type"),
-        }
-    }
-    #[track_caller]
-    pub fn expect_enumlike(self) -> Option<DomainDataEnum<'vir>> {
-        match self {
-            Self::EnumLike(data) => data,
-            _ => panic!("expected enum-like, was {self:?}"),
-        }
-    }
-}
-impl<'vir> DomainDataPrim<'vir> {
+impl<'vir> TyPurePrimData<'vir> {
     pub fn expr_from_bits(&self, ty: ty::Ty<'vir>, value: u128) -> vir::ExprPrim<'vir> {
         match self.prim_type.kind() {
             vir::TypeKind::Bool => {
@@ -646,46 +587,5 @@ impl<'vir> DomainDataPrim<'vir> {
             }
             ref k => unreachable!("{k:?}"),
         }
-    }
-}
-
-/// Data for encoding field access functions and axioms
-#[derive(Clone)]
-pub(super) struct FieldTy<'vir> {
-    pub(super) rust_ty: ty::Ty<'vir>,
-
-    /// The type of encoded field
-    pub(super) ty: vir::TypeSnap<'vir>,
-}
-
-impl<'vir> FieldTy<'vir> {
-    pub fn mk_field_tys<T: TaskEncoder>(
-        vcx: &'vir vir::VirCtxt<'vir>,
-        deps: &mut TaskEncoderDependencies<'vir, T>,
-        variant: &ty::VariantDef,
-        params: ty::GenericArgsRef<'vir>,
-    ) -> Result<Vec<Self>, EncodeFullError<'vir, T>> {
-        variant
-            .fields
-            .iter()
-            .map(|f| f.ty(vcx.tcx(), params))
-            .map(|ty| Self::from_ty(deps, ty))
-            .collect::<Result<Vec<_>, _>>()
-    }
-
-    pub(super) fn from_ty<T: TaskEncoder>(
-        deps: &mut TaskEncoderDependencies<'vir, T>,
-        ty: ty::Ty<'vir>,
-    ) -> Result<FieldTy<'vir>, EncodeFullError<'vir, T>> {
-        let (generic_ty, _) = deps.require_local::<MostGenericTyEnc>(ty)?;
-        let fd = deps.require_ref::<DomainEnc>(generic_ty)?;
-        let vir_ty = (fd.domain)();
-        // let fd = deps.require_ref::<TyConstructorEnc>(generic_ty)?;
-        // let typeof_function = fd.typeof_function;
-        // let lifted_ty = deps.require_local::<LiftedTyEnc<EncodeGenericsAsParamTy>>(ty)?;
-        Ok(FieldTy {
-            rust_ty: ty,
-            ty: vir_ty,
-        })
     }
 }

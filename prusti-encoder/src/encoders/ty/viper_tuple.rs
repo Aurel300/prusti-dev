@@ -4,19 +4,20 @@ use vir::CastType;
 use prusti_rustc_interface::{
     middle::ty,
     abi,
+    span::def_id::DefId,
 };
 
-use crate::encoders::ty::use_pure::{TyPureDataStruct, TyPureEncOutput, TyPureEnc};
+use crate::encoders::ty::{generics::GParams, use_pure::{TyUsePure, TyUsePureEnc, TyUsePureStruct}, RustTyDecomposition};
 
 pub struct ViperTupleEnc;
 
 #[derive(Clone, Debug)]
 pub struct ViperTupleEncOutput<'vir> {
-    domain_data: TyPureEncOutput<'vir>,
+    domain_data: TyUsePure<'vir>,
 }
 
 impl<'vir> ViperTupleEncOutput<'vir> {
-    fn structlike(&self) -> TyPureDataStruct<'_, 'vir> {
+    fn structlike(&self) -> &TyUsePureStruct<'vir> {
         self.domain_data.expect_structlike()
     }
 
@@ -38,31 +39,31 @@ impl<'vir> ViperTupleEncOutput<'vir> {
         tuple: vir::ExprGenSnap<'vir, Curr, Next>,
         elem: usize,
     ) -> vir::ExprGenSnap<'vir, Curr, Next> {
-        self.structlike().field(abi::FieldIdx::from_usize(elem)).read(tuple.downcast_ty())
+        self.structlike()[abi::FieldIdx::from_usize(elem)].read(tuple.downcast_ty())
     }
 
     pub fn mk_unreachable<'tcx, Curr, Next>(
         &self,
         _vcx: &'vir vir::VirCtxt<'tcx>,
     ) -> vir::ExprGenSnap<'vir, Curr, Next> {
-        self.domain_data.unreachable_to_snap().call()()
+        self.domain_data.unreachable_to_snap()
     }
 }
 
 impl TaskEncoder for ViperTupleEnc {
     task_encoder::encoder_cache!(ViperTupleEnc);
 
-    type TaskDescription<'vir> = Vec<ty::Ty<'vir>>;
-    type TaskKey<'vir> = ty::Ty<'vir>;
+    type TaskDescription<'vir> = (DefId, Vec<ty::Ty<'vir>>);
+    type TaskKey<'vir> = RustTyDecomposition<'vir>;
 
-    type OutputFullLocal<'vir> = ViperTupleEncOutput<'vir>;
+    type OutputFullDependency<'vir> = ViperTupleEncOutput<'vir>;
     type EncodingError = ();
 
-    fn task_to_key<'vir>(task: &Self::TaskDescription<'vir>) -> Self::TaskKey<'vir> {
-        vir::with_vcx(|vcx| {
-            let tys = vcx.tcx().mk_type_list(task);
-            vcx.tcx().mk_ty_from_kind(ty::TyKind::Tuple(tys))
-        })
+    fn task_to_key<'vir>((def_id, tys): &Self::TaskDescription<'vir>) -> Self::TaskKey<'vir> {
+        let tcx = vir::with_vcx(|vcx| vcx.tcx());
+        let tys = tcx.mk_type_list(tys);
+        let ty = tcx.mk_ty_from_kind(ty::TyKind::Tuple(tys));
+        RustTyDecomposition::from_ty(tcx, ty, *def_id)
     }
 
     fn do_encode_full<'vir>(
@@ -70,12 +71,12 @@ impl TaskEncoder for ViperTupleEnc {
         deps: &mut TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self> {
         deps.emit_output_ref(*task_key, ())?;
-        let domain_data = deps.require_local::<TyPureEnc>(*task_key)?;
+        let domain_data = deps.require_dep::<TyUsePureEnc>(*task_key)?;
         Ok((
+            (),
             ViperTupleEncOutput {
                 domain_data,
             },
-            (),
         ))
     }
 }

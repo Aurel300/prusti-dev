@@ -1,102 +1,79 @@
 use crate::encoders::ty::{
-    pure::{AdtBuilder, DomainDataMutRef, DomainEnc, DomainEncOutput, DomainEncSpecifics, PureTypeBuilder, PureTypeCommon},
-    impure::{PredicateBuilder, PredicateEnc, PredicateEncData, PredicateEncDataMutRef, RefToIndirectPred}, use_pure::TyPureEnc,
+    impure::{ImpureTyDatas, PredicateBuilder, TyImpureEnc, TyImpureMutRef, TyImpureMutRefData}, pure::{AdtBuilder, PureTyDatas, TyPureEnc, TyPureMutRef, TyPureMutRefData}, RustTyDatas, RustTyMutRef
 };
 use prusti_rustc_interface::middle::ty;
 use task_encoder::{EncodeFullError, TaskEncoder, TaskEncoderDependencies};
 use vir::{CastType, HasType};
 
-pub(crate) fn domain<'vir>(
-    task_key: <DomainEnc as TaskEncoder>::TaskKey<'vir>,
-    deps: &mut TaskEncoderDependencies<'vir, DomainEnc>,
-    builder: PureTypeCommon<'vir>,
-) -> Result<(DomainEncSpecifics<'vir>, PureTypeBuilder<'vir>), EncodeFullError<'vir, DomainEnc>> {
-    let mut builder = AdtBuilder::new(builder);
-    let ty = task_key.ty();
-    let ty_kind = ty.kind();
-    let ty::TyKind::Ref(_, inner_ty, ty::Mutability::Mut) = ty_kind else {
-        unreachable!();
-    };
+pub(crate) fn ty_pure<'vir>(
+    _data: &RustTyMutRef<'vir>,
+    _deps: &mut TaskEncoderDependencies<'vir, TyPureEnc>,
+    builder: &mut AdtBuilder<'vir>,
+) -> Result<TyPureMutRef<'vir>, EncodeFullError<'vir, TyPureEnc>> {
+    let (field_snaps_to_snap, field_access) = builder.constructor("", (vir::TYPE_REF, vir::TYPE_PSNAP), None);
 
-    let inner_ty_out = deps.require_ref::<TyPureEnc>(*inner_ty)?;
-    let inner_type = inner_ty_out.snapshot.downcast_ty();
-    let (field_snaps_to_snap, field_access) = builder.constructor("", (vir::TYPE_REF, inner_type), None);
-
-    Ok((DomainEncSpecifics::MutRef(DomainDataMutRef {
+    Ok(TyPureMutRefData {
         prim_to_snap: field_snaps_to_snap,
         deref_access: field_access[0].downcast_ty(),
         value_access: field_access[1].downcast_ty(),
-    }), Ok(builder)))
+    })
 }
 
-pub(crate) fn predicate<'vir>(
-    _task_key: <PredicateEnc as TaskEncoder>::TaskKey<'vir>,
-    snap: DomainEncOutput<'vir>,
-    _deps: &mut TaskEncoderDependencies<'vir, PredicateEnc>,
+pub(crate) fn ty_impure<'vir>(
+    data: &(&RustTyMutRef<'vir>, &TyPureMutRef<'vir>),
+    _deps: &mut TaskEncoderDependencies<'vir, TyImpureEnc>,
     builder: &mut PredicateBuilder<'vir>,
 ) -> Result<
-    (PredicateEncData<'vir>, Option<RefToIndirectPred<'vir>>),
-    EncodeFullError<'vir, PredicateEnc>,
+    TyImpureMutRef<'vir>,
+    EncodeFullError<'vir, TyImpureEnc>,
 > {
-    //let ty = task_key.ty();
-    //let ty_kind = ty.kind();
-    //let ty::TyKind::Ref(_, _, _) = ty_kind else { unreachable!(); };
+    let snap_type = builder.snap_type();
 
-    let snap_type = (snap.domain)();
-
-    let ref_self = builder.vcx.mk_local("self", vir::TYPE_REF);
-    let ref_self_decl = builder.vcx.mk_local_decl_local(ref_self);
-    //let ref_self_ex = builder.vcx.mk_local_ex_local(ref_self);
-
-    let snap_data = snap.specifics.expect_mutref();
+    let ref_self_decl = builder.ref_self_decl();
+    let ref_self = builder.vcx.mk_local_ex(ref_self_decl);
 
     // fields
     let ref_field = builder.field("val", snap_type);
 
     // main predicate
-    let self_pred = builder.predicate::<vir::Ref>(
+    let self_pred = builder.inner.predicate::<(vir::Ref, vir::ManyTyVal, vir::ManyCSnap)>(
         "",
-        ref_self_decl.ty(),
-        (ref_self_decl,),
+        (ref_self_decl.ty(), builder.params.ty_args(), builder.params.const_args()),
+        (ref_self_decl, builder.params.ty_decls(), builder.params.const_decls()),
         Some(vir::expr! { acc((ref_self).[ref_field]) }),
     );
 
     // Ref-to-snap
     builder.function_snap = Some(
         builder
-            .mk_function::<vir::Ref, _>(
+            .mk_function::<(vir::Ref, vir::ManyTyVal, vir::ManyCSnap), _>(
                 "snap",
-                ref_self_decl.ty(),
+                (ref_self_decl.ty(), builder.params.ty_args(), builder.params.const_args()),
                 snap_type,
-                (ref_self_decl,),
-                &[vir::expr! { acc([self_pred](ref_self)) }],
+                (ref_self_decl, builder.params.ty_decls(), builder.params.const_decls()),
+                &[vir::expr! { acc([self_pred](ref_self, [..[builder.params.ty_exprs()]], [..[builder.params.const_exprs()]])) }],
                 &[],
                 Some(vir::expr! {
-                    unfolding ([self_pred](ref_self)) in ([ref_field](ref_self))
+                    unfolding ([self_pred](ref_self, [..[builder.params.ty_exprs()]], [..[builder.params.const_exprs()]])) in ([ref_field](ref_self))
                 }),
             )
             .1,
     );
 
     // Ref-to-Ref
-    let deref_func = builder.function(
+    let deref_func = builder.inner.function(
         "deref",
-        ref_self_decl.ty(),
+        (ref_self_decl.ty(), builder.params.ty_args(), builder.params.const_args()),
         vir::TYPE_REF,
-        (ref_self_decl,),
-        &[vir::expr! { acc([self_pred](ref_self)) }],
+        (ref_self_decl, builder.params.ty_decls(), builder.params.const_decls()),
+        &[vir::expr! { acc([self_pred](ref_self, [..[builder.params.ty_exprs()]], [..[builder.params.const_exprs()]])) }],
         &[],
         Some(vir::expr! {
-            unfolding ([self_pred](ref_self)) in ([snap_data.deref_access](([ref_field](ref_self)) as CSnap))
+            unfolding ([self_pred](ref_self, [..[builder.params.ty_exprs()]], [..[builder.params.const_exprs()]])) in ([data.1.deref_access](([ref_field](ref_self)) as CSnap))
         }),
     );
 
-    Ok((
-        PredicateEncData::MutRef(PredicateEncDataMutRef {
-            deref_func: deref_func,
-            perm: None,
-            snap_data,
-        }),
-        None,
-    ))
+    Ok(TyImpureMutRefData {
+        deref_func,
+    })
 }

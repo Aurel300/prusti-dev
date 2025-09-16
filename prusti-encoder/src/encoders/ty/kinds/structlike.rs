@@ -1,72 +1,111 @@
-use crate::encoders::ty::{
-    pure::{AdtBuilder, DomainDataField, DomainDataStruct, DomainEncOutput, FieldTy},
-    impure::{PredicateBuilder, PredicateEnc}, use_impure::TyImpureEncOutputRef,
-};
+use crate::encoders::{ty::{
+    data::{StructData, TyData, TyDatas}, impure::{ImpureTyDatas, PredicateBuilder, TyImpureEnc, TyImpureFieldData, TyImpureStruct}, pure::{AdtBuilder, PureTyDatas, TyPureData, TyPureEnc, TyPureFieldData, TyPureStruct, TyPureStructData}, use_pure::TyUsePureEnc, RustTyData, RustTyDatas, RustTyDecompose, RustTyStruct
+}, TyUseImpureEnc};
 use prusti_rustc_interface::middle::ty::{TyKind, ParamTy};
 use task_encoder::{EncodeFullError, TaskEncoder, TaskEncoderDependencies};
 use vir::{vir_format, CastType, FunctionIdn, HasType, PredicateIdn};
 
-pub fn domain<'vir>(
-    prefix: &str,
-    fields: &[FieldTy<'vir>],
+pub(crate) fn ty_pure<'vir>(
+    task_key: &RustTyData<'vir>,
+    data: &RustTyStruct<'vir>,
+    deps: &mut TaskEncoderDependencies<'vir, TyPureEnc>,
     builder: &mut AdtBuilder<'vir>,
-    discr: Option<vir::ExprCSnap<'vir>>,
-) -> (
-    FunctionIdn<'vir, vir::ManySnap, vir::CSnap>,
-    &'vir [DomainDataField<'vir>],
-) {
-    let field_tys = builder.vcx.alloc_slice(&fields.iter().map(|f| f.ty).collect::<Vec<_>>());
-    let (cons, des) = builder.constructor(prefix, field_tys, discr);
-    assert_eq!(des.len(), fields.len());
-    let des = des.iter().zip(fields).map(|(d, ty)| {
-        DomainDataField::new(d.downcast_ty(), ty.rust_ty)
-    }).collect::<Vec<_>>();
-    (cons, builder.vcx.alloc_slice(&des))
+) -> Result<TyPureStruct<'vir>, EncodeFullError<'vir, TyPureEnc>> {
+    ty_pure_variant("", None, task_key, data, deps, builder)
 }
 
-pub(crate) fn predicate<'vir>(
+pub(super) fn ty_pure_variant<'vir>(
     prefix: &str,
-    fields: &[TyImpureEncOutputRef<'vir>],
-    task_key: <PredicateEnc as TaskEncoder>::TaskKey<'vir>,
-    snap: &DomainEncOutput<'vir>,
-    dds: DomainDataStruct<'vir>,
-    deps: &mut TaskEncoderDependencies<'vir, PredicateEnc>,
+    discr: Option<vir::ExprCSnap<'vir>>,
+    task_key: &RustTyData<'vir>,
+    data: &RustTyStruct<'vir>,
+    deps: &mut TaskEncoderDependencies<'vir, TyPureEnc>,
+    builder: &mut AdtBuilder<'vir>,
+) -> Result<TyPureStruct<'vir>, EncodeFullError<'vir, TyPureEnc>> {
+    let field_tys = data.fields.iter().map(|f| {
+        let ty = f.decompose(builder.vcx.tcx(), task_key.params);
+        Ok(deps.require_ref::<TyUsePureEnc>(ty)?.snapshot)
+    }).collect::<Result<Vec<_>, _>>()?;
+    let field_tys = builder.vcx.alloc_slice(&field_tys);
+    let (field_snaps_to_snap, des) = builder.constructor(prefix, field_tys, discr);
+    assert_eq!(des.len(), data.fields.len());
+    let des = des.iter().map(|read| {
+        TyPureFieldData { read: read.downcast_ty() }
+    }).collect::<Vec<_>>();
+    Ok(TyPureStruct::new(TyPureStructData { field_snaps_to_snap }, des))
+}
+
+pub(crate) fn ty_impure<'vir>(
+    task_key: &TyData<'vir, (RustTyDatas, PureTyDatas)>,
+    data: &StructData<'vir, (RustTyDatas, PureTyDatas)>,
+    deps: &mut TaskEncoderDependencies<'vir, TyImpureEnc>,
+    builder: &mut PredicateBuilder<'vir>,
+) -> Result<TyImpureStruct<'vir>, EncodeFullError<'vir, TyImpureEnc>> {
+    let (data, self_pred, snap_expr) = ty_impure_variant(
+        "",
+        task_key,
+        data,
+        deps,
+        builder,
+    )?;
+
+    let ref_self_decl = builder.ref_self_decl();
+    let ref_self = builder.vcx.mk_local_ex(ref_self_decl);
+
+    // Ref-to-snap
+    builder.function_snap = Some(
+        builder
+            .mk_function::<(vir::Ref, vir::ManyTyVal, vir::ManyCSnap), _>(
+                "snap",
+                (ref_self_decl.ty(), builder.params.ty_args(), builder.params.const_args()),
+                builder.csnap_type(),
+                (ref_self_decl, builder.params.ty_decls(), builder.params.const_decls()),
+                &[vir::expr! { acc([self_pred](ref_self, [..[builder.params.ty_exprs()]], [..[builder.params.const_exprs()]])) }],
+                &[],
+                Some(snap_expr),
+            )
+            .1,
+    );
+    Ok(data)
+}
+
+pub(crate) fn ty_impure_variant<'vir>(
+    prefix: &str,
+    task_key: &TyData<'vir, (RustTyDatas, PureTyDatas)>,
+    data: &StructData<'vir, (RustTyDatas, PureTyDatas)>,
+    deps: &mut TaskEncoderDependencies<'vir, TyImpureEnc>,
     builder: &mut PredicateBuilder<'vir>,
 ) -> Result<
     (
-        Vec<FunctionIdn<'vir, (vir::Ref, vir::ManyTyVal), vir::Ref>>,
-        PredicateIdn<'vir, (vir::Ref, vir::ManyTyVal)>,
+        StructData<'vir, ImpureTyDatas>,
+        PredicateIdn<'vir, (vir::Ref, vir::ManyTyVal, vir::ManyCSnap)>,
         vir::ExprCSnap<'vir>,
     ),
-    EncodeFullError<'vir, PredicateEnc>,
+    EncodeFullError<'vir, TyImpureEnc>,
 > {
-    /*
-        let snap_data = snap.specifics.expect_structlike();
-        let fields = variant
-        .fields
-        .iter()
-        .map(|f| deps.require_ref::<TyImpureEnc>(f.ty(builder.vcx.tcx(), params)).unwrap())
-        .collect::<Vec<_>>();
-    */
+    let fields = data.fields.iter().map(|f| {
+        let ty = f.0.decompose(builder.vcx.tcx(), task_key.0.params);
+        deps.require_dep::<TyUseImpureEnc>(ty)
+    }).collect::<Result<Vec<_>, _>>()?;
 
-    let ref_self = builder.vcx.mk_local("self", vir::TYPE_REF);
-    let ref_self_decl = builder.vcx.mk_local_decl_local(ref_self);
-    let ref_self_ex = builder.vcx.mk_local_ex_local(ref_self);
+    let ref_self_decl = builder.ref_self_decl();
+    let ref_self = builder.vcx.mk_local_ex(ref_self_decl);
 
     // Ref-to-Ref function for every field
-    let field_accessors: Vec<FunctionIdn<'vir, (vir::Ref, vir::ManyTyVal), vir::Ref>> = fields
+    let field_accessors = fields
         .iter()
         .enumerate()
         .map(|(idx, _field)| {
-            builder.inner.function::<(vir::Ref, vir::ManyTyVal), vir::Ref>(
+            let ref_to_field_ref = builder.inner.function::<(vir::Ref, vir::ManyTyVal, vir::ManyCSnap), vir::Ref>(
                 &format!("{prefix}field_{idx}"),
-                (ref_self_decl.ty(), builder.generic_tys),
+                (ref_self_decl.ty(), builder.params.ty_args(), builder.params.const_args()),
                 vir::TYPE_REF,
-                (ref_self_decl, &builder.generic_decls),
+                (ref_self_decl, builder.params.ty_decls(), builder.params.const_decls()),
                 &[], // TODO: should have a read permission here!
                 &[vir::expr! { ((ref_self) == (null)) == ((result: Ref) == (null)) }],
                 None,
-            )
+            );
+            TyImpureFieldData { ref_to_field_ref }
         })
         .collect::<Vec<_>>();
 
@@ -75,17 +114,18 @@ pub(crate) fn predicate<'vir>(
     if !prefix.is_empty() {
         pred_name = format!("{prefix}owned");
     }
-    let pred_owned = builder.inner.predicate::<(vir::Ref, vir::ManyTyVal)>(
+    let pred_owned = builder.inner.predicate::<(vir::Ref, vir::ManyTyVal, vir::ManyCSnap)>(
         &pred_name,
-        (ref_self_decl.ty(), builder.generic_tys),
-        (ref_self_decl, &builder.generic_decls),
+        (ref_self_decl.ty(), builder.params.ty_args(), builder.params.const_args()),
+        (ref_self_decl, builder.params.ty_decls(), builder.params.const_decls()),
         Some(
             builder.vcx.mk_conj(
                 &fields
                     .iter()
                     .zip(&field_accessors)
                     .map(|(field, accessor)| {
-                        field.ref_to_pred(builder.vcx, accessor(ref_self_ex, &builder.generic_exprs), None)
+                        let TyImpureFieldData { ref_to_field_ref } = accessor;
+                        field.ref_to_pred(builder.vcx, ref_to_field_ref(ref_self, builder.params.ty_exprs(), builder.params.const_exprs()), None)
                     })
                     .collect::<Vec<_>>(),
             ),
@@ -93,110 +133,17 @@ pub(crate) fn predicate<'vir>(
     );
 
     // Ref-to-snap
-    let snap_args = fields
+    let snap_args: Vec<&'vir vir::ExprGenData<'vir, (), !, vir::Snap>> = fields
         .iter()
         .zip(&field_accessors)
         .map(|(field, accessor)| {
-            field.ref_to_snap(builder.vcx, accessor(ref_self_ex, &builder.generic_exprs))
+            let TyImpureFieldData { ref_to_field_ref } = accessor;
+            field.ref_to_snap(ref_to_field_ref(ref_self, builder.params.ty_exprs(), builder.params.const_exprs()))
         })
         .collect::<Vec<_>>();
     let variant_snap_expr = vir::expr! {
-        unfolding ([pred_owned](ref_self, ..[&builder.generic_exprs])) in ([dds.field_snaps_to_snap](..[snap_args.as_slice()]))
+        unfolding ([pred_owned](ref_self, [..[builder.params.ty_exprs()]], [..[builder.params.const_exprs()]])) in ([data.1.field_snaps_to_snap](..[snap_args.as_slice()]))
     };
-    /*
-    let pred_owned_expr = vir::expr! {
-        (([discr_ty_out.ref_to_snap(builder.vcx, fdisc_func.apply(builder.vcx, &[ref_self_ex]))])
-            == ([snap_variant.discr])) => ([pred_owned](ref_self))
-    };
-    */
 
-    /*
-    let variant = adt.non_enum_variant();
-    let fields = variant
-        .fields
-        .iter()
-        .map(|f| deps.require_ref::<TyImpureEnc>(f.ty(builder.vcx.tcx(), params)).unwrap())
-        .collect::<Vec<_>>();
-
-    // Ref-to-Ref function for every field
-    let field_accessors = fields.iter()
-        .enumerate()
-        .map(|(idx, _field)| builder.function(
-            &format!("field_{idx}"),
-            &[ref_self_decl],
-            &vir::TypeData::Ref,
-            &[],
-            &[
-                vir::expr! { ((ref_self) == (null)) == (([builder.vcx.mk_result(&vir::TypeData::Ref)]) == (null)) },
-            ],
-            None,
-        ))
-        .collect::<Vec<_>>();
-
-    // main predicate
-    let self_pred = builder.predicate(
-        "",
-        &[ref_self_decl],
-        Some(builder.vcx.mk_conj(&fields.iter()
-            .zip(&field_accessors)
-            .map(|(field, accessor)| field.ref_to_pred(builder.vcx, accessor.apply(builder.vcx, &[ref_self_ex]), None))
-            .collect::<Vec<_>>())),
-    );
-
-    // Ref-to-snap
-    let snap_args = fields.iter()
-        .zip(&field_accessors)
-        .map(|(field, accessor)| field.ref_to_snap(builder.vcx, accessor.apply(builder.vcx, &[ref_self_ex])))
-        .collect::<Vec<_>>();
-    builder.function_snap = Some(builder.mk_function(
-        "snap",
-        &[ref_self_decl],
-        snap_type,
-        &[vir::expr! { acc([self_pred](ref_self)) }],
-        &[],
-        Some(vir::expr! {
-            unfolding ([self_pred](ref_self)) in ([snap_data.field_snaps_to_snap](..[snap_args]))
-        }),
-    ).1);
-
-    /*
-    // lifetime projection predicates
-    let _lft_predicates = params.iter()
-        .enumerate()
-        .flat_map(|(reg_idx, arg)| Some((reg_idx, arg.as_region()?)))
-        .map(|(reg_idx, reg)| builder.predicate(
-                &format!("lft_{reg_idx}"),
-                &[snap_self_decl],
-                Some(builder.vcx.mk_conj(&fields.iter()
-                    .zip(&variant.fields)
-                    .enumerate()
-                    .filter_map(|(field_idx, (field, rust_field))| match rust_field.ty(builder.vcx.tcx(), params).kind() {
-                        ty::TyKind::Ref(field_reg, inner_ty, ty::Mutability::Mut) => {
-                            if *field_reg != reg {
-                                return None;
-                            }
-                            let inner_ty_enc = deps.require_ref::<TyImpureEnc>(*inner_ty).unwrap();
-                            Some(inner_ty_enc.ref_to_pred(
-                                builder.vcx,
-                                field.generic_predicate.expect_ref().snap_data.deref_access.apply(builder.vcx, [
-                                    snap_data.field_access[field_idx].read.apply(builder.vcx, [snap_self_ex]),
-                                ]),
-                                None,
-                            ))
-                        }
-                        _ => None,
-                    })
-                    .collect::<Vec<_>>()))
-            ))
-        .collect::<Vec<_>>();
-    */
-
-    Ok(PredicateEncData::StructLike(PredicateEncDataStruct {
-        snap_data,
-        ref_to_field_refs: builder.vcx.alloc_slice(&field_accessors.iter()
-            .map(|f| f)
-            .collect::<Vec<_>>()),
-    }))
-    */
-    Ok((field_accessors, pred_owned, variant_snap_expr))
+    Ok((StructData::new((), field_accessors), pred_owned, variant_snap_expr))
 }

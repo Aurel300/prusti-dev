@@ -3,63 +3,200 @@ use prusti_rustc_interface::{
     abi,
 };
 use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
+use vir::PredicateIdn;
 
-use crate::encoders::ty::{lifted::{LiftedTyEncTask, casters::{CastTypeImpure, CastTypePure}, rust_ty_cast::{GenericCasterImpure, GenericCasterPure, RustTyCastersEnc}}, most_generic_ty::MostGenericTyEnc, impure::{PredicateEnc, PredicateEncDataEnum, PredicateEncDataImmRef, PredicateEncDataMutRef, PredicateEncDataStruct, PredicateEncOutputRef}};
+use crate::encoders::{ty::{generics::{GArgs, GArgsCastEnc, GArgsTyEnc, GParams}, RustTy, RustTyDatas, RustTyDecompose, RustTyEnum, RustTyStruct}, Impure};
 
 use super::{
-    lifted::{
-        generic::LiftedGeneric,
-        ty::{EncodeGenericsAsLifted, LiftedTy, LiftedTyEnc},
-    },
+    generics::{GArgCaster, GArgsTy},
+    impure::{ImpureTyDatas, TyImpureRef, TyImpureEnc},
+    data::*,
+    TyUseEnc, UseTyDatas,
 };
 
+pub(super) type UseImpureTyDatas = UseTyDatas<Impure>;
+
+type FieldCaster<'vir> = GArgCaster<'vir, Impure>;
+
+impl<'vir> TyDatas<'vir> for UseImpureTyDatas {
+    type TyData = TyUseImpureData<'vir>;
+    type PrimitiveData = ();
+    type ImmRefData = TyUseImpureImmRef<'vir>;
+    type MutRefData = TyUseImpureMutRef<'vir>;
+    type FieldData = TyUseImpureField<'vir>;
+    type StructData = TyUseImpureStructData<'vir>;
+    type VariantData = ();
+    type EnumData = TyUseImpureEnumData<'vir>;
+}
+
+pub type TyUseImpure<'vir> = Ty<'vir, UseImpureTyDatas>;
+// pub type TyUseImpureData<'vir> = TyData<'vir, UseImpureTyDatas>;
+
+pub type TyUseImpureStruct<'vir> = StructData<'vir, UseImpureTyDatas>;
+pub type TyUseImpureEnum<'vir> = EnumData<'vir, UseImpureTyDatas>;
+
+#[derive(Debug, Clone, Copy)]
+pub struct TyUseImpureData<'vir> {
+    args: GArgsTy<'vir>,
+    impure: <ImpureTyDatas as TyDatas<'vir>>::TyData,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct TyUseImpureImmRef<'vir> {
+    caster: FieldCaster<'vir>,
+    args: GArgsTy<'vir>,
+    impure: <ImpureTyDatas as TyDatas<'vir>>::ImmRefData,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct TyUseImpureMutRef<'vir> {
+    caster: FieldCaster<'vir>,
+    args: GArgsTy<'vir>,
+    impure: <ImpureTyDatas as TyDatas<'vir>>::MutRefData,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct TyUseImpureStructData<'vir> {
+    args: GArgsTy<'vir>,
+    ref_to_pred: PredicateIdn<'vir, (vir::Ref, vir::ManyTyVal, vir::ManyCSnap)>,
+    impure: <ImpureTyDatas as TyDatas<'vir>>::StructData,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct TyUseImpureField<'vir> {
+    caster: FieldCaster<'vir>,
+    args: GArgsTy<'vir>,
+    impure: <ImpureTyDatas as TyDatas<'vir>>::FieldData,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct TyUseImpureEnumData<'vir> {
+    args: GArgsTy<'vir>,
+    impure: <ImpureTyDatas as TyDatas<'vir>>::EnumData,
+}
+
 /// Encodes a type into the predicate representation. Takes an arbitrary Rust
-/// `Ty` and provides a wrapper around the results of the `PredicateEnc` encoder.
+/// `Ty` and provides a wrapper around the results of the `TyImpureEnc` encoder.
 /// This wrapper handles all the generic casts required (e.g. when fold/unfolding).
-pub struct TyImpureEnc;
+pub type TyUseImpureEnc = TyUseEnc<Impure>;
 
-#[derive(Clone)]
-pub struct TyImpureEncOutputRef<'vir> {
-    /// The predicate output for the "most generic version" of the input type
-    generic_predicate: PredicateEncOutputRef<'vir>,
+impl TaskEncoder for TyUseImpureEnc {
+    task_encoder::encoder_cache!(TyUseImpureEnc);
 
-    pub indirect_predicate: Option<(
-        vir::ExprGenBool<'vir, vir::ExprRef<'vir>, vir::ExprKind<'vir>>,
-        vir::ExprGenBool<'vir, vir::ExprRef<'vir>, vir::ExprKind<'vir>>,
-    )>,
+    type TaskDescription<'vir> = super::RustTyDecomposition<'vir>;
 
-    /// The lifted representation of the input type, as a Viper value
-    pub ty: LiftedTy<'vir, LiftedGeneric<'vir>>,
+    type OutputFullDependency<'vir> = TyUseImpure<'vir>;
 
-    pub f_ty: GenericCasterPure<'vir>,
+    fn task_to_key<'vir>(task: &Self::TaskDescription<'vir>) -> Self::TaskKey<'vir> {
+        *task
+    }
 
-    params: Vec<GenericCasterImpure<'vir>>,
+    fn do_encode_full<'vir>(
+        task_key: &Self::TaskKey<'vir>,
+        deps: &mut task_encoder::TaskEncoderDependencies<'vir, Self>,
+    ) -> EncodeFullResult<'vir, Self> {
+        deps.emit_output_ref(*task_key, ())?;
+
+        let ty_impure = deps.require_dep::<TyImpureEnc>(task_key.ty)?;
+        let mut walker = TyUseImpureWalker::new(deps, task_key.args);
+        let ty_use_impure = walker.encode_ty(task_key.ty.zip(ty_impure));
+        Ok(((), ty_use_impure.alloc()))
+    }
+
+    fn emit_outputs<'vir>(program: &mut task_encoder::Program<'vir>) {
+        TyImpureEnc::emit_outputs(program)
+    }
 }
 
-pub struct TyImpureDataStruct<'a, 'vir> {
-    params: &'a [GenericCasterImpure<'vir>],
-    ty_args: Vec<vir::ExprTyVal<'vir>>,
-
-    ref_to_pred: vir::PredicateIdn<'vir, (vir::Ref, vir::ManyTyVal)>,
-    inner: Option<PredicateEncDataStruct<'vir>>,
+struct TyUseImpureWalker<'a, 'vir> {
+    tcx: ty::TyCtxt<'vir>,
+    deps: &'a mut TaskEncoderDependencies<'vir, TyUseImpureEnc>,
+    args_t: GArgsTy<'vir>,
+    args: GArgs<'vir>,
 }
 
-pub struct TyImpureDataEnum<'vir> {
-    inner: PredicateEncDataEnum<'vir>,
-    ty_args: Vec<vir::ExprTyVal<'vir>>,
+impl<'a, 'vir> TyUseImpureWalker<'a, 'vir> {
+    fn new(deps: &'a mut TaskEncoderDependencies<'vir, TyUseImpureEnc>, args: GArgs<'vir>) -> Self {
+        let tcx = vir::with_vcx(|vcx| vcx.tcx());
+        let args_t = deps.require_dep::<GArgsTyEnc>(args).unwrap();
+        Self { tcx, deps, args_t, args }
+    }
+
+    fn encode_ty(
+        &mut self,
+        ty: TyData<'vir, (RustTyDatas, ImpureTyDatas)>,
+    ) -> TyData<'vir, UseImpureTyDatas> {
+        let specifics = match &ty.specifics {
+            TySpecifics::Param(..) => TySpecifics::mk_param(()),
+            TySpecifics::Opaque(..) => TySpecifics::mk_opaque(()),
+            TySpecifics::Primitive(..) => TySpecifics::mk_primitive(()),
+            TySpecifics::ImmRef(data) => {
+                let caster = self.encode_normalized(*data.0, ty.0.params);
+                TySpecifics::mk_immref(TyUseImpureImmRef { caster, args: self.args_t, impure: *data.1 })
+            }
+            TySpecifics::MutRef(data) => {
+                let caster = self.encode_normalized(*data.0, ty.0.params);
+                TySpecifics::mk_mutref(TyUseImpureMutRef { caster, args: self.args_t, impure: *data.1 })
+            }
+            TySpecifics::StructLike(data) =>
+                TySpecifics::StructLike(self.encode_structlike(data, ty.1.ref_to_pred, ty.0.params)),
+            TySpecifics::EnumLike(data) =>
+                TySpecifics::EnumLike(self.encode_enumlike(data, ty.0.params)),
+        };
+        let data = TyUseImpureData { args: self.args_t, impure: *ty.1 };
+        TyData::new(data, specifics)
+    }
+
+    fn encode_normalized(
+        &mut self,
+        decomposable: impl RustTyDecompose<'vir>,
+        params: GParams<'vir>,
+    ) -> FieldCaster<'vir> {
+        let normalized = decomposable.decompose_compare_normalize(self.tcx, params, self.args);
+        self.deps.require_dep::<GArgsCastEnc<Impure>>(normalized).unwrap()
+    }
+
+    fn encode_structlike(
+        &mut self,
+        data: &StructData<'vir, (RustTyDatas, ImpureTyDatas)>,
+        ref_to_pred: PredicateIdn<'vir, (vir::Ref, vir::ManyTyVal, vir::ManyCSnap)>,
+        params: GParams<'vir>,
+    ) -> StructData<'vir, UseImpureTyDatas> {
+        let fields = data
+            .fields
+            .iter()
+            .map(|field| {
+                let caster = self.encode_normalized(field.0.ty(), params);
+                TyUseImpureField {
+                    caster,
+                    args: self.args_t,
+                    impure: *field.1,
+                }
+            })
+            .collect::<Vec<_>>();
+        let data = TyUseImpureStructData { args: self.args_t, ref_to_pred, impure: *data.1 };
+        StructData::new(data, fields)
+    }
+
+    fn encode_enumlike(
+        &mut self,
+        data: &EnumData<'vir, (RustTyDatas, ImpureTyDatas)>,
+        params: GParams<'vir>,
+    ) -> EnumData<'vir, UseImpureTyDatas> {
+        let variants = data
+            .variants
+            .iter()
+            .map(|variant| {
+                let structlike = self.encode_structlike(&variant.inner, variant.1.predicate, params);
+                VariantData::new((), structlike)
+            })
+            .collect::<Vec<_>>();
+        let data = TyUseImpureEnumData { args: self.args_t, impure: *data.1 };
+        EnumData::new(data, variants)
+    }
 }
 
-pub struct TyImpureDataImmRef<'vir> {
-    inner: PredicateEncDataImmRef<'vir>,
-    ty_args: Vec<vir::ExprTyVal<'vir>>,
-}
-
-pub struct TyImpureDataMutRef<'vir> {
-    inner: PredicateEncDataMutRef<'vir>,
-    ty_args: Vec<vir::ExprTyVal<'vir>>,
-}
-
-impl<'vir> TyImpureEncOutputRef<'vir> {
+impl<'vir> TyUseImpureData<'vir> {
     /// Generates a call to `method_assign`, which asserts that the snapshot of
     /// `self_ref` is `self_new_snap`. Appropriate type arguments are used.
     pub fn apply_method_assign<'tcx>(
@@ -68,23 +205,14 @@ impl<'vir> TyImpureEncOutputRef<'vir> {
         self_ref: vir::ExprRef<'vir>,
         self_new_snap: vir::ExprSnap<'vir>,
     ) -> vir::Stmt<'vir> {
-        assert_eq!(
-            self.snapshot(),
-            self_new_snap.ty(),
-            "rhs of assignment does not have expected type"
-        );
         vcx.alloc(vir::StmtData::new(vcx.alloc(
-            (self.generic_predicate.method_assign)(
+            (self.impure.method_assign)(
                 self_ref,
-                &self.ty.arg_exprs(vcx),
+                self.args.get_ty(),
+                self.args.get_const(),
                 self_new_snap,
             ),
         )))
-    }
-
-    /// The snapshot type.
-    pub fn snapshot(&self) -> vir::TypeSnap<'vir> {
-        self.generic_predicate.snapshot
     }
 
     /// Constructs the Viper predicate application expression.
@@ -94,217 +222,159 @@ impl<'vir> TyImpureEncOutputRef<'vir> {
         self_ref: vir::ExprRef<'vir>,
         perm: Option<vir::ExprPerm<'vir>>,
     ) -> vir::ExprBool<'vir> {
-        vcx.mk_predicate_app_expr(self.ref_to_pred_app(vcx, self_ref, perm))
+        vcx.mk_predicate_app_expr(self.ref_to_pred_app(self_ref, perm))
     }
 
     /// Constructs the Viper predicate application.
     pub fn ref_to_pred_app<'tcx>(
         &self,
-        vcx: &'vir vir::VirCtxt<'tcx>,
         self_ref: vir::ExprRef<'vir>,
         perm: Option<vir::ExprPerm<'vir>>,
     ) -> vir::PredicateApp<'vir> {
-        (self.generic_predicate.ref_to_pred)(self_ref, &self.ref_to_ty_args(vcx))(perm)
+        (self.impure.ref_to_pred)(self_ref, self.args.get_ty(), self.args.get_const())(perm)
     }
 
     /// Calls the predicate (heap) dependent snapshot construction function.
     pub fn ref_to_snap<'tcx>(
         &self,
-        vcx: &'vir vir::VirCtxt<'tcx>,
         self_ref: vir::ExprRef<'vir>,
     ) -> vir::ExprSnap<'vir> {
-        let expr = (self.generic_predicate.ref_to_snap)(self_ref, &self.ref_to_ty_args(vcx));
-        assert!(expr.ty() == self.snapshot());
-        expr
+        (self.impure.ref_to_snap)(self_ref, self.args.get_ty(), self.args.get_const())
     }
 
-    /// Get the struct specifics (or enum variant if specified), panics if not a struct.
-    pub fn expect_variant_opt(&self, vid: Option<abi::VariantIdx>) -> TyImpureDataStruct<'_, 'vir> {
-        let ref_to_pred = self.generic_predicate.get_ref_to_pred(vid);
-        let inner = self.generic_predicate.get_variant_opt(vid).copied();
-        let ty_args = self.ref_to_ty_args(vir::with_vcx(|vcx| vcx));
-        TyImpureDataStruct { ty_args, params: &self.params, ref_to_pred, inner }
-    }
-
-    /// Optionally get the enum specifics, `None` if not an enum. The inner
-    /// option is a `None` if this is an empty enum (uninhabited).
-    pub fn get_enumlike(&self) -> Option<Option<TyImpureDataEnum<'vir>>> {
-        self.generic_predicate
-            .get_enumlike()
-            .map(|&inner| inner.map(|inner| TyImpureDataEnum {
-                inner,
-                ty_args: self.ref_to_ty_args(vir::with_vcx(|vcx| vcx)),
-            }))
-    }
-
-    /// Get the immref specifics, panics if not immref.
-    pub fn expect_immref(&self) -> TyImpureDataImmRef<'vir> {
-        let inner = self.generic_predicate.expect_immref();
-        let ty_args = self.ref_to_ty_args(vir::with_vcx(|vcx| vcx));
-        TyImpureDataImmRef { inner, ty_args }
-    }
-
-    /// Get the mutref specifics, panics if not mutref.
-    pub fn expect_mutref(&self) -> TyImpureDataMutRef<'vir> {
-        let inner = self.generic_predicate.expect_mutref();
-        let ty_args = self.ref_to_ty_args(vir::with_vcx(|vcx| vcx));
-        TyImpureDataMutRef { inner, ty_args }
-    }
-
-    /// Constructs arguments for [`PredicateEncOutputRef::ref_to_pred`] and
-    /// [`PredicateEncOutputRef::ref_to_snap`]. Takes as input a Ref representing
-    /// the self, and the encoded Rust type (see [`LiftedTy`]). The arguments to the
-    /// function are the type arguments of the lifted type.
-    fn ref_to_ty_args<'tcx>(&self, vcx: &'vir vir::VirCtxt<'tcx>) -> Vec<vir::ExprTyVal<'vir>> {
-        self.ty.arg_exprs(vcx)
+    pub fn snapshot(&self) -> vir::TypeSnap<'vir> {
+        self.impure.ref_to_snap.result()
     }
 }
 
-impl<'vir> TyImpureDataStruct<'_, 'vir> {
-    /// Get the (Ref) address of a field.
-    pub fn field<Curr, Next>(&self, field: abi::FieldIdx, self_ref: vir::ExprGenRef<'vir, Curr, Next>) -> vir::ExprGenRef<'vir, Curr, Next> {
-        let ty_args = (&*self.ty_args) as *const [vir::ExprTyVal<'vir>] as *const [vir::ExprGenTyVal<'vir, Curr, Next>];
-        // TODO: remove unsafe
-        let ty_args = unsafe { &*ty_args };
-        self.inner.expect("field of enum with no variant").ref_to_field_refs[field.index()].call()(self_ref, ty_args)
-    }
-
+impl<'vir> TyData<'vir, UseImpureTyDatas> {
     /// Fold the predicate (including generic casts).
     pub fn fold(
         &self,
+        variant: Option<abi::VariantIdx>,
         self_ref: vir::ExprRef<'vir>,
         perm: Option<vir::ExprPerm<'vir>>,
-    ) -> impl Iterator<Item = vir::Stmt<'vir>> + '_ {
-        vir::with_vcx(|vcx| {
-            let to_gen = self.generic_fields(self_ref).filter_map(|(f_ref, param)| {
-                param.cast_to_generic_if_necessary(vcx, f_ref)
-            });
-
-            let pred_app = self.ref_to_pred_app(self_ref, perm);
-            let fold = vir::with_vcx(|vcx| vcx.mk_fold_stmt(pred_app));
-            to_gen.chain([fold])
-        })
+    ) -> Vec<vir::Stmt<'vir>> {
+        if let Some(variant) = variant {
+            return self.expect_variant(variant).inner.fold(self_ref, perm).collect();
+        };
+        match &self.specifics {
+            TySpecifics::Param(_) | TySpecifics::Primitive(_) => unreachable!(),
+            TySpecifics::Opaque(_) => panic!("cannot fold opaque type"),
+            TySpecifics::ImmRef(..) => Vec::new(),
+            TySpecifics::MutRef(data) => data.fold(self_ref).into_iter().collect(),
+            TySpecifics::StructLike(data) => data.fold(self_ref, perm).collect(),
+            TySpecifics::EnumLike(..) => {
+                let pred_app = self.ref_to_pred_app(self_ref, perm);
+                vec![vir::with_vcx(|vcx| vcx.mk_fold_stmt(pred_app))]
+            }
+        }
     }
 
     /// Unfold the predicate (including generic casts).
     pub fn unfold(
         &self,
+        variant: Option<abi::VariantIdx>,
         self_ref: vir::ExprRef<'vir>,
         perm: Option<vir::ExprPerm<'vir>>,
-    ) -> impl Iterator<Item = vir::Stmt<'vir>> + '_ {
-        vir::with_vcx(|vcx| {
-            let to_con = self.generic_fields(self_ref).filter_map(|(f_ref, param)| {
-                param.cast_to_concrete_if_possible(vcx, f_ref)
-            });
-
-            let pred_app = self.ref_to_pred_app(self_ref, perm);
-            let unfold = vir::with_vcx(|vcx| vcx.mk_unfold_stmt(pred_app));
-            [unfold].into_iter().chain(to_con)
-        })
+    ) -> Vec<vir::Stmt<'vir>> {
+        if let Some(variant) = variant {
+            return self.expect_variant(variant).inner.unfold(self_ref, perm).collect();
+        };
+        match &self.specifics {
+            TySpecifics::Param(_) | TySpecifics::Primitive(_) => unreachable!(),
+            TySpecifics::Opaque(_) => panic!("cannot unfold opaque type"),
+            TySpecifics::ImmRef(..) => Vec::new(),
+            TySpecifics::MutRef(data) => data.unfold(self_ref).into_iter().collect(),
+            TySpecifics::StructLike(data) => data.unfold(self_ref, perm).collect(),
+            TySpecifics::EnumLike(..) => {
+                let pred_app = self.ref_to_pred_app(self_ref, perm);
+                vec![vir::with_vcx(|vcx| vcx.mk_unfold_stmt(pred_app))]
+            }
+        }
     }
+}
 
-    fn generic_fields(&self, self_ref: vir::ExprRef<'vir>) -> impl Iterator<Item = (vir::ExprRef<'vir>, GenericCasterImpure<'vir>)> + '_ {
-        self.inner.into_iter().flat_map(|inner| {
-            assert_eq!(inner.ref_to_field_refs.len(), inner.snap_data.field_access.len());
-            let fields = inner.ref_to_field_refs.iter().zip(inner.snap_data.field_access);
-            fields.filter_map(|(f_ref, f)| f.generic_idx.map(|idx| (f_ref.call()(self_ref, &self.ty_args), self.params[idx as usize])))
-        })
-    }
-
+impl<'vir> TyUseImpureStruct<'vir> {
     fn ref_to_pred_app(
         &self,
         self_ref: vir::ExprRef<'vir>,
         perm: Option<vir::ExprPerm<'vir>>,
     ) -> vir::PredicateApp<'vir> {
-        (self.ref_to_pred)(self_ref, &self.ty_args)(perm)
+        (self.ref_to_pred)(self_ref, self.args.get_ty(), self.args.get_const())(perm)
+    }
+
+    /// Fold the predicate (including generic casts).
+    fn fold(
+        &self,
+        self_ref: vir::ExprRef<'vir>,
+        perm: Option<vir::ExprPerm<'vir>>,
+    ) -> impl Iterator<Item = vir::Stmt<'vir>> + '_ {
+        let pred_app = self.ref_to_pred_app(self_ref, perm);
+        let fold = vir::with_vcx(|vcx| vcx.mk_fold_stmt(pred_app));
+        self.cast_to_callee_ctx(self_ref).chain([fold])
+    }
+
+    /// Unfold the predicate (including generic casts).
+    fn unfold(
+        &self,
+        self_ref: vir::ExprRef<'vir>,
+        perm: Option<vir::ExprPerm<'vir>>,
+    ) -> impl Iterator<Item = vir::Stmt<'vir>> + '_ {
+        let pred_app = self.ref_to_pred_app(self_ref, perm);
+        let unfold = vir::with_vcx(|vcx| vcx.mk_unfold_stmt(pred_app));
+        [unfold].into_iter().chain(self.cast_to_caller_ctx(self_ref))
+    }
+
+    fn cast_to_caller_ctx(&self, self_ref: vir::ExprRef<'vir>) -> impl Iterator<Item = vir::Stmt<'vir>> {
+        self.fields.iter().filter_map(|f| f.cast_to_caller_ctx(self_ref))
+    }
+
+    fn cast_to_callee_ctx(&self, self_ref: vir::ExprRef<'vir>) -> impl Iterator<Item = vir::Stmt<'vir>> {
+        self.fields.iter().filter_map(|f| f.cast_to_callee_ctx(self_ref))
     }
 }
 
-impl<'vir> TyImpureDataEnum<'vir> {
+impl<'vir> TyUseImpureField<'vir> {
+    /// Get the (Ref) address of a field.
+    pub fn field_ref<Curr, Next>(&self, self_ref: vir::ExprGenRef<'vir, Curr, Next>) -> vir::ExprGenRef<'vir, Curr, Next> {
+        self.impure.ref_to_field_ref.call()(self_ref, self.args.get_ty(), self.args.get_const())
+    }
+
+    fn cast_to_caller_ctx(&self, self_ref: vir::ExprRef<'vir>) -> Option<vir::Stmt<'vir>> {
+        self.caster.cast_to_caller_ctx(self.field_ref(self_ref))
+    }
+
+    fn cast_to_callee_ctx(&self, self_ref: vir::ExprRef<'vir>) -> Option<vir::Stmt<'vir>> {
+        self.caster.cast_to_callee_ctx(self.field_ref(self_ref))
+    }
+}
+
+impl<'vir> TyUseImpureEnum<'vir> {
     pub fn discr(&self, self_ref: vir::ExprRef<'vir>) -> vir::ExprRef<'vir> {
-        (self.inner.discr)(self_ref)
+        (self.impure.discr)(self_ref)
     }
 }
 
-impl<'vir> TyImpureDataImmRef<'vir> {
+impl<'vir> TyUseImpureImmRef<'vir> {
     pub fn deref(&self, self_ref: vir::ExprRef<'vir>) -> vir::ExprRef<'vir> {
-        (self.inner.deref_func)(self_ref, &self.ty_args)
+        (self.impure.deref_func)(self_ref, self.args.get_ty(), self.args.get_const())
     }
 }
 
-impl<'vir> TyImpureDataMutRef<'vir> {
+impl<'vir> TyUseImpureMutRef<'vir> {
     pub fn deref(&self, self_ref: vir::ExprRef<'vir>) -> vir::ExprRef<'vir> {
-        (self.inner.deref_func)(self_ref)
-    }
-}
-
-impl<'vir> task_encoder::OutputRefAny for TyImpureEncOutputRef<'vir> {}
-
-impl TaskEncoder for TyImpureEnc {
-    task_encoder::encoder_cache!(TyImpureEnc);
-
-    type TaskDescription<'vir> = ty::Ty<'vir>;
-
-    type OutputRef<'vir> = ();
-    type OutputFullLocal<'vir> = TyImpureEncOutputRef<'vir>;
-
-    type TaskKey<'tcx> = Self::TaskDescription<'tcx>;
-
-    type EncodingError = ();
-
-    const ENCODER_NAME: &'static str = "impure type encoder";
-
-    fn do_encode_full<'vir>(
-        task_key: &Self::TaskKey<'vir>,
-        deps: &mut TaskEncoderDependencies<'vir, Self>,
-    ) -> EncodeFullResult<'vir, Self> {
-        deps.emit_output_ref(*task_key, ())?;
-        let (generic_ty, args) = deps.require_local::<MostGenericTyEnc>(*task_key)?;
-        let generic_predicate = deps.require_ref::<PredicateEnc>(generic_ty)?;
-        /*
-        let indirect_predicate = if let ty::TyKind::Ref(_, inner_ty, _) = task_key.kind() {
-            let inner_ty_enc = deps.require_ref::<TyImpureEnc>(*inner_ty).unwrap();
-            let deref_access = generic_predicate.expect_ref().deref_func;
-            let inner_ty_enc_c = inner_ty_enc.clone();
-            Some((
-                vcx.mk_lazy_expr("ref_indirect", Box::new(move |vcx, self_expr| inner_ty_enc.ref_to_pred(
-                    vcx,
-                    deref_access.apply(vcx, [self_expr]),
-                    None,
-                ).kind)),
-                vcx.mk_lazy_expr("ref_indirect_post", Box::new(move |vcx, self_expr| inner_ty_enc_c.ref_to_pred(
-                    vcx,
-                    vcx.mk_old_expr(deref_access.apply(vcx, [self_expr])),
-                    None,
-                ).kind)),
-            ))
-        } else {
-            None
-        };
-        */
-        let ty = deps.require_local::<LiftedTyEnc<EncodeGenericsAsLifted>>(LiftedTyEncTask::Ty(*task_key))?;
-        let f_ty = deps.require_local::<RustTyCastersEnc<CastTypePure>>(*task_key)?;
-        let params = args
-                    .iter()
-                    .map(|arg| {
-                        deps.require_local::<RustTyCastersEnc<CastTypeImpure>>(*arg)
-                            .unwrap()
-                    })
-                    .collect();
-        Ok((TyImpureEncOutputRef {
-            generic_predicate,
-            indirect_predicate: None,
-            ty,
-            f_ty,
-            params,
-        }, ()))
+        (self.impure.deref_func)(self_ref, self.args.get_ty(), self.args.get_const())
     }
 
-    fn task_to_key<'vir>(task: &Self::TaskDescription<'vir>) -> Self::TaskKey<'vir> {
-        *task
+    fn fold(&self, _self_ref: vir::ExprRef<'vir>) -> Option<vir::Stmt<'vir>> {
+        // TODO: should the deref of a mut ref be generic or not?
+        // self.caster.cast_to_callee_ctx(self.deref(self_ref))
+        None
     }
 
-    fn emit_outputs<'vir>(program: &mut task_encoder::Program<'vir>) {
-        PredicateEnc::emit_outputs(program)
+    fn unfold(&self, _self_ref: vir::ExprRef<'vir>) -> Option<vir::Stmt<'vir>> {
+        // self.caster.cast_to_caller_ctx(self.deref(self_ref))
+        None
     }
 }

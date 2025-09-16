@@ -1,22 +1,40 @@
 use crate::encoders::ty::{
-    pure::{DomainBuilder, DomainDataPrim, DomainEnc, DomainEncOutput, DomainEncSpecifics, PureTypeBuilder, PureTypeCommon},
-    impure::{PredicateBuilder, PredicateEnc, PredicateEncData, RefToIndirectPred},
+    impure::{ImpureTyDatas, PredicateBuilder, TyImpureEnc, TyImpurePrimitive}, pure::{DomainBuilder, PureTyDatas, TyPureEnc, TyPureEncError, TyPurePrimData, TyPurePrimitive}, RustTyDatas, RustTyPrimitive
 };
 use prusti_rustc_interface::middle::ty;
 use task_encoder::{EncodeFullError, TaskEncoder, TaskEncoderDependencies};
 use vir::{CastType, HasType};
 
-pub(crate) fn domain<'vir>(
-    task_key: <DomainEnc as TaskEncoder>::TaskKey<'vir>,
-    _deps: &mut TaskEncoderDependencies<'vir, DomainEnc>,
-    builder: PureTypeCommon<'vir>,
-) -> Result<(DomainEncSpecifics<'vir>, PureTypeBuilder<'vir>), EncodeFullError<'vir, DomainEnc>> {
-    let mut builder = DomainBuilder::new(builder);
-    let ty = task_key.ty();
+pub(crate) fn ty_pure<'vir>(
+    data: &RustTyPrimitive<'vir>,
+    _deps: &mut TaskEncoderDependencies<'vir, TyPureEnc>,
+    builder: &mut DomainBuilder<'vir>,
+) -> Result<TyPurePrimitive<'vir>, EncodeFullError<'vir, TyPureEnc>> {
+    let ty = data;
     let ty_kind = ty.kind();
     let prim_type: vir::TypePrim<'vir> = match ty_kind {
         ty::TyKind::Bool => vir::TYPE_BOOL.upcast_ty(),
         ty::TyKind::Char | ty::TyKind::Int(_) | ty::TyKind::Uint(_) => vir::TYPE_INT.upcast_ty(),
+        ty::TyKind::Float(_) => return Err(EncodeFullError::EncodingError(
+            TyPureEncError::Unimplemented,
+            None,
+        )),
+        // TODO: implement float support (like so in Viper):
+        /*
+            domain myBV interpretation (SMTLIB: "(_ BitVec 32)", Boogie: "bv32") {
+                function toBV32(i: Int): myBV interpretation "(_ int2bv 32)"
+            }
+
+            domain myFloat interpretation (Boogie: "float24e8", SMTLIB: "(_ FloatingPoint 8 24)") {
+                function tofp(bv: myBV): myFloat interpretation "(_ to_fp 8 24)"
+                function fp_eq(myFloat, myFloat): Bool interpretation "fp.eq"
+
+                function fp_min(f1: myFloat, f2: myFloat): myFloat interpretation "fp.min"
+                function fp_max(f1: myFloat, f2: myFloat): myFloat interpretation "fp.max"
+                function add(d1: myFloat, f2: myFloat): myFloat interpretation "fp.add RNE"
+                function gt(myFloat, myFloat): Bool interpretation "fp.gt"
+            }
+        */
         _ => unreachable!(),
     };
 
@@ -50,29 +68,28 @@ pub(crate) fn domain<'vir>(
         }
     };
 
-    Ok((DomainEncSpecifics::Primitive(DomainDataPrim {
+    Ok(TyPurePrimData {
         prim_type,
         snap_to_prim: value_ident,
         prim_to_snap: cons_ident,
-    }), Err(builder)))
+    })
 }
 
-pub(crate) fn predicate<'vir>(
-    _task_key: <PredicateEnc as TaskEncoder>::TaskKey<'vir>,
-    snap: DomainEncOutput<'vir>,
-    _deps: &mut TaskEncoderDependencies<'vir, PredicateEnc>,
+pub(crate) fn ty_impure<'vir>(
+    _data: &(&RustTyPrimitive<'vir>, &TyPurePrimitive<'vir>),
+    _deps: &mut TaskEncoderDependencies<'vir, TyImpureEnc>,
     builder: &mut PredicateBuilder<'vir>,
 ) -> Result<
-    (PredicateEncData<'vir>, Option<RefToIndirectPred<'vir>>),
-    EncodeFullError<'vir, PredicateEnc>,
+    TyImpurePrimitive<'vir>,
+    EncodeFullError<'vir, TyImpureEnc>,
 > {
-    // let ty = task_key.ty();
+    // let ty = data.ty();
     // let ty_kind = ty.kind();
 
-    let snap_type = (snap.domain)();
+    let snap_type = builder.csnap_type();
 
-    let ref_self = builder.vcx.mk_local("self", vir::TYPE_REF);
-    let ref_self_decl = builder.vcx.mk_local_decl_local(ref_self);
+    let ref_self_decl = builder.ref_self_decl();
+    let ref_self = builder.vcx.mk_local_ex(ref_self_decl);
 
     // fields
     let prim_field = builder.field("val", snap_type);
@@ -102,8 +119,5 @@ pub(crate) fn predicate<'vir>(
             .1,
     );
 
-    Ok((
-        PredicateEncData::Primitive(snap.specifics.expect_primitive()),
-        None,
-    ))
+    Ok(())
 }

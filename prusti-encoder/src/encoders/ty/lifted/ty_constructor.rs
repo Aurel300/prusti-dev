@@ -1,42 +1,48 @@
 use task_encoder::{EncodeFullResult, OutputRefAny, TaskEncoder};
-use vir::{Arity, CallableIdn, CastType, FunctionIdn};
+use vir::{Arity, CallableIdn, CastType, FunctionIdn, HasType};
 
-use crate::encoders::ty::{
-    lifted::r#typeof::{TypeOfEnc, TypeOfEncOutputRef}, most_generic_ty::{MostGenericTy, MostGenericTyEnc}
-};
+use crate::encoders::ty::{generics::GenericParamsEnc, RustTy};
+
+use super::r#typeof::{TypeOfEnc, TypeOfEncOutputRef};
 
 #[derive(Clone)]
 pub struct TyConstructorEncOutputRef<'vir> {
     /// Takes as input the generics for this type (if any),
     /// and returns the resulting type
-    pub ty_constructor: vir::FunctionIdn<'vir, vir::ManyTyVal, vir::TyVal>,
+    pub ty_constructor: vir::FunctionIdn<'vir, (vir::ManyTyVal, vir::ManyCSnap), vir::TyVal>,
 
     /// Accessors of the arguments to an instantiation of the type constructor.
     /// Each function takes as input an instantiated type. The `i`th function in
     /// this list returns the `i`th argument to the type constructor.
     pub ty_param_accessors: &'vir [vir::AdtDestructor<'vir, vir::TyVal, vir::TyVal>],
 
+    /// Accessors of the const parameters to an instantiation of the type constructor.
+    /// Each function takes as input an instantiated type. The `i`th function in
+    /// this list returns the `i`th const argument to the type constructor.
+    pub const_param_accessors: &'vir [vir::AdtDestructor<'vir, vir::TyVal, vir::CSnap>],
+
     pub typeof_data: TypeOfEncOutputRef<'vir>,
 }
 
 impl<'vir> TyConstructorEncOutputRef<'vir> {
-    pub fn arity(&self) -> <vir::ManyTyVal as Arity>::Tys<'vir> {
-        self.ty_constructor.arity()
-    }
-
-    pub fn args(&self) -> impl Iterator<Item = vir::TypeTyVal<'vir>> + '_ {
-        self.arity().into_iter().copied()
-    }
-
     /// Takes as input a snapshot encoding of a rust value, and returns
     /// the `idx`th type parameter of its type.
     pub fn ty_param_from_snap(
         &self,
-        vcx: &'vir vir::VirCtxt,
         idx: usize,
         snap: vir::ExprCSnap<'vir>,
     ) -> vir::ExprTyVal<'vir> {
         self.ty_param_accessors[idx].call()((self.typeof_data.typeof_function)(snap.upcast_ty()))
+    }
+
+    /// Takes as input a snapshot encoding of a rust value, and returns
+    /// the `idx`th const parameter of its type.
+    pub fn const_param_from_snap(
+        &self,
+        idx: usize,
+        snap: vir::ExprCSnap<'vir>,
+    ) -> vir::ExprCSnap<'vir> {
+        self.const_param_accessors[idx].call()((self.typeof_data.typeof_function)(snap.upcast_ty()))
     }
 }
 
@@ -50,9 +56,7 @@ pub struct TyConstructorEnc;
 
 impl TaskEncoder for TyConstructorEnc {
     task_encoder::encoder_cache!(TyConstructorEnc);
-    type TaskDescription<'tcx> = MostGenericTy<'tcx>;
-
-    type TaskKey<'tcx> = Self::TaskDescription<'tcx>;
+    type TaskDescription<'tcx> = RustTy<'tcx>;
 
     type OutputRef<'vir> = TyConstructorEncOutputRef<'vir>;
 
@@ -68,25 +72,35 @@ impl TaskEncoder for TyConstructorEnc {
         task_key: &Self::TaskKey<'vir>,
         deps: &mut task_encoder::TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self> {
-        assert!(!task_key.is_generic());
+        assert!(!task_key.specifics.is_param());
         vir::with_vcx(|vcx| {
-            let (generic_ty, _) = deps.require_local::<MostGenericTyEnc>(task_key.ty())?;
-            let base_name = generic_ty.get_vir_base_name(vcx);
-            let args = generic_ty.generics();
-            let type_function_args = vcx.alloc_slice(&vec![vir::TYPE_TYVAL; args.len()]);
+            let base_name = task_key.name();
+            let params = deps.require_dep::<GenericParamsEnc>(task_key.params)?;
             let type_function_ident = FunctionIdn::new(
                 vir::vir_format_identifier!(vcx, "s_{base_name}_type",),
-                type_function_args,
+                (params.ty_args(), params.const_args()),
                 vir::TYPE_TYVAL,
             );
 
-            let ty_accessor_functions = args
+            let ty_accessor_functions = params
+                .ty_decls()
                 .iter()
-                .map(|arg| {
+                .map(|param| {
                     vcx.mk_adt_destructor(
-                        vir::vir_format!(vcx, "s_{base_name}_typaram_{}", arg.name),
+                        vir::vir_format!(vcx, "s_{base_name}_typaram_{}", param.name),
                         vir::TYPE_TYVAL,
+                        param.ty(),
+                    )
+                })
+                .collect::<Vec<_>>();
+            let const_accessor_functions = params
+                .const_decls()
+                .iter()
+                .map(|param| {
+                    vcx.mk_adt_destructor(
+                        vir::vir_format!(vcx, "s_{base_name}_constparam_{}", param.name),
                         vir::TYPE_TYVAL,
+                        param.ty(),
                     )
                 })
                 .collect::<Vec<_>>();
@@ -98,6 +112,7 @@ impl TaskEncoder for TyConstructorEnc {
                     typeof_data,
                     ty_constructor: type_function_ident,
                     ty_param_accessors: vcx.alloc_slice(&ty_accessor_functions),
+                    const_param_accessors: vcx.alloc_slice(&const_accessor_functions),
                 },
             )?;
 

@@ -1,10 +1,7 @@
 use task_encoder::{EncodeFullResult, OutputRefAny, TaskEncoder, TaskEncoderDependencies};
 use vir::{CallableIdn, CastType, FunctionIdn};
 
-use crate::encoders::ty::{
-    pure::DomainEnc,
-    most_generic_ty::{MostGenericTy, MostGenericTyEnc},
-};
+use crate::encoders::ty::{pure::TyPureEnc, RustTy};
 
 #[derive(Clone)]
 pub struct TypeOfEncOutputRef<'vir> {
@@ -18,16 +15,9 @@ type TypeOfEncOutput<'vir> = vir::DomainFunction<'vir>;
 
 pub struct TypeOfEnc;
 
-impl TypeOfEnc {
-    pub fn generic_typeof<'vir, E: TaskEncoder + 'vir + ?Sized>(deps: &mut TaskEncoderDependencies<'vir, E>) -> vir::FunctionIdn<'vir, vir::PSnap, vir::TyVal> {
-        let typeof_fn = deps.require_ref::<TypeOfEnc>(MostGenericTy::param()).unwrap();
-        typeof_fn.typeof_function.cast_ty(typeof_fn.typeof_function.arity().downcast_ty())
-    }
-}
-
 impl TaskEncoder for TypeOfEnc {
     task_encoder::encoder_cache!(TypeOfEnc);
-    type TaskDescription<'tcx> = MostGenericTy<'tcx>;
+    type TaskDescription<'tcx> = RustTy<'tcx>;
 
     type TaskKey<'tcx> = Self::TaskDescription<'tcx>;
 
@@ -46,10 +36,8 @@ impl TaskEncoder for TypeOfEnc {
         deps: &mut task_encoder::TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self> {
         vir::with_vcx(|vcx| {
-            let (generic_ty, args) = deps.require_local::<MostGenericTyEnc>(task_key.ty())?;
-            let base_name = generic_ty.get_vir_base_name(vcx);
-
-            let domain = deps.require_ref::<DomainEnc>(*task_key)?;
+            let base_name = task_key.name();
+            let domain = deps.require_ref::<TyPureEnc>(*task_key)?;
             let snap = (domain.domain)();
             let typeof_function = FunctionIdn::new(
                 vir::vir_format_identifier!(vcx, "s_{base_name}_typeof"),

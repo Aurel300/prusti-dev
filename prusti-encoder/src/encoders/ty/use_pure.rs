@@ -1,78 +1,86 @@
-use std::ops::Deref;
-
-use prusti_rustc_interface::middle::ty;
 use task_encoder::{EncodeFullResult, TaskEncoder};
 use vir::{with_vcx, CastType, FunctionIdn};
 
 use prusti_rustc_interface::{
-    abi,
+    middle::ty,
 };
 
-use crate::encoders::ty::{pure::{DomainDataEnum, DomainDataField, DomainDataImmRef, DomainDataMutRef, DomainDataPrim, DomainDataStruct, DomainEnc, DomainEncOutput, DomainEncOutputRef}, lifted::{casters::CastTypePure, rust_ty_cast::{GenericCasterPure, RustTyCastersEnc}}, most_generic_ty::MostGenericTyEnc};
+use crate::encoders::{ty::{generics::{GArgs, GArgsCastEnc, GArgsTyEnc, GParams}, RustTy, RustTyDatas, RustTyDecompose, RustTyEnum, RustTyStruct}, Pure};
+
+use super::{
+    generics::{GArgCaster, GArgsTy},
+    pure::{PureTyDatas, TyPureRef, TyPureEnc},
+    data::*,
+    TyUseEnc, UseTyDatas,
+};
+
+pub(super) type UsePureTyDatas = UseTyDatas<Pure>;
+
+type FieldCaster<'vir> = GArgCaster<'vir, Pure>;
+
+impl<'vir> TyDatas<'vir> for UsePureTyDatas {
+    type TyData = TyUsePureRef<'vir>;
+    type OpaqueData = <PureTyDatas as TyDatas<'vir>>::OpaqueData;
+    type ParamData = <PureTyDatas as TyDatas<'vir>>::ParamData;
+    type PrimitiveData = <PureTyDatas as TyDatas<'vir>>::PrimitiveData;
+    type ImmRefData = TyUsePureImmRef<'vir>;
+    type MutRefData = TyUsePureMutRef<'vir>;
+    type FieldData = TyUsePureField<'vir>;
+    type StructData = TyUsePureStructData<'vir>;
+    type VariantData = <PureTyDatas as TyDatas<'vir>>::VariantData;
+    type EnumData = <PureTyDatas as TyDatas<'vir>>::EnumData;
+}
+
+pub type TyUsePure<'vir> = Ty<'vir, UsePureTyDatas>;
+pub type TyUsePureData<'vir> = TyData<'vir, UsePureTyDatas>;
+pub type TyUsePureStruct<'vir> = StructData<'vir, UsePureTyDatas>;
+pub type TyUsePureEnum<'vir> = EnumData<'vir, UsePureTyDatas>;
 
 #[derive(Debug, Clone, Copy)]
-pub struct TyPureDataImmRef<'vir> {
-    param: GenericCasterPure<'vir>,
-    data: DomainDataImmRef<'vir>,
+pub struct TyUsePureImmRef<'vir> {
+    caster: FieldCaster<'vir>,
+    pure: <PureTyDatas as TyDatas<'vir>>::ImmRefData,
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct TyPureDataMutRef<'vir> {
-    param: GenericCasterPure<'vir>,
-    data: DomainDataMutRef<'vir>,
+pub struct TyUsePureMutRef<'vir> {
+    caster: FieldCaster<'vir>,
+    pure: <PureTyDatas as TyDatas<'vir>>::MutRefData,
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct TyPureDataStruct<'a, 'vir> {
-    params: &'a [GenericCasterPure<'vir>],
-    data: DomainDataStruct<'vir>,
+pub struct TyUsePureField<'vir> {
+    caster: FieldCaster<'vir>,
+    pure: <PureTyDatas as TyDatas<'vir>>::FieldData,
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct TyPureDataField<'vir> {
-    param: Option<GenericCasterPure<'vir>>,
-    field: DomainDataField<'vir>,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct TyPureDataEnum<'vir> {
-    data: DomainDataEnum<'vir>,
+pub struct TyUsePureStructData<'vir> {
+    args: GArgsTy<'vir>,
+    pure: <PureTyDatas as TyDatas<'vir>>::StructData,
 }
 
 /// Encodes a type into the snapshot representation. Takes an arbitrary Rust
 /// `Ty` and provides a wrapper around the results of the `DomainEnc` encoder.
 /// This wrapper handles all the generic casts required.
-pub struct TyPureEnc;
+pub type TyUsePureEnc = TyUseEnc<Pure>;
 
-#[derive(Clone, Debug)]
-pub struct TyPureEncOutputRef<'vir> {
+#[derive(Debug, Clone, Copy)]
+pub struct TyUsePureRef<'vir> {
     pub snapshot: vir::TypeSnap<'vir>,
-    domain: DomainEncOutputRef<'vir>,
+    args: GArgsTy<'vir>,
+    ty_pure_ref: TyPureRef<'vir>,
 }
 
-#[derive(Clone, Debug)]
-pub struct TyPureEncOutput<'vir> {
-    inner: TyPureEncOutputRef<'vir>,
-    output: DomainEncOutput<'vir>,
-    params: Vec<GenericCasterPure<'vir>>,
-}
+impl<'vir> task_encoder::OutputRefAny for TyUsePureRef<'vir> {}
 
-impl<'vir> Deref for TyPureEncOutput<'vir> {
-    type Target = TyPureEncOutputRef<'vir>;
-    fn deref(&self) -> &Self::Target {
-        &self.inner
-    }
-}
+impl TaskEncoder for TyUsePureEnc {
+    task_encoder::encoder_cache!(TyUsePureEnc);
 
-impl<'vir> task_encoder::OutputRefAny for TyPureEncOutputRef<'vir> {}
+    type TaskDescription<'vir> = super::RustTyDecomposition<'vir>;
 
-impl TaskEncoder for TyPureEnc {
-    task_encoder::encoder_cache!(TyPureEnc);
-
-    type TaskDescription<'vir> = ty::Ty<'vir>;
-
-    type OutputRef<'vir> = TyPureEncOutputRef<'vir>;
-    type OutputFullLocal<'vir> = TyPureEncOutput<'vir>;
+    type OutputRef<'vir> = TyUsePureRef<'vir>;
+    type OutputFullDependency<'vir> = TyUsePure<'vir>;
 
     type TaskKey<'tcx> = Self::TaskDescription<'tcx>;
 
@@ -88,163 +96,181 @@ impl TaskEncoder for TyPureEnc {
         task_key: &Self::TaskKey<'vir>,
         deps: &mut task_encoder::TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self> {
-        with_vcx(|vcx| {
-            let (generic_ty, args) = deps.require_local::<MostGenericTyEnc>(*task_key)?;
-            let domain = deps.require_ref::<DomainEnc>(generic_ty)?;
-            let snapshot = (domain.domain)();
-            let inner = TyPureEncOutputRef { snapshot, domain };
-            deps.emit_output_ref(*task_key, inner.clone())?;
-            let mut params = Vec::new();
-            for arg in args {
-                params.push(deps.require_local::<RustTyCastersEnc<CastTypePure>>(arg)?);
-            }
-            // TODO: mutable references are unsound since they both hold the
-            // inner value in the `p_Ref_mut` predicate as well as the separate
-            // indirect predicate.
-            if let ty::TyKind::Ref(_, inner_ty, ty::Mutability::Mut) = task_key.kind() {
-                params.push(deps.require_local::<RustTyCastersEnc<CastTypePure>>(*inner_ty)?);
-            }
-            let output = deps.require_dep::<DomainEnc>(generic_ty)?;
-            Ok((TyPureEncOutput { inner, output, params }, ()))
-        })
+        let ty_pure_ref = deps.require_ref::<TyPureEnc>(task_key.ty)?;
+        let args = deps.require_dep::<GArgsTyEnc>(task_key.args).unwrap();
+        let snapshot = (ty_pure_ref.domain)();
+        let inner = TyUsePureRef { args, snapshot, ty_pure_ref };
+        deps.emit_output_ref(*task_key, inner)?;
+
+        let ty_pure = deps.require_dep::<TyPureEnc>(task_key.ty)?;
+        let ty = task_key.ty.zip(ty_pure);
+        let mut walker = TyUsePureWalker::new(deps, task_key.args);
+        let specifics = walker.encode_ty(ty);
+        let ty_use_pure = TyData::new(inner, specifics);
+        Ok(((), ty_use_pure.alloc()))
     }
 
     fn emit_outputs<'vir>(program: &mut task_encoder::Program<'vir>) {
-        DomainEnc::emit_outputs(program)
+        TyPureEnc::emit_outputs(program)
     }
 }
 
-impl<'vir> TyPureEncOutputRef<'vir> {
-    pub fn unreachable_to_snap(&self) -> FunctionIdn<'vir, (), vir::Snap> {
-        self.domain.unreachable_to_snap
+struct TyUsePureWalker<'a, 'vir> {
+    tcx: ty::TyCtxt<'vir>,
+    deps: &'a mut task_encoder::TaskEncoderDependencies<'vir, TyUsePureEnc>,
+    args_t: GArgsTy<'vir>,
+    args: GArgs<'vir>,
+}
+
+impl<'a, 'vir> TyUsePureWalker<'a, 'vir> {
+    fn new(deps: &'a mut task_encoder::TaskEncoderDependencies<'vir, TyUsePureEnc>, args: GArgs<'vir>) -> Self {
+        let tcx = with_vcx(|vcx| vcx.tcx());
+        let args_t = deps.require_dep::<GArgsTyEnc>(args).unwrap();
+        TyUsePureWalker { tcx, deps, args_t, args }
+    }
+
+    fn encode_ty(&mut self, ty: TyData<'vir, (RustTyDatas, PureTyDatas)>) -> TySpecifics<'vir, UsePureTyDatas> {
+        match &ty.specifics {
+            TySpecifics::Param(data) => TySpecifics::mk_param(*data.1),
+            TySpecifics::Opaque(data) => TySpecifics::mk_opaque(*data.1),
+            TySpecifics::Primitive(data) => TySpecifics::mk_primitive(*data.1),
+            TySpecifics::ImmRef(data) => {
+                let caster = self.encode_normalized(*data.0, ty.0.params);
+                TySpecifics::mk_immref(TyUsePureImmRef { caster, pure: *data.1 })
+            }
+            TySpecifics::MutRef(data) => {
+                let caster = self.encode_normalized(*data.0, ty.0.params);
+                TySpecifics::mk_mutref(TyUsePureMutRef { caster, pure: *data.1 })
+            }
+            TySpecifics::StructLike(data) =>
+                TySpecifics::StructLike(self.encode_structlike(data, ty.0.params)),
+            TySpecifics::EnumLike(data) =>
+                TySpecifics::EnumLike(self.encode_enumlike(data, ty.0.params)),
+        }
+    }
+
+    fn encode_normalized(
+        &mut self,
+        decomposable: impl RustTyDecompose<'vir>,
+        params: GParams<'vir>,
+    ) -> FieldCaster<'vir> {
+        let normalized = decomposable.decompose_compare_normalize(self.tcx, params, self.args);
+        self.deps.require_dep::<GArgsCastEnc<Pure>>(normalized).unwrap()
+    }
+
+    fn encode_structlike(
+        &mut self,
+        data: &StructData<'vir, (RustTyDatas, PureTyDatas)>,
+        params: GParams<'vir>,
+    ) -> StructData<'vir, UsePureTyDatas> {
+        let fields = data
+            .fields
+            .iter()
+            .map(|field| {
+                let caster = self.encode_normalized(field.0.ty(), params);
+                TyUsePureField { caster, pure: *field.1 }
+            })
+            .collect::<Vec<_>>();
+        let data = TyUsePureStructData { args: self.args_t, pure: *data.1 };
+        StructData::new(data, fields)
+    }
+
+    fn encode_enumlike(
+        &mut self,
+        data: &EnumData<'vir, (RustTyDatas, PureTyDatas)>,
+        params: GParams<'vir>,
+    ) -> EnumData<'vir, UsePureTyDatas> {
+        let variants = data
+            .variants
+            .iter()
+            .map(|variant| {
+                let structlike = self.encode_structlike(&variant.inner, params);
+                VariantData::new(*variant.1, structlike)
+            })
+            .collect::<Vec<_>>();
+        EnumData::new(*data.1, variants)
     }
 }
 
-impl<'vir> TyPureEncOutput<'vir> {
-    #[track_caller]
-    pub fn expect_primitive(&self) -> DomainDataPrim<'vir> {
-        self.output.specifics.expect_primitive()
-    }
-
-    pub fn expect_immref(&self) -> TyPureDataImmRef<'vir> {
-        assert_eq!(self.params.len(), 1);
-        TyPureDataImmRef { param: self.params[0], data: self.output.specifics.expect_immref() }
-    }
-
-    pub fn expect_mutref(&self) -> TyPureDataMutRef<'vir> {
-        assert_eq!(self.params.len(), 1);
-        TyPureDataMutRef { param: self.params[0], data: self.output.specifics.expect_mutref() }
-    }
-
-    pub fn expect_structlike(&self) -> TyPureDataStruct<'_, 'vir> {
-        TyPureDataStruct { data: self.output.specifics.expect_structlike(), params: &self.params }
-    }
-
-    pub fn get_enumlike(&self) -> Option<TyPureDataEnum<'vir>> {
-        self.output.specifics.expect_enumlike().map(|data| TyPureDataEnum { data })
-    }
-
-    pub fn get_variant_any(&self, variant: abi::VariantIdx) -> TyPureDataStruct<'_, 'vir> {
-        TyPureDataStruct { data: self.output.specifics.get_variant_any(variant), params: &self.params }
-    }
-
-    pub fn get_variant_opt(&self, variant: Option<abi::VariantIdx>) -> TyPureDataStruct<'_, 'vir> {
-        TyPureDataStruct { data: self.output.specifics.get_variant_any(variant.unwrap_or(abi::FIRST_VARIANT)), params: &self.params }
+impl<'vir> TyUsePureRef<'vir> {
+    pub fn unreachable_to_snap<Curr, Next>(&self) -> vir::ExprGenSnap<'vir, Curr, Next> {
+        self.ty_pure_ref.unreachable_to_snap.call()(self.args.get_ty())
     }
 }
 
-impl<'vir> TyPureDataImmRef<'vir> {
+impl<'vir> TyUsePureImmRef<'vir> {
     pub fn prim_to_snap<Curr, Next>(
         &self,
         ref_: vir::ExprGenRef<'vir, Curr, Next>,
         inner: vir::ExprGenSnap<'vir, Curr, Next>,
     ) -> vir::ExprGenCSnap<'vir, Curr, Next> {
-        let inner = self.param.cast_to_generic_if_necessary(vir::with_vcx(|vcx| vcx), inner);
-        self.data.prim_to_snap.call()(ref_, inner)
+        let inner = self.caster.cast_to_callee_ctx(inner);
+        self.pure.prim_to_snap.call()(ref_, inner.downcast_ty())
     }
 
     pub fn value_access<Curr, Next>(
         &self,
         snap: vir::ExprGenCSnap<'vir, Curr, Next>,
     ) -> vir::ExprGenSnap<'vir, Curr, Next> {
-        let value = self.data.value_access.call()(snap);
-        self.param.cast_to_concrete_if_possible(vir::with_vcx(|vcx| vcx), value.upcast_ty())
+        let value = self.pure.value_access.call()(snap);
+        self.caster.cast_to_caller_ctx(value.upcast_ty())
     }
 }
 
-impl<'vir> TyPureDataMutRef<'vir> {
+impl<'vir> TyUsePureMutRef<'vir> {
     pub fn prim_to_snap<Curr, Next>(
         &self,
         ref_: vir::ExprGenRef<'vir, Curr, Next>,
         inner: vir::ExprGenSnap<'vir, Curr, Next>,
     ) -> vir::ExprGenCSnap<'vir, Curr, Next> {
-        let inner = self.param.cast_to_generic_if_necessary(vir::with_vcx(|vcx| vcx), inner);
-        self.data.prim_to_snap.call()(ref_, inner)
+        let inner = self.caster.cast_to_callee_ctx(inner);
+        self.pure.prim_to_snap.call()(ref_, inner.downcast_ty())
     }
 
     pub fn deref_access<Curr, Next>(
         &self,
         snap: vir::ExprGenCSnap<'vir, Curr, Next>,
     ) -> vir::ExprGenRef<'vir, Curr, Next> {
-        self.data.deref_access.call()(snap)
+        self.pure.deref_access.call()(snap)
     }
 
     pub fn value_access<Curr, Next>(
         &self,
         snap: vir::ExprGenCSnap<'vir, Curr, Next>,
     ) -> vir::ExprGenSnap<'vir, Curr, Next> {
-       let value = self.data.value_access.call()(snap);
-        self.param.cast_to_concrete_if_possible(vir::with_vcx(|vcx| vcx), value.upcast_ty())
+       let value = self.pure.value_access.call()(snap);
+        self.caster.cast_to_caller_ctx(value.upcast_ty())
     }
 }
 
-impl<'a, 'vir> TyPureDataStruct<'a, 'vir> {
+impl<'vir> TyUsePureStruct<'vir> {
     pub fn field_snaps_to_snap<Curr, Next>(
         &self,
         mut snaps: Vec<vir::ExprGenSnap<'vir, Curr, Next>>,
     ) -> vir::ExprGenCSnap<'vir, Curr, Next> {
-        assert_eq!(snaps.len(), self.data.field_access.len());
-        for (snap, fa) in snaps.iter_mut().zip(self.data.field_access) {
-            let Some(gidx) = fa.generic_idx else {
-                continue;
-            };
-            let param = &self.params[gidx as usize];
-            *snap = vir::with_vcx(|vcx| param.cast_to_generic_if_necessary(vcx, *snap).upcast_ty());
+        assert_eq!(snaps.len(), self.fields.len());
+        for (snap, field) in snaps.iter_mut().zip(&self.fields) {
+            *snap = field.caster.cast_to_callee_ctx(*snap);
         }
-        self.data.field_snaps_to_snap.call()(&snaps)
-    }
-
-    pub fn field(&self, idx: abi::FieldIdx) -> TyPureDataField<'vir> {
-        let field = self.data.field_access[idx.as_usize()];
-        TyPureDataField {
-            param: field.generic_idx.map(|idx| self.params[idx as usize]),
-            field,
-        }
-    }
-
-    pub fn fields(&self) -> impl Iterator<Item = TyPureDataField<'vir>> + '_ {
-        (0..self.data.field_access.len()).map(move |idx| self.field(abi::FieldIdx::from_usize(idx)))
+        self.pure.field_snaps_to_snap.call()(&snaps)
     }
 }
 
-impl<'vir> TyPureDataField<'vir> {
+impl<'vir> TyUsePureField<'vir> {
     pub fn read<Curr, Next>(
         &self,
         snap: vir::ExprGenCSnap<'vir, Curr, Next>,
     ) -> vir::ExprGenSnap<'vir, Curr, Next> {
-        let res = self.field.read.call()(snap);
-        let Some(param) = self.param else {
-            return res;
-        };
-        param.cast_to_concrete_if_possible(vir::with_vcx(|vcx| vcx), res)
+        let res = self.pure.read.call()(snap);
+        self.caster.cast_to_caller_ctx(res)
     }
 }
 
-impl<'vir> TyPureDataEnum<'vir> {
+impl<'vir> TyUsePureEnum<'vir> {
     pub fn snap_to_discr_snap<Curr, Next>(
         &self,
         snap: vir::ExprGenCSnap<'vir, Curr, Next>,
     ) -> vir::ExprGenCSnap<'vir, Curr, Next> {
-        self.data.snap_to_discr_snap.call()(snap)
+        self.snap_to_discr_snap.call()(snap)
     }
 }

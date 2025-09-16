@@ -1,5 +1,5 @@
 use crate::encoders::{
-    ty::indirect::{IndirectKey, IndirectPredicatesEnc},
+    ty::{generics::GParams, indirect::{IndirectKey, IndirectPredicatesEnc}, RustTyDecomposition},
     ImpureEncVisitor, MirLocalDefEncOutput, MirSpecEnc,
 };
 use pcg::borrow_pcg::{state::BorrowsState, unblock_graph::UnblockGraph};
@@ -11,6 +11,7 @@ use prusti_rustc_interface::{
     span::{def_id::DefId, Span},
 };
 use task_encoder::{EncodeFullError, EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
+use vir::HasType;
 
 /// Encodes the magic wands given a function signature.
 pub struct WandEnc;
@@ -28,6 +29,7 @@ type Pledges<'vir> = Vec<(
 
 #[derive(Clone, Debug, Default)]
 pub struct WandEncOutput<'vir> {
+    context: Option<DefId>,
     edges: WandEncEdges,
     pub generic_to_param: FxHashMap<IndirectKey, Vec<(mir::Local, ty::Ty<'vir>)>>,
     pub pledges: Pledges<'vir>,
@@ -52,7 +54,8 @@ impl<'vir> WandEncOutput<'vir> {
             .iter()
             .filter(|i| !(input && i.0 == mir::RETURN_PLACE))
             .flat_map(move |(i, ty)| {
-                let indirect = deps.require_ref::<IndirectPredicatesEnc>((*ty, g)).unwrap();
+                let ty_task = RustTyDecomposition::from_ty(vcx.tcx(), *ty, self.context.unwrap());
+                let indirect = deps.require_dep::<IndirectPredicatesEnc>((ty_task, g)).unwrap();
                 let indirect = if input == (*i == mir::RETURN_PLACE) {
                     indirect.contravariant
                 } else {
@@ -102,9 +105,10 @@ impl<'vir> WandEncOutput<'vir> {
                     .entry(i)
                     .or_insert_with(|| {
                         let name = vir::vir_format!(vcx, "wand{:?}", i);
+                        let decl = vcx.mk_local_decl(name, local_defs[i].local_snap.ty());
                         (
-                            name,
-                            vcx.mk_local_ex(name, local_defs[i].ty.snapshot()),
+                            decl,
+                            vcx.mk_local_ex(decl),
                         )
                     })
                     .1
@@ -321,7 +325,7 @@ impl TaskEncoder for WandEnc {
 
     type TaskKey<'vir> = WandEncTask;
 
-    type OutputFullLocal<'vir> = WandEncOutput<'vir>;
+    type OutputFullDependency<'vir> = WandEncOutput<'vir>;
 
     type EncodingError = WandEncError;
 
@@ -478,7 +482,7 @@ impl TaskEncoder for WandEnc {
                 insert_edge(a, IndirectKey::Param(b));
             }
 
-            let spec = deps.require_local::<MirSpecEnc>((def_id, substs, None, false))?;
+            let spec = deps.require_dep::<MirSpecEnc>((def_id, substs, None, false))?;
             let pledges = spec.pledges;
 
             // convert edges to viper-supported wands
@@ -533,13 +537,14 @@ impl TaskEncoder for WandEnc {
             }
 
             Ok((
+                (),
                 WandEncOutput {
+                    context: Some(def_id),
                     edges,
                     generic_to_param,
                     pledges,
                     wands,
                 },
-                (),
             ))
         })
     }

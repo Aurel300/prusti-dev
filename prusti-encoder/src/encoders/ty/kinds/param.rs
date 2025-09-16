@@ -1,15 +1,21 @@
 use crate::encoders::ty::{
-    pure::{DomainBuilder, DomainEnc, DomainEncOutputRef, DomainEncSpecifics, PureTypeBuilder, PureTypeCommon},
-    most_generic_ty::get_vir_base_name_kind,
+    impure::{ImpureTyDatas, PredicateBuilder, TyImpureEnc, TyImpureParam}, pure::{DomainBuilder, PureTyDatas, TyPureEnc, TyPureParam}, RustTyDatas, RustTyParam
 };
-use prusti_rustc_interface::middle::ty;
-use task_encoder::{EncodeFullError, TaskEncoder, TaskEncoderDependencies};
-use vir::{CallableIdn, CastType};
+use task_encoder::{EncodeFullError, TaskEncoderDependencies};
 
-pub(crate) fn domain<'vir>(
-    task_key: <DomainEnc as TaskEncoder>::TaskKey<'vir>,
-    deps: &mut TaskEncoderDependencies<'vir, DomainEnc>,
-    builder: PureTypeCommon<'vir>,
-) -> Result<(DomainEncSpecifics<'vir>, PureTypeBuilder<'vir>), EncodeFullError<'vir, DomainEnc>> {
-    Ok((DomainEncSpecifics::Param, Err(DomainBuilder::new(builder))))
+pub(crate) fn ty_pure<'vir>(
+    _data: &RustTyParam<'vir>,
+    _deps: &mut TaskEncoderDependencies<'vir, TyPureEnc>,
+    _builder: &mut DomainBuilder<'vir>,
+) -> Result<TyPureParam<'vir>, EncodeFullError<'vir, TyPureEnc>> {
+    Ok(())
+}
+
+pub(crate) fn ty_impure<'vir>(
+    _data: &(&RustTyParam<'vir>, &TyPureParam<'vir>),
+    _deps: &mut TaskEncoderDependencies<'vir, TyImpureEnc>,
+    builder: &mut PredicateBuilder<'vir>,
+) -> Result<TyImpureParam<'vir>, EncodeFullError<'vir, TyImpureEnc>> {
+    super::opaque::set_opaque(builder);
+    Ok(())
 }

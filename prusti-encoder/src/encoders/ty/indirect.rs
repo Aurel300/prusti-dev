@@ -2,9 +2,9 @@ use prusti_rustc_interface::middle::ty::{self};
 use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 use vir::{CastType, Reify};
 
-use crate::encoders::ty::lifted::{casters::CastTypePure, rust_ty_cast::RustTyCastersEnc};
+use crate::encoders::ty::RustTyDecompose;
 
-use super::{use_impure::TyImpureEnc, use_pure::TyPureEnc};
+use super::{data::TySpecifics, use_impure::TyUseImpureEnc, use_pure::TyUsePureEnc};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum IndirectKey {
@@ -57,14 +57,13 @@ impl<'vir> task_encoder::OutputRefAny for IndirectPredicatesEncOutputRef<'vir> {
 impl TaskEncoder for IndirectPredicatesEnc {
     task_encoder::encoder_cache!(IndirectPredicatesEnc);
 
-    type TaskDescription<'vir> = (ty::Ty<'vir>, IndirectKey);
+    type TaskDescription<'vir> = (super::RustTyDecomposition<'vir>, IndirectKey);
 
     type TaskKey<'tcx> = Self::TaskDescription<'tcx>;
 
     type EncodingError = ();
 
-    type OutputRef<'vir> = IndirectPredicatesEncOutputRef<'vir>;
-    type OutputFullLocal<'vir> = ();
+    type OutputFullDependency<'vir> = IndirectPredicatesEncOutputRef<'vir>;
 
     fn task_to_key<'vir>(task: &Self::TaskDescription<'vir>) -> Self::TaskKey<'vir> {
         *task
@@ -74,18 +73,37 @@ impl TaskEncoder for IndirectPredicatesEnc {
         task_key: &Self::TaskKey<'vir>,
         deps: &mut TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self> {
+        deps.emit_output_ref(
+            *task_key,
+            (),
+        )?;
         vir::with_vcx(|vcx| {
             let (ty, proj_region) = task_key;
-            let self_ty_enc = deps.require_local::<TyPureEnc>(*ty)?;
+            let self_ty_enc = deps.require_dep::<TyUsePureEnc>(*ty)?;
             let mut covariant = Vec::<ExprOutput<'vir>>::new();
             let mut contravariant = Vec::<ExprOutput<'vir>>::new();
-            match ty.kind() {
-                ty::TyKind::Ref(ref_region, inner_ty, ty::Mutability::Mut) => {
-                    let ref_domain = self_ty_enc.expect_mutref();
-                    if IndirectKey::from_region(*ref_region)
+            let combined = ty.ty.zip(self_ty_enc);
+            match combined.specifics {
+                // Optimisation: if there are no type arguments, there cannot be
+                // anything behind a ref inside (except for 'static, which we
+                // ignore for now).
+                _ if ty.args.args().is_empty() => (),
+                TySpecifics::Primitive(_) | TySpecifics::ImmRef(_) => (),
+                // TODO: it's not valid to have nothing for these. We should fix
+                // this by using an opaque predicate to represent potential
+                // indirect stuff. For example:
+                // fn foo<'a, T: Trait<'a>>(x: T) -> &'a mut i32 { x.get() }
+                // Here, `T` could be instantiated as `&'a mut i32` in which
+                // case we would want a wand with `i32(result) --* opaque_behind_a(x)`.
+                // This is why we should return `opaque_behind_a(x)` here.
+                TySpecifics::Param(_) | TySpecifics::Opaque(_) => (),
+                TySpecifics::MutRef((data, ref_domain)) => {
+                    let inner_ty = data.decompose_normalize(vcx.tcx(), ty.args);
+                    let region = ty.args.args()[0].expect_region();
+                    if IndirectKey::from_region(region)
                         .is_some_and(|indirect| &indirect == proj_region)
                     {
-                        let inner_ty_enc = deps.require_local::<TyImpureEnc>(*inner_ty)?;
+                        let inner_ty_enc = deps.require_dep::<TyUseImpureEnc>(inner_ty)?;
                         covariant.push(vcx.mk_lazy_expr(
                             "ref_indirect",
                             vir::TYPE_BOOL,
@@ -102,7 +120,7 @@ impl TaskEncoder for IndirectPredicatesEnc {
                     }
                     // TODO: is this correct??? do we always project into the inner type, regardless of region?
                     let inner_indirect =
-                        deps.require_ref::<IndirectPredicatesEnc>((*inner_ty, *proj_region))?;
+                        deps.require_dep::<IndirectPredicatesEnc>((inner_ty, *proj_region))?;
                     let inner = inner_indirect
                         .covariant
                         .into_iter()
@@ -125,10 +143,8 @@ impl TaskEncoder for IndirectPredicatesEnc {
                     covariant.extend(inner.clone());
                     contravariant.extend(inner);
                 }
-                ty::TyKind::Tuple(params) => {
-                    let structlike = self_ty_enc
-                        .expect_structlike();
-                    for (field_ty, accessor) in params.into_iter().zip(structlike.fields()) {
+                TySpecifics::StructLike(data) => {
+                    for (field_ty, accessor) in data.fields {
                         let project = |inner_expr: ExprOutput<'vir>| {
                             vcx.mk_lazy_expr(
                                 "ref_inner_indirect",
@@ -141,25 +157,21 @@ impl TaskEncoder for IndirectPredicatesEnc {
                             )
                         };
 
-                        // TODO: tuple generics need to be passed to field accessors
-                        // TODO: tuple fields need to be (snapshot) cast
+                        // TODO: invalid recursion here if the defined struct is
+                        // recursive!
+                        let field_ty = field_ty.decompose(vcx.tcx(), ty.ty.params);
                         let field_indirect =
-                            deps.require_ref::<IndirectPredicatesEnc>((field_ty, *proj_region))?;
+                            deps.require_dep::<IndirectPredicatesEnc>((field_ty, *proj_region))?;
                         covariant.extend(field_indirect.covariant.into_iter().map(project));
                         contravariant.extend(field_indirect.contravariant.into_iter().map(project));
                     }
                 }
-                // TODO: recurse into other types
-                _ => (),
+                TySpecifics::EnumLike(_data) => todo!(),
             }
-            deps.emit_output_ref(
-                *task_key,
-                IndirectPredicatesEncOutputRef {
-                    covariant,
-                    contravariant,
-                },
-            )?;
-            Ok(((), ()))
+            Ok(((), IndirectPredicatesEncOutputRef {
+                covariant,
+                contravariant,
+            }))
         })
     }
 }

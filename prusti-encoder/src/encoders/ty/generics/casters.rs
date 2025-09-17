@@ -120,7 +120,7 @@ impl TaskEncoder for CastersEnc<Pure> {
                 (make_generic_arg, generics.ty_decls(), generics.const_decls()),
                 &[],
                 vcx.alloc_slice(&[
-                    // mk_type_spec(make_generic_result, &ty_params_from_snap, &const_params_from_snap),
+                    mk_type_spec(make_generic_result, &ty_params_from_snap, &const_params_from_snap),
                     vcx.mk_eq_expr(
                         make_concrete_ident(make_generic_result, &ty_params_from_snap, &const_params_from_snap),
                         make_generic_expr,

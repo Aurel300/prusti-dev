@@ -9,7 +9,7 @@ use prusti_rustc_interface::{
 use task_encoder::{EncodeFullResult, TaskEncoder};
 use vir::{CallableIdn, CastType};
 
-use crate::encoders::lifted::cast::{CastArgs, CastToEnc};
+use crate::encoders::ty::lifted::cast::{CastArgs, CastToEnc};
 
 use super::{cast::PureCast, casters::CastTypePure, rust_ty_cast::RustTyCastersEnc};
 

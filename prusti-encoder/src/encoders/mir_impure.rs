@@ -37,16 +37,16 @@ use crate::{
         pure_func_app_enc::PureFuncAppEnc,
     },
     encoders::{
-        self, r#const::ConstEncTask, lifted::LiftedFuncAppTyParamsEnc, FunctionCallTaskDescription, MirBuiltinEnc, TyPureEnc, WandEnc, WandEncTask
+        self, r#const::ConstEncTask, ty::lifted::LiftedFuncAppTyParamsEnc, FunctionCallTaskDescription, MirBuiltinEnc, TyPureEnc, WandEnc, WandEncTask
     },
 };
 
 use super::{
-    lifted::{
+    ty::lifted::{
         CastArgs, CastToEnc,
         CastTypeImpure,
     },
-    ty_impure::{TyImpureEnc, TyImpureEncOutputRef},
+    ty::use_impure::{TyImpureEnc, TyImpureEncOutputRef},
     ConstEnc, MirPolyImpureEnc, WandEncOutput,
 };
 

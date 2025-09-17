@@ -6,11 +6,7 @@ use prusti_rustc_interface::{
     abi,
 };
 
-use crate::encoders::ty_pure::{TyPureDataStruct, TyPureEncOutput};
-
-use super::{
-    ty_pure::TyPureEnc,
-};
+use crate::encoders::ty::use_pure::{TyPureDataStruct, TyPureEncOutput, TyPureEnc};
 
 pub struct ViperTupleEnc;
 

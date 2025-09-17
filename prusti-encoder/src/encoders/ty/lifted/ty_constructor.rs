@@ -1,7 +1,7 @@
 use task_encoder::{EncodeFullResult, OutputRefAny, TaskEncoder};
 use vir::{Arity, CallableIdn, CastType, FunctionIdn};
 
-use crate::encoders::{
+use crate::encoders::ty::{
     lifted::r#typeof::{TypeOfEnc, TypeOfEncOutputRef}, most_generic_ty::{MostGenericTy, MostGenericTyEnc}
 };
 

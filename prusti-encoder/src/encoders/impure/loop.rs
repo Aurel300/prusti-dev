@@ -15,8 +15,8 @@ use task_encoder::TaskEncoder;
 use vir::{CastType, Reify};
 
 use crate::encoders::{
-    indirect::{IndirectKey, IndirectPredicatesEnc},
-    ty_impure::{TyImpureEnc, TyImpureEncOutputRef},
+    ty::indirect::{IndirectKey, IndirectPredicatesEnc},
+    ty::use_impure::{TyImpureEnc, TyImpureEncOutputRef},
     ImpureEncVisitor,
 };
 

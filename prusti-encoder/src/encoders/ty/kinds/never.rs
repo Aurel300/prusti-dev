@@ -2,9 +2,9 @@ use prusti_rustc_interface::middle::ty;
 use task_encoder::{EncodeFullError, TaskEncoder, TaskEncoderDependencies};
 use vir::HasType;
 
-use crate::encoders::{
-    domain::{DomainBuilder, DomainEnc, DomainEncOutput, DomainEncSpecifics, PureTypeBuilder, PureTypeCommon},
-    predicate::{PredicateBuilder, PredicateEnc, PredicateEncData},
+use crate::encoders::ty::{
+    pure::{DomainBuilder, DomainEnc, DomainEncOutput, DomainEncSpecifics, PureTypeBuilder, PureTypeCommon},
+    impure::{PredicateBuilder, PredicateEnc, PredicateEncData},
 };
 
 pub(crate) fn domain<'vir>(

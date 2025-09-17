@@ -45,7 +45,7 @@ pub struct MirBuiltinEncOutput<'vir> {
     pub function: vir::Function<'vir>,
 }
 
-use super::ty_pure::TyPureEnc;
+use super::ty::use_pure::TyPureEnc;
 
 impl TaskEncoder for MirBuiltinEnc {
     task_encoder::encoder_cache!(MirBuiltinEnc);

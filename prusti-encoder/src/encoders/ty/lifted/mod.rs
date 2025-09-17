@@ -1,6 +1,5 @@
 pub(super) mod aggregate_cast;
 pub(super) mod cast;
-pub(super) mod casters;
 pub(super) mod r#const;
 pub(super) mod func_app_ty_params;
 pub(super) mod func_def_ty_params;
@@ -16,6 +15,8 @@ pub use {
     ty_constructor::TyConstructorEnc,
     r#typeof::TypeOfEnc,
 };
+
+pub use super::generics::*;
 
 // TODO: these should probably not be public, generics stuff should be wrapped
 // within an api of the relevant encoder (e.g. the api of the domain/predicate

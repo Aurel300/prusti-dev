@@ -1,5 +1,5 @@
 use crate::encoders::{
-    indirect::{IndirectKey, IndirectPredicatesEnc},
+    ty::indirect::{IndirectKey, IndirectPredicatesEnc},
     ImpureEncVisitor, MirLocalDefEncOutput, MirSpecEnc,
 };
 use pcg::borrow_pcg::{state::BorrowsState, unblock_graph::UnblockGraph};

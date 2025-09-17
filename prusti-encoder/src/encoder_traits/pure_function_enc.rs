@@ -8,9 +8,9 @@ use task_encoder::{EncodeFullError, TaskEncoder, TaskEncoderDependencies};
 use vir::{ExprGenBool, ExprGenSnap, FunctionIdn, Reify, ViperIdent};
 
 use crate::encoders::{
-    MirLocalDefEnc, MirPureEnc, MirPureEncTask, MirSpecEnc, PureKind, lifted::{
+    MirLocalDefEnc, MirPureEnc, MirPureEncTask, MirSpecEnc, PureKind, ty::lifted::{
         EncodeGenericsAsLifted, LiftedTy, LiftedTyEnc, LiftedTyEncTask, LiftedTyParamsEnc, TypeOfEnc,
-    }, most_generic_ty::MostGenericTyEnc,
+    }, ty::most_generic_ty::MostGenericTyEnc,
 };
 
 use super::function_enc::FunctionEnc;

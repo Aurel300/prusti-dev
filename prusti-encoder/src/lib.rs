@@ -15,7 +15,7 @@ use prusti_rustc_interface::{hir, middle::ty};
 use task_encoder::TaskEncoder;
 
 use crate::encoders::{
-    lifted::{
+    ty::lifted::{
         CastTypeImpure, CastTypePure, CastersEnc, LiftedConstEnc, TyConstructorEnc, TypeOfEnc
     },
     MirPolyImpureEnc,

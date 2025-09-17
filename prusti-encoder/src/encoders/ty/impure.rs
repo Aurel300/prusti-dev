@@ -10,10 +10,10 @@ use vir::{
     VirCtxt,
 };
 
-use crate::encoders::{domain::DomainEnc, ty::lifted::generic::LiftedGeneric};
+use crate::encoders::ty::{pure::DomainEnc, lifted::generic::LiftedGeneric};
 
 use super::{
-    domain::{DomainDataImmRef, DomainDataMutRef, DomainDataPrim, DomainDataStruct},
+    pure::{DomainDataImmRef, DomainDataMutRef, DomainDataPrim, DomainDataStruct},
     lifted::{ty::LiftedTy},
     most_generic_ty::{get_vir_base_name_kind, MostGenericTy},
 };

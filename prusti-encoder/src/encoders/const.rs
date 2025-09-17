@@ -12,10 +12,10 @@ use prusti_rustc_interface::{
 use task_encoder::{EncodeFullError, EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 use vir::CastType;
 
-use crate::encoders::{lifted::{LiftedConstEnc, LiftedGenericEnc, LiftedGenericEncTask}, mir_pure::PureKind, MirPureEnc, MirPureEncTask};
+use crate::encoders::{ty::lifted::{LiftedConstEnc, LiftedGenericEnc, LiftedGenericEncTask}, mir_pure::PureKind, MirPureEnc, MirPureEncTask};
 
-use super::{
-    ty_pure::TyPureEnc,
+use super::ty::{
+    use_pure::TyPureEnc,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]

@@ -2,7 +2,7 @@ use prusti_rustc_interface::middle::ty;
 use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 use vir::{CastType, FunctionIdn, ViperIdent};
 
-use crate::encoders::{most_generic_ty::get_vir_base_name_kind, TyPureEnc};
+use crate::encoders::{ty::most_generic_ty::get_vir_base_name_kind, TyPureEnc};
 
 /// Creates domain functions which embed values of the given type into instances
 /// of `Type`, suitable for passing as the representation of a type parameter,

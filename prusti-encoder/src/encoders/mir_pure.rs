@@ -14,8 +14,8 @@ use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 use vir::{add_debug_note, CastType, CompType};
 // TODO: replace uses of `PredicateEnc` with `SnapshotEnc`
 use super::{
-    ty_impure::TyImpureEnc,
-    ty_pure::TyPureEnc,
+    ty::use_impure::TyImpureEnc,
+    ty::use_pure::TyPureEnc,
     r#const::ConstEncTask,
 };
 use crate::{

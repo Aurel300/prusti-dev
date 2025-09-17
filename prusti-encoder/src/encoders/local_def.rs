@@ -9,8 +9,8 @@ use prusti_rustc_interface::{
 use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 
 use crate::{
-    encoders::{
-        ty_impure::{TyImpureEnc, TyImpureEncOutputRef}
+    encoders::ty::{
+        use_impure::{TyImpureEnc, TyImpureEncOutputRef}
     },
     trait_support::is_function_with_body,
 };

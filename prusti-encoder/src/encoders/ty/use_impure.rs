@@ -4,7 +4,7 @@ use prusti_rustc_interface::{
 };
 use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 
-use crate::encoders::{PredicateEncOutputRef, lifted::{LiftedTyEncTask, casters::{CastTypeImpure, CastTypePure}, rust_ty_cast::{GenericCasterImpure, GenericCasterPure, RustTyCastersEnc}}, most_generic_ty::MostGenericTyEnc, predicate::{PredicateEnc, PredicateEncDataEnum, PredicateEncDataImmRef, PredicateEncDataMutRef, PredicateEncDataStruct}};
+use crate::encoders::ty::{lifted::{LiftedTyEncTask, casters::{CastTypeImpure, CastTypePure}, rust_ty_cast::{GenericCasterImpure, GenericCasterPure, RustTyCastersEnc}}, most_generic_ty::MostGenericTyEnc, impure::{PredicateEnc, PredicateEncDataEnum, PredicateEncDataImmRef, PredicateEncDataMutRef, PredicateEncDataStruct, PredicateEncOutputRef}};
 
 use super::{
     lifted::{

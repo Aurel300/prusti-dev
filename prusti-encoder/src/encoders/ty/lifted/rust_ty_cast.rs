@@ -4,7 +4,7 @@ use prusti_rustc_interface::middle::ty;
 use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderError};
 use vir::with_vcx;
 
-use crate::encoders::most_generic_ty::{MostGenericTy, MostGenericTyEnc};
+use crate::encoders::ty::most_generic_ty::{MostGenericTy, MostGenericTyEnc};
 
 use super::{
     cast::Cast,

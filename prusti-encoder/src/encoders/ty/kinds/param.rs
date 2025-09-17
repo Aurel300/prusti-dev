@@ -1,5 +1,5 @@
-use crate::encoders::{
-    domain::{DomainBuilder, DomainEnc, DomainEncOutputRef, DomainEncSpecifics, PureTypeBuilder, PureTypeCommon},
+use crate::encoders::ty::{
+    pure::{DomainBuilder, DomainEnc, DomainEncOutputRef, DomainEncSpecifics, PureTypeBuilder, PureTypeCommon},
     most_generic_ty::get_vir_base_name_kind,
 };
 use prusti_rustc_interface::middle::ty;

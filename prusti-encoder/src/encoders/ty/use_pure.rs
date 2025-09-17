@@ -8,7 +8,7 @@ use prusti_rustc_interface::{
     abi,
 };
 
-use crate::encoders::{domain::{DomainDataEnum, DomainDataField, DomainDataImmRef, DomainDataMutRef, DomainDataPrim, DomainDataStruct, DomainEnc, DomainEncOutput, DomainEncOutputRef}, lifted::{casters::CastTypePure, rust_ty_cast::{GenericCasterPure, RustTyCastersEnc}}, most_generic_ty::MostGenericTyEnc};
+use crate::encoders::ty::{pure::{DomainDataEnum, DomainDataField, DomainDataImmRef, DomainDataMutRef, DomainDataPrim, DomainDataStruct, DomainEnc, DomainEncOutput, DomainEncOutputRef}, lifted::{casters::CastTypePure, rust_ty_cast::{GenericCasterPure, RustTyCastersEnc}}, most_generic_ty::MostGenericTyEnc};
 
 #[derive(Debug, Clone, Copy)]
 pub struct TyPureDataImmRef<'vir> {

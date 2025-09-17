@@ -1,13 +1,13 @@
-use crate::encoders::{
-    domain::{
+use crate::encoders::ty::{
+    pure::{
         AdtBuilder, DomainDataEnum, DomainDataStruct, DomainDataVariant, DomainEnc, DomainEncOutput, DomainEncOutputRef, DomainEncSpecifics, FieldTy, PureTypeBuilder, PureTypeCommon
     },
     lifted::ty::{EncodeGenericsAsParamTy, LiftedTyEnc, LiftedTyEncTask},
-    predicate::{
+    impure::{
         PredicateBuilder, PredicateEnc, PredicateEncData, PredicateEncDataEnum, PredicateEncDataStruct, PredicateEncDataVariant, RefToIndirectPred
     },
-    ty_impure::TyImpureEnc,
-    ty_pure::{TyPureEnc, TyPureEncOutput},
+    use_impure::TyImpureEnc,
+    use_pure::{TyPureEnc, TyPureEncOutput},
 };
 use prusti_rustc_interface::middle::ty;
 use task_encoder::{EncodeFullError, TaskEncoder, TaskEncoderDependencies};

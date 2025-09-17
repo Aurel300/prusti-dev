@@ -7,7 +7,7 @@ use prusti_rustc_interface::{
 use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 use vir::{CastType, Reify};
 
-use crate::encoders::{mir_pure::PureKind, ty_impure::TyImpureEnc, MirPureEnc, TyPureEnc};
+use crate::encoders::{mir_pure::PureKind, ty::use_impure::TyImpureEnc, MirPureEnc, TyPureEnc};
 pub struct MirSpecEnc;
 
 #[derive(Clone)]

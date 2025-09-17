@@ -1,6 +1,6 @@
-use crate::encoders::{
-    domain::{AdtBuilder, DomainDataMutRef, DomainEnc, DomainEncOutput, DomainEncSpecifics, PureTypeBuilder, PureTypeCommon},
-    predicate::{PredicateBuilder, PredicateEnc, PredicateEncData, PredicateEncDataMutRef, RefToIndirectPred}, TyPureEnc,
+use crate::encoders::ty::{
+    pure::{AdtBuilder, DomainDataMutRef, DomainEnc, DomainEncOutput, DomainEncSpecifics, PureTypeBuilder, PureTypeCommon},
+    impure::{PredicateBuilder, PredicateEnc, PredicateEncData, PredicateEncDataMutRef, RefToIndirectPred}, use_pure::TyPureEnc,
 };
 use prusti_rustc_interface::middle::ty;
 use task_encoder::{EncodeFullError, TaskEncoder, TaskEncoderDependencies};

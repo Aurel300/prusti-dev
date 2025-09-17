@@ -14,7 +14,7 @@ use vir::{
     AdtDestructor, Arity, CastType, CompType, DomainAxiomData, DomainIdnSnap, FunctionIdn, Type
 };
 
-use crate::encoders::{most_generic_ty::MostGenericTyEnc};
+use crate::encoders::ty::{most_generic_ty::MostGenericTyEnc};
 
 use super::{
     most_generic_ty::{get_vir_base_name_kind, MostGenericTy},

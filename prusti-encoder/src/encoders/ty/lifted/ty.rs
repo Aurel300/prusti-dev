@@ -5,9 +5,9 @@ use task_encoder::{EncodeFullResult, TaskEncoder};
 use vir::{with_vcx, FunctionIdn, CastType};
 
 use crate::encoders::{
-    ConstEnc, r#const::ConstEncTask, lifted::{
+    ConstEnc, r#const::ConstEncTask, ty::lifted::{
         LiftedConstEnc, generic::{LiftedGeneric, LiftedGenericEnc}, ty_constructor::TyConstructorEnc
-    }, most_generic_ty::MostGenericTyEnc,
+    }, ty::most_generic_ty::MostGenericTyEnc,
 };
 
 use super::generic::LiftedGenericEncTask;

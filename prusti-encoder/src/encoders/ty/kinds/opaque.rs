@@ -1,4 +1,4 @@
-use crate::encoders::domain::{DomainBuilder, DomainEnc, DomainEncSpecifics, PureTypeBuilder, PureTypeCommon};
+use crate::encoders::ty::pure::{DomainBuilder, DomainEnc, DomainEncSpecifics, PureTypeBuilder, PureTypeCommon};
 use task_encoder::{EncodeFullError, TaskEncoder, TaskEncoderDependencies};
 
 pub(crate) fn domain<'vir>(

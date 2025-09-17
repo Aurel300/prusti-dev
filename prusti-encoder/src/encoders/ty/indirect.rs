@@ -2,9 +2,9 @@ use prusti_rustc_interface::middle::ty::{self};
 use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 use vir::{CastType, Reify};
 
-use crate::encoders::lifted::{casters::CastTypePure, rust_ty_cast::RustTyCastersEnc};
+use crate::encoders::ty::lifted::{casters::CastTypePure, rust_ty_cast::RustTyCastersEnc};
 
-use super::{ty_impure::TyImpureEnc, ty_pure::TyPureEnc};
+use super::{use_impure::TyImpureEnc, use_pure::TyPureEnc};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum IndirectKey {

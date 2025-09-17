@@ -1,8 +1,8 @@
 use task_encoder::{EncodeFullResult, OutputRefAny, TaskEncoder, TaskEncoderDependencies};
 use vir::{CallableIdn, CastType, FunctionIdn};
 
-use crate::encoders::{
-    domain::DomainEnc,
+use crate::encoders::ty::{
+    pure::DomainEnc,
     most_generic_ty::{MostGenericTy, MostGenericTyEnc},
 };
 

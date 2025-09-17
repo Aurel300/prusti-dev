@@ -3,12 +3,8 @@ use std::marker::PhantomData;
 use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 use vir::{CallableIdn, FunctionIdn, MethodIdn};
 
-use crate::encoders::{
-    domain::DomainEnc, lifted::{generic::{LiftedGeneric, LiftedGenericEnc, LiftedGenericEncTask}, ty_constructor::TyConstructorEnc, TypeOfEnc}, most_generic_ty::MostGenericTy, predicate::PredicateEnc
-};
-
-use super::{
-    ty::LiftedTy,
+use crate::encoders::ty::{
+    pure::DomainEnc, lifted::{generic::{LiftedGeneric, LiftedGenericEnc, LiftedGenericEncTask}, ty_constructor::TyConstructorEnc, TypeOfEnc, LiftedTy}, most_generic_ty::MostGenericTy, impure::PredicateEnc
 };
 
 pub struct CastTypePure;

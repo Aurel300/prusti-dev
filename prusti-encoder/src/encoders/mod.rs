@@ -6,7 +6,7 @@ mod spec;
 mod mir_pure_function;
 mod pure;
 mod local_def;
-mod r#type;
+mod ty;
 mod r#const;
 mod mono;
 // TODO: move `mir_impure` to this dir:
@@ -25,7 +25,7 @@ pub use pure::spec::MirSpecEnc;
 pub use r#const::ConstEnc;
 pub use ty_pure::TyPureEnc;
 pub use ty_impure::TyImpureEnc;
-pub use r#type::*;
+pub use ty::*;
 pub(super) use spec::with_proc_spec;
 pub use spec::{is_function_trusted, is_type_trusted, SpecEnc, SpecEncTask};
 pub use viper_tuple::{ViperTupleEnc, ViperTupleEncOutput};

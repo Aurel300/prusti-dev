@@ -10,7 +10,7 @@ use vir::{
     VirCtxt,
 };
 
-use crate::encoders::{domain::DomainEnc, r#type::lifted::generic::LiftedGeneric};
+use crate::encoders::{domain::DomainEnc, ty::lifted::generic::LiftedGeneric};
 
 use super::{
     domain::{DomainDataImmRef, DomainDataMutRef, DomainDataPrim, DomainDataStruct},

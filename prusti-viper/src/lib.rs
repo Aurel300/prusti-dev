@@ -513,7 +513,7 @@ impl<'vir, 'v> ToViper<'vir, 'v> for vir::Function<'vir> {
                 .posts
                 .iter()
                 .map(|v| v.to_viper_no_pos(ctx))
-                .chain(decreases.into_iter())
+                .chain(decreases)
                 .collect::<Vec<_>>(),
             ctx.ast.no_position(), // TODO: position (each function should have its own)
             self.expr.map(|v| v.to_viper_no_pos(ctx)),

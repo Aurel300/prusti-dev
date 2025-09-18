@@ -1,5 +1,3 @@
-use std::alloc::Global;
-
 use pcg::{
     PcgOutput,
     action::{BorrowPcgAction, PcgAction, PcgActions},
@@ -28,7 +26,7 @@ use prusti_rustc_interface::{
     span::def_id::DefId,
 };
 use prusti_utils::config;
-use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
+use task_encoder::{TaskEncoder, TaskEncoderDependencies};
 use vir::{CastType, CompType};
 
 use crate::encoders::{
@@ -37,7 +35,6 @@ use crate::encoders::{
     mir_fn::{CallTaskDescription, RustSignature},
     ty::{
         RustTyDecomposition,
-        generics::GParams,
         use_impure::TyUseImpure,
         use_pure::{TyUsePure, TyUsePureEnc},
     },
@@ -673,7 +670,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                     }
                     ty::TyKind::Ref(_, _, ty::Mutability::Mut) => {
                         // TODO: unfold? function? use snapshot?
-                        let expr_deref = e_ty.expect_mutref().deref(expr);
+
                         // TODO: we are writing directly to the deref; is a cast ever
                         //   needed?
                         /*
@@ -688,7 +685,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                             return (expr_deref, Some(cast_stmts.unapply_cast_stmt));
                         }
                         */
-                        expr_deref
+                        (e_ty.expect_mutref().deref(expr)) as _
                     }
                     _ => unreachable!(),
                 }
@@ -1200,17 +1197,16 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                 };
                 self.encoded_blocks.push(
                     self.vcx.mk_cfg_block(
-                        std::mem::replace(
-                            &mut self.current_block_label,
-                            Some(self.vcx.alloc(vir::CfgBlockLabelData::BasicBlockTerminator(
-                                current_block,
-                            ))),
-                        )
-                        .unwrap(),
+                        self.current_block_label
+                            .replace(
+                                self.vcx.alloc(vir::CfgBlockLabelData::BasicBlockTerminator(
+                                    current_block,
+                                )),
+                            )
+                            .unwrap(),
                         &[],
-                        self.vcx.alloc_slice(
-                            &std::mem::replace(&mut self.current_stmts, Some(Vec::new())).unwrap(),
-                        ),
+                        self.vcx
+                            .alloc_slice(&self.current_stmts.replace(Vec::new()).unwrap()),
                         self.vcx
                             .mk_goto_stmt(self.vcx.alloc(
                                 vir::CfgBlockLabelData::BasicBlockTerminator(current_block),
@@ -1295,7 +1291,7 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                                 Some(vec![error])
                             },
                         );
-                        self.stmts(call.into_iter());
+                        self.stmts(call);
                     });
                     let label_post = self.new_label("post");
                     self.call_labels

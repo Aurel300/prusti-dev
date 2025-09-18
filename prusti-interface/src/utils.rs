@@ -36,7 +36,7 @@ pub fn try_pop_one_level<'tcx>(
     tcx: TyCtxt<'tcx>,
     place: mir::Place<'tcx>,
 ) -> Option<(mir::PlaceElem<'tcx>, mir::Place<'tcx>)> {
-    if place.projection.len() > 0 {
+    if !place.projection.is_empty() {
         let last_index = place.projection.len() - 1;
         let new_place = mir::Place {
             local: place.local,

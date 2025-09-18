@@ -242,7 +242,7 @@ impl<'vir, D: TyDatas<'vir>> StructData<'vir, D> {
         let fields = self.fields.iter().zip(other.fields.iter());
         StructData {
             data: (&self.data, &other.data),
-            fields: fields.map(|(f1, f2)| (f1, f2)).collect(),
+            fields: fields.collect(),
         }
     }
 }

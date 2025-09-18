@@ -1,11 +1,11 @@
-use prusti_rustc_interface::{abi, middle::ty};
+use prusti_rustc_interface::abi;
 use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 use vir::PredicateIdn;
 
 use crate::encoders::{
     Impure,
     ty::{
-        LazyRustTy, RustTy, RustTyDatas,
+        LazyRustTy, RustTyDatas,
         generics::{GArgs, GArgsCastEnc, GArgsTyEnc, GParams},
     },
 };
@@ -14,7 +14,7 @@ use super::{
     TyUseEnc, UseTyDatas,
     data::*,
     generics::{GArgCaster, GArgsTy},
-    impure::{ImpureTyDatas, TyImpureEnc, TyImpureRef},
+    impure::{ImpureTyDatas, TyImpureEnc},
 };
 
 pub(super) type UseImpureTyDatas = UseTyDatas<Impure>;

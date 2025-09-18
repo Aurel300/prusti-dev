@@ -9,8 +9,8 @@ mod encoders;
 mod trait_support;
 pub mod request;
 
-use prusti_interface::{PrustiError, environment::EnvBody, specs::specifications::SpecQuery};
-use prusti_rustc_interface::{hir, middle::ty};
+use prusti_interface::{PrustiError, environment::EnvBody};
+use prusti_rustc_interface::middle::ty;
 use task_encoder::TaskEncoder;
 
 use crate::encoders::{

@@ -1,7 +1,7 @@
 use crate::encoders::ty::{
-    RustOpaque, RustTyDatas,
-    impure::{ImpureTyDatas, PredicateBuilder, TyImpureEnc, TyImpureOpaque},
-    pure::{DomainBuilder, PureTyDatas, TyPureEnc, TyPureOpaque, TyPureOpaqueData},
+    RustOpaque,
+    impure::{PredicateBuilder, TyImpureEnc, TyImpureOpaque},
+    pure::{DomainBuilder, TyPureEnc, TyPureOpaque, TyPureOpaqueData},
 };
 use task_encoder::{EncodeFullError, TaskEncoderDependencies};
 

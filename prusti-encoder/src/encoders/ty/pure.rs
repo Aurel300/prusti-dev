@@ -6,10 +6,9 @@ use std::ops::Deref;
 
 use prusti_rustc_interface::{
     abi,
-    middle::ty::{self, IntTy, ParamTy, TyKind, UintTy},
-    span::symbol,
+    middle::ty::{self, IntTy, TyKind, UintTy},
 };
-use task_encoder::{EncodeFullError, EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
+use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 use vir::{
     AdtDestructor, Arity, CastType, CompType, DomainAxiomData, DomainIdnSnap, FunctionIdn, Type,
 };
@@ -167,9 +166,9 @@ impl TaskEncoder for TyPureEnc {
         deps: &mut TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self> {
         vir::with_vcx(|vcx| {
-            let mut builder = TyPureBuilder::new(deps, vcx, *task_key);
+            let mut builder = TyPureBuilder::new(deps, vcx, task_key);
             let output_ref = builder.output_ref();
-            deps.emit_output_ref(*task_key, output_ref.clone())?;
+            deps.emit_output_ref(*task_key, output_ref)?;
 
             let specifics = match &task_key.specifics {
                 TySpecifics::Param(param) => {

@@ -1,7 +1,7 @@
 use crate::encoders::ty::{
-    RustParam, RustTyDatas,
-    impure::{ImpureTyDatas, PredicateBuilder, TyImpureEnc, TyImpureParam},
-    pure::{DomainBuilder, PureTyDatas, TyPureEnc, TyPureParam},
+    RustParam,
+    impure::{PredicateBuilder, TyImpureEnc, TyImpureParam},
+    pure::{DomainBuilder, TyPureEnc, TyPureParam},
 };
 use task_encoder::{EncodeFullError, TaskEncoderDependencies};
 

@@ -4,7 +4,6 @@ use crate::encoders::{
     mir_fn::{CallTaskDescription, RustSignature},
     ty::{
         RustTyDecomposition,
-        generics::GParams,
         use_pure::{TyUsePure, TyUsePureEnc},
     },
 };
@@ -363,8 +362,8 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                             }
                             curr_ver[local]
                         });
-                        let snap = self.mk_local_ex(*local, version);
-                        snap
+
+                        self.mk_local_ex(*local, version)
                     })
                     .collect::<Vec<_>>();
                 self.reify_binds(update, tuple_ref.mk_cons(self.vcx, tuple_args))

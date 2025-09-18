@@ -1,9 +1,5 @@
 use std::ops::{Deref, DerefMut};
 
-use prusti_rustc_interface::{
-    abi,
-    middle::ty::{self, TyKind},
-};
 use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 use vir::{
     CallableIdn, CastType, FunctionIdn, HasType, MethodIdn, PredicateIdn, VirCtxt,
@@ -126,7 +122,7 @@ impl TaskEncoder for TyImpureEnc {
         let ty = task_key.zip(snap);
 
         vir::with_vcx(|vcx| {
-            let mut builder = PredicateBuilder::new(deps, vcx, *task_key, snapshot);
+            let mut builder = PredicateBuilder::new(deps, vcx, task_key, snapshot);
 
             let ref_self_decl = builder.ref_self_decl();
             let ref_self = vcx.mk_local_ex(ref_self_decl);
@@ -315,8 +311,8 @@ impl<'vir> PredicateBuilderInner<'vir> {
         args: A::Tys<'vir>,
     ) -> vir::PredicateIdn<'vir, A> {
         let name = self.ident_str(name);
-        let ident = vir::PredicateIdn::new(vir::ViperIdent::new(name), args);
-        ident
+
+        vir::PredicateIdn::new(vir::ViperIdent::new(name), args)
     }
 
     pub(crate) fn predicate<A: vir::Arity>(
@@ -339,8 +335,8 @@ impl<'vir> PredicateBuilderInner<'vir> {
         ret: vir::Type<'vir, T>,
     ) -> vir::FunctionIdn<'vir, A, T> {
         let name = self.ident_str(name);
-        let ident = vir::FunctionIdn::new(vir::ViperIdent::new(name), args, ret);
-        ident
+
+        vir::FunctionIdn::new(vir::ViperIdent::new(name), args, ret)
     }
 
     pub(crate) fn mk_function<A: vir::Arity, T: vir::CompType>(

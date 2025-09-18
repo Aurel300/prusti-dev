@@ -12,13 +12,12 @@ use pcg::{
 use prusti_rustc_interface::middle::mir;
 
 use task_encoder::TaskEncoder;
-use vir::{CastType, Reify};
+use vir::Reify;
 
 use crate::encoders::{
     ImpureEncVisitor, TyUseImpureEnc,
     ty::{
         RustTyDecomposition,
-        generics::GParams,
         indirect::{IndirectKey, IndirectPredicatesEnc},
         use_impure::TyUseImpure,
     },

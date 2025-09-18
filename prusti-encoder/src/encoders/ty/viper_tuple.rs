@@ -5,7 +5,6 @@ use prusti_rustc_interface::{abi, middle::ty, span::def_id::DefId};
 
 use crate::encoders::ty::{
     RustTyDecomposition,
-    generics::GParams,
     use_pure::{TyUsePure, TyUsePureEnc, TyUsePureStruct},
 };
 

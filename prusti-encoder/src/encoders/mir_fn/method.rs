@@ -36,7 +36,7 @@ impl<'vir> MethodCallEncOutput<'vir> {
         assert_eq!(self.inputs.len(), args.len());
         let generics = args.iter().zip(self.inputs.iter());
         let mut stmts: Vec<_> = generics
-            .filter_map(|(arg, caster)| caster.cast_to_callee_ctx(*arg))
+            .filter_map(|(arg, caster)| caster.cast_to_callee_ctx(arg))
             .collect();
 
         args.insert(0, ret);
@@ -210,7 +210,7 @@ impl TaskEncoder for MethodEnc {
                 let local_defs =
                     deps.require_dep_spanned::<MirLocalDefEnc>((def_id, true), span)?;
 
-                let loop_analysis = LoopAnalysis::find_loops(&body);
+                let loop_analysis = LoopAnalysis::find_loops(body);
                 let bc = NllBorrowCheckerImpl::new(vcx.tcx(), &body_with_facts);
                 let pcg_ctxt = pcg::PcgCtxt::new(&body_with_facts.body, vcx.tcx(), &bc);
                 let fpcs_analysis = pcg::run_pcg(&pcg_ctxt, None);
@@ -244,7 +244,7 @@ impl TaskEncoder for MethodEnc {
                     local_decls: &body.local_decls,
                     fpcs_analysis,
                     local_defs,
-                    body: &body,
+                    body,
 
                     loop_analysis,
                     wands,
@@ -261,7 +261,7 @@ impl TaskEncoder for MethodEnc {
                     current_terminator: None,
                     encoded_blocks,
                 };
-                visitor.visit_body(&body);
+                visitor.visit_body(body);
                 start_stmts.extend(
                     visitor
                         .from_to_vars

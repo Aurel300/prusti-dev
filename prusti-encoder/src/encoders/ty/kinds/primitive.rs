@@ -1,12 +1,10 @@
 use crate::encoders::ty::{
-    RustPrimitive, RustTyDatas,
-    impure::{ImpureTyDatas, PredicateBuilder, TyImpureEnc, TyImpurePrimitive},
-    pure::{
-        DomainBuilder, PureTyDatas, TyPureEnc, TyPureEncError, TyPurePrimData, TyPurePrimitive,
-    },
+    RustPrimitive,
+    impure::{PredicateBuilder, TyImpureEnc, TyImpurePrimitive},
+    pure::{DomainBuilder, TyPureEnc, TyPureEncError, TyPurePrimData, TyPurePrimitive},
 };
 use prusti_rustc_interface::middle::ty;
-use task_encoder::{EncodeFullError, TaskEncoder, TaskEncoderDependencies};
+use task_encoder::{EncodeFullError, TaskEncoderDependencies};
 use vir::{CastType, HasType};
 
 pub(crate) fn ty_pure<'vir>(
@@ -53,8 +51,8 @@ pub(crate) fn ty_pure<'vir>(
 
     match ty_kind {
         ty::TyKind::Int(_) | ty::TyKind::Uint(_) => {
-            let min = builder.vcx.get_min_int(&ty_kind);
-            let max = builder.vcx.get_max_int(&ty_kind);
+            let min = builder.vcx.get_min_int(ty_kind);
+            let max = builder.vcx.get_max_int(ty_kind);
             builder.axiom("bounds", vir::expr! {
                 forall s: [builder.self_type()] :: {[value_ident](s)} (([min]) <= (([value_ident](s)) as Int)) && ((([value_ident](s)) as Int) <= ([max]))
             });

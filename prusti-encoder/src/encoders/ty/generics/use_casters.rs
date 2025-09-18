@@ -1,13 +1,9 @@
 use std::marker::PhantomData;
 
-use prusti_rustc_interface::middle::ty;
 use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 use vir::CastType;
 
-use crate::encoders::{
-    Impure, Pure, Purity,
-    ty::{RustTyDecomposition, RustTyNormalized},
-};
+use crate::encoders::{Impure, Pure, Purity, ty::RustTyNormalized};
 
 use super::{
     GArgsTy, GArgsTyEnc,

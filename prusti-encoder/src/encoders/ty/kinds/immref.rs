@@ -1,11 +1,9 @@
 use crate::encoders::ty::{
-    RustImmRef, RustTyDatas,
-    impure::{ImpureTyDatas, PredicateBuilder, TyImpureEnc, TyImpureImmRef, TyImpureImmRefData},
-    lifted::TypeOfEnc,
-    pure::{AdtBuilder, PureTyDatas, TyPureEnc, TyPureImmRef, TyPureImmRefData},
+    RustImmRef,
+    impure::{PredicateBuilder, TyImpureEnc, TyImpureImmRef, TyImpureImmRefData},
+    pure::{AdtBuilder, TyPureEnc, TyPureImmRef, TyPureImmRefData},
 };
-use prusti_rustc_interface::middle::ty;
-use task_encoder::{EncodeFullError, TaskEncoder, TaskEncoderDependencies};
+use task_encoder::{EncodeFullError, TaskEncoderDependencies};
 use vir::{CastType, HasType};
 
 pub(crate) fn ty_pure<'vir>(

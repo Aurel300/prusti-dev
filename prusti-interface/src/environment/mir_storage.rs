@@ -56,7 +56,7 @@ pub(crate) unsafe fn retrieve_mir_body<'tcx>(
     let body_with_facts: BodyWithBorrowckFacts<'static> = SHARED_STATE_WITH_FACTS.with(|state| {
         let mut map = state.borrow_mut();
         map.remove(&def_id).unwrap_or_else(|| {
-            panic!("No MIR body found for {:?}", def_id);
+            panic!("No MIR body found for {def_id:?}");
         })
     });
     // SAFETY: See the module level comment.

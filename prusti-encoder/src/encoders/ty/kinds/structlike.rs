@@ -2,18 +2,16 @@ use crate::encoders::{
     TyUseImpureEnc,
     ty::{
         RustTyDatas,
-        data::{StructData, TyData, TyDatas},
+        data::{StructData, TyData},
         impure::{ImpureTyDatas, PredicateBuilder, TyImpureEnc, TyImpureFieldData, TyImpureStruct},
         pure::{
-            AdtBuilder, PureTyDatas, TyPureData, TyPureEnc, TyPureFieldData, TyPureStruct,
-            TyPureStructData,
+            AdtBuilder, PureTyDatas, TyPureEnc, TyPureFieldData, TyPureStruct, TyPureStructData,
         },
         use_pure::TyUsePureEnc,
     },
 };
-use prusti_rustc_interface::middle::ty::{ParamTy, TyKind};
-use task_encoder::{EncodeFullError, TaskEncoder, TaskEncoderDependencies};
-use vir::{CastType, FunctionIdn, HasType, PredicateIdn, vir_format};
+use task_encoder::{EncodeFullError, TaskEncoderDependencies};
+use vir::{CastType, HasType, PredicateIdn};
 
 pub(crate) fn ty_pure<'vir>(
     task_key: &TyData<'vir, RustTyDatas>,

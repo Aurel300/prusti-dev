@@ -1,12 +1,10 @@
 use task_encoder::{EncodeFullResult, TaskEncoder};
-use vir::{CastType, FunctionIdn, with_vcx};
-
-use prusti_rustc_interface::middle::ty;
+use vir::CastType;
 
 use crate::encoders::{
     Pure,
     ty::{
-        LazyRustTy, RustTy, RustTyDatas,
+        LazyRustTy, RustTyDatas,
         generics::{GArgs, GArgsCastEnc, GArgsTyEnc, GParams},
     },
 };
@@ -143,7 +141,10 @@ impl<'a, 'vir> TyUsePureWalker<'a, 'vir> {
         ty: TyData<'vir, (RustTyDatas, PureTyDatas)>,
     ) -> TySpecifics<'vir, UsePureTyDatas> {
         match &ty.specifics {
-            TySpecifics::Param(data) => TySpecifics::mk_param(*data.1),
+            TySpecifics::Param(data) => {
+                let _: () = *data.1;
+                TySpecifics::mk_param(())
+            }
             TySpecifics::Opaque(data) => TySpecifics::mk_opaque(*data.1),
             TySpecifics::Primitive(data) => TySpecifics::mk_primitive(*data.1),
             TySpecifics::ImmRef(data) => {

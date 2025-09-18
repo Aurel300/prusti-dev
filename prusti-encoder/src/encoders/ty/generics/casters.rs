@@ -6,7 +6,7 @@ use vir::{CallableIdn, FunctionIdn, MethodIdn};
 use crate::encoders::{
     Impure, Pure, Purity,
     ty::{
-        RustTy, RustTyDecomposition,
+        RustTy,
         impure::TyImpureEnc,
         lifted::{TypeOfEnc, ty_constructor::TyConstructorEnc},
         pure::TyPureEnc,

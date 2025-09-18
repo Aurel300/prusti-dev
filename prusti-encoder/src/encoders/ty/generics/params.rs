@@ -7,12 +7,7 @@ use vir::{CastType, HasType};
 
 use crate::encoders::{
     TyUsePureEnc,
-    ty::{
-        RustTyDecomposition,
-        data::TySpecifics,
-        generics::GArgsTyEnc,
-        lifted::{TyConstructorEnc, TypeOfEnc},
-    },
+    ty::{RustTyDecomposition, data::TySpecifics, generics::GArgsTyEnc, lifted::TyConstructorEnc},
 };
 
 /// The list of defined parameters in a given context. E.g. the type parameters

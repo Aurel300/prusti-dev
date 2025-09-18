@@ -58,10 +58,10 @@ impl<'vir, Curr: Copy, NextA, NextB> Reify<'vir, Curr>
                 vcx.alloc(ExprKindGenData::AdtConstructor(v.reify(vcx, lctx)))
             }
             ExprKindGenData::AdtDestructor(v, field) => {
-                vcx.alloc(ExprKindGenData::AdtDestructor(v.reify(vcx, lctx), *field))
+                vcx.alloc(ExprKindGenData::AdtDestructor(v.reify(vcx, lctx), field))
             }
             ExprKindGenData::AdtDiscriminator(v, cons) => {
-                vcx.alloc(ExprKindGenData::AdtDiscriminator(v.reify(vcx, lctx), *cons))
+                vcx.alloc(ExprKindGenData::AdtDiscriminator(v.reify(vcx, lctx), cons))
             }
 
             ExprKindGenData::Todo(v) => vcx.alloc(ExprKindGenData::Todo(v)),

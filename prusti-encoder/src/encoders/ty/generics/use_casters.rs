@@ -6,13 +6,13 @@ use vir::CastType;
 
 use crate::encoders::{ty::{RustTyDecomposition, RustTyNormalized}, Impure, Pure, Purity};
 
-use super::{CastersEnc, GArgs, GArgsTy, GArgsTyEnc, GArgCasters, PurityC};
+use super::{GArgsTy, GArgsTyEnc, casters::{CastersEnc, GArgCasters, PurityCasters}};
 
 pub struct GArgsCastEnc<P: Purity>(PhantomData<P>);
 
 /// One specific caster (if any).
 #[derive(Debug, Clone, Copy)]
-pub enum GArgCaster<'vir, P: PurityC> {
+pub enum GArgCaster<'vir, P: PurityCasters> {
     Casters {
         cast: GArgCasters<'vir, P>,
         ty_args: GArgsTy<'vir>,
@@ -22,7 +22,7 @@ pub enum GArgCaster<'vir, P: PurityC> {
     NoCast,
 }
 
-impl<'vir, P: PurityC> GArgCaster<'vir, P> {
+impl<'vir, P: PurityCasters> GArgCaster<'vir, P> {
     fn get(self) -> Option<(GArgCasters<'vir, P>, GArgsTy<'vir>)> {
         match self {
             GArgCaster::Casters { cast, ty_args } => Some((cast, ty_args)),
@@ -79,14 +79,18 @@ impl TaskEncoder for GArgsCastEnc<Pure> {
         task_key: &Self::TaskKey<'vir>,
         deps: &mut TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self> {
-        deps.emit_output_ref(*task_key, ()).unwrap();
+        deps.emit_output_ref(*task_key, ())?;
         let Some(ty) = task_key else {
             return Ok(((), GArgCaster::NoCast));
         };
 
-        let cast = deps.require_ref::<CastersEnc<Pure>>((ty.param, ty.concrete)).unwrap();
-        let ty_args = deps.require_dep::<GArgsTyEnc>(ty.args).unwrap();
+        let cast = deps.require_ref::<CastersEnc<Pure>>((ty.param, ty.concrete))?;
+        let ty_args = deps.require_dep::<GArgsTyEnc>(ty.args)?;
         Ok(((), GArgCaster::Casters { cast, ty_args }))
+    }
+
+    fn emit_outputs<'vir>(program: &mut task_encoder::Program<'vir>) {
+        CastersEnc::<Pure>::emit_outputs(program);
     }
 }
 
@@ -104,12 +108,16 @@ impl TaskEncoder for GArgsCastEnc<Impure> {
         task_key: &Self::TaskKey<'vir>,
         deps: &mut TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self> {
-        deps.emit_output_ref(*task_key, ()).unwrap();
+        deps.emit_output_ref(*task_key, ())?;
         let Some(ty) = task_key else {
             return Ok(((), GArgCaster::NoCast));
         };
-        let cast = deps.require_ref::<CastersEnc<Impure>>((ty.param, ty.concrete)).unwrap();
-        let ty_args = deps.require_dep::<GArgsTyEnc>(ty.args).unwrap();
+        let cast = deps.require_ref::<CastersEnc<Impure>>((ty.param, ty.concrete))?;
+        let ty_args = deps.require_dep::<GArgsTyEnc>(ty.args)?;
         Ok(((), GArgCaster::Casters { cast, ty_args }))
+    }
+
+    fn emit_outputs<'vir>(program: &mut task_encoder::Program<'vir>) {
+        CastersEnc::<Impure>::emit_outputs(program);
     }
 }

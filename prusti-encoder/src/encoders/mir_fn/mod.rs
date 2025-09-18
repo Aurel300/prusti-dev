@@ -46,8 +46,7 @@ pub fn encode_all_in_crate<'tcx>(tcx: ty::TyCtxt<'tcx>) {
                 .unwrap_or_default();
 
                 if !(is_trusted && is_pure) {
-                    let res = method::MethodEnc::encode(def_id, false);
-                    assert!(res.is_ok());
+                    let _ = method::MethodEnc::encode(def_id, false);
                 }
             }
             unsupported_item_kind => {

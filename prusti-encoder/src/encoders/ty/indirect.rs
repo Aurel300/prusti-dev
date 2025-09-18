@@ -2,8 +2,6 @@ use prusti_rustc_interface::middle::ty::{self};
 use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 use vir::{CastType, Reify};
 
-use crate::encoders::ty::RustTyDecompose;
-
 use super::{data::TySpecifics, use_impure::TyUseImpureEnc, use_pure::TyUsePureEnc};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -98,7 +96,7 @@ impl TaskEncoder for IndirectPredicatesEnc {
                 // This is why we should return `opaque_behind_a(x)` here.
                 TySpecifics::Param(_) | TySpecifics::Opaque(_) => (),
                 TySpecifics::MutRef((data, ref_domain)) => {
-                    let inner_ty = data.decompose_normalize(vcx.tcx(), ty.args);
+                    let inner_ty = data.decompose_normalize(ty.args);
                     let region = ty.args.args()[0].expect_region();
                     if IndirectKey::from_region(region)
                         .is_some_and(|indirect| &indirect == proj_region)
@@ -159,7 +157,7 @@ impl TaskEncoder for IndirectPredicatesEnc {
 
                         // TODO: invalid recursion here if the defined struct is
                         // recursive!
-                        let field_ty = field_ty.decompose(vcx.tcx(), ty.ty.params);
+                        let field_ty = field_ty.decompose(ty.ty.params);
                         let field_indirect =
                             deps.require_dep::<IndirectPredicatesEnc>((field_ty, *proj_region))?;
                         covariant.extend(field_indirect.covariant.into_iter().map(project));

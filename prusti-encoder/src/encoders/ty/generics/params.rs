@@ -2,7 +2,7 @@ use prusti_rustc_interface::{middle::ty, span::{symbol, def_id::DefId}};
 use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 use vir::{CastType, HasType};
 
-use crate::encoders::{ty::{data::TySpecifics, generics::GArgsTyEnc, lifted::{TyConstructorEnc, TypeOfEnc}, RustTyData, RustTyDecomposition}, TyUsePureEnc};
+use crate::encoders::{ty::{data::TySpecifics, generics::GArgsTyEnc, lifted::{TyConstructorEnc, TypeOfEnc}, RustTyDecomposition}, TyUsePureEnc};
 
 /// The list of defined parameters in a given context. E.g. the type parameters
 /// `T` and `U` in the body of the function `fn foo<T, U>(t: T) -> U { ... }`
@@ -43,27 +43,29 @@ impl<'tcx> GParams<'tcx> {
     /// Tries to normalize associated types of the corresponding type. Returns
     /// `Some` if managed to normalize (or there were no associated types), else
     /// returns None.
-    pub fn try_normalize(self, tcx: ty::TyCtxt<'tcx>, ty: ty::Ty<'tcx>) -> Option<ty::Ty<'tcx>> {
+    pub fn try_normalize(self, ty: ty::Ty<'tcx>) -> Option<ty::Ty<'tcx>> {
         use prusti_rustc_interface::{middle::ty, trait_selection::{infer::{InferCtxt, TyCtxtInferExt}, traits::{ObligationCause, NormalizeExt, ScrubbedTraitError, TraitEngine, TraitEngineExt}}};
-        // Normalize associated types
-        let ifctxt: InferCtxt = tcx.infer_ctxt().build(ty::TypingMode::PostAnalysis);
-        let mut fulfill_cx = <dyn TraitEngine<ScrubbedTraitError> as TraitEngineExt<ScrubbedTraitError>>::new(&ifctxt);
-        // TODO: is this correct?
-        let kinds = self.params.iter().map(|param| match param.kind() {
-            ty::GenericArgKind::Lifetime(_) => ty::BoundVariableKind::Region(ty::BoundRegionKind::Anon),
-            ty::GenericArgKind::Type(_) => ty::BoundVariableKind::Ty(ty::BoundTyKind::Anon),
-            ty::GenericArgKind::Const(_) => ty::BoundVariableKind::Const,
-        }).collect::<Vec<_>>();
-        let kinds = tcx.mk_bound_variable_kinds(&kinds);
-        let ty = ty::Binder::bind_with_vars(ty, kinds);
-        let nty = ifctxt.at(&ObligationCause::dummy(), self.env).deeply_normalize(ty, &mut *fulfill_cx);
-        nty.ok().map(|nty| nty.skip_binder())
+        vir::with_vcx(|vcx| {
+            // Normalize associated types
+            let ifctxt: InferCtxt = vcx.tcx().infer_ctxt().build(ty::TypingMode::PostAnalysis);
+            let mut fulfill_cx = <dyn TraitEngine<ScrubbedTraitError> as TraitEngineExt<ScrubbedTraitError>>::new(&ifctxt);
+            // TODO: is this correct?
+            let kinds = self.params.iter().map(|param| match param.kind() {
+                ty::GenericArgKind::Lifetime(_) => ty::BoundVariableKind::Region(ty::BoundRegionKind::Anon),
+                ty::GenericArgKind::Type(_) => ty::BoundVariableKind::Ty(ty::BoundTyKind::Anon),
+                ty::GenericArgKind::Const(_) => ty::BoundVariableKind::Const,
+            }).collect::<Vec<_>>();
+            let kinds = vcx.tcx().mk_bound_variable_kinds(&kinds);
+            let ty = ty::Binder::bind_with_vars(ty, kinds);
+            let nty = ifctxt.at(&ObligationCause::dummy(), self.env).deeply_normalize(ty, &mut *fulfill_cx);
+            nty.ok().map(|nty| nty.skip_binder())
+        })
     }
 
     /// Same as `try_normalize`, but returns the argument type if it failed to
     /// normalize it.
-    pub fn normalize(self, tcx: ty::TyCtxt<'tcx>, ty: ty::Ty<'tcx>) -> ty::Ty<'tcx> {
-        self.try_normalize(tcx, ty).unwrap_or(ty)
+    pub fn normalize(self, ty: ty::Ty<'tcx>) -> ty::Ty<'tcx> {
+        self.try_normalize(ty).unwrap_or(ty)
     }
 
     fn params<T>(self, f: impl Fn(ty::GenericArg<'tcx>) -> Option<T>) -> impl Iterator<Item = (usize, T)> {
@@ -190,10 +192,10 @@ impl TaskEncoder for GenericParamsEnc {
         task_key: &Self::TaskKey<'vir>,
         deps: &mut TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self> {
-        deps.emit_output_ref(*task_key, ()).unwrap();
+        deps.emit_output_ref(*task_key, ())?;
         vir::with_vcx(|vcx| {
             let sanitize = |name: symbol::Symbol, index: u32|
-                vir::ViperIdent::sanitize(vcx, &format!("{name}{index}")).to_str();
+                vir::ViperIdent::sanitize(vcx, &format!("{name}${index}")).to_str();
 
             let mut indicies = vec![Ok(usize::MAX); task_key.params.len()];
             let ty_decls = task_key.ty_params().enumerate().map(|(i, (gi, param))| {
@@ -205,7 +207,7 @@ impl TaskEncoder for GenericParamsEnc {
 
             let const_decls = task_key.const_params().enumerate().map(|(i, (gi, p, ty))| {
                 indicies[gi] = Err(i);
-                let ty = RustTyDecomposition::from_ty(vcx.tcx(), ty, *task_key);
+                let ty = RustTyDecomposition::from_ty(ty, *task_key);
                 let lifted_const = deps.require_ref::<TyUsePureEnc>(ty)?;
                 Ok(vcx.mk_local_decl(sanitize(p.name, p.index), lifted_const.snapshot.downcast_ty()))
             }).collect::<Result<Vec<_>, _>>()?;

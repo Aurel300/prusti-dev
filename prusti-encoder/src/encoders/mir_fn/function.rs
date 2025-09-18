@@ -2,7 +2,7 @@ use prusti_rustc_interface::{middle::ty, span::def_id::DefId};
 use task_encoder::{EncodeFullResult, OutputRefAny, TaskEncoder, TaskEncoderDependencies};
 use vir::{FunctionIdn, Reify};
 
-use crate::encoders::{mir_fn::{CallTaskDescription, RustSignature}, ty::{generics::{GArgCaster, GArgsCastEnc, GArgsTy, GArgsTyEnc, GParams, GenericParamsEnc}, RustTyDecompose}, MirLocalDefEnc, MirPureEnc, MirPureEncTask, MirSpecEnc, Pure, PureKind};
+use crate::encoders::{mir_fn::{CallTaskDescription, RustSignature}, ty::{generics::{GArgCaster, GArgsCastEnc, GArgsTy, GArgsTyEnc, GParams, GenericParamsEnc}}, MirLocalDefEnc, MirPureEnc, MirPureEncTask, MirSpecEnc, Pure, PureKind};
 
 // Function wrapper
 
@@ -41,17 +41,16 @@ impl TaskEncoder for FunctionCallEnc {
         task_key: &Self::TaskKey<'vir>,
         deps: &mut TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self> {
-        deps.emit_output_ref(*task_key, ()).unwrap();
-        let function_ref = deps.require_ref::<FunctionEnc>(task_key.callee).unwrap();
-        let tcx = vir::with_vcx(|vcx| vcx.tcx());
-        let signature = RustSignature::new(tcx, task_key.callee);
-        let ty_args = deps.require_dep::<GArgsTyEnc>(task_key.gargs).unwrap();
+        deps.emit_output_ref(*task_key, ())?;
+        let function_ref = deps.require_ref::<FunctionEnc>(task_key.callee)?;
+        let signature = RustSignature::new(task_key.callee);
+        let ty_args = deps.require_dep::<GArgsTyEnc>(task_key.gargs)?;
         let inputs = signature.inputs.iter().map(|ty| {
-            let normalized = ty.decompose_compare_normalize(tcx, signature.gparams, task_key.gargs);
-            deps.require_dep::<GArgsCastEnc<Pure>>(normalized).unwrap()
-        }).collect();
-        let normalized = signature.output.decompose_compare_normalize(tcx, signature.gparams, task_key.gargs);
-        let output = deps.require_dep::<GArgsCastEnc<Pure>>(normalized).unwrap();
+            let normalized = ty.decompose_compare_normalize(signature.gparams, task_key.gargs);
+            deps.require_dep::<GArgsCastEnc<Pure>>(normalized)
+        }).collect::<Result<Vec<_>, _>>()?;
+        let normalized = signature.output.decompose_compare_normalize(signature.gparams, task_key.gargs);
+        let output = deps.require_dep::<GArgsCastEnc<Pure>>(normalized)?;
         Ok(((), FunctionCallEncOutput { function: function_ref, ty_args, inputs, output }))
     }
 
@@ -100,8 +99,7 @@ impl TaskEncoder for FunctionEnc {
             let def_id = *task_key;
             let trusted = crate::encoders::is_function_trusted(def_id);
             let local_defs = deps
-                .require_dep::<MirLocalDefEnc>((def_id, true))
-                .unwrap();
+                .require_dep::<MirLocalDefEnc>((def_id, true))?;
 
             tracing::debug!("encoding {def_id:?}");
 

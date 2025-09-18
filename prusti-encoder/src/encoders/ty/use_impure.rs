@@ -5,7 +5,7 @@ use prusti_rustc_interface::{
 use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 use vir::PredicateIdn;
 
-use crate::encoders::{ty::{generics::{GArgs, GArgsCastEnc, GArgsTyEnc, GParams}, RustTy, RustTyDatas, RustTyDecompose, RustTyEnum, RustTyStruct}, Impure};
+use crate::encoders::{ty::{generics::{GArgs, GArgsCastEnc, GArgsTyEnc, GParams}, LazyRustTy, RustTy, RustTyDatas}, Impure};
 
 use super::{
     generics::{GArgCaster, GArgsTy},
@@ -109,7 +109,6 @@ impl TaskEncoder for TyUseImpureEnc {
 }
 
 struct TyUseImpureWalker<'a, 'vir> {
-    tcx: ty::TyCtxt<'vir>,
     deps: &'a mut TaskEncoderDependencies<'vir, TyUseImpureEnc>,
     args_t: GArgsTy<'vir>,
     args: GArgs<'vir>,
@@ -117,9 +116,8 @@ struct TyUseImpureWalker<'a, 'vir> {
 
 impl<'a, 'vir> TyUseImpureWalker<'a, 'vir> {
     fn new(deps: &'a mut TaskEncoderDependencies<'vir, TyUseImpureEnc>, args: GArgs<'vir>) -> Self {
-        let tcx = vir::with_vcx(|vcx| vcx.tcx());
         let args_t = deps.require_dep::<GArgsTyEnc>(args).unwrap();
-        Self { tcx, deps, args_t, args }
+        Self { deps, args_t, args }
     }
 
     fn encode_ty(
@@ -149,10 +147,10 @@ impl<'a, 'vir> TyUseImpureWalker<'a, 'vir> {
 
     fn encode_normalized(
         &mut self,
-        decomposable: impl RustTyDecompose<'vir>,
+        inner: LazyRustTy<'vir>,
         params: GParams<'vir>,
     ) -> FieldCaster<'vir> {
-        let normalized = decomposable.decompose_compare_normalize(self.tcx, params, self.args);
+        let normalized = inner.decompose_compare_normalize(params, self.args);
         self.deps.require_dep::<GArgsCastEnc<Impure>>(normalized).unwrap()
     }
 

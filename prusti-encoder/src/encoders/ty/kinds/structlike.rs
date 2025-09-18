@@ -1,13 +1,13 @@
 use crate::encoders::{ty::{
-    data::{StructData, TyData, TyDatas}, impure::{ImpureTyDatas, PredicateBuilder, TyImpureEnc, TyImpureFieldData, TyImpureStruct}, pure::{AdtBuilder, PureTyDatas, TyPureData, TyPureEnc, TyPureFieldData, TyPureStruct, TyPureStructData}, use_pure::TyUsePureEnc, RustTyData, RustTyDatas, RustTyDecompose, RustTyStruct
+    data::{StructData, TyData, TyDatas}, impure::{ImpureTyDatas, PredicateBuilder, TyImpureEnc, TyImpureFieldData, TyImpureStruct}, pure::{AdtBuilder, PureTyDatas, TyPureData, TyPureEnc, TyPureFieldData, TyPureStruct, TyPureStructData}, use_pure::TyUsePureEnc, RustTyDatas
 }, TyUseImpureEnc};
 use prusti_rustc_interface::middle::ty::{TyKind, ParamTy};
 use task_encoder::{EncodeFullError, TaskEncoder, TaskEncoderDependencies};
 use vir::{vir_format, CastType, FunctionIdn, HasType, PredicateIdn};
 
 pub(crate) fn ty_pure<'vir>(
-    task_key: &RustTyData<'vir>,
-    data: &RustTyStruct<'vir>,
+    task_key: &TyData<'vir, RustTyDatas>,
+    data: &StructData<'vir, RustTyDatas>,
     deps: &mut TaskEncoderDependencies<'vir, TyPureEnc>,
     builder: &mut AdtBuilder<'vir>,
 ) -> Result<TyPureStruct<'vir>, EncodeFullError<'vir, TyPureEnc>> {
@@ -17,13 +17,13 @@ pub(crate) fn ty_pure<'vir>(
 pub(super) fn ty_pure_variant<'vir>(
     prefix: &str,
     discr: Option<vir::ExprCSnap<'vir>>,
-    task_key: &RustTyData<'vir>,
-    data: &RustTyStruct<'vir>,
+    task_key: &TyData<'vir, RustTyDatas>,
+    data: &StructData<'vir, RustTyDatas>,
     deps: &mut TaskEncoderDependencies<'vir, TyPureEnc>,
     builder: &mut AdtBuilder<'vir>,
 ) -> Result<TyPureStruct<'vir>, EncodeFullError<'vir, TyPureEnc>> {
     let field_tys = data.fields.iter().map(|f| {
-        let ty = f.decompose(builder.vcx.tcx(), task_key.params);
+        let ty = f.decompose(task_key.params);
         Ok(deps.require_ref::<TyUsePureEnc>(ty)?.snapshot)
     }).collect::<Result<Vec<_>, _>>()?;
     let field_tys = builder.vcx.alloc_slice(&field_tys);
@@ -84,7 +84,7 @@ pub(crate) fn ty_impure_variant<'vir>(
     EncodeFullError<'vir, TyImpureEnc>,
 > {
     let fields = data.fields.iter().map(|f| {
-        let ty = f.0.decompose(builder.vcx.tcx(), task_key.0.params);
+        let ty = f.0.decompose(task_key.0.params);
         deps.require_dep::<TyUseImpureEnc>(ty)
     }).collect::<Result<Vec<_>, _>>()?;
 

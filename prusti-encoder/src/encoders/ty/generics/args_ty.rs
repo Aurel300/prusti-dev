@@ -39,11 +39,10 @@ impl TaskEncoder for GArgsTyEnc {
         task_key: &Self::TaskKey<'vir>,
         deps: &mut TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self> {
-        deps.emit_output_ref(*task_key, ()).unwrap();
-        let vcx = vir::with_vcx(|vcx| vcx);
-        let params = deps.require_dep::<GenericParamsEnc>(task_key.context).unwrap();
+        deps.emit_output_ref(*task_key, ())?;
+        let params = deps.require_dep::<GenericParamsEnc>(task_key.context)?;
         let ty_args = task_key.args.iter().copied().filter_map(ty::GenericArg::as_type).map(|arg| {
-            let decomp = RustTyDecomposition::from_ty(vcx.tcx(), arg, task_key.context);
+            let decomp = RustTyDecomposition::from_ty(arg, task_key.context);
             params.ty_expr(deps, decomp)
         }).collect::<Vec<_>>();
         let const_args = task_key.args.iter().copied().enumerate()
@@ -53,10 +52,10 @@ impl TaskEncoder for GArgsTyEnc {
                 let task = ConstEncTask::Ty { const_, ty, context: task_key.context };
                 deps.require_dep::<ConstEnc>(task)
             }).collect::<Result<Vec<_>, _>>()?;
-        let args = GArgsTy {
+        let args = vir::with_vcx(|vcx| GArgsTy {
             ty_args: vcx.alloc_slice(&ty_args),
             const_args: vcx.alloc_slice(&const_args),
-        };
+        });
         Ok(((), args))
     }
 }

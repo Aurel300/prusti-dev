@@ -166,9 +166,6 @@ impl TaskEncoder for TyPureEnc {
         task_key: &Self::TaskKey<'vir>,
         deps: &mut TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self> {
-        // TODO: remove this line
-        let task_key: &RustTy<'vir> = task_key;
-
         vir::with_vcx(|vcx| {
             let mut builder = TyPureBuilder::new(deps, vcx, *task_key);
             let output_ref = builder.output_ref();
@@ -227,6 +224,7 @@ impl TaskEncoder for TyPureEnc {
     }
 }
 
+#[repr(transparent)]
 pub(crate) struct DomainBuilder<'vir>(TyPureBuilder<'vir>);
 
 impl<'vir> DomainBuilder<'vir> {
@@ -267,7 +265,6 @@ impl<'vir> Deref for AdtBuilder<'vir> {
 pub(crate) struct TyPureBuilder<'vir> {
     pub(crate) vcx: &'vir vir::VirCtxt<'vir>,
     name: &'vir str,
-    generics: Option<Vec<vir::LocalDeclTyVal<'vir>>>,
     domain_ident: vir::DomainIdnSnap<'vir>,
     self_type: vir::TypeSnap<'vir>,
     unreachable_to_snap: FunctionIdn<'vir, vir::ManyTyVal, vir::Snap>,
@@ -317,17 +314,12 @@ impl<'vir> TyPureBuilder<'vir> {
         TyPureBuilder {
             vcx,
             name,
-            generics: None,
             domain_ident,
             self_type,
             unreachable_to_snap,
             params,
             data: BuilderData::None,
         }
-    }
-
-    pub(crate) fn set_generics(&mut self, generics: Vec<vir::LocalDeclTyVal<'vir>>) {
-        self.generics = Some(generics);
     }
 
     pub(crate) fn self_type(&self) -> vir::TypeCSnap<'vir> {

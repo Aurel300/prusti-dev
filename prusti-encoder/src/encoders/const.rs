@@ -39,7 +39,6 @@ pub struct ConstEnc;
 
 impl ConstEnc {
     fn encode_ty_const<'vir>(
-        vcx: &'vir vir::VirCtxt<'vir>,
         deps: &mut TaskEncoderDependencies<'vir, Self>,
         const_: ty::Const<'vir>,
         ty: ty::Ty<'vir>,
@@ -51,21 +50,20 @@ impl ConstEnc {
                 Ok(params.const_expr(param))
             }
             ty::ConstKind::Value(val) => {
-                let val = vcx.tcx().valtree_to_const_val(val);
-                Self::encode_const_val(vcx, deps, val, ty, context)
+                let val = vir::with_vcx(|vcx| vcx.tcx().valtree_to_const_val(val));
+                Self::encode_const_val(deps, val, ty, context)
             }
             k => todo!("const kind {k:?}"),
         }
     }
 
     fn encode_const_val<'vir>(
-        vcx: &'vir vir::VirCtxt<'vir>,
         deps: &mut TaskEncoderDependencies<'vir, Self>,
         val: ConstValue<'vir>,
         ty: ty::Ty<'vir>,
         context: GParams<'vir>
     ) -> Result<vir::ExprCSnap<'vir>, EncodeFullError<'vir, Self>> {
-        let ty_task = RustTyDecomposition::from_ty(vcx.tcx(), ty, context);
+        let ty_task = RustTyDecomposition::from_ty(ty, context);
         let kind = deps
             .require_dep::<TyUsePureEnc>(ty_task)?;
         Ok(match val {
@@ -76,7 +74,7 @@ impl ConstEnc {
                 (prim.prim_to_snap)(val)
             }
             ConstValue::Scalar(Scalar::Ptr(ptr, _)) => {
-                match vcx.tcx().global_alloc(ptr.provenance.alloc_id()) {
+                match vir::with_vcx(|vcx| vcx.tcx().global_alloc(ptr.provenance.alloc_id())) {
                     GlobalAlloc::Function { .. } => todo!(),
                     GlobalAlloc::VTable(_, _) => todo!(),
                     GlobalAlloc::Static(_) => todo!(),
@@ -99,14 +97,14 @@ impl ConstEnc {
             ConstValue::Slice { .. } if ty.peel_refs().is_str() => {
                 let ref_ty = kind.expect_immref();
                 let str_ty = ty.peel_refs();
-                let str_ty_task = RustTyDecomposition::from_ty(vcx.tcx(), str_ty, context);
+                let str_ty_task = RustTyDecomposition::from_ty(str_ty, context);
                 let str_snap = deps
                     .require_dep::<TyUsePureEnc>(str_ty_task)?;
                 let str_snap = str_snap.expect_opaque();
                 // first, we create a string snapshot
                 let snap = (str_snap.arbitrary)().upcast_ty();
                 // wrap it in a ref
-                ref_ty.prim_to_snap(vcx.mk_null(), snap)
+                vir::with_vcx(|vcx| ref_ty.prim_to_snap(vcx.mk_null(), snap))
             }
             ConstValue::Slice { .. } => todo!("ConstValue::Slice: {ty:?}"),
             ConstValue::Indirect { .. } => todo!("ConstValue::Indirect"),
@@ -130,30 +128,28 @@ impl TaskEncoder for ConstEnc {
         deps: &mut TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self> {
         deps.emit_output_ref(*task_key, ())?;
-        vir::with_vcx(|vcx| {
-            let res = match *task_key {
-                ConstEncTask::Ty { const_, ty, context } => {
-                    Self::encode_ty_const(vcx, deps, const_, ty, context)?
-                }
-                ConstEncTask::Mir { const_, encoding_depth, def_id } => match const_ {
-                    mir::Const::Val(val, ty) => Self::encode_const_val(vcx, deps, val, ty, def_id.into())?,
-                    mir::Const::Unevaluated(uneval, _) => {
-                        let task = MirPureEncTask {
-                            encoding_depth: encoding_depth + 1,
-                            parent_def_id: uneval.def,
-                            param_env: vcx.tcx().param_env(uneval.def),
-                            substs: ty::List::identity_for_item(vcx.tcx(), uneval.def),
-                            kind: PureKind::Constant(uneval.promoted.unwrap()),
-                            caller_def_id: Some(def_id),
-                        };
-                        let expr = deps.require_dep::<MirPureEnc>(task)?.expr;
-                        use vir::Reify;
-                        expr.reify(vcx, (uneval.def, &[])).downcast_ty()
-                    },
-                    mir::Const::Ty(ty, const_) => Self::encode_ty_const(vcx, deps, const_, ty, def_id.into())?,
-                }
-            };
-            Ok(((), res))
-        })
+        let res = match *task_key {
+            ConstEncTask::Ty { const_, ty, context } => {
+                Self::encode_ty_const(deps, const_, ty, context)?
+            }
+            ConstEncTask::Mir { const_, encoding_depth, def_id } => match const_ {
+                mir::Const::Val(val, ty) => Self::encode_const_val(deps, val, ty, def_id.into())?,
+                mir::Const::Unevaluated(uneval, _) => vir::with_vcx(|vcx| {
+                    let task = MirPureEncTask {
+                        encoding_depth: encoding_depth + 1,
+                        parent_def_id: uneval.def,
+                        param_env: vcx.tcx().param_env(uneval.def),
+                        substs: ty::List::identity_for_item(vcx.tcx(), uneval.def),
+                        kind: PureKind::Constant(uneval.promoted.unwrap()),
+                        caller_def_id: Some(def_id),
+                    };
+                    let expr = deps.require_dep::<MirPureEnc>(task)?.expr;
+                    use vir::Reify;
+                    Ok(expr.reify(vcx, (uneval.def, &[])).downcast_ty())
+                })?,
+                mir::Const::Ty(ty, const_) => Self::encode_ty_const(deps, const_, ty, def_id.into())?,
+            }
+        };
+        Ok(((), res))
     }
 }

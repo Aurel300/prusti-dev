@@ -118,9 +118,6 @@ impl TaskEncoder for TyImpureEnc {
         task_key: &Self::TaskKey<'vir>,
         deps: &mut TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self> {
-        // TODO: remove this line
-        let task_key: &RustTy<'vir> = task_key;
-
         deps.emit_output_ref(*task_key, ())?;
         let snap = deps.require_dep::<TyPureEnc>(*task_key)?;
         let snapshot = (snap.domain)();

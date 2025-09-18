@@ -1,12 +1,12 @@
 use crate::encoders::ty::{
-    impure::{ImpureTyDatas, PredicateBuilder, TyImpureEnc, TyImpureMutRef, TyImpureMutRefData}, pure::{AdtBuilder, PureTyDatas, TyPureEnc, TyPureMutRef, TyPureMutRefData}, RustTyDatas, RustTyMutRef
+    impure::{ImpureTyDatas, PredicateBuilder, TyImpureEnc, TyImpureMutRef, TyImpureMutRefData}, pure::{AdtBuilder, PureTyDatas, TyPureEnc, TyPureMutRef, TyPureMutRefData}, RustTyDatas, RustMutRef
 };
 use prusti_rustc_interface::middle::ty;
 use task_encoder::{EncodeFullError, TaskEncoder, TaskEncoderDependencies};
 use vir::{CastType, HasType};
 
 pub(crate) fn ty_pure<'vir>(
-    _data: &RustTyMutRef<'vir>,
+    _data: &RustMutRef<'vir>,
     _deps: &mut TaskEncoderDependencies<'vir, TyPureEnc>,
     builder: &mut AdtBuilder<'vir>,
 ) -> Result<TyPureMutRef<'vir>, EncodeFullError<'vir, TyPureEnc>> {
@@ -20,7 +20,7 @@ pub(crate) fn ty_pure<'vir>(
 }
 
 pub(crate) fn ty_impure<'vir>(
-    data: &(&RustTyMutRef<'vir>, &TyPureMutRef<'vir>),
+    data: &(&RustMutRef<'vir>, &TyPureMutRef<'vir>),
     _deps: &mut TaskEncoderDependencies<'vir, TyImpureEnc>,
     builder: &mut PredicateBuilder<'vir>,
 ) -> Result<

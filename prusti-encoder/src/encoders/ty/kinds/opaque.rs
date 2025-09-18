@@ -1,10 +1,10 @@
 use crate::encoders::ty::{
-    impure::{ImpureTyDatas, PredicateBuilder, TyImpureEnc, TyImpureOpaque}, pure::{DomainBuilder, PureTyDatas, TyPureEnc, TyPureOpaque, TyPureOpaqueData}, RustTyDatas, RustTyOpaque
+    impure::{ImpureTyDatas, PredicateBuilder, TyImpureEnc, TyImpureOpaque}, pure::{DomainBuilder, PureTyDatas, TyPureEnc, TyPureOpaque, TyPureOpaqueData}, RustTyDatas, RustOpaque
 };
 use task_encoder::{EncodeFullError, TaskEncoderDependencies};
 
 pub(crate) fn ty_pure<'vir>(
-    _data: &RustTyOpaque<'vir>,
+    _data: &RustOpaque<'vir>,
     _deps: &mut TaskEncoderDependencies<'vir, TyPureEnc>,
     builder: &mut DomainBuilder<'vir>,
 ) -> Result<TyPureOpaque<'vir>, EncodeFullError<'vir, TyPureEnc>> {
@@ -13,7 +13,7 @@ pub(crate) fn ty_pure<'vir>(
 }
 
 pub(crate) fn ty_impure<'vir>(
-    _data: &(&RustTyOpaque<'vir>, &TyPureOpaque<'vir>),
+    _data: &(&RustOpaque<'vir>, &TyPureOpaque<'vir>),
     _deps: &mut TaskEncoderDependencies<'vir, TyImpureEnc>,
     builder: &mut PredicateBuilder<'vir>,
 ) -> Result<TyImpureOpaque<'vir>, EncodeFullError<'vir, TyImpureEnc>> {

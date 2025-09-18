@@ -5,7 +5,7 @@ use prusti_rustc_interface::{
     middle::ty,
 };
 
-use crate::encoders::{ty::{generics::{GArgs, GArgsCastEnc, GArgsTyEnc, GParams}, RustTy, RustTyDatas, RustTyDecompose, RustTyEnum, RustTyStruct}, Pure};
+use crate::encoders::{ty::{generics::{GArgs, GArgsCastEnc, GArgsTyEnc, GParams}, LazyRustTy, RustTy, RustTyDatas}, Pure};
 
 use super::{
     generics::{GArgCaster, GArgsTy},
@@ -97,7 +97,7 @@ impl TaskEncoder for TyUsePureEnc {
         deps: &mut task_encoder::TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self> {
         let ty_pure_ref = deps.require_ref::<TyPureEnc>(task_key.ty)?;
-        let args = deps.require_dep::<GArgsTyEnc>(task_key.args).unwrap();
+        let args = deps.require_dep::<GArgsTyEnc>(task_key.args)?;
         let snapshot = (ty_pure_ref.domain)();
         let inner = TyUsePureRef { args, snapshot, ty_pure_ref };
         deps.emit_output_ref(*task_key, inner)?;
@@ -116,7 +116,6 @@ impl TaskEncoder for TyUsePureEnc {
 }
 
 struct TyUsePureWalker<'a, 'vir> {
-    tcx: ty::TyCtxt<'vir>,
     deps: &'a mut task_encoder::TaskEncoderDependencies<'vir, TyUsePureEnc>,
     args_t: GArgsTy<'vir>,
     args: GArgs<'vir>,
@@ -124,9 +123,8 @@ struct TyUsePureWalker<'a, 'vir> {
 
 impl<'a, 'vir> TyUsePureWalker<'a, 'vir> {
     fn new(deps: &'a mut task_encoder::TaskEncoderDependencies<'vir, TyUsePureEnc>, args: GArgs<'vir>) -> Self {
-        let tcx = with_vcx(|vcx| vcx.tcx());
         let args_t = deps.require_dep::<GArgsTyEnc>(args).unwrap();
-        TyUsePureWalker { tcx, deps, args_t, args }
+        TyUsePureWalker { deps, args_t, args }
     }
 
     fn encode_ty(&mut self, ty: TyData<'vir, (RustTyDatas, PureTyDatas)>) -> TySpecifics<'vir, UsePureTyDatas> {
@@ -151,10 +149,10 @@ impl<'a, 'vir> TyUsePureWalker<'a, 'vir> {
 
     fn encode_normalized(
         &mut self,
-        decomposable: impl RustTyDecompose<'vir>,
+        inner: LazyRustTy<'vir>,
         params: GParams<'vir>,
     ) -> FieldCaster<'vir> {
-        let normalized = decomposable.decompose_compare_normalize(self.tcx, params, self.args);
+        let normalized = inner.decompose_compare_normalize(params, self.args);
         self.deps.require_dep::<GArgsCastEnc<Pure>>(normalized).unwrap()
     }
 

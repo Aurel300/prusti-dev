@@ -12,7 +12,7 @@ use crate::encoders::{
 use super::GenericParamsEnc;
 
 #[derive(Debug, Clone, Copy)]
-pub struct GArgCasters<'vir, P: PurityC> {
+pub(super) struct GArgCasters<'vir, P: PurityCasters> {
     pub(super) make_generic: P::MakeGeneric<'vir>,
     pub(super) make_concrete: P::MakeConcrete<'vir>,
 }
@@ -22,24 +22,24 @@ pub struct GArgCasters<'vir, P: PurityC> {
 /// a Rust expression with that type to its concrete representation, and
 /// vice-versa. If the provided type is generic, it does nothing, returning
 /// [`CastFunctions::AlreadyGeneric`].
-pub struct CastersEnc<T>(PhantomData<T>);
+pub(super) struct CastersEnc<T>(PhantomData<T>);
 
-pub trait PurityC: Purity {
+pub(super) trait PurityCasters: Purity {
     type MakeGeneric<'vir>: Debug + Clone + Copy;
     type MakeConcrete<'vir>: Debug + Clone + Copy;
 }
 
-impl PurityC for Pure {
+impl PurityCasters for Pure {
     type MakeGeneric<'vir> = FunctionIdn<'vir, (vir::CSnap, vir::ManyTyVal, vir::ManyCSnap), vir::PSnap>;
     type MakeConcrete<'vir> = FunctionIdn<'vir, (vir::PSnap, vir::ManyTyVal, vir::ManyCSnap), vir::CSnap>;
 }
 
-impl PurityC for Impure {
+impl PurityCasters for Impure {
     type MakeGeneric<'vir> = MethodIdn<'vir, (vir::Ref, vir::ManyTyVal, vir::ManyCSnap)>;
     type MakeConcrete<'vir> = MethodIdn<'vir, (vir::Ref, vir::ManyTyVal, vir::ManyCSnap)>;
 }
 
-impl<'vir, P: PurityC> task_encoder::OutputRefAny for GArgCasters<'vir, P> {}
+impl<'vir, P: PurityCasters> task_encoder::OutputRefAny for GArgCasters<'vir, P> {}
 
 impl TaskEncoder for CastersEnc<Pure> {
     task_encoder::encoder_cache!(CastersEnc<Pure>);
@@ -67,7 +67,7 @@ impl TaskEncoder for CastersEnc<Pure> {
             let self_ty = (domain_ref.domain)().downcast_ty();
             let base_name = concrete.name();
             let ty_constructor = deps.require_ref::<TyConstructorEnc>(concrete)?;
-            let generics = deps.require_dep::<GenericParamsEnc>(concrete.params).unwrap();
+            let generics = deps.require_dep::<GenericParamsEnc>(concrete.params)?;
 
             let make_generic_ident = FunctionIdn::new(
                 vir::vir_format_identifier!(vcx, "make_generic_s_{base_name}"),
@@ -191,7 +191,7 @@ impl TaskEncoder for CastersEnc<Impure> {
             let generic_ref = deps.require_dep::<TyImpureEnc>(param)?;
             let base_name = concrete.name();
             let ty_constructor = deps.require_ref::<TyConstructorEnc>(concrete)?;
-            let generics = deps.require_dep::<GenericParamsEnc>(concrete.params).unwrap();
+            let generics = deps.require_dep::<GenericParamsEnc>(concrete.params)?;
 
             let make_generic_ident = MethodIdn::new(
                 vir::vir_format_identifier!(vcx, "make_generic_{base_name}"),

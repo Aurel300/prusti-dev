@@ -24,11 +24,11 @@ impl<'tcx> GArgs<'tcx> {
     }
 
     /// Substitutes type arguments and try to normalize associated types
-    pub fn normalize(self, tcx: ty::TyCtxt<'tcx>, ty: ty::Ty<'tcx>) -> ty::Ty<'tcx> {
+    pub fn normalize(self, ty: ty::Ty<'tcx>) -> ty::Ty<'tcx> {
         // Substitute type parameters
-        let ty = ty::EarlyBinder::bind(ty).instantiate(tcx, self.args);
+        let ty = vir::with_vcx(|vcx| ty::EarlyBinder::bind(ty).instantiate(vcx.tcx(), self.args));
         // Normalize associated types
-        self.context.normalize(tcx, ty)
+        self.context.normalize(ty)
     }
 
     pub fn expect_param(self) -> ty::ParamTy {

@@ -120,24 +120,25 @@ impl TaskEncoder for MirLocalDefEnc {
             }
         }
 
+        let trusted = crate::encoders::spec::is_function_trusted(def_id);
         vir::with_vcx(|vcx| {
+            // TODO: refactor this a bit: split into one encoder for arguments (only)
+            //   and one for locals (only)
             let substs = ty::GenericArgs::identity_for_item(vcx.tcx(), def_id);
-            let caller_def_id = None;
-            let trusted = crate::encoders::spec::is_function_trusted(def_id);
             let data = if !trusted
                 && let Some(local_def_id) = def_id.as_local()
                 && is_function_with_body(vcx.tcx(), def_id)
             {
                 let body = vcx
                     .body_mut()
-                    .get_impure_fn_body(local_def_id, substs, caller_def_id);
+                    .get_impure_fn_body(local_def_id, substs, None);
                 deps.emit_output_ref(*task_key, MirLocalDefEncOutputRef {
                     arg_count: body.arg_count,
                 })?;
                 let locals = IndexVec::from_fn_n(
                     |local: mir::Local| {
                         let rust_ty = body.local_decls[local].ty;
-                        let rust_ty_task = RustTyDecomposition::from_ty(vcx.tcx(), rust_ty, def_id);
+                        let rust_ty_task = RustTyDecomposition::from_ty(rust_ty, def_id);
                         let ty = deps
                             .require_dep::<TyUseImpureEnc>(rust_ty_task)
                             .unwrap();
@@ -156,7 +157,7 @@ impl TaskEncoder for MirLocalDefEnc {
                 }
             } else {
                 let typing_env =
-                    ty::TypingEnv::post_analysis(vcx.tcx(), caller_def_id.unwrap_or(def_id));
+                    ty::TypingEnv::post_analysis(vcx.tcx(), def_id);
                 let sig = vcx.tcx().instantiate_and_normalize_erasing_regions(
                     substs,
                     typing_env,
@@ -175,7 +176,7 @@ impl TaskEncoder for MirLocalDefEnc {
                         } else {
                             sig.inputs()[local.index() - 1]
                         };
-                        let rust_ty_task = RustTyDecomposition::from_ty(vcx.tcx(), rust_ty, def_id);
+                        let rust_ty_task = RustTyDecomposition::from_ty(rust_ty, def_id);
                         let ty = deps.require_dep::<TyUseImpureEnc>(rust_ty_task)?;
                         Ok(mk_local_def(vcx, local, ty, rust_ty))
                     })

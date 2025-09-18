@@ -1,11 +1,9 @@
-use std::alloc::Global;
-
 use pcg::{borrow_checker::r#impl::NllBorrowCheckerImpl, r#loop::LoopAnalysis};
 use prusti_rustc_interface::{middle::{ty, mir}, span::def_id::DefId};
 use task_encoder::{EncodeFullResult, OutputRefAny, TaskEncoder, TaskEncoderDependencies};
 use vir::MethodIdn;
 
-use crate::{encoders::{mir_fn::{CallTaskDescription, RustSignature}, ty::{generics::{GArgCaster, GArgsCastEnc, GArgsTy, GArgsTyEnc, GParams, GenericParamsEnc}, RustTyDecompose}, Impure, ImpureEncVisitor, MirLocalDefEnc, MirSpecEnc, WandEnc, WandEncTask}, trait_support::is_function_with_body};
+use crate::{encoders::{mir_fn::{CallTaskDescription, RustSignature}, ty::{generics::{GArgCaster, GArgsCastEnc, GArgsTy, GArgsTyEnc, GParams, GenericParamsEnc}}, Impure, ImpureEncVisitor, MirLocalDefEnc, MirSpecEnc, WandEnc, WandEncTask}, trait_support::is_function_with_body};
 
 // Method wrapper
 
@@ -53,17 +51,16 @@ impl TaskEncoder for MethodCallEnc {
         task_key: &Self::TaskKey<'vir>,
         deps: &mut TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self> {
-        deps.emit_output_ref(*task_key, ()).unwrap();
-        let method_ref = deps.require_ref::<MethodEnc>(task_key.callee).unwrap();
-        let tcx = vir::with_vcx(|vcx| vcx.tcx());
-        let signature = RustSignature::new(tcx, task_key.callee);
-        let ty_args = deps.require_dep::<GArgsTyEnc>(task_key.gargs).unwrap();
+        deps.emit_output_ref(*task_key, ())?;
+        let method_ref = deps.require_ref::<MethodEnc>(task_key.callee)?;
+        let signature = RustSignature::new(task_key.callee);
+        let ty_args = deps.require_dep::<GArgsTyEnc>(task_key.gargs)?;
         let inputs = signature.inputs.iter().map(|ty| {
-            let normalized = ty.decompose_compare_normalize(tcx, signature.gparams, task_key.gargs);
-            deps.require_dep::<GArgsCastEnc<Impure>>(normalized).unwrap()
-        }).collect();
-        let normalized = signature.output.decompose_compare_normalize(tcx, signature.gparams, task_key.gargs);
-        let output = deps.require_dep::<GArgsCastEnc<Impure>>(normalized).unwrap();
+            let normalized = ty.decompose_compare_normalize(signature.gparams, task_key.gargs);
+            deps.require_dep::<GArgsCastEnc<Impure>>(normalized)
+        }).collect::<Result<Vec<_>, _>>()?;
+        let normalized = signature.output.decompose_compare_normalize(signature.gparams, task_key.gargs);
+        let output = deps.require_dep::<GArgsCastEnc<Impure>>(normalized)?;
         Ok(((), MethodCallEncOutput { method: method_ref, ty_args, inputs, output }))
     }
 
@@ -199,16 +196,6 @@ impl TaskEncoder for MethodEnc {
                     start_stmts.push(
                         vcx.mk_local_decl_stmt(vir::vir_local_decl! { vcx; [name_p] : Ref }, None),
                     )
-                }
-                // TODO: what is this for?
-                if false {
-                    start_stmts.extend((0..block_count).map(|block| {
-                        let name = vir::vir_format!(vcx, "_reach_bb{block}");
-                        vcx.mk_local_decl_stmt(
-                            vir::vir_local_decl! { vcx; [name] : Bool },
-                            Some(vcx.mk_bool::<false>()),
-                        )
-                    }));
                 }
                 // This will be overwritten later.
                 encoded_blocks.push(vcx.mk_cfg_block(

@@ -14,7 +14,7 @@ use prusti_rustc_interface::{hir, middle::ty};
 use task_encoder::TaskEncoder;
 
 use crate::encoders::{
-    ty::{generics::CastersEnc, lifted::{
+    ty::{generics::GArgsCastEnc, lifted::{
         TyConstructorEnc, TypeOfEnc,
     }}, Impure, Pure
 };
@@ -46,10 +46,10 @@ pub fn test_entrypoint<'tcx>(
     crate::encoders::MirBuiltinEnc::emit_outputs(&mut program);
 
     program.header("pure generic casts");
-    CastersEnc::<Pure>::emit_outputs(&mut program);
+    GArgsCastEnc::<Pure>::emit_outputs(&mut program);
 
     program.header("impure generic casts");
-    CastersEnc::<Impure>::emit_outputs(&mut program);
+    GArgsCastEnc::<Impure>::emit_outputs(&mut program);
     
     program.header("snapshots");
     crate::encoders::TyUsePureEnc::emit_outputs(&mut program);

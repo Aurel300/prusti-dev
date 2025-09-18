@@ -84,7 +84,8 @@ impl TaskEncoder for IndirectPredicatesEnc {
             match combined.specifics {
                 // Optimisation: if there are no type arguments, there cannot be
                 // anything behind a ref inside (except for 'static, which we
-                // ignore for now).
+                // ignore for now). Plus it skips unsupported types if they
+                // don't have lifetimes.
                 _ if ty.args.args().is_empty() => (),
                 TySpecifics::Primitive(_) | TySpecifics::ImmRef(_) => (),
                 // TODO: it's not valid to have nothing for these. We should fix

@@ -332,6 +332,7 @@ impl<'vir> PredicateBuilderInner<'vir> {
         vir::FunctionIdn::new(vir::ViperIdent::new(name), args, ret)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn mk_function<A: vir::Arity, T: vir::CompType>(
         &self,
         name: &str,
@@ -357,6 +358,7 @@ impl<'vir> PredicateBuilderInner<'vir> {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn function<A: vir::Arity, T: vir::CompType>(
         &mut self,
         name: &str,

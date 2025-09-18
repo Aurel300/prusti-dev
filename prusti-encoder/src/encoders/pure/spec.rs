@@ -18,6 +18,7 @@ pub struct MirSpecEnc;
 pub struct MirSpecEncOutput<'vir> {
     pub pres: Vec<vir::ExprBool<'vir>>,
     pub posts: Vec<vir::ExprBool<'vir>>,
+    #[allow(clippy::type_complexity)]
     pub pledges: Vec<(
         Option<(vir::ExprBool<'vir>, Span)>,
         vir::ExprBool<'vir>,

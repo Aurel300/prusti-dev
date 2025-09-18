@@ -1227,8 +1227,11 @@ pub fn encode_place_element<'vir, 'enc, T: TaskEncoder>(
                     let inner_ty = RustTyDecomposition::from_ty(*inner_ty, def_id);
                     let inner_ty_out = deps.require_dep::<TyUseImpureEnc>(inner_ty).unwrap();
                     let ref_expr = e_ty.deref_access(expr);
-                    let ref_val_expr =
-                        inner_ty_out.ref_to_snap(unsafe { std::mem::transmute(ref_expr) }); // TODO: hack...
+                    let ref_val_expr = inner_ty_out.ref_to_snap(unsafe {
+                        std::mem::transmute::<vir::ExprGenRef<'vir, _, _>, vir::ExprRef<'vir>>(
+                            ref_expr,
+                        )
+                    }); // TODO: hack...
                     (ref_val_expr.lift(), place_ref)
                 }
                 _ => unreachable!(),

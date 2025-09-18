@@ -81,20 +81,19 @@ pub(crate) fn ty_impure<'vir>(
     Ok(data)
 }
 
+pub(super) type ImpureVariant<'vir> = (
+    StructData<'vir, ImpureTyDatas>,
+    PredicateIdn<'vir, (vir::Ref, vir::ManyTyVal, vir::ManyCSnap)>,
+    vir::ExprCSnap<'vir>,
+);
+
 pub(crate) fn ty_impure_variant<'vir>(
     prefix: &str,
     task_key: &TyData<'vir, (RustTyDatas, PureTyDatas)>,
     data: &StructData<'vir, (RustTyDatas, PureTyDatas)>,
     deps: &mut TaskEncoderDependencies<'vir, TyImpureEnc>,
     builder: &mut PredicateBuilder<'vir>,
-) -> Result<
-    (
-        StructData<'vir, ImpureTyDatas>,
-        PredicateIdn<'vir, (vir::Ref, vir::ManyTyVal, vir::ManyCSnap)>,
-        vir::ExprCSnap<'vir>,
-    ),
-    EncodeFullError<'vir, TyImpureEnc>,
-> {
+) -> Result<ImpureVariant<'vir>, EncodeFullError<'vir, TyImpureEnc>> {
     let fields = data
         .fields
         .iter()

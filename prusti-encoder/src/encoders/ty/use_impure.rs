@@ -251,7 +251,7 @@ impl<'vir> TyUseImpureData<'vir> {
     }
 
     /// Constructs the Viper predicate application.
-    pub fn ref_to_pred_app<'tcx>(
+    pub fn ref_to_pred_app(
         &self,
         self_ref: vir::ExprRef<'vir>,
         perm: Option<vir::ExprPerm<'vir>>,
@@ -260,7 +260,7 @@ impl<'vir> TyUseImpureData<'vir> {
     }
 
     /// Calls the predicate (heap) dependent snapshot construction function.
-    pub fn ref_to_snap<'tcx>(&self, self_ref: vir::ExprRef<'vir>) -> vir::ExprSnap<'vir> {
+    pub fn ref_to_snap(&self, self_ref: vir::ExprRef<'vir>) -> vir::ExprSnap<'vir> {
         (self.impure.ref_to_snap)(self_ref, self.args.get_ty(), self.args.get_const())
     }
 

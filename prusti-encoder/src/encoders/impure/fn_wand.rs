@@ -228,6 +228,7 @@ impl<'vir> WandEncOutput<'vir> {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn mk_wand<'a, E: TaskEncoder>(
         &'a self,
         lhs: &[IndirectKey],
@@ -411,6 +412,7 @@ impl TaskEncoder for WandEnc {
                     || tcx.collect_referenced_late_bound_regions(fn_sig).is_empty()
             );
 
+            #[allow(clippy::needless_range_loop)]
             for i in 0..generics.count() {
                 let g = generics.param_at(i, tcx);
                 let key = match g.kind {

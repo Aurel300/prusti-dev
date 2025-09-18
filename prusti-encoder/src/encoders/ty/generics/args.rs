@@ -35,7 +35,9 @@ impl<'tcx> GArgs<'tcx> {
         assert_eq!(self.args.len(), 1);
         match self.args[0].expect_ty().kind() {
             ty::TyKind::Param(p) => *p,
-            _ => panic!("expected type parameter"),
+            // TODO: this needs to be changed to support type aliases
+            ty::TyKind::Alias(..) => panic!("type aliases are not currently supported"),
+            other => panic!("expected type parameter, {other:?}"),
         }
     }
 }

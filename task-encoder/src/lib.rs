@@ -132,7 +132,7 @@ pub trait TaskEncoder {
         format!("{task:?}")
     }
 
-    fn describe_error<'vir>(error: Self::EncodingError) -> String {
+    fn describe_error(error: Self::EncodingError) -> String {
         format!("{error:?}")
     }
 
@@ -494,6 +494,7 @@ pub trait TaskEncoder {
         outputs
     }
 
+    #[allow(clippy::type_complexity)]
     fn all_outputs_local<'vir>() -> (
         Vec<Self::OutputFullLocal<'vir>>,
         Vec<(

@@ -1,8 +1,5 @@
 use pcg::{borrow_checker::r#impl::NllBorrowCheckerImpl, r#loop::LoopAnalysis};
-use prusti_rustc_interface::{
-    middle::{mir, ty},
-    span::def_id::DefId,
-};
+use prusti_rustc_interface::{middle::mir, span::def_id::DefId};
 use task_encoder::{EncodeFullResult, OutputRefAny, TaskEncoder, TaskEncoderDependencies};
 use vir::MethodIdn;
 
@@ -175,16 +172,15 @@ impl TaskEncoder for MethodEnc {
             // wands in case of a reborrowing function.
             let mut pres = Vec::new();
             let mut posts = Vec::new();
-            let substs = ty::GenericArgs::identity_for_item(vcx.tcx(), def_id);
-            let spec =
-                deps.require_dep_spanned::<MirSpecEnc>((def_id, substs, None, false), span)?;
+            let spec = deps.require_dep_spanned::<MirSpecEnc>((def_id, false), span)?;
             let wands = deps.require_dep_spanned::<WandEnc>(WandEncTask { def_id }, span)?;
 
+            let gparams = GParams::from(def_id);
             // Add direct resources for inputs and outputs to the pre- and
             // postconditions, respectively. "Direct" here refers to owned
             // Viper resources that must be passed in/out given the signature,
             // without going through any dereferences.
-            let mut args = Vec::with_capacity(arg_count + substs.len());
+            let mut args = Vec::with_capacity(arg_count + gparams.count());
             for arg_idx in (0..arg_count).map(mir::Local::from) {
                 let name_p = arg_defs[arg_idx].local.name;
                 args.push(vir::vir_local_decl! { vcx; [name_p] : Ref });

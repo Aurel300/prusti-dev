@@ -32,10 +32,8 @@ impl TaskEncoder for MirSpecEnc {
     task_encoder::encoder_cache!(MirSpecEnc);
 
     type TaskDescription<'tcx> = (
-        DefId,                    // The function annotated with specs
-        ty::GenericArgsRef<'tcx>, // ? this should be the "signature", after applying the env/substs
-        Option<DefId>,            // ID of the caller function, if any
-        bool,                     // If to encode as pure or not
+        DefId, // The function annotated with specs
+        bool,  // If to encode as pure or not
     );
 
     type OutputFullDependency<'vir> = MirSpecEncOutput<'vir>;
@@ -50,7 +48,7 @@ impl TaskEncoder for MirSpecEnc {
         task_key: &Self::TaskKey<'vir>,
         deps: &mut TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self> {
-        let (def_id, substs, caller_def_id, pure) = *task_key;
+        let (def_id, pure) = *task_key;
         deps.emit_output_ref(*task_key, ())?;
 
         let local_defs =
@@ -59,6 +57,7 @@ impl TaskEncoder for MirSpecEnc {
             deps.require_dep::<crate::encoders::SpecEnc>(crate::encoders::SpecEncTask { def_id })?;
 
         vir::with_vcx(|vcx| {
+            let substs = ty::GenericArgs::identity_for_item(vcx.tcx(), def_id);
             let local_iter = (1..=local_defs.arg_count).map(mir::Local::from);
             let all_args: Vec<vir::ExprSnap<'vir>> = if pure {
                 let result_ty = local_defs[mir::RETURN_PLACE].local_snap.ty();

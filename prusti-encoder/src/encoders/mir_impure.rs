@@ -9,9 +9,9 @@ use pcg::{
         state::BorrowsState,
         unblock_graph::BorrowPcgUnblockAction,
     },
-    free_pcs::{CapabilityKind, RepackOp},
+    free_pcs::RepackOp,
     r#loop::LoopAnalysis,
-    pcg::{EvalStmtPhase, Pcg, PcgNode, PcgSuccessor},
+    pcg::{CapabilityKind, EvalStmtPhase, Pcg, PcgNode, PcgSuccessor},
     results::PcgBasicBlock,
     utils::{CompilerCtxt, HasPlace, Place, maybe_old::MaybeLabelledPlace},
 };
@@ -530,7 +530,6 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                     if crossed_ref {
                         use vir::Reify;
                         let (expr, _) = crate::encoders::mir_pure::encode_place_element(
-                            self.vcx,
                             self.deps,
                             self.def_id,
                             place_ty,

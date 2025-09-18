@@ -211,9 +211,9 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             return vir::OldLabel::Block(vir::CfgBlockLabelData::BasicBlock(bb.as_usize()));
         }
         let label_identifier = match at {
-            SnapshotLocation::Before(analysis_location) => "before",
-            SnapshotLocation::After(basic_block) => "after",
-            SnapshotLocation::BeforeRefReassignment(location) => "before_ref_reassignment",
+            SnapshotLocation::Before(..) => "before",
+            SnapshotLocation::After(..) => "after",
+            SnapshotLocation::BeforeRefReassignment(..) => "before_ref_reassignment",
             SnapshotLocation::Loop(_) | SnapshotLocation::BeforeJoin(_) => unreachable!(),
         };
         let location = at.location();

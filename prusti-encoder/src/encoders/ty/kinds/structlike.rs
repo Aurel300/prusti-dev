@@ -3,10 +3,8 @@ use crate::encoders::{
     ty::{
         RustTyDatas,
         data::{StructData, TyData},
-        impure::{ImpureTyDatas, PredicateBuilder, TyImpureEnc, TyImpureFieldData, TyImpureStruct},
-        pure::{
-            AdtBuilder, PureTyDatas, TyPureEnc, TyPureFieldData, TyPureStruct, TyPureStructData,
-        },
+        impure::{ImpureTyDatas, PredicateBuilder, TyImpureEnc, TyImpureFieldData},
+        pure::{AdtBuilder, PureTyDatas, TyPureEnc, TyPureFieldData, TyPureStructData},
         use_pure::TyUsePureEnc,
     },
 };
@@ -18,7 +16,7 @@ pub(crate) fn ty_pure<'vir>(
     data: &StructData<'vir, RustTyDatas>,
     deps: &mut TaskEncoderDependencies<'vir, TyPureEnc>,
     builder: &mut AdtBuilder<'vir>,
-) -> Result<TyPureStruct<'vir>, EncodeFullError<'vir, TyPureEnc>> {
+) -> Result<StructData<'vir, PureTyDatas>, EncodeFullError<'vir, TyPureEnc>> {
     ty_pure_variant("", None, task_key, data, deps, builder)
 }
 
@@ -29,7 +27,7 @@ pub(super) fn ty_pure_variant<'vir>(
     data: &StructData<'vir, RustTyDatas>,
     deps: &mut TaskEncoderDependencies<'vir, TyPureEnc>,
     builder: &mut AdtBuilder<'vir>,
-) -> Result<TyPureStruct<'vir>, EncodeFullError<'vir, TyPureEnc>> {
+) -> Result<StructData<'vir, PureTyDatas>, EncodeFullError<'vir, TyPureEnc>> {
     let field_tys = data
         .fields
         .iter()
@@ -47,7 +45,7 @@ pub(super) fn ty_pure_variant<'vir>(
             read: read.downcast_ty(),
         })
         .collect::<Vec<_>>();
-    Ok(TyPureStruct::new(
+    Ok(StructData::new(
         TyPureStructData {
             field_snaps_to_snap,
         },
@@ -60,7 +58,7 @@ pub(crate) fn ty_impure<'vir>(
     data: &StructData<'vir, (RustTyDatas, PureTyDatas)>,
     deps: &mut TaskEncoderDependencies<'vir, TyImpureEnc>,
     builder: &mut PredicateBuilder<'vir>,
-) -> Result<TyImpureStruct<'vir>, EncodeFullError<'vir, TyImpureEnc>> {
+) -> Result<StructData<'vir, ImpureTyDatas>, EncodeFullError<'vir, TyImpureEnc>> {
     let (data, self_pred, snap_expr) = ty_impure_variant("", task_key, data, deps, builder)?;
 
     let ref_self_decl = builder.ref_self_decl();

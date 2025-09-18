@@ -161,7 +161,7 @@ struct Update<'vir> {
 
 #[derive(Debug)]
 enum UpdateBind<'vir> {
-    Local(mir::Local, Version<'vir>, ExprRet<'vir>),
+    Local(#[allow(dead_code)] mir::Local, Version<'vir>, ExprRet<'vir>),
     Phi(Version<'vir>, ExprRet<'vir>),
 }
 
@@ -837,21 +837,13 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
         expr: ExprCRet<'vir>,
         place_ref: Option<ExprRetRef<'vir>>,
     ) -> (ExprRet<'vir>, Option<ExprRetRef<'vir>>) {
-        encode_place_element(
-            self.vcx,
-            self.deps,
-            self.def_id,
-            place_ty,
-            elem,
-            expr,
-            place_ref,
-        )
+        encode_place_element(self.deps, self.def_id, place_ty, elem, expr, place_ref)
     }
 
     fn encode_prusti_builtin(
         &mut self,
         def_id: DefId,
-        sig: Binder<'vir, FnSig<'vir>>,
+        _sig: Binder<'vir, FnSig<'vir>>,
         arg_tys: ty::GenericArgsRef<'vir>,
         args: &[Spanned<mir::Operand<'vir>>],
         curr_ver: &HashMap<mir::Local, Version<'vir>>,
@@ -1196,7 +1188,6 @@ fn encode_place_with_ref<'vir, 'enc>(
 */
 
 pub fn encode_place_element<'vir, 'enc, T: TaskEncoder>(
-    vcx: &'vir vir::VirCtxt<'vir>,
     deps: &'enc mut TaskEncoderDependencies<'vir, T>,
     def_id: DefId,
     place_ty: mir::PlaceTy<'vir>,
@@ -1243,7 +1234,7 @@ pub fn encode_place_element<'vir, 'enc, T: TaskEncoder>(
                 _ => unreachable!(),
             }
         }
-        mir::ProjectionElem::Field(field_idx, ty) => {
+        mir::ProjectionElem::Field(field_idx, _ty) => {
             let e_ty = deps.require_dep::<TyUseImpureEnc>(ty_task).unwrap();
             let struct_like = e_ty.expect_variant_opt(place_ty.variant_index);
             let e_ty_pure = deps.require_dep::<TyUsePureEnc>(ty_task).unwrap();

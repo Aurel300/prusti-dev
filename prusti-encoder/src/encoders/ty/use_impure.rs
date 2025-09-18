@@ -33,7 +33,6 @@ impl<'vir> TyDatas<'vir> for UseImpureTyDatas {
 }
 
 pub type TyUseImpure<'vir> = Ty<'vir, UseImpureTyDatas>;
-// pub type TyUseImpureData<'vir> = TyData<'vir, UseImpureTyDatas>;
 
 pub type TyUseImpureStruct<'vir> = StructData<'vir, UseImpureTyDatas>;
 pub type TyUseImpureEnum<'vir> = EnumData<'vir, UseImpureTyDatas>;
@@ -46,6 +45,7 @@ pub struct TyUseImpureData<'vir> {
 
 #[derive(Debug, Clone, Copy)]
 pub struct TyUseImpureImmRef<'vir> {
+    #[allow(dead_code)]
     caster: FieldCaster<'vir>,
     args: GArgsTy<'vir>,
     impure: <ImpureTyDatas as TyDatas<'vir>>::ImmRefData,
@@ -53,6 +53,7 @@ pub struct TyUseImpureImmRef<'vir> {
 
 #[derive(Debug, Clone, Copy)]
 pub struct TyUseImpureMutRef<'vir> {
+    #[allow(dead_code)]
     caster: FieldCaster<'vir>,
     args: GArgsTy<'vir>,
     impure: <ImpureTyDatas as TyDatas<'vir>>::MutRefData,
@@ -62,6 +63,7 @@ pub struct TyUseImpureMutRef<'vir> {
 pub struct TyUseImpureStructData<'vir> {
     args: GArgsTy<'vir>,
     ref_to_pred: PredicateIdn<'vir, (vir::Ref, vir::ManyTyVal, vir::ManyCSnap)>,
+    #[allow(dead_code)]
     impure: <ImpureTyDatas as TyDatas<'vir>>::StructData,
 }
 
@@ -74,6 +76,7 @@ pub struct TyUseImpureField<'vir> {
 
 #[derive(Debug, Clone, Copy)]
 pub struct TyUseImpureEnumData<'vir> {
+    #[allow(dead_code)]
     args: GArgsTy<'vir>,
     impure: <ImpureTyDatas as TyDatas<'vir>>::EnumData,
 }

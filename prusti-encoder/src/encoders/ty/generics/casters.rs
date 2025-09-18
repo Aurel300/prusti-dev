@@ -1,7 +1,7 @@
 use std::{fmt::Debug, marker::PhantomData};
 
 use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
-use vir::{CallableIdn, FunctionIdn, MethodIdn};
+use vir::{FunctionIdn, MethodIdn};
 
 use crate::encoders::{
     Impure, Pure, Purity,
@@ -28,7 +28,7 @@ pub(super) struct GArgCasters<'vir, P: PurityCasters> {
 /// [`CastFunctions::AlreadyGeneric`].
 pub(super) struct CastersEnc<T>(PhantomData<T>);
 
-pub(super) trait PurityCasters: Purity {
+pub trait PurityCasters: Purity {
     type MakeGeneric<'vir>: Debug + Clone + Copy;
     type MakeConcrete<'vir>: Debug + Clone + Copy;
 }

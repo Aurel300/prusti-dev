@@ -22,7 +22,7 @@ pub struct WandEnc;
 
 #[derive(Clone, Debug)]
 pub enum WandEncError {
-    Unsupported(String),
+    Unsupported(#[allow(dead_code)] String),
 }
 
 impl<'vir, E: TaskEncoder> ImpureEncVisitor<'vir, '_, E> {
@@ -101,6 +101,7 @@ pub struct WandEncOutput<'vir> {
     context: GParams<'vir>,
     edges: WandEncEdges,
     pub generic_to_param: FxHashMap<IndirectKey, Vec<(mir::Local, ty::Ty<'vir>)>>,
+    #[allow(dead_code)]
     pub pledges: Pledges<'vir>,
     wands: Vec<(Vec<IndirectKey>, Vec<IndirectKey>, Pledges<'vir>)>,
 }
@@ -496,7 +497,7 @@ impl TaskEncoder for WandEnc {
                 insert_edge(a, IndirectKey::Param(b));
             }
 
-            let spec = deps.require_dep::<MirSpecEnc>((def_id, substs, None, false))?;
+            let spec = deps.require_dep::<MirSpecEnc>((def_id, false))?;
             let pledges = spec.pledges;
 
             // convert edges to viper-supported wands
@@ -583,6 +584,7 @@ impl<'vir> WandEncOutput<'vir> {
         self.edges.outputs.iter().copied()
     }
 
+    #[allow(dead_code)]
     pub fn edges(&self) -> impl Iterator<Item = (IndirectKey, IndirectKey)> + '_ {
         self.edges.edges.iter().copied()
     }

@@ -141,7 +141,7 @@ impl TaskEncoder for FunctionEnc {
             deps.emit_output_ref(def_id, FunctionEncOutputRef { function_ref })?;
 
             let substs = ty::GenericArgs::identity_for_item(vcx.tcx(), def_id);
-            let spec = deps.require_dep::<MirSpecEnc>((def_id, substs, None, true))?;
+            let spec = deps.require_dep::<MirSpecEnc>((def_id, true))?;
 
             let expr = if trusted {
                 None

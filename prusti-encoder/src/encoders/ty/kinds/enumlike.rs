@@ -9,7 +9,7 @@ use crate::encoders::{
         impure::{
             ImpureTyDatas, PredicateBuilder, TyImpureEnc, TyImpureEnumData, TyImpureVariantData,
         },
-        pure::{AdtBuilder, PureTyDatas, TyPureEnc, TyPureEnum, TyPureEnumData, TyPureVariantData},
+        pure::{AdtBuilder, PureTyDatas, TyPureEnc, TyPureEnumData, TyPureVariantData},
     },
 };
 
@@ -48,7 +48,7 @@ pub(crate) fn ty_pure<'vir>(
     // discriminant can only have the selected values
     let snap_to_discr_snap = builder.build_discr_fn(discr_ty.downcast_ty());
 
-    Ok(TyPureEnum::new(
+    Ok(EnumData::new(
         TyPureEnumData {
             discr_ty,
             discr_prim: *discr_prim,

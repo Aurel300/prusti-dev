@@ -1,10 +1,7 @@
 use std::ops::{Deref, DerefMut};
 
 use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
-use vir::{
-    CallableIdn, CastType, FunctionIdn, HasType, MethodIdn, PredicateIdn, VirCtxt,
-    macros::{ExprApply, ExprQuote},
-};
+use vir::{CallableIdn, CastType, FunctionIdn, HasType, MethodIdn, PredicateIdn};
 
 use crate::encoders::Impure;
 
@@ -29,15 +26,11 @@ impl<'vir> TyDatas<'vir> for ImpureTyDatas {
 }
 
 pub type TyImpure<'vir> = Ty<'vir, ImpureTyDatas>;
-pub type TyImpureData<'vir> = TyData<'vir, ImpureTyDatas>;
-pub type TyImpureSpecifics<'vir> = TySpecifics<'vir, ImpureTyDatas>;
 pub type TyImpureParam<'vir> = <ImpureTyDatas as TyDatas<'vir>>::ParamData;
 pub type TyImpureOpaque<'vir> = <ImpureTyDatas as TyDatas<'vir>>::OpaqueData;
 pub type TyImpurePrimitive<'vir> = <ImpureTyDatas as TyDatas<'vir>>::PrimitiveData;
 pub type TyImpureImmRef<'vir> = <ImpureTyDatas as TyDatas<'vir>>::ImmRefData;
 pub type TyImpureMutRef<'vir> = <ImpureTyDatas as TyDatas<'vir>>::MutRefData;
-pub type TyImpureStruct<'vir> = StructData<'vir, ImpureTyDatas>;
-pub type TyImpureEnum<'vir> = EnumData<'vir, ImpureTyDatas>;
 
 #[derive(Debug, Clone, Copy)]
 pub struct TyImpureImmRefData<'vir> {
@@ -190,7 +183,7 @@ impl TaskEncoder for TyImpureEnc {
                 ref_to_snap: snap_func_ident.cast_ty(snap_func_ident.arity()),
                 method_assign,
             };
-            let output = TyImpureData::new(data, specifics).alloc();
+            let output = TyData::new(data, specifics).alloc();
 
             Ok((builder.inner.build(), output))
         })
@@ -414,36 +407,4 @@ impl<'vir> PredicateBuilderInner<'vir> {
             method_assign: self.methods[0],
         }
     }
-}
-
-fn mk_method_assign<'vir>(
-    vcx: &'vir VirCtxt<'_>,
-    ident: MethodIdn<'vir, (vir::Ref, vir::ManyTyVal, vir::Snap)>,
-    generics: Vec<vir::LocalDeclTyVal<'vir>>,
-    snapshot: vir::TypeSnap<'vir>,
-    ref_to_pred: PredicateIdn<'vir, (vir::Ref, vir::ManyTyVal)>,
-    ref_to_snap: FunctionIdn<'vir, (vir::Ref, vir::ManyTyVal), vir::Snap>,
-) -> vir::Method<'vir> {
-    let self_local = vcx.mk_local_decl("self", vir::TYPE_REF);
-    let self_new_local = vcx.mk_local_decl("self_new", snapshot);
-
-    let self_arg = vcx.mk_local_ex(self_local);
-    let generic_args = generics
-        .iter()
-        .copied()
-        .map(|decl| vcx.mk_local_ex(decl))
-        .collect::<Vec<_>>();
-
-    let self_pred_app = vcx.mk_predicate_app_expr(ref_to_pred(self_arg, &generic_args)(None));
-
-    let assign_args = (self_local, generics.as_slice(), self_new_local);
-
-    let posts = vcx.alloc_slice(&[
-        self_pred_app,
-        vcx.mk_eq_expr(
-            ref_to_snap(self_arg, &generic_args),
-            vcx.mk_local_ex(self_new_local),
-        ),
-    ]);
-    vcx.mk_method(ident, assign_args, &[], &[], posts, None)
 }

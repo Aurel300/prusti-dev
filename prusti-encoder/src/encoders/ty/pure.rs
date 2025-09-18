@@ -36,15 +36,11 @@ impl<'vir> TyDatas<'vir> for PureTyDatas {
 }
 
 pub type TyPure<'vir> = Ty<'vir, PureTyDatas>;
-pub type TyPureData<'vir> = TyData<'vir, PureTyDatas>;
-pub type TyPureSpecifics<'vir> = TySpecifics<'vir, PureTyDatas>;
 pub type TyPureParam<'vir> = <PureTyDatas as TyDatas<'vir>>::ParamData;
 pub type TyPureOpaque<'vir> = <PureTyDatas as TyDatas<'vir>>::OpaqueData;
 pub type TyPurePrimitive<'vir> = <PureTyDatas as TyDatas<'vir>>::PrimitiveData;
 pub type TyPureImmRef<'vir> = <PureTyDatas as TyDatas<'vir>>::ImmRefData;
 pub type TyPureMutRef<'vir> = <PureTyDatas as TyDatas<'vir>>::MutRefData;
-pub type TyPureStruct<'vir> = StructData<'vir, PureTyDatas>;
-pub type TyPureEnum<'vir> = EnumData<'vir, PureTyDatas>;
 
 #[derive(Debug, Clone, Copy)]
 pub struct TyPureOpaqueData<'vir> {
@@ -96,9 +92,11 @@ pub struct TyPureFieldData<'vir> {
 
 #[derive(Debug, Clone, Copy)]
 pub struct TyPureEnumData<'vir> {
+    #[allow(dead_code)]
     pub(super) discr_ty: vir::TypeSnap<'vir>,
+    #[allow(dead_code)]
     pub(super) discr_prim: TyPurePrimitive<'vir>,
-    pub snap_to_discr_snap: FunctionIdn<'vir, vir::CSnap, vir::CSnap>,
+    pub(super) snap_to_discr_snap: FunctionIdn<'vir, vir::CSnap, vir::CSnap>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -204,7 +202,7 @@ impl TaskEncoder for TyPureEnc {
                     )?)
                 }
             };
-            let output = TyPureData::new(output_ref, specifics).alloc();
+            let output = TyData::new(output_ref, specifics).alloc();
             Ok((builder.build(), output))
         })
     }

@@ -1,5 +1,5 @@
 use task_encoder::{EncodeFullResult, OutputRefAny, TaskEncoder};
-use vir::{Arity, CallableIdn, CastType, FunctionIdn, HasType};
+use vir::{CallableIdn, CastType, FunctionIdn, HasType};
 
 use crate::encoders::ty::{RustTy, generics::GenericParamsEnc};
 

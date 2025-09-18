@@ -34,7 +34,6 @@ impl<'vir> TyDatas<'vir> for UsePureTyDatas {
 }
 
 pub type TyUsePure<'vir> = Ty<'vir, UsePureTyDatas>;
-pub type TyUsePureData<'vir> = TyData<'vir, UsePureTyDatas>;
 pub type TyUsePureStruct<'vir> = StructData<'vir, UsePureTyDatas>;
 pub type TyUsePureEnum<'vir> = EnumData<'vir, UsePureTyDatas>;
 
@@ -58,6 +57,7 @@ pub struct TyUsePureField<'vir> {
 
 #[derive(Debug, Clone, Copy)]
 pub struct TyUsePureStructData<'vir> {
+    #[allow(dead_code)]
     args: GArgsTy<'vir>,
     pure: <PureTyDatas as TyDatas<'vir>>::StructData,
 }

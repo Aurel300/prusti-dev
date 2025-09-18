@@ -55,7 +55,7 @@ impl<'vir, R: CompType> DomainIdn<'vir, R> {
     }
 }
 
-impl<'a, 'vir, R: CompType> FnOnce<()> for DomainIdn<'vir, R> {
+impl<'vir, R: CompType> FnOnce<()> for DomainIdn<'vir, R> {
     type Output = crate::Type<'vir, R>;
     extern "rust-call" fn call_once(self, _args: ()) -> Self::Output {
         with_vcx(|vcx| {
@@ -88,7 +88,7 @@ impl<'vir, T: CompType, R: CompType> crate::AdtDestructorData<'vir, T, R> {
     }
 }
 
-impl<'a, 'vir, Curr, Next, T: CompType, R: CompType> FnOnce<(crate::ExprGen<'vir, Curr, Next, T>,)>
+impl<'vir, Curr, Next, T: CompType, R: CompType> FnOnce<(crate::ExprGen<'vir, Curr, Next, T>,)>
     for AdtDestructorWrapper<'vir, T, R>
 {
     type Output = crate::ExprGen<'vir, Curr, Next, R>;
@@ -310,9 +310,11 @@ impl<'vir, A: Arity> CallableIdn<'vir, A> for PredicateIdn<'vir, A> {
     }
 }
 
+type VarianceBound<'a, Curr, Next> = core::marker::PhantomData<(Box<dyn Fn(&'a ())>, Curr, Next)>;
+
 pub struct PredicateIdnGen<'a, 'vir, Curr: 'vir, Next: 'vir, A: Arity> {
     inner: PredicateIdn<'vir, A>,
-    _p: core::marker::PhantomData<(Box<dyn Fn(&'a ())>, Curr, Next)>,
+    _p: VarianceBound<'a, Curr, Next>,
 }
 
 impl<'vir, A: Arity> PredicateIdn<'vir, A> {

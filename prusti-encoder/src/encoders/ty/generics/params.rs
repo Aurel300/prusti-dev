@@ -31,6 +31,10 @@ impl<'tcx> GParams<'tcx> {
         Self::new(params, ty::ParamEnv::empty())
     }
 
+    pub fn count(self) -> usize {
+        self.ty_params().count() + self.const_params().count()
+    }
+
     pub(super) fn expect_const(self, idx: usize) -> (ty::ParamConst, ty::Ty<'tcx>) {
         self.const_ty(self.params[idx].expect_const())
     }

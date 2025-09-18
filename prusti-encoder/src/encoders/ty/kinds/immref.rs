@@ -23,15 +23,13 @@ pub(crate) fn ty_pure<'vir>(
 
 pub(crate) fn ty_impure<'vir>(
     data: &(&RustImmRef<'vir>, &TyPureImmRef<'vir>),
-    deps: &mut TaskEncoderDependencies<'vir, TyImpureEnc>,
+    _deps: &mut TaskEncoderDependencies<'vir, TyImpureEnc>,
     builder: &mut PredicateBuilder<'vir>,
 ) -> Result<TyImpureImmRef<'vir>, EncodeFullError<'vir, TyImpureEnc>> {
     let snap_type = builder.csnap_type();
 
     let ref_self_decl = builder.ref_self_decl();
     let ref_self = builder.vcx.mk_local_ex(ref_self_decl);
-
-    // let generic_typeof = TypeOfEnc::generic_typeof(deps);
 
     // fields
     let ref_field = builder.field("val", snap_type);

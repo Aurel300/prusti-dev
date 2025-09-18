@@ -1,9 +1,19 @@
 use pcg::{borrow_checker::r#impl::NllBorrowCheckerImpl, r#loop::LoopAnalysis};
-use prusti_rustc_interface::{middle::{ty, mir}, span::def_id::DefId};
+use prusti_rustc_interface::{
+    middle::{mir, ty},
+    span::def_id::DefId,
+};
 use task_encoder::{EncodeFullResult, OutputRefAny, TaskEncoder, TaskEncoderDependencies};
 use vir::MethodIdn;
 
-use crate::{encoders::{mir_fn::{CallTaskDescription, RustSignature}, ty::{generics::{GArgCaster, GArgsCastEnc, GArgsTy, GArgsTyEnc, GParams, GenericParamsEnc}}, Impure, ImpureEncVisitor, MirLocalDefEnc, MirSpecEnc, WandEnc, WandEncTask}, trait_support::is_function_with_body};
+use crate::{
+    encoders::{
+        Impure, ImpureEncVisitor, MirLocalDefEnc, MirSpecEnc, WandEnc, WandEncTask,
+        mir_fn::{CallTaskDescription, RustSignature},
+        ty::generics::{GArgCaster, GArgsCastEnc, GArgsTy, GArgsTyEnc, GParams, GenericParamsEnc},
+    },
+    trait_support::is_function_with_body,
+};
 
 // Method wrapper
 
@@ -18,12 +28,16 @@ pub struct MethodCallEncOutput<'vir> {
 }
 
 impl<'vir> MethodCallEncOutput<'vir> {
-    pub fn call(&self, mut args: Vec<vir::ExprRef<'vir>>, ret: vir::ExprRef<'vir>) -> Vec<vir::Stmt<'vir>> {
+    pub fn call(
+        &self,
+        mut args: Vec<vir::ExprRef<'vir>>,
+        ret: vir::ExprRef<'vir>,
+    ) -> Vec<vir::Stmt<'vir>> {
         assert_eq!(self.inputs.len(), args.len());
         let generics = args.iter().zip(self.inputs.iter());
-        let mut stmts: Vec<_> = generics.filter_map(|(arg, caster)| {
-            caster.cast_to_callee_ctx(*arg)
-        }).collect();
+        let mut stmts: Vec<_> = generics
+            .filter_map(|(arg, caster)| caster.cast_to_callee_ctx(*arg))
+            .collect();
 
         args.insert(0, ret);
         let call = (self.method.method_ref)(&args, self.ty_args.get_ty(), self.ty_args.get_const());
@@ -55,13 +69,27 @@ impl TaskEncoder for MethodCallEnc {
         let method_ref = deps.require_ref::<MethodEnc>(task_key.callee)?;
         let signature = RustSignature::new(task_key.callee);
         let ty_args = deps.require_dep::<GArgsTyEnc>(task_key.gargs)?;
-        let inputs = signature.inputs.iter().map(|ty| {
-            let normalized = ty.decompose_compare_normalize(signature.gparams, task_key.gargs);
-            deps.require_dep::<GArgsCastEnc<Impure>>(normalized)
-        }).collect::<Result<Vec<_>, _>>()?;
-        let normalized = signature.output.decompose_compare_normalize(signature.gparams, task_key.gargs);
+        let inputs = signature
+            .inputs
+            .iter()
+            .map(|ty| {
+                let normalized = ty.decompose_compare_normalize(signature.gparams, task_key.gargs);
+                deps.require_dep::<GArgsCastEnc<Impure>>(normalized)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let normalized = signature
+            .output
+            .decompose_compare_normalize(signature.gparams, task_key.gargs);
         let output = deps.require_dep::<GArgsCastEnc<Impure>>(normalized)?;
-        Ok(((), MethodCallEncOutput { method: method_ref, ty_args, inputs, output }))
+        Ok((
+            (),
+            MethodCallEncOutput {
+                method: method_ref,
+                ty_args,
+                inputs,
+                output,
+            },
+        ))
     }
 
     fn emit_outputs<'vir>(program: &mut task_encoder::Program<'vir>) {
@@ -112,8 +140,7 @@ impl TaskEncoder for MethodEnc {
             let span = vcx.tcx().def_span(def_id);
             let trusted = crate::encoders::is_function_trusted(def_id);
 
-            let arg_defs =
-                deps.require_ref_spanned::<MirLocalDefEnc>((def_id, false), span)?;
+            let arg_defs = deps.require_ref_spanned::<MirLocalDefEnc>((def_id, false), span)?;
 
             // Argument count for the Viper method:
             // - one (`Ref`) for the return place;
@@ -130,15 +157,18 @@ impl TaskEncoder for MethodEnc {
 
             // Create the identifier and use it as an output ref. This is what
             // is used when other methods call this one.
-            let method_name = vir::vir_format_identifier!(vcx, "m_{}", vcx.tcx().def_path_str(def_id));
+            let method_name =
+                vir::vir_format_identifier!(vcx, "m_{}", vcx.tcx().def_path_str(def_id));
             let ref_args = vcx.alloc_slice(&vec![vir::TYPE_REF; arg_count]);
             let params = GParams::from(def_id);
             let generics = deps.require_dep_spanned::<GenericParamsEnc>(params, span)?;
-            let method_ref = MethodIdn::new(method_name, (ref_args, generics.ty_args(), generics.const_args()));
+            let method_ref = MethodIdn::new(
+                method_name,
+                (ref_args, generics.ty_args(), generics.const_args()),
+            );
             deps.emit_output_ref(def_id, MethodEncOutputRef { method_ref })?;
 
-            let arg_defs =
-                deps.require_dep_spanned::<MirLocalDefEnc>((def_id, false), span)?;
+            let arg_defs = deps.require_dep_spanned::<MirLocalDefEnc>((def_id, false), span)?;
 
             // Method contract. We will need to emit pre- and postconditions for
             // the permissions, the functional spec, and (in the postcondition)
@@ -146,7 +176,8 @@ impl TaskEncoder for MethodEnc {
             let mut pres = Vec::new();
             let mut posts = Vec::new();
             let substs = ty::GenericArgs::identity_for_item(vcx.tcx(), def_id);
-            let spec = deps.require_dep_spanned::<MirSpecEnc>((def_id, substs, None, false), span)?;
+            let spec =
+                deps.require_dep_spanned::<MirSpecEnc>((def_id, substs, None, false), span)?;
             let wands = deps.require_dep_spanned::<WandEnc>(WandEncTask { def_id }, span)?;
 
             // Add direct resources for inputs and outputs to the pre- and
@@ -231,14 +262,13 @@ impl TaskEncoder for MethodEnc {
                     encoded_blocks,
                 };
                 visitor.visit_body(&body);
-                start_stmts.extend(visitor.from_to_vars.iter().flat_map(|(_, v)| v.iter()).map(
-                    |(_, v)| {
-                        vcx.mk_local_decl_stmt(
-                            v,
-                            Some(vcx.mk_bool::<false>()),
-                        )
-                    },
-                ));
+                start_stmts.extend(
+                    visitor
+                        .from_to_vars
+                        .iter()
+                        .flat_map(|(_, v)| v.iter())
+                        .map(|(_, v)| vcx.mk_local_decl_stmt(v, Some(vcx.mk_bool::<false>()))),
+                );
                 visitor.encoded_blocks[0] = vcx.mk_cfg_block(
                     &vir::CfgBlockLabelData::Start,
                     &[],
@@ -264,16 +294,19 @@ impl TaskEncoder for MethodEnc {
             pres.extend(spec.pres);
             posts.extend(spec.posts);
 
-            Ok((MethodEncOutput {
-                method: vcx.mk_method(
-                    method_ref,
-                    (&args, generics.ty_decls(), generics.const_decls()),
-                    &[],
-                    vcx.alloc_slice(&pres),
-                    vcx.alloc_slice(&posts),
-                    blocks.map(|blocks| vcx.alloc_slice(&blocks)),
-                ),
-            }, ()))
+            Ok((
+                MethodEncOutput {
+                    method: vcx.mk_method(
+                        method_ref,
+                        (&args, generics.ty_decls(), generics.const_decls()),
+                        &[],
+                        vcx.alloc_slice(&pres),
+                        vcx.alloc_slice(&posts),
+                        blocks.map(|blocks| vcx.alloc_slice(&blocks)),
+                    ),
+                },
+                (),
+            ))
         })
     }
 

@@ -4,9 +4,15 @@ use prusti_rustc_interface::middle::ty;
 use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 use vir::CastType;
 
-use crate::encoders::{ty::{RustTyDecomposition, RustTyNormalized}, Impure, Pure, Purity};
+use crate::encoders::{
+    Impure, Pure, Purity,
+    ty::{RustTyDecomposition, RustTyNormalized},
+};
 
-use super::{GArgsTy, GArgsTyEnc, casters::{CastersEnc, GArgCasters, PurityCasters}};
+use super::{
+    GArgsTy, GArgsTyEnc,
+    casters::{CastersEnc, GArgCasters, PurityCasters},
+};
 
 pub struct GArgsCastEnc<P: Purity>(PhantomData<P>);
 
@@ -34,30 +40,42 @@ impl<'vir, P: PurityCasters> GArgCaster<'vir, P> {
 // utility functions to allow doing `ty_casters[gidx].cast_to_...`
 
 impl<'vir> GArgCaster<'vir, Pure> {
-    pub fn cast_to_callee_ctx<Curr, Next>(&self, e: vir::ExprGenSnap<'vir, Curr, Next>) -> vir::ExprGenSnap<'vir, Curr, Next> {
-        self.get().map(|(cast, ty_args)| {
-            cast.make_generic.call()(e.downcast_ty(), ty_args.get_ty(), ty_args.get_const()).upcast_ty()
-        }).unwrap_or(e)
+    pub fn cast_to_callee_ctx<Curr, Next>(
+        &self,
+        e: vir::ExprGenSnap<'vir, Curr, Next>,
+    ) -> vir::ExprGenSnap<'vir, Curr, Next> {
+        self.get()
+            .map(|(cast, ty_args)| {
+                cast.make_generic.call()(e.downcast_ty(), ty_args.get_ty(), ty_args.get_const())
+                    .upcast_ty()
+            })
+            .unwrap_or(e)
     }
 
-    pub fn cast_to_caller_ctx<Curr, Next>(&self, e: vir::ExprGenSnap<'vir, Curr, Next>) -> vir::ExprGenSnap<'vir, Curr, Next> {
-        self.get().map(|(cast, ty_args)| {
-            cast.make_concrete.call()(e.downcast_ty(), ty_args.get_ty(), ty_args.get_const()).upcast_ty()
-        }).unwrap_or(e)
+    pub fn cast_to_caller_ctx<Curr, Next>(
+        &self,
+        e: vir::ExprGenSnap<'vir, Curr, Next>,
+    ) -> vir::ExprGenSnap<'vir, Curr, Next> {
+        self.get()
+            .map(|(cast, ty_args)| {
+                cast.make_concrete.call()(e.downcast_ty(), ty_args.get_ty(), ty_args.get_const())
+                    .upcast_ty()
+            })
+            .unwrap_or(e)
     }
 }
 
 impl<'vir> GArgCaster<'vir, Impure> {
     pub fn cast_to_callee_ctx(&self, e: vir::ExprRef<'vir>) -> Option<vir::Stmt<'vir>> {
-        self.get().map(|(cast, ty_args)| {
-            (cast.make_generic)(e, ty_args.get_ty(), ty_args.get_const())
-        }).map(alloc_stmt)
+        self.get()
+            .map(|(cast, ty_args)| (cast.make_generic)(e, ty_args.get_ty(), ty_args.get_const()))
+            .map(alloc_stmt)
     }
 
     pub fn cast_to_caller_ctx(&self, e: vir::ExprRef<'vir>) -> Option<vir::Stmt<'vir>> {
-        self.get().map(|(cast, ty_args)| {
-            (cast.make_concrete)(e, ty_args.get_ty(), ty_args.get_const())
-        }).map(alloc_stmt)
+        self.get()
+            .map(|(cast, ty_args)| (cast.make_concrete)(e, ty_args.get_ty(), ty_args.get_const()))
+            .map(alloc_stmt)
     }
 }
 

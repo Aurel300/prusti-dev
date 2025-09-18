@@ -1,5 +1,9 @@
 use crate::encoders::ty::{
-    impure::{ImpureTyDatas, PredicateBuilder, TyImpureEnc, TyImpurePrimitive}, pure::{DomainBuilder, PureTyDatas, TyPureEnc, TyPureEncError, TyPurePrimData, TyPurePrimitive}, RustTyDatas, RustPrimitive
+    RustPrimitive, RustTyDatas,
+    impure::{ImpureTyDatas, PredicateBuilder, TyImpureEnc, TyImpurePrimitive},
+    pure::{
+        DomainBuilder, PureTyDatas, TyPureEnc, TyPureEncError, TyPurePrimData, TyPurePrimitive,
+    },
 };
 use prusti_rustc_interface::middle::ty;
 use task_encoder::{EncodeFullError, TaskEncoder, TaskEncoderDependencies};
@@ -15,10 +19,12 @@ pub(crate) fn ty_pure<'vir>(
     let prim_type: vir::TypePrim<'vir> = match ty_kind {
         ty::TyKind::Bool => vir::TYPE_BOOL.upcast_ty(),
         ty::TyKind::Char | ty::TyKind::Int(_) | ty::TyKind::Uint(_) => vir::TYPE_INT.upcast_ty(),
-        ty::TyKind::Float(_) => return Err(EncodeFullError::EncodingError(
-            TyPureEncError::Unimplemented,
-            None,
-        )),
+        ty::TyKind::Float(_) => {
+            return Err(EncodeFullError::EncodingError(
+                TyPureEncError::Unimplemented,
+                None,
+            ));
+        }
         // TODO: implement float support (like so in Viper):
         /*
             domain myBV interpretation (SMTLIB: "(_ BitVec 32)", Boogie: "bv32") {
@@ -79,10 +85,7 @@ pub(crate) fn ty_impure<'vir>(
     _data: &(&RustPrimitive<'vir>, &TyPurePrimitive<'vir>),
     _deps: &mut TaskEncoderDependencies<'vir, TyImpureEnc>,
     builder: &mut PredicateBuilder<'vir>,
-) -> Result<
-    TyImpurePrimitive<'vir>,
-    EncodeFullError<'vir, TyImpureEnc>,
-> {
+) -> Result<TyImpurePrimitive<'vir>, EncodeFullError<'vir, TyImpureEnc>> {
     // let ty = data.ty();
     // let ty_kind = ty.kind();
 

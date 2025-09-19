@@ -1,5 +1,8 @@
 #![no_std]
-#![cfg_attr(feature = "prusti", feature(unboxed_closures, tuple_trait))]
+#![cfg_attr(
+    feature = "prusti",
+    feature(unboxed_closures, tuple_trait, auto_traits)
+)]
 
 /// A macro for writing a precondition on a function.
 pub use prusti_contracts_proc_macros::requires;
@@ -124,6 +127,9 @@ mod private {
 
 #[cfg(feature = "prusti")]
 pub mod core_spec;
+
+#[cfg(feature = "prusti")]
+pub use core_spec::type_eq::TypeEq;
 
 #[cfg(feature = "prusti")]
 mod private {

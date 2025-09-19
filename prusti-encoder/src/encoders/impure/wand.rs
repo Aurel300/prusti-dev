@@ -3,13 +3,11 @@ use pcg::{
         AbstractionInputTarget, AbstractionOutputTarget,
         borrow_pcg_edge::{BorrowPcgEdgeLike, BorrowPcgEdgeRef},
         edge::{abstraction::AbstractionEdge, kind::BorrowPcgEdgeKind},
-        graph::{
-            BorrowsGraph,
-            coupling::{PcgCoupledEdge, PcgCoupledEdges},
-        },
+        graph::BorrowsGraph,
         state::BorrowsState,
         unblock_graph::UnblockGraph,
     },
+    coupling::{CouplingResults, PcgCoupledEdgeKind, PcgCoupledEdges},
     pcg::PcgNode,
     utils::maybe_remote::MaybeRemotePlace,
 };
@@ -27,7 +25,7 @@ type Outputs<'a> = Vec<Output<'a>>;
 impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
     pub(crate) fn without_remote_places(
         &self,
-        at: &PcgCoupledEdge<'vir>,
+        at: &PcgCoupledEdgeKind<'vir>,
     ) -> Option<(Inputs<'vir>, Outputs<'vir>)> {
         let inputs = at.inputs(self.pcg_ctxt());
         if inputs.iter().any(|input| input.is_remote_place()) {
@@ -41,7 +39,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         &self,
         g: &'a BorrowsGraph<'vir>,
     ) -> Vec<(Inputs<'vir>, Outputs<'vir>)> {
-        g.coupled_edges()
+        PcgCoupledEdges::get_coupled_edges(g)
             .into_iter()
             .filter_map(|edge| self.without_remote_places(&edge))
             .collect()
@@ -49,9 +47,9 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
 
     pub(crate) fn pcs_handle_wand(
         &mut self,
-        borrows_state: &BorrowsState<'vir>,
+        borrows_state: &BorrowsState<'_, 'vir>,
         package: bool,
-        edge: &PcgCoupledEdge<'vir>,
+        edge: &PcgCoupledEdgeKind<'vir>,
         label: Option<&'vir str>,
         edge_to_loop: bool,
     ) {
@@ -91,7 +89,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
 
     fn create_package_script(
         &mut self,
-        borrows_state: &BorrowsState<'vir>,
+        borrows_state: &BorrowsState<'_, 'vir>,
         rhs: impl Into<PcgNode<'vir>>,
         old_outer: &mut WandOldOuter<'vir>,
     ) -> Vec<vir::Stmt<'vir>> {

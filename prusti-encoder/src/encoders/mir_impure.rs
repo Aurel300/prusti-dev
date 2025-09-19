@@ -1,21 +1,14 @@
 use std::alloc::Global;
 
 use pcg::{
-    PcgOutput,
-    action::{BorrowPcgAction, PcgAction, PcgActions},
-    borrow_pcg::{
+    action::{BorrowPcgAction, PcgAction, PcgActions}, borrow_pcg::{
         action::BorrowPcgActionKind,
         borrow_pcg_edge::BorrowPcgEdge,
         borrow_pcg_expansion::BorrowPcgExpansion,
-        edge::{abstraction::AbstractionEdge, kind::BorrowPcgEdgeKind},
+        edge::{abstraction::{AbstractionEdge, FunctionCallOrLoop}, kind::BorrowPcgEdgeKind},
         state::BorrowsState,
         unblock_graph::BorrowPcgUnblockAction,
-    },
-    free_pcs::{CapabilityKind, RepackOp},
-    r#loop::LoopAnalysis,
-    pcg::{EvalStmtPhase, Pcg, PcgNode, PcgSuccessor},
-    results::PcgBasicBlock,
-    utils::{CompilerCtxt, HasPlace, Place, maybe_old::MaybeLabelledPlace},
+    }, coupling::PcgCoupledEdgeKind, free_pcs::{CapabilityKind, RepackOp}, r#loop::LoopAnalysis, pcg::{EvalStmtPhase, Pcg, PcgNode, PcgSuccessor}, results::PcgBasicBlock, utils::{maybe_old::MaybeLabelledPlace, CompilerCtxt, HasPlace, Place}, PcgOutput
 };
 use prusti_interface::{PrustiError, specs::specifications::SpecQuery};
 use prusti_rustc_interface::{
@@ -105,7 +98,7 @@ where
     pub from_to_vars: FxHashMap<mir::BasicBlock, Vec<(mir::BasicBlock, &'vir str)>>,
 
     // for the current basic block
-    pub current_fpcs: Option<PcgBasicBlock<'vir>>,
+    pub current_fpcs: Option<PcgBasicBlock<'enc, 'vir>>,
 
     pub current_block_label: Option<vir::CfgBlockLabel<'vir>>,
     pub current_stmts: Option<Vec<vir::Stmt<'vir>>>,
@@ -217,8 +210,8 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
     /// TODO: clean this up
     fn collect_pcs_succ<'a>(
         &mut self,
-        state: &Pcg<'vir>,
-        pcs: &'a PcgSuccessor<'vir>,
+        state: &Pcg<'_, 'vir>,
+        pcs: &'a PcgSuccessor<'_, 'vir>,
     ) -> Vec<vir::Stmt<'vir>> {
         let current_stmts = self.current_stmts.take();
         self.current_stmts = Some(Vec::new());
@@ -295,7 +288,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
 
     fn pcs_handle_edge(
         &mut self,
-        borrows_state: &BorrowsState<'vir>,
+        borrows_state: &BorrowsState<'_, 'vir>,
         edge: &BorrowPcgEdge<'vir>,
         add: bool,
         label: Option<&'vir str>,
@@ -346,7 +339,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
 
     fn pcs_handle_edge_conditionless(
         &mut self,
-        borrows_state: &BorrowsState<'vir>,
+        borrows_state: &BorrowsState<'_, 'vir>,
         edge: &BorrowPcgEdge<'vir>,
         add: bool,
         label: Option<&'vir str>,
@@ -357,11 +350,12 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             BorrowPcgEdgeKind::BorrowPcgExpansion(expansion) => {
                 self.pcs_borrow_expansion(expansion.clone(), add, label);
             }
-            BorrowPcgEdgeKind::Abstraction(AbstractionEdge::FunctionCall(call)) => {
+            BorrowPcgEdgeKind::Coupled(PcgCoupledEdgeKind(FunctionCallOrLoop::FunctionCall(call_edge))) => {
                 if add {
                     // The wand will be introduced by the method call itself.
                     return;
                 }
+                let call = call_edge.metadata();
                 // We may be encoding multiple edges as a single wand, skip
                 // further edge removals. This is a hack to get around the fact
                 // that Viper doesn't support hyperwands.
@@ -399,7 +393,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 }
             }
             BorrowPcgEdgeKind::Abstraction(at @ AbstractionEdge::Loop(_)) => {
-                self.pcs_handle_wand(borrows_state, add, &at.to_hyper_edge(), label, edge_to_loop);
+                self.pcs_handle_wand(borrows_state, add, &at.clone().into_singleton_coupled_edge(), label, edge_to_loop);
             }
             _ => comment!(self, "(ignoring)"),
         }
@@ -407,7 +401,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
 
     pub(crate) fn pcs_unblock_actions(
         &mut self,
-        borrows_state: &BorrowsState<'vir>,
+        borrows_state: &BorrowsState<'_, 'vir>,
         actions: &[BorrowPcgUnblockAction<'vir>],
         label: Option<&'vir str>,
     ) {
@@ -424,7 +418,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         }
     }
 
-    fn pcg_actions(&mut self, pcg: &Pcg<'vir>, actions: &PcgActions<'vir>, edge_to_loop: bool) {
+    fn pcg_actions(&mut self, pcg: &Pcg<'_, 'vir>, actions: &PcgActions<'vir>, edge_to_loop: bool) {
         for action in actions.iter() {
             match action {
                 PcgAction::Borrow(action) => self.borrow_action(pcg, action, edge_to_loop),
@@ -434,7 +428,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
     }
     fn borrow_action(
         &mut self,
-        pcg: &Pcg<'vir>,
+        pcg: &Pcg<'_, 'vir>,
         action: &BorrowPcgAction<'vir>,
         edge_to_loop: bool,
     ) {
@@ -538,7 +532,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         }
     }
 
-    fn pcs_succ<'a>(&mut self, pcg_state: &Pcg<'vir>, succ: &'a PcgSuccessor<'vir>) {
+    fn pcs_succ<'a>(&mut self, pcg_state: &Pcg<'_, 'vir>, succ: &'a PcgSuccessor<'_, 'vir>) {
         let edge_to_loop = self.loop_analysis.loop_head_of(succ.block()).is_some();
         self.pcg_actions(pcg_state, succ.actions(), edge_to_loop);
     }

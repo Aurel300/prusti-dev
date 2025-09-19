@@ -30,7 +30,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
     pub(crate) fn get_loop_inv(
         &mut self,
         _lh: LoopId,
-        cfpcs: &PcgBasicBlock<'vir>,
+        cfpcs: &PcgBasicBlock<'_, 'vir>,
     ) -> &'vir [vir::ExprBool<'vir>] {
         let mut inv = Vec::new();
         let start = &cfpcs.statements[0];

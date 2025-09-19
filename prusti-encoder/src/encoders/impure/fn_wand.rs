@@ -153,7 +153,7 @@ impl<'vir> WandEncOutput<'vir> {
 
     pub fn package_wands<E: TaskEncoder>(
         &self,
-        final_borrow_state: &BorrowsState<'vir>,
+        final_borrow_state: &BorrowsState<'_, 'vir>,
         visitor: &mut ImpureEncVisitor<'vir, '_, E>,
     ) -> Vec<vir::Stmt<'vir>> {
         let mut wand_packages = Vec::new();

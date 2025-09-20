@@ -1,14 +1,18 @@
 use std::alloc::Global;
 
-use pcg::{borrow_checker::r#impl::{BorrowCheckerImpl, NllBorrowCheckerImpl}, borrow_pcg::FunctionShape, r#loop::LoopAnalysis};
+use pcg::{
+    borrow_checker::r#impl::{BorrowCheckerImpl, NllBorrowCheckerImpl},
+    borrow_pcg::FunctionShape,
+    r#loop::LoopAnalysis,
+};
 use prusti_rustc_interface::middle::mir;
 use task_encoder::{EncodeFullError, TaskEncoder, TaskEncoderDependencies};
 use vir::{MethodIdn, ViperIdent};
 
 use crate::{
     encoders::{
-        lifted::LiftedTyParamsEnc, ImpureEncVisitor,
-        MirLocalDefEnc, MirSpecEnc, WandEnc, WandEncTask,
+        ImpureEncVisitor, MirLocalDefEnc, MirSpecEnc, WandEnc, WandEncTask,
+        lifted::LiftedTyParamsEnc,
     },
     trait_support::is_function_with_body,
 };
@@ -37,7 +41,10 @@ where
     Self: 'static
         + Sized
         + FunctionEnc
-        + for<'vir> TaskEncoder<OutputRef<'vir> = ImpureFunctionEncOutputRef<'vir>>,
+        + for<'vir> TaskEncoder<
+            OutputRef<'vir> = ImpureFunctionEncOutputRef<'vir>,
+            EncodingError = ImpureFunctionEncError,
+        >,
 {
     /// Generates the identifier for the method; for a monomorphic encoding,
     /// this should be a name including (mangled) type arguments
@@ -59,8 +66,10 @@ where
             let substs = Self::get_substs(vcx, &task_key);
             let trusted = crate::encoders::is_function_trusted(def_id, substs);
 
-            let arg_defs =
-                deps.require_ref_spanned::<MirLocalDefEnc>((def_id, substs, caller_def_id, false), span)?;
+            let arg_defs = deps.require_ref_spanned::<MirLocalDefEnc>(
+                (def_id, substs, caller_def_id, false),
+                span,
+            )?;
 
             // Argument count for the Viper method:
             // - one (`Ref`) for the return place;
@@ -98,27 +107,34 @@ where
                 .as_local()
                 .filter(|_| !trusted && is_function_with_body(vcx.tcx(), def_id));
 
-            deps.emit_output_ref(task_key, ImpureFunctionEncOutputRef {
-                method_ref,
-                should_be_verified: local_def_id.is_some(),
-            })?;
+            deps.emit_output_ref(
+                task_key,
+                ImpureFunctionEncOutputRef {
+                    method_ref,
+                    should_be_verified: local_def_id.is_some(),
+                },
+            )?;
 
-            let arg_defs =
-                deps.require_local_spanned::<MirLocalDefEnc>((def_id, substs, caller_def_id, false), span)?;
+            let arg_defs = deps.require_local_spanned::<MirLocalDefEnc>(
+                (def_id, substs, caller_def_id, false),
+                span,
+            )?;
 
             // Method contract. We will need to emit pre- and postconditions for
             // the permissions, the functional spec, and (in the postcondition)
             // wands in case of a reborrowing function.
             let mut pres = Vec::new();
             let mut posts = Vec::new();
-            let spec = deps.require_local_spanned::<MirSpecEnc>((def_id, substs, None, false), span)?;
-            let shape = FunctionShape::for_fn(def_id, substs, self.pcg_ctxt())?.map_err(|e| {
-                EncodeFullError::EncodingError(
-                    ImpureFunctionEncError,
-                    None,
-                )
-            })?;
-            let wands = deps.require_local_spanned::<WandEnc>(WandEncTask { def_id }, span)?;
+            let spec =
+                deps.require_local_spanned::<MirSpecEnc>((def_id, substs, None, false), span)?;
+            let shape = FunctionShape::for_fn(
+                def_id,
+                substs,
+                caller_def_id.map(|id| id.expect_local()),
+                vcx.tcx(),
+            )
+            .map_err(|e| EncodeFullError::EncodingError(ImpureFunctionEncError, None))?;
+            let wands = deps.require_local_spanned::<WandEnc>(WandEncTask { def_id, shape  }, span)?;
 
             // Add direct resources for inputs and outputs to the pre- and
             // postconditions, respectively. "Direct" here refers to owned
@@ -142,8 +158,10 @@ where
             let blocks = if let Some(local_def_id) = local_def_id {
                 let body_with_facts = vcx.body_mut().get_impure_fn_body_with_facts(local_def_id);
                 let body = &body_with_facts.body;
-                let local_defs =
-                    deps.require_local_spanned::<MirLocalDefEnc>((def_id, substs, caller_def_id, true), span)?;
+                let local_defs = deps.require_local_spanned::<MirLocalDefEnc>(
+                    (def_id, substs, caller_def_id, true),
+                    span,
+                )?;
 
                 let loop_analysis = LoopAnalysis::find_loops(&body);
                 let bc = NllBorrowCheckerImpl::new(vcx.tcx(), &body_with_facts);

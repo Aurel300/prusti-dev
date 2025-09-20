@@ -4,14 +4,18 @@ use crate::encoders::{
     pure::spec::VirPledge,
 };
 use pcg::borrow_pcg::{
-    edge::abstraction, state::BorrowsState, unblock_graph::UnblockGraph, FunctionData, FunctionShape, FunctionShapeInput, FunctionShapeNode, FunctionShapeOutput
+    FunctionData, FunctionShape, FunctionShapeInput, FunctionShapeNode, FunctionShapeOutput,
+    edge::abstraction, state::BorrowsState, unblock_graph::UnblockGraph,
 };
 use prusti_interface::{PrustiError, environment::EnvQuery};
 use prusti_rustc_interface::{
     data_structures::fx::{FxHashMap, FxHashSet},
     infer::infer::region_constraints::GenericKind,
     middle::{mir, ty},
-    span::{Span, def_id::DefId},
+    span::{
+        Span,
+        def_id::{DefId, LocalDefId},
+    },
 };
 use task_encoder::{EncodeFullError, EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 
@@ -36,7 +40,7 @@ impl<'vir> WandEncOutput<'vir> {
         &self,
         vcx: &'vir vir::VirCtxt<'vir>,
         deps: &mut TaskEncoderDependencies<'vir, impl TaskEncoder>,
-        g: FunctionShapeNode<'vir>,
+        g: FunctionShapeNode,
         fn_sig: ty::FnSig<'vir>,
         mut snap: impl FnMut(mir::Local) -> vir::ExprSnap<'vir>,
     ) -> vir::ExprBool<'vir> {
@@ -249,7 +253,7 @@ impl<'vir> WandEncOutput<'vir> {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct WandEncTask {
     pub def_id: DefId,
-    pub shape: FunctionShape<'static>
+    pub shape: FunctionShape,
 }
 
 // #[derive(Clone, Debug, Default)]
@@ -310,8 +314,8 @@ pub struct WandEncTask {
 //     }
 // }
 
-pub type WandInputKey = FunctionShapeInput<'static>;
-pub type WandOutputKey = FunctionShapeOutput<'static>;
+pub type WandInputKey = FunctionShapeInput;
+pub type WandOutputKey = FunctionShapeOutput;
 
 #[derive(Clone, Debug)]
 pub struct VirWand<'vir> {
@@ -344,9 +348,7 @@ impl TaskEncoder for WandEnc {
     const ENCODER_NAME: &'static str = "wand encoder";
 
     fn task_to_key<'vir>(task: &Self::TaskDescription<'vir>) -> Self::TaskKey<'vir> {
-        WandEncTask {
-            def_id: task.def_id,
-        }
+        task.clone()
     }
 
     fn do_encode_full<'vir>(
@@ -361,8 +363,7 @@ impl TaskEncoder for WandEnc {
             let substs = ecx.identity_substs(def_id);
 
             let fn_sig = ecx.get_fn_sig(def_id, substs).skip_binder();
-            let shape = FunctionShape::new(&FunctionData::new(def_id, substs).shape(), self.pcg_ctxt());
-            let coupled_edges = shape.coupled().map_err(|e| {
+            let coupled_edges = task_key.shape.coupled().map_err(|e| {
                 EncodeFullError::EncodingError(
                     WandEncError::Unsupported(format!("coupled edges: {e:?}")),
                     None,
@@ -371,7 +372,13 @@ impl TaskEncoder for WandEnc {
             let spec = deps.require_local::<MirSpecEnc>((def_id, substs, None, false))?;
             if coupled_edges.is_empty() {
                 assert!(spec.pledges.is_empty());
-                return Ok((WandEncOutput { wands: vec![] }, ()));
+                return Ok((
+                    WandEncOutput {
+                        fn_sig,
+                        wands: vec![],
+                    },
+                    (),
+                ));
             }
             let pledges = spec.pledges;
             if pledges.len() > 1 && coupled_edges.len() > 1 {
@@ -382,16 +389,14 @@ impl TaskEncoder for WandEnc {
                     None,
                 ));
             }
-            let output: WandEncOutput<'vir> = WandEncOutput {
-                wands: coupled_edges
-                    .into_iter()
-                    .map(|hyper_edge| {
-                        hyper_edge.map_into(|inputs, outputs| {
-                            VirWand::new(inputs, outputs, pledges.clone())
-                        })
-                    })
-                    .collect(),
-            };
+            let wands: Vec<VirWand<'vir>> = coupled_edges
+                .into_iter()
+                .map(|hyper_edge| {
+                    let (inputs, outputs) = hyper_edge.into_tuple();
+                    VirWand::new(inputs, outputs, pledges.clone())
+                })
+                .collect();
+            let output: WandEncOutput<'vir> = WandEncOutput { fn_sig, wands };
             Ok(todo!())
             // let args = [fn_sig.skip_binder().output()]
             //     .into_iter()

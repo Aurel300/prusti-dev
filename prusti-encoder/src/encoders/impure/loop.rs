@@ -131,7 +131,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         r: LifetimeProjection<'vir, T>,
         old_outer: &mut WandOldOuter<'vir>,
     ) -> Vec<vir::ExprBool<'vir>> {
-        let place = r.place().to_pcg_lifetime_projection_base();
+        let place = r.base().to_pcg_lifetime_projection_base();
         let (place_snap, ty, _) = match place {
             PcgLifetimeProjectionBase::Place(p) => {
                 self.encode_maybe_remote_place_snap(p, old_outer)

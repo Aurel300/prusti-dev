@@ -2,7 +2,7 @@ use std::cell::RefCell;
 
 use prusti_interface::specs::{
     specifications::SpecQuery,
-    typed::{DefSpecificationMap, ProcedureSpecification, SpecificationItem},
+    typed::{DefSpecificationMap, ProcedureSpecification, SpecPledge, SpecificationItem},
 };
 use prusti_rustc_interface::{
     middle::ty,
@@ -20,7 +20,7 @@ pub struct SpecEncOutput<'vir> {
     //pub expr: vir::Expr<'vir>,
     pub pres: &'vir [DefId],
     pub posts: &'vir [DefId],
-    pub pledges: &'vir [(Option<DefId>, DefId)], // TODO: reuse Pledge type?
+    pub pledges: &'vir [SpecPledge],
 }
 
 thread_local! {
@@ -119,12 +119,7 @@ impl TaskEncoder for SpecEnc {
                 SpecEncOutput {
                     pres,
                     posts,
-                    pledges: vcx.alloc_slice(
-                        &pledges
-                            .iter()
-                            .map(|pledge| (pledge.lhs, pledge.rhs))
-                            .collect::<Vec<_>>(),
-                    ),
+                    pledges,
                 },
                 (),
             ))

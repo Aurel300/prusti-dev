@@ -1,3 +1,4 @@
+use pcg::borrow_pcg::region_projection::LifetimeProjection;
 use prusti_rustc_interface::middle::ty::{self};
 use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 use vir::{CastType, Reify};
@@ -48,8 +49,15 @@ type ExprOutput<'vir> = vir::ExprGenBool<'vir, ExprInput<'vir>, vir::ExprKind<'v
 
 #[derive(Clone)]
 pub struct IndirectPredicatesEncOutputRef<'vir> {
-    pub covariant: Vec<ExprOutput<'vir>>,
-    pub contravariant: Vec<ExprOutput<'vir>>,
+    pub predicate_applications: Vec<ExprOutput<'vir>>,
+}
+
+impl<'vir> IndirectPredicatesEncOutputRef<'vir> {
+    pub fn new(predicate_applications: Vec<ExprOutput<'vir>>) -> Self {
+        Self {
+            predicate_applications,
+        }
+    }
 }
 
 impl<'vir> task_encoder::OutputRefAny for IndirectPredicatesEncOutputRef<'vir> {}
@@ -57,7 +65,7 @@ impl<'vir> task_encoder::OutputRefAny for IndirectPredicatesEncOutputRef<'vir> {
 impl TaskEncoder for IndirectPredicatesEnc {
     task_encoder::encoder_cache!(IndirectPredicatesEnc);
 
-    type TaskDescription<'vir> = (ty::Ty<'vir>, IndirectKey);
+    type TaskDescription<'vir> = LifetimeProjection<'vir, ty::Ty<'vir>>;
 
     type TaskKey<'tcx> = Self::TaskDescription<'tcx>;
 
@@ -75,89 +83,31 @@ impl TaskEncoder for IndirectPredicatesEnc {
         deps: &mut TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self> {
         vir::with_vcx(|vcx| {
-            let (ty, proj_region) = task_key;
-            let self_ty_enc = deps.require_local::<TyPureEnc>(*ty)?;
+            let self_ty_enc = deps.require_local::<TyPureEnc>(task_key.base())?;
             let mut covariant = Vec::<ExprOutput<'vir>>::new();
             let mut contravariant = Vec::<ExprOutput<'vir>>::new();
-            match ty.kind() {
+            let predicate_applications = match ty.kind() {
                 ty::TyKind::Ref(ref_region, inner_ty, ty::Mutability::Mut) => {
-                    let ref_domain = self_ty_enc.expect_mutref();
-                    if IndirectKey::from_region(*ref_region)
-                        .is_some_and(|indirect| &indirect == proj_region)
-                    {
-                        let inner_ty_enc = deps.require_local::<TyImpureEnc>(*inner_ty)?;
-                        covariant.push(vcx.mk_lazy_expr(
-                            "ref_indirect",
-                            vir::TYPE_BOOL,
-                            Box::new(move |vcx, self_expr| {
-                                inner_ty_enc
-                                    .ref_to_pred(
-                                        vcx,
-                                        ref_domain.deref_access(self_expr.downcast_ty()),
-                                        None,
-                                    )
-                                    .kind
-                            }),
-                        ));
-                    }
-                    // TODO: is this correct??? do we always project into the inner type, regardless of region?
-                    let inner_indirect =
-                        deps.require_ref::<IndirectPredicatesEnc>((*inner_ty, *proj_region))?;
-                    let inner = inner_indirect
-                        .covariant
-                        .into_iter()
-                        .chain(inner_indirect.contravariant)
-                        .map(|inner_expr| {
-                            vcx.mk_lazy_expr(
-                                "ref_inner_indirect",
-                                vir::TYPE_BOOL,
-                                Box::new(move |vcx, self_expr: vir::ExprGenSnap<_, _>| {
-                                    inner_expr
-                                        .reify(
-                                            vcx,
-                                            ref_domain.value_access(self_expr.downcast_ty())
-                                        )
-                                        .kind
-                                }),
-                            )
-                        })
-                        .collect::<Vec<_>>();
-                    covariant.extend(inner.clone());
-                    contravariant.extend(inner);
-                }
-                ty::TyKind::Tuple(params) => {
-                    let structlike = self_ty_enc
-                        .expect_structlike();
-                    for (field_ty, accessor) in params.into_iter().zip(structlike.fields()) {
-                        let project = |inner_expr: ExprOutput<'vir>| {
-                            vcx.mk_lazy_expr(
-                                "ref_inner_indirect",
-                                vir::TYPE_BOOL,
-                                Box::new(move |vcx, self_expr: vir::ExprGenSnap<_, _>| {
-                                    inner_expr
-                                        .reify(vcx, accessor.read(self_expr.downcast_ty()))
-                                        .kind
-                                }),
-                            )
-                        };
-
-                        // TODO: tuple generics need to be passed to field accessors
-                        // TODO: tuple fields need to be (snapshot) cast
-                        let field_indirect =
-                            deps.require_ref::<IndirectPredicatesEnc>((field_ty, *proj_region))?;
-                        covariant.extend(field_indirect.covariant.into_iter().map(project));
-                        contravariant.extend(field_indirect.contravariant.into_iter().map(project));
-                    }
+                    vec![vcx.mk_lazy_expr(
+                        "ref_indirect",
+                        vir::TYPE_BOOL,
+                        Box::new(move |vcx, self_expr| {
+                            inner_ty_enc
+                                .ref_to_pred(
+                                    vcx,
+                                    ref_domain.deref_access(self_expr.downcast_ty()),
+                                    None,
+                                )
+                                .kind
+                        }),
+                    )];
                 }
                 // TODO: recurse into other types
-                _ => (),
-            }
+                _ => vec![],
+            };
             deps.emit_output_ref(
                 *task_key,
-                IndirectPredicatesEncOutputRef {
-                    covariant,
-                    contravariant,
-                },
+                IndirectPredicatesEncOutputRef::new(predicate_applications),
             )?;
             Ok(((), ()))
         })

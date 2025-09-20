@@ -1,6 +1,6 @@
 use std::alloc::Global;
 
-use pcg::{borrow_checker::r#impl::{BorrowCheckerImpl, NllBorrowCheckerImpl}, r#loop::LoopAnalysis};
+use pcg::{borrow_checker::r#impl::{BorrowCheckerImpl, NllBorrowCheckerImpl}, borrow_pcg::FunctionShape, r#loop::LoopAnalysis};
 use prusti_rustc_interface::middle::mir;
 use task_encoder::{EncodeFullError, TaskEncoder, TaskEncoderDependencies};
 use vir::{MethodIdn, ViperIdent};
@@ -112,6 +112,12 @@ where
             let mut pres = Vec::new();
             let mut posts = Vec::new();
             let spec = deps.require_local_spanned::<MirSpecEnc>((def_id, substs, None, false), span)?;
+            let shape = FunctionShape::for_fn(def_id, substs, self.pcg_ctxt())?.map_err(|e| {
+                EncodeFullError::EncodingError(
+                    ImpureFunctionEncError,
+                    None,
+                )
+            })?;
             let wands = deps.require_local_spanned::<WandEnc>(WandEncTask { def_id }, span)?;
 
             // Add direct resources for inputs and outputs to the pre- and
@@ -129,8 +135,8 @@ where
             posts.push(arg_defs[mir::RETURN_PLACE].impure_pred);
 
             // ..
-            pres.extend(wands.indirect_pres(vcx, &arg_defs, deps));
-            posts.extend(wands.indirect_posts(vcx, &arg_defs, deps));
+            // pres.extend(wands.indirect_pres(vcx, &arg_defs, deps));
+            // posts.extend(wands.indirect_posts(vcx, &arg_defs, deps));
             posts.extend(wands.wand_posts(vcx, &arg_defs, deps));
 
             let blocks = if let Some(local_def_id) = local_def_id {

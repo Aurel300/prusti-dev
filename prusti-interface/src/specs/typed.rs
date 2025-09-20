@@ -210,7 +210,7 @@ pub struct ProcedureSpecification {
     pub kind: SpecificationItem<ProcedureSpecificationKind>,
     pub pres: SpecificationItem<Vec<DefId>>,
     pub posts: SpecificationItem<Vec<DefId>>,
-    pub pledges: SpecificationItem<Vec<Pledge>>,
+    pub pledges: SpecificationItem<Vec<SpecPledge>>,
     pub trusted: SpecificationItem<bool>,
     pub terminates: SpecificationItem<Option<LocalDefId>>,
     pub purity: SpecificationItem<Option<DefId>>, // for type-conditional spec refinements
@@ -471,7 +471,7 @@ impl SpecGraph<ProcedureSpecification> {
     }
 
     /// Attaches the `pledge` to the base spec and all constrained specs.
-    pub fn add_pledge(&mut self, pledge: Pledge) {
+    pub fn add_pledge(&mut self, pledge: SpecPledge) {
         self.base_spec.pledges.push(pledge.clone());
         self.specs_with_constraints
             .values_mut()
@@ -531,10 +531,16 @@ impl SpecGraph<ProcedureSpecification> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, TyEncodable, TyDecodable)]
-pub struct Pledge {
+pub struct SpecPledge {
     pub reference: Option<()>, // TODO: pledge references
     pub lhs: Option<DefId>,
     pub rhs: DefId,
+}
+
+impl SpecPledge {
+    pub fn new(lhs: Option<DefId>, rhs: DefId) -> Self {
+        Self { reference: None, lhs, rhs }
+    }
 }
 
 /// A specification, such as preconditions or a `#[pure]` annotation.
@@ -766,7 +772,7 @@ impl Refinable for ProcedureSpecification {
         // See issue-1022
         type SpecVec<T> = SpecificationItem<Vec<T>>;
         static EMPTYL: SpecVec<DefId> = SpecificationItem::Inherent(vec![]);
-        static EMPTYP: SpecVec<Pledge> = SpecificationItem::Inherent(vec![]);
+        static EMPTYP: SpecVec<SpecPledge> = SpecificationItem::Inherent(vec![]);
         fn replace_empty<'a, T>(empty: &'a SpecVec<T>, spec: &'a SpecVec<T>) -> &'a SpecVec<T> {
             match spec {
                 SpecificationItem::Empty => empty,

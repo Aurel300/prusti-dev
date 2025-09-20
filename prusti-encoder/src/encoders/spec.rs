@@ -2,12 +2,17 @@ use std::cell::RefCell;
 
 use prusti_interface::specs::{
     specifications::SpecQuery,
+<<<<<<< HEAD
     typed::{DefSpecificationMap, ProcedureSpecification, SpecPledge, SpecificationItem},
 };
 use prusti_rustc_interface::{
     middle::ty,
     span::def_id::DefId,
+=======
+    typed::{DefSpecificationMap, ExternSpecKind, ProcedureSpecification, SpecificationItem},
+>>>>>>> aurel/rewrite-2023
 };
+use prusti_rustc_interface::{middle::ty, span::def_id::DefId};
 use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 use vir::VirCtxt;
 
@@ -17,7 +22,7 @@ pub type SpecEncError = ();
 
 #[derive(Clone, Debug)]
 pub struct SpecEncOutput<'vir> {
-    //pub expr: vir::Expr<'vir>,
+    pub extern_spec: Option<ExternSpecKind>,
     pub pres: &'vir [DefId],
     pub posts: &'vir [DefId],
     pub pledges: &'vir [SpecPledge],
@@ -47,7 +52,8 @@ where
     })
 }
 
-pub fn is_function_trusted(def_id: DefId, substs: ty::GenericArgsRef<'_>) -> bool {
+pub fn is_function_trusted(def_id: DefId) -> bool {
+    let substs = ty::GenericArgs::identity_for_item(vir::with_vcx(|vcx| vcx.tcx()), def_id);
     with_proc_spec(
         SpecQuery::GetProcKind(def_id, substs),
         |proc_spec: &ProcedureSpecification| {
@@ -84,7 +90,7 @@ impl TaskEncoder for SpecEnc {
         DefId, // ID of the function
     );
 
-    type OutputFullLocal<'vir> = SpecEncOutput<'vir>;
+    type OutputFullDependency<'vir> = SpecEncOutput<'vir>;
 
     type EncodingError = SpecEncError;
 
@@ -101,7 +107,7 @@ impl TaskEncoder for SpecEnc {
     ) -> EncodeFullResult<'vir, Self> {
         deps.emit_output_ref(*task_key, ())?;
         vir::with_vcx(|vcx| {
-            let (pres, posts, pledges) = with_proc_spec(
+            let (extern_spec, pres, posts, pledges) = with_proc_spec(
                 SpecQuery::GetProcKind(
                     task_key.0,
                     ty::List::identity_for_item(vcx.tcx(), task_key.0),
@@ -111,17 +117,24 @@ impl TaskEncoder for SpecEnc {
                     let pres = get_spec_items(vcx, &specs.pres);
                     let posts = get_spec_items(vcx, &specs.posts);
                     let pledges = get_spec_items(vcx, &specs.pledges);
-                    (pres, posts, pledges)
+                    (specs.extern_spec, pres, posts, pledges)
                 },
             )
-            .unwrap_or((&[], &[], &[]));
+            .unwrap_or((None, &[], &[], &[]));
+            let pledges = vcx.alloc_slice(
+                &pledges
+                    .iter()
+                    .map(|pledge| (pledge.lhs, pledge.rhs))
+                    .collect::<Vec<_>>(),
+            );
             Ok((
+                (),
                 SpecEncOutput {
+                    extern_spec,
                     pres,
                     posts,
                     pledges,
                 },
-                (),
             ))
         })
     }

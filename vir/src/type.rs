@@ -23,6 +23,9 @@ pub trait CompType:
     fn check(ty: Type<impl CompType>);
 }
 
+/// # Safety
+///
+/// Types must be safe to transmute between each other.
 pub unsafe trait TransmuteFrom<T: CompType>: Sized {}
 
 pub trait CastType<'a, 'vir: 'a, T: CompType>: private::UnsafeCastType<'a, 'vir, T> {
@@ -40,10 +43,7 @@ pub trait CastType<'a, 'vir: 'a, T: CompType>: private::UnsafeCastType<'a, 'vir,
     }
 
     /// Cannot panic.
-    fn upcast_ty<U: CompType>(&self) -> &Self::Output<U>
-    where
-        U: TransmuteFrom<T>,
-    {
+    fn upcast_ty<U: CompType + TransmuteFrom<T>>(&self) -> &Self::Output<U> {
         unsafe { self.cast_unchecked::<U>() }
     }
 
@@ -109,15 +109,15 @@ impl_exp_type!(Dyn, TypeKind::Unsupported(..) => false, "Represents a dynamicall
 #[macro_export]
 macro_rules! typecheck_error {
     ($($arg:tt)*) => {
-        if cfg!(feature = "vir_panic_on_typecheck_error") || cfg!(debug_assertions) {
-            panic!($($arg)*);
-        } else {
+        // if cfg!(feature = "vir_panic_on_typecheck_error") || cfg!(debug_assertions) {
+        //     panic!($($arg)*);
+        // } else {
             tracing::error!(
                 "{}\nThe error occurred at: {}",
                 format_args!($($arg)*),
                 std::backtrace::Backtrace::capture()
-            );
-        }
+            )
+        // }
     };
 }
 

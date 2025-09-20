@@ -1,4 +1,7 @@
-use crate::{environment::Environment, utils::has_trait_bounds_type_cond_spec, PrustiError};
+use crate::{
+    environment::Environment, specs::external::ExternSpecDeclaration,
+    utils::has_trait_bounds_type_cond_spec, PrustiError,
+};
 pub use common::{SpecIdRef, SpecType, SpecificationId};
 use prusti_rustc_interface::{
     hir::def_id::{DefId, LocalDefId},
@@ -207,6 +210,7 @@ pub struct ProcedureSpecification {
     // DefId of fn signature to which the spec was attached.
     // For `extern_spec` it differs to the key in `proc_specs`
     pub source: DefId,
+    pub extern_spec: Option<ExternSpecKind>,
     pub kind: SpecificationItem<ProcedureSpecificationKind>,
     pub pres: SpecificationItem<Vec<DefId>>,
     pub posts: SpecificationItem<Vec<DefId>>,
@@ -220,6 +224,7 @@ impl ProcedureSpecification {
     pub fn empty(source: DefId) -> Self {
         ProcedureSpecification {
             source,
+            extern_spec: None,
             // We never create an empty "kind". Having no concrete user-annotation
             // defaults to an impure function
             kind: SpecificationItem::Inherent(ProcedureSpecificationKind::Impure),
@@ -475,7 +480,7 @@ impl SpecGraph<ProcedureSpecification> {
         self.base_spec.pledges.push(pledge.clone());
         self.specs_with_constraints
             .values_mut()
-            .for_each(|s| s.pledges.push(pledge.clone()));
+            .for_each(|s| s.pledges.push(pledge));
     }
 
     /// Sets the trusted flag for the base spec and all constrained specs.
@@ -500,6 +505,14 @@ impl SpecGraph<ProcedureSpecification> {
         self.specs_with_constraints
             .values_mut()
             .for_each(|s| s.kind.set(kind));
+    }
+
+    /// Sets the [ExternSpecKind] for the base spec and all constrained specs.
+    pub fn set_extern_spec(&mut self, extern_spec: ExternSpecKind) {
+        self.base_spec.extern_spec = Some(extern_spec);
+        self.specs_with_constraints
+            .values_mut()
+            .for_each(|s| s.extern_spec = Some(extern_spec));
     }
 
     /// Lazily gets/creates a constrained spec.
@@ -781,6 +794,8 @@ impl Refinable for ProcedureSpecification {
         }
         ProcedureSpecification {
             source: self.source,
+            // TODO: what here?
+            extern_spec: self.extern_spec.or(other.extern_spec),
             pres: self.pres.refine(replace_empty(&EMPTYL, &other.pres)),
             posts: self.posts.refine(replace_empty(&EMPTYL, &other.posts)),
             pledges: self.pledges.refine(replace_empty(&EMPTYP, &other.pledges)),
@@ -788,6 +803,27 @@ impl Refinable for ProcedureSpecification {
             trusted: self.trusted.refine(&other.trusted),
             terminates: self.terminates.refine(&other.terminates),
             purity: self.purity.refine(&other.purity),
+        }
+    }
+}
+
+/// Identical to `prusti_specs::ExternSpecKind` or `ExternSpecDeclaration` but
+/// implements required traits.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, TyEncodable, TyDecodable)]
+pub enum ExternSpecKind {
+    InherentImpl,
+    TraitImpl,
+    Trait,
+    Method,
+}
+
+impl From<&ExternSpecDeclaration> for ExternSpecKind {
+    fn from(kind: &ExternSpecDeclaration) -> Self {
+        match kind {
+            ExternSpecDeclaration::Inherent(..) => ExternSpecKind::InherentImpl,
+            ExternSpecDeclaration::TraitImpl(..) => ExternSpecKind::TraitImpl,
+            ExternSpecDeclaration::Trait(..) => ExternSpecKind::Trait,
+            ExternSpecDeclaration::Method(..) => ExternSpecKind::Method,
         }
     }
 }

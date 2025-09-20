@@ -2,8 +2,8 @@
 #![feature(associated_type_defaults)]
 
 use hashlink::LinkedHashMap;
-use std::cell::RefCell;
 use prusti_rustc_interface::span::Span;
+use std::cell::RefCell;
 
 mod cache;
 mod dependencies;
@@ -80,6 +80,9 @@ impl<'vir> Program<'vir> {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum NeverError {}
+
 pub trait OutputRefAny {}
 impl OutputRefAny for () {}
 
@@ -107,6 +110,7 @@ pub trait TaskEncoder {
     /// dependencies (such as methods), this output should only be emitted in
     /// one Viper program.
     type OutputFullLocal<'vir>: Clone
+        = ()
     where
         Self: 'vir;
 
@@ -118,8 +122,8 @@ pub trait TaskEncoder {
     where
         Self: 'vir;
 
-    type EnqueueingError: Clone + std::fmt::Debug = ();
-    type EncodingError: Clone + std::fmt::Debug;
+    type EnqueueingError: Clone + std::fmt::Debug = NeverError;
+    type EncodingError: Clone + std::fmt::Debug = NeverError;
 
     /// User-presentable name of this encoder.
     const ENCODER_NAME: &'static str = "<untitled encoder>";
@@ -128,7 +132,7 @@ pub trait TaskEncoder {
         format!("{task:?}")
     }
 
-    fn describe_error<'vir>(error: Self::EncodingError) -> String {
+    fn describe_error(error: Self::EncodingError) -> String {
         format!("{error:?}")
     }
 
@@ -194,8 +198,7 @@ pub trait TaskEncoder {
         // TODO: we should still make sure that *some* progress is done, because an actual cyclic dependency could cause a stack overflow?
         let encode_res = Self::encode(task, false);
         match encode_res {
-            Ok(_)
-            | Err(TaskEncoderError::DependencyError(..)) => (), // pass, check for output ref
+            Ok(_) | Err(TaskEncoderError::DependencyError(..)) => (), // pass, check for output ref
             Err(err) => return Err(err),
         }
 
@@ -331,9 +334,14 @@ pub trait TaskEncoder {
                 })
             }
             Err(EncodeFullError::DependencyError(stack)) => {
-                let owned_stack = std::iter::once((Self::ENCODER_NAME, Self::describe_task(task), Vec::new())).chain(stack.into_iter()
-                    .map(|(encoder, task, spans)| (encoder, task, spans.clone())))
-                    .collect::<Vec<_>>();
+                let owned_stack =
+                    std::iter::once((Self::ENCODER_NAME, Self::describe_task(task), Vec::new()))
+                        .chain(
+                            stack
+                                .into_iter()
+                                .map(|(encoder, task, spans)| (encoder, task, spans.clone())),
+                        )
+                        .collect::<Vec<_>>();
                 Self::with_cache(|cache| {
                     cache.borrow_mut().insert(
                         task_key,
@@ -486,9 +494,14 @@ pub trait TaskEncoder {
         outputs
     }
 
+    #[allow(clippy::type_complexity)]
     fn all_outputs_local<'vir>() -> (
         Vec<Self::OutputFullLocal<'vir>>,
-        Vec<(Self::TaskKey<'vir>, Self::OutputRef<'vir>, TaskEncoderError<Self>)>,
+        Vec<(
+            Self::TaskKey<'vir>,
+            Self::OutputRef<'vir>,
+            TaskEncoderError<Self>,
+        )>,
     )
     where
         Self: 'vir,
@@ -501,9 +514,11 @@ pub trait TaskEncoder {
                     TaskEncoderCacheState::Encoded { output_local, .. } => {
                         outputs.push(output_local.clone());
                     }
-                    TaskEncoderCacheState::ErrorEncode { output_ref, error, .. } => {
+                    TaskEncoderCacheState::ErrorEncode {
+                        output_ref, error, ..
+                    } => {
                         errored.push((key.clone(), output_ref.clone(), error.clone()));
-                    },
+                    }
                     _ => panic!("task encoder not completed: {key:?}"),
                 }
             }

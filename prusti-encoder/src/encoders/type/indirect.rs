@@ -83,11 +83,13 @@ impl TaskEncoder for IndirectPredicatesEnc {
         deps: &mut TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self> {
         vir::with_vcx(|vcx| {
-            let self_ty_enc = deps.require_local::<TyPureEnc>(task_key.base())?;
+            let ty = task_key.base();
+            let self_ty_enc = deps.require_local::<TyPureEnc>(ty)?;
             let mut covariant = Vec::<ExprOutput<'vir>>::new();
             let mut contravariant = Vec::<ExprOutput<'vir>>::new();
             let predicate_applications = match ty.kind() {
                 ty::TyKind::Ref(ref_region, inner_ty, ty::Mutability::Mut) => {
+                    let inner_ty_enc = deps.require_dep::<TyUseImpureEnc>(inner_ty)?;
                     vec![vcx.mk_lazy_expr(
                         "ref_indirect",
                         vir::TYPE_BOOL,

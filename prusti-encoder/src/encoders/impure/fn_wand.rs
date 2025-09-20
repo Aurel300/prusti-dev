@@ -29,13 +29,18 @@ pub enum WandEncError {
 
 type Pledges<'vir> = Vec<VirPledge<'vir>>;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct WandEncOutput<'vir> {
-    fn_sig: ty::FnSig<'vir>,
+    /// The function signature. In general this should be defined, but we make it an option in order to have `WandEncOutput: Default`.
+    fn_sig: Option<ty::FnSig<'vir>>,
     wands: Vec<VirWand<'vir>>,
 }
 
 impl<'vir> WandEncOutput<'vir> {
+    pub(crate) fn fn_sig(&self) -> ty::FnSig<'vir> {
+        self.fn_sig.unwrap()
+    }
+
     fn encode_generic(
         &self,
         vcx: &'vir vir::VirCtxt<'vir>,
@@ -229,7 +234,7 @@ impl<'vir> WandEncOutput<'vir> {
     ) -> Result<vir::Wand<'vir>, vir::ExprBool<'vir>> {
         let rhs = rhs
             .iter()
-            .map(|g| self.encode_generic(vcx, deps, *g, self.fn_sig, &mut snap_rhs));
+            .map(|g| self.encode_generic(vcx, deps, *g, self.fn_sig(), &mut snap_rhs));
         let rhs = rhs.chain(pledge.iter().map(|pledge| pledge.rhs));
         let rhs = vcx.mk_conj(vcx.alloc_slice(&rhs.collect::<Vec<_>>()));
         if lhs.is_empty() {
@@ -240,7 +245,7 @@ impl<'vir> WandEncOutput<'vir> {
                 vcx,
                 deps,
                 g.to_function_shape_node(),
-                self.fn_sig,
+                self.fn_sig(),
                 &mut snap_lhs,
             )
         });
@@ -374,7 +379,7 @@ impl TaskEncoder for WandEnc {
                 assert!(spec.pledges.is_empty());
                 return Ok((
                     WandEncOutput {
-                        fn_sig,
+                        fn_sig: Some(fn_sig),
                         wands: vec![],
                     },
                     (),
@@ -396,8 +401,8 @@ impl TaskEncoder for WandEnc {
                     VirWand::new(inputs, outputs, pledges.clone())
                 })
                 .collect();
-            let output: WandEncOutput<'vir> = WandEncOutput { fn_sig, wands };
-            Ok(todo!())
+            let output: WandEncOutput<'vir> = WandEncOutput { fn_sig: Some(fn_sig), wands };
+            Ok((output, ()))
             // let args = [fn_sig.skip_binder().output()]
             //     .into_iter()
             //     .chain(fn_sig.skip_binder().inputs().iter().copied())

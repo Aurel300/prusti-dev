@@ -367,7 +367,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 //   function call; instead we should figure out which
                 //   wand it is based on the edge info.
                 // TODO: closures
-                let shape = call.shape(self.pcg_ctxt());
+                let shape = call.shape(self.pcg_ctxt()).unwrap();
                 let wands = self
                     .deps
                     .require_local::<WandEnc>(WandEncTask {

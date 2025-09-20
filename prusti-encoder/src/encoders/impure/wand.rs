@@ -72,7 +72,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         let mut wand_lhs = Vec::new();
         for i in outputs {
             let i = i.expect_lifetime_projection();
-            let exprs = self.encode_region_projection(i, &mut old_outer);
+            let exprs = self.encode_lifetime_projection(i, &mut old_outer);
             wand_lhs.extend(exprs);
         }
         let wand = self.vcx.mk_wand(

@@ -15,9 +15,9 @@ use task_encoder::TaskEncoder;
 use vir::{CastType, Reify};
 
 use crate::encoders::{
+    ImpureEncVisitor,
     indirect::{IndirectKey, IndirectPredicatesEnc},
     ty_impure::{TyImpureEnc, TyImpureEncOutputRef},
-    ImpureEncVisitor,
 };
 
 pub(super) enum WandOldOuter<'vir> {
@@ -39,36 +39,36 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         // self.stmt(self.vcx.mk_comment_stmt(
         //     vir::vir_format!(self.vcx, "_borrows: {:#?}", borrows),
         // ));
-        for cap_local in state.owned_pcg().iter() {
-            if cap_local.is_unallocated() {
-                continue;
-            }
-            let cap = cap_local.get_allocated();
-            for place in cap.leaf_places(self.pcg_ctxt()).iter() {
-                if !state.capabilities().is_exclusive(*place, self.pcg_ctxt()) {
-                    continue;
-                }
-                let (place_res, snap, _, _) = self.encode_place_snap(*place);
-                let ty = (*place).ty(self.pcg_ctxt());
-                let ty_out = self.deps.require_local::<TyImpureEnc>(ty.ty).unwrap();
-                let pred = ty_out.ref_to_pred(self.vcx, place_res.expr, None);
-                inv.push(pred);
+        // for cap_local in state.owned_pcg().iter() {
+        //     if cap_local.is_unallocated() {
+        //         continue;
+        //     }
+        //     let cap = cap_local.get_allocated();
+        //     for place in cap.leaf_places(self.pcg_ctxt()).iter() {
+        //         if !state.capabilities().is_exclusive(*place, self.pcg_ctxt()) {
+        //             continue;
+        //         }
+        //         let (place_res, snap, _, _) = self.encode_place_snap(*place);
+        //         let ty = (*place).ty(self.pcg_ctxt());
+        //         let ty_out = self.deps.require_local::<TyImpureEnc>(ty.ty).unwrap();
+        //         let pred = ty_out.ref_to_pred(self.vcx, place_res.expr, None);
+        //         inv.push(pred);
 
-                let regions = ty.ty.walk().flat_map(IndirectKey::from_generic_arg);
-                for region in regions {
-                    let indirect = self
-                        .deps
-                        .require_ref::<IndirectPredicatesEnc>((ty.ty, region))
-                        .unwrap();
-                    inv.extend(
-                        indirect
-                            .covariant
-                            .into_iter()
-                            .map(|expr| expr.reify(self.vcx, snap)),
-                    );
-                }
-            }
-        }
+        //         let regions = ty.ty.walk().flat_map(IndirectKey::from_generic_arg);
+        //         for region in regions {
+        //             let indirect = self
+        //                 .deps
+        //                 .require_ref::<IndirectPredicatesEnc>((ty.ty, region))
+        //                 .unwrap();
+        //             inv.extend(
+        //                 indirect
+        //                     .covariant
+        //                     .into_iter()
+        //                     .map(|expr| expr.reify(self.vcx, snap)),
+        //             );
+        //         }
+        //     }
+        // }
         for (inputs, outputs) in self.get_abstraction_edges(state.borrow_pcg().graph()) {
             let mut let_bind = WandOldOuter::LetBind(Vec::new());
             let mut wand_rhs = Vec::new();
@@ -81,7 +81,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                     PcgNode::LifetimeProjection(region_projection) => region_projection,
                     PcgNode::Place(_) => unreachable!(),
                 };
-                let exprs = self.encode_region_projection(i, &mut let_bind);
+                let exprs = self.encode_lifetime_projection(i, &mut let_bind);
                 wand_lhs.extend(exprs);
             }
             let wand = self.vcx.mk_wand(
@@ -120,13 +120,13 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 wand_rhs.push(pred);
             }
             PcgNode::LifetimeProjection(r) => {
-                let exprs = self.encode_region_projection(*r, old_outer);
+                let exprs = self.encode_lifetime_projection(*r, old_outer);
                 wand_rhs.extend(exprs);
             }
         }
     }
 
-    pub(super) fn encode_region_projection<T: PcgLifetimeProjectionBaseLike<'vir>>(
+    pub(super) fn encode_lifetime_projection<T: PcgLifetimeProjectionBaseLike<'vir>>(
         &mut self,
         r: LifetimeProjection<'vir, T>,
         old_outer: &mut WandOldOuter<'vir>,
@@ -138,20 +138,12 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             }
             PcgLifetimeProjectionBase::Const(c) => todo!("{c:?}"),
         };
-        let mut regions = ty.ty.walk().flat_map(IndirectKey::from_generic_arg);
-        let region = regions.next().unwrap();
-        // TODO:
-        assert!(
-            regions.next().is_none(),
-            "multiple regions in a type not supported ({:?})",
-            ty.ty
-        );
         let indirect = self
             .deps
-            .require_ref::<IndirectPredicatesEnc>((ty.ty, region))
+            .require_ref::<IndirectPredicatesEnc>(r.with_base(ty.ty))
             .unwrap();
         indirect
-            .covariant
+        .predicate_applications
             .into_iter()
             .map(|expr| expr.reify(self.vcx, place_snap))
             .collect::<Vec<_>>()
@@ -242,17 +234,22 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
 }
 
 trait SnapOrRef: vir::CompType {
-    fn as_result<'vir>(e: vir::Expr<'vir, Self>) -> Result<vir::ExprSnap<'vir>, vir::ExprRef<'vir>>;
+    fn as_result<'vir>(e: vir::Expr<'vir, Self>)
+    -> Result<vir::ExprSnap<'vir>, vir::ExprRef<'vir>>;
 }
 
 impl SnapOrRef for vir::Snap {
-    fn as_result<'vir>(e: vir::Expr<'vir, Self>) -> Result<vir::ExprSnap<'vir>, vir::ExprRef<'vir>> {
+    fn as_result<'vir>(
+        e: vir::Expr<'vir, Self>,
+    ) -> Result<vir::ExprSnap<'vir>, vir::ExprRef<'vir>> {
         Ok(e)
     }
 }
 
 impl SnapOrRef for vir::Ref {
-    fn as_result<'vir>(e: vir::Expr<'vir, Self>) -> Result<vir::ExprSnap<'vir>, vir::ExprRef<'vir>> {
+    fn as_result<'vir>(
+        e: vir::Expr<'vir, Self>,
+    ) -> Result<vir::ExprSnap<'vir>, vir::ExprRef<'vir>> {
         Err(e)
     }
 }

@@ -1,6 +1,6 @@
 use prusti_interface::{
     PrustiError,
-    specs::{specifications::find_trait_method_substs, typed::SpecPledge},
+    specs::{specifications::find_trait_method_substs, typed::Pledge},
 };
 use prusti_rustc_interface::{
     middle::{mir, ty},
@@ -198,7 +198,7 @@ impl TaskEncoder for MirSpecEnc {
                 .pledges
                 .iter()
                 .map(
-                    |SpecPledge {
+                    |Pledge {
                          lhs: lhs_def_id,
                          rhs: rhs_def_id,
                          ..

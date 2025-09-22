@@ -1,19 +1,24 @@
 use crate::encoders::{
     ImpureEncVisitor, MirLocalDefEncOutput, MirSpecEnc,
+    pure::spec::VirPledge,
     ty::{
         RustTyDecomposition,
         generics::GParams,
         indirect::{IndirectKey, IndirectPredicatesEnc},
     },
-    pure::spec::VirPledge,
 };
-use pcg::borrow_pcg::{state::BorrowsState, unblock_graph::UnblockGraph};
+use pcg::{borrow_pcg::{
+    state::BorrowsState, unblock_graph::UnblockGraph, FunctionData, FunctionShape, FunctionShapeCoupledEdges, FunctionShapeInput, FunctionShapeNode, FunctionShapeOutput, MakeFunctionShapeError
+}, coupling::CoupleAbstractionError};
 use prusti_interface::{PrustiError, environment::EnvQuery};
 use prusti_rustc_interface::{
     data_structures::fx::{FxHashMap, FxHashSet},
     infer::infer::region_constraints::GenericKind,
     middle::{mir, ty},
-    span::{Span, def_id::DefId, def_id::LocalDefId},
+    span::{
+        Span,
+        def_id::{DefId, LocalDefId},
+    },
 };
 use task_encoder::{EncodeFullError, EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 use vir::HasType;
@@ -29,7 +34,7 @@ pub enum WandEncError {
 impl<'vir, E: TaskEncoder> ImpureEncVisitor<'vir, '_, E> {
     pub fn package_wands(
         &mut self,
-        final_borrow_state: &BorrowsState<'vir>,
+        final_borrow_state: &BorrowsState<'_, 'vir>,
     ) -> Vec<vir::Stmt<'vir>> {
         let mut wand_packages = Vec::new();
         let vcx = self.vcx;
@@ -47,26 +52,21 @@ impl<'vir, E: TaskEncoder> ImpureEncVisitor<'vir, '_, E> {
             vcx.mk_old_expr(ld.impure_snap)
         };
 
-        for (lhs, rhs, pledge) in self.wands.viper_wands() {
+        for VirWand { lhs, rhs, pledges } in self.wands.viper_wands() {
             if lhs.is_empty() {
                 continue;
             }
             let wand = self
                 .wands
-                .mk_wand(&lhs, &rhs, &pledge, snap_lhs, snap_rhs, vcx, self.deps)
+                .mk_wand(&lhs, &rhs, &pledges, snap_lhs, snap_rhs, vcx, self.deps)
                 .unwrap();
             let mut package_script = Vec::new();
-            let generic_to_param = self.wands.generic_to_param.clone();
-            for (rhs, _) in rhs
-                .iter()
-                .filter(|g| generic_to_param.contains_key(g))
-                .flat_map(|g| &generic_to_param[g])
-            {
-                if *rhs == mir::RETURN_PLACE {
+            for rhs in rhs.iter() {
+                if rhs.mir_local() == mir::RETURN_PLACE {
                     continue;
                 }
                 let ug = UnblockGraph::for_node(
-                    mir::Place::from(*rhs),
+                    mir::Place::from(rhs.mir_local()),
                     final_borrow_state,
                     self.pcg_ctxt(),
                 );
@@ -77,15 +77,15 @@ impl<'vir, E: TaskEncoder> ImpureEncVisitor<'vir, '_, E> {
                 package_script.extend(unblock);
             }
 
-            for &(_, spec, span) in pledge.iter() {
+            for VirPledge { rhs, span, .. } in pledges.iter().copied() {
                 self.vcx.with_span(span, |vcx| {
                     vcx.handle_error("exhale.failed:assertion.false", move |_| {
                         Some(vec![PrustiError::verification(
                             "pledge postcondition might not hold",
-                            span.into(),
+                            (span).into(),
                         )])
                     });
-                    package_script.push(vcx.mk_exhale_stmt(spec));
+                    package_script.push(vcx.mk_exhale_stmt(rhs));
                 });
             }
             wand_packages.push(
@@ -97,25 +97,27 @@ impl<'vir, E: TaskEncoder> ImpureEncVisitor<'vir, '_, E> {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct WandEncOutput<'vir> {
-    fn_sig: Option<ty::FnSig<'vir>>,
-    wands: Vec<VirWand<'vir>>,
-}
-
 type Pledges<'vir> = Vec<VirPledge<'vir>>;
 
 #[derive(Clone, Debug, Default)]
 pub struct WandEncOutput<'vir> {
-    /// The function signature. In general this should be defined, but we make
-    /// it an option in order to have `WandEncOutput: Default`.
-    fn_sig: Option<ty::FnSig<'vir>>,
+    /// The function data. This is optional in order to have `WandEncOutput: Default`.
+    function_data: Option<FunctionData<'vir>>,
     wands: Vec<VirWand<'vir>>,
 }
 
 impl<'vir> WandEncOutput<'vir> {
-    pub(crate) fn fn_sig(&self) -> ty::FnSig<'vir> {
-        self.fn_sig.unwrap()
+    pub(crate) fn fn_sig(&self, vcx: &'vir vir::VirCtxt<'vir>) -> ty::FnSig<'vir> {
+        self.function_data.unwrap().instantiated_fn_sig(vcx.tcx())
+    }
+
+    pub(crate) fn g_params(&self, vcx: &'vir vir::VirCtxt<'vir>) -> GParams<'vir> {
+        let function_data = self.function_data.unwrap();
+        GParams::new(
+            function_data.substs(),
+            function_data.param_env(vcx.tcx()),
+            false,
+        )
     }
 
     fn encode_generic(
@@ -123,16 +125,16 @@ impl<'vir> WandEncOutput<'vir> {
         vcx: &'vir vir::VirCtxt<'vir>,
         deps: &mut TaskEncoderDependencies<'vir, impl TaskEncoder>,
         g: FunctionShapeNode,
-        fn_sig: ty::FnSig<'vir>,
         mut snap: impl FnMut(mir::Local) -> vir::ExprSnap<'vir>,
     ) -> vir::ExprBool<'vir> {
         use vir::Reify;
         // There may not be any parameters for this generic, for example, if the
         // generic is the `Self` type of a trait but the function doesn't take a
         // `self` parameter.
-        let ty = g.ty(fn_sig);
+        let fn_sig = self.fn_sig(vcx);
+        let ty = RustTyDecomposition::from_ty(g.ty(fn_sig), self.g_params(vcx));
         let predicates = deps
-            .require_ref::<IndirectPredicatesEnc>(g.with_base(ty))
+            .require_dep::<IndirectPredicatesEnc>(g.with_base(ty))
             .unwrap()
             .predicate_applications;
 
@@ -184,7 +186,8 @@ impl<'vir> WandEncOutput<'vir> {
                         .entry(i)
                         .or_insert_with(|| {
                             let name = vir::vir_format!(vcx, "wand{:?}", i);
-                            (name, vcx.mk_local_ex(name, local_defs[i].ty.snapshot()))
+                            let decl = vcx.mk_local_decl(name, local_defs[i].local_snap.ty());
+                            (decl, vcx.mk_local_ex(decl))
                         })
                         .1
                 };
@@ -311,21 +314,15 @@ impl<'vir> WandEncOutput<'vir> {
     ) -> Result<vir::Wand<'vir>, vir::ExprBool<'vir>> {
         let rhs = rhs
             .iter()
-            .map(|g| self.encode_generic(vcx, deps, *g, self.fn_sig(), &mut snap_rhs));
+            .map(|g| self.encode_generic(vcx, deps, *g, &mut snap_rhs));
         let rhs = rhs.chain(pledge.iter().map(|pledge| pledge.rhs));
         let rhs = vcx.mk_conj(vcx.alloc_slice(&rhs.collect::<Vec<_>>()));
         if lhs.is_empty() {
             return Err(rhs);
         }
-        let lhs = lhs.iter().map(|g| {
-            self.encode_generic(
-                vcx,
-                deps,
-                g.to_function_shape_node(),
-                self.fn_sig(),
-                &mut snap_lhs,
-            )
-        });
+        let lhs = lhs
+            .iter()
+            .map(|g| self.encode_generic(vcx, deps, g.to_function_shape_node(), &mut snap_lhs));
         let lhs = lhs.chain(pledge.iter().filter_map(|pledge| pledge.lhs_expr()));
         let lhs = vcx.mk_conj(vcx.alloc_slice(&lhs.collect::<Vec<_>>()));
         Ok(vcx.mk_wand(lhs, rhs))
@@ -333,9 +330,25 @@ impl<'vir> WandEncOutput<'vir> {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct WandEncTask {
-    pub def_id: DefId,
-    pub shape: FunctionShape,
+pub struct WandEncTask<'tcx> {
+    pub data: FunctionData<'tcx>,
+}
+
+impl<'tcx> WandEncTask<'tcx> {
+    pub fn new(data: FunctionData<'tcx>) -> Self {
+        Self { data }
+    }
+
+    pub fn def_id(&self) -> DefId {
+        self.data.def_id()
+    }
+
+    pub fn coupled_edges(
+        &self,
+        vcx: &vir::VirCtxt<'tcx>,
+    ) -> Result<FunctionShapeCoupledEdges, CoupleAbstractionError> {
+        self.data.coupled_edges(vcx.tcx())
+    }
 }
 
 // #[derive(Clone, Debug, Default)]
@@ -419,9 +432,9 @@ impl<'vir> VirWand<'vir> {
 impl TaskEncoder for WandEnc {
     task_encoder::encoder_cache!(WandEnc);
 
-    type TaskDescription<'vir> = WandEncTask;
+    type TaskDescription<'vir> = WandEncTask<'vir>;
 
-    type TaskKey<'vir> = WandEncTask;
+    type TaskKey<'vir> = WandEncTask<'vir>;
 
     type OutputFullDependency<'vir> = WandEncOutput<'vir>;
 
@@ -439,27 +452,27 @@ impl TaskEncoder for WandEnc {
     ) -> EncodeFullResult<'vir, Self> {
         deps.emit_output_ref(task_key.clone(), ())?;
         vir::with_vcx(|vcx| {
-            let def_id = task_key.def_id;
+            let def_id = task_key.def_id();
             let tcx = vcx.tcx();
             let ecx = EnvQuery::new(tcx);
             let substs = ecx.identity_substs(def_id);
 
             let fn_sig = ecx.get_fn_sig(def_id, substs).skip_binder();
-            let coupled_edges = task_key.shape.coupled().map_err(|e| {
+            let coupled_edges = task_key.coupled_edges(vcx).map_err(|e| {
                 EncodeFullError::EncodingError(
                     WandEncError::Unsupported(format!("coupled edges: {e:?}")),
                     None,
                 )
             })?;
-            let spec = deps.require_local::<MirSpecEnc>((def_id, substs, None, false))?;
+            let spec = deps.require_dep::<MirSpecEnc>((def_id, false))?;
             if coupled_edges.is_empty() {
                 assert!(spec.pledges.is_empty());
                 return Ok((
+                    (),
                     WandEncOutput {
-                        fn_sig: Some(fn_sig),
+                        function_data: Some(task_key.data),
                         wands: vec![],
                     },
-                    (),
                 ));
             }
             let pledges = spec.pledges;
@@ -478,8 +491,12 @@ impl TaskEncoder for WandEnc {
                     VirWand::new(inputs, outputs, pledges.clone())
                 })
                 .collect();
-            let output: WandEncOutput<'vir> = WandEncOutput { fn_sig: Some(fn_sig), wands };
-            Ok((output, ()))
+            let output: WandEncOutput<'vir> = WandEncOutput {
+                function_data: Some(task_key.data),
+                wands,
+            };
+            let output = ((), output);
+            Ok(output)
             // let args = [fn_sig.skip_binder().output()]
             //     .into_iter()
             //     .chain(fn_sig.skip_binder().inputs().iter().copied())

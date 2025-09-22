@@ -1,4 +1,4 @@
-use pcg::{borrow_checker::r#impl::NllBorrowCheckerImpl, r#loop::LoopAnalysis};
+use pcg::{borrow_checker::r#impl::NllBorrowCheckerImpl, borrow_pcg::FunctionData, r#loop::LoopAnalysis};
 use prusti_rustc_interface::{middle::mir, span::def_id::DefId};
 use task_encoder::{EncodeFullResult, OutputRefAny, TaskEncoder, TaskEncoderDependencies};
 use vir::MethodIdn;
@@ -173,7 +173,8 @@ impl TaskEncoder for MethodEnc {
             let mut pres = Vec::new();
             let mut posts = Vec::new();
             let spec = deps.require_dep_spanned::<MirSpecEnc>((def_id, false), span)?;
-            let wands = deps.require_dep_spanned::<WandEnc>(WandEncTask { def_id }, span)?;
+            let function_data = FunctionData::new(def_id, params.rust_params(), None);
+            let wands = deps.require_dep_spanned::<WandEnc>(WandEncTask { data: function_data }, span)?;
 
             let gparams = GParams::from(def_id);
             // Add direct resources for inputs and outputs to the pre- and
@@ -191,8 +192,8 @@ impl TaskEncoder for MethodEnc {
             posts.push(arg_defs[mir::RETURN_PLACE].impure_pred);
 
             // ..
-            pres.extend(wands.indirect_pres(vcx, &arg_defs, deps));
-            posts.extend(wands.indirect_posts(vcx, &arg_defs, deps));
+            // pres.extend(wands.indirect_pres(vcx, &arg_defs, deps));
+            // posts.extend(wands.indirect_posts(vcx, &arg_defs, deps));
             posts.extend(wands.wand_posts(vcx, &arg_defs, deps));
 
             // Do not encode the method body if it is external, trusted, just

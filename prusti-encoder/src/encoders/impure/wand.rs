@@ -1,13 +1,7 @@
 use pcg::{
     borrow_pcg::{
         AbstractionInputTarget, AbstractionOutputTarget,
-<<<<<<< HEAD
-        borrow_pcg_edge::{BorrowPcgEdgeLike, BorrowPcgEdgeRef},
-        edge::{abstraction::AbstractionEdge, kind::BorrowPcgEdgeKind},
-        graph::BorrowsGraph,
-=======
-        graph::{BorrowsGraph, coupling::PcgCoupledEdge},
->>>>>>> aurel/rewrite-2023
+        graph::{BorrowsGraph},
         state::BorrowsState,
         unblock_graph::UnblockGraph,
     },
@@ -42,9 +36,9 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         &self,
         g: &'a BorrowsGraph<'vir>,
     ) -> Vec<(Inputs<'vir>, Outputs<'vir>)> {
-        PcgCoupledEdges::get_coupled_edges(g)
+        g.coupled_edges()
             .into_iter()
-            .filter_map(|edge| self.without_remote_places(&edge))
+            .filter_map(|edge| self.without_remote_places(&edge.value()))
             .collect()
     }
 

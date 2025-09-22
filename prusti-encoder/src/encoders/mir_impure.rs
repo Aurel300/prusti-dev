@@ -8,7 +8,7 @@ use pcg::{
         unblock_graph::BorrowPcgUnblockAction,
     },
     coupling::PcgCoupledEdgeKind,
-    free_pcs::{CapabilityKind, RepackOp},
+    free_pcs::{RepackOp},
     r#loop::LoopAnalysis,
     pcg::{CapabilityKind, EvalStmtPhase, Pcg, PcgNode, PcgSuccessor},
     results::PcgBasicBlock,
@@ -358,12 +358,10 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 //   function call; instead we should figure out which
                 //   wand it is based on the edge info.
                 // TODO: closures
-                let shape = call.shape(self.pcg_ctxt()).unwrap();
                 let wands = self
                     .deps
                     .require_dep::<WandEnc>(WandEncTask {
-                        def_id: call.def_id().unwrap(),
-                        shape,
+                        data: call.function_data().unwrap(),
                     })
                     .unwrap();
                 let bb = &self.body[call.location().block];

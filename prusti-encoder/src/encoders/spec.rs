@@ -2,15 +2,7 @@ use std::cell::RefCell;
 
 use prusti_interface::specs::{
     specifications::SpecQuery,
-<<<<<<< HEAD
-    typed::{DefSpecificationMap, ProcedureSpecification, SpecPledge, SpecificationItem},
-};
-use prusti_rustc_interface::{
-    middle::ty,
-    span::def_id::DefId,
-=======
-    typed::{DefSpecificationMap, ExternSpecKind, ProcedureSpecification, SpecificationItem},
->>>>>>> aurel/rewrite-2023
+    typed::{DefSpecificationMap, ExternSpecKind, ProcedureSpecification, SpecPledge, SpecificationItem},
 };
 use prusti_rustc_interface::{middle::ty, span::def_id::DefId};
 use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
@@ -124,7 +116,7 @@ impl TaskEncoder for SpecEnc {
             let pledges = vcx.alloc_slice(
                 &pledges
                     .iter()
-                    .map(|pledge| (pledge.lhs, pledge.rhs))
+                    .map(|pledge| SpecPledge::new(pledge.lhs, pledge.rhs))
                     .collect::<Vec<_>>(),
             );
             Ok((

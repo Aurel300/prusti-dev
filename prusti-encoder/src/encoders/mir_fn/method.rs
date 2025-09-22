@@ -207,10 +207,10 @@ impl TaskEncoder for MethodEnc {
                 let local_defs =
                     deps.require_dep_spanned::<MirLocalDefEnc>((def_id, true), span)?;
 
-                let loop_analysis = LoopAnalysis::find_loops(body);
                 let bc = NllBorrowCheckerImpl::new(vcx.tcx(), &body_with_facts);
                 let pcg_ctxt = pcg::PcgCtxt::new(&body_with_facts.body, vcx.tcx(), &bc);
-                let fpcs_analysis = pcg::run_pcg(&pcg_ctxt, None);
+                let fpcs_analysis = pcg::run_pcg(&pcg_ctxt);
+                pcg_ctxt.update_debug_visualization_metadata();
 
                 let block_count = body.basic_blocks.len();
 
@@ -243,7 +243,6 @@ impl TaskEncoder for MethodEnc {
                     local_defs,
                     body,
 
-                    loop_analysis,
                     wands,
 
                     tmp_ctr: 0,

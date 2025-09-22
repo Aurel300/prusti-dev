@@ -2,11 +2,12 @@ use pcg::{
     borrow_pcg::region_projection::{
         LifetimeProjection, PcgLifetimeProjectionBase, PcgLifetimeProjectionBaseLike,
     },
-    r#loop::LoopId,
+    r#loop::{LoopId, PlaceUsages},
     pcg::{EvalStmtPhase, PcgNode},
     results::PcgBasicBlock,
     utils::{
-        Place, SnapshotLocation, maybe_old::MaybeLabelledPlace, maybe_remote::MaybeRemotePlace,
+        HasCompilerCtxt, Place, SnapshotLocation, maybe_old::MaybeLabelledPlace,
+        maybe_remote::MaybeRemotePlace,
     },
 };
 use prusti_rustc_interface::middle::mir;
@@ -30,14 +31,32 @@ pub(super) enum WandOldOuter<'vir> {
 
 impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
     /// Calculate invariant at loop head
-    pub(crate) fn get_loop_inv(
+    pub(crate) fn get_loop_inv<'a>(
         &mut self,
-        _lh: LoopId,
         cfpcs: &PcgBasicBlock<'_, 'vir>,
+        loop_place_usages: &PlaceUsages<'vir>,
+        ctxt: impl HasCompilerCtxt<'a, 'vir>,
     ) -> &'vir [vir::ExprBool<'vir>] {
         let mut inv = Vec::new();
         let start = &cfpcs.statements[0];
         let state = &start.states[EvalStmtPhase::PreOperands];
+        let loop_invariant_place_capabilities =
+            cfpcs.loop_invariant_place_capabilities(loop_place_usages, ctxt);
+        eprintln!(
+            "loop_invariant_place_capabilities: {:#?}",
+            loop_invariant_place_capabilities
+        );
+        for (place, capability) in loop_invariant_place_capabilities.iter() {
+            if capability.is_write() {
+                continue; // TODO: bug with always live locals
+            }
+            let (place_res, snap, _, _) = self.encode_place_snap(*place);
+            let ty = (*place).ty(self.pcg_ctxt());
+            let task = RustTyDecomposition::from_ty(ty.ty, self.def_id);
+            let ty_out = self.deps.require_dep::<TyUseImpureEnc>(task).unwrap();
+            let pred = ty_out.ref_to_pred(self.vcx, place_res.expr.expect_predicate(), None);
+            inv.push(pred);
+        }
         // let borrows = &*start.borrows[EvalStmtPhase::PreOperands];
         // self.stmt(self.vcx.mk_comment_stmt(
         //     vir::vir_format!(self.vcx, "_borrows: {:#?}", borrows),
@@ -150,7 +169,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             .require_dep::<IndirectPredicatesEnc>(r.with_base(ty))
             .unwrap();
         indirect
-        .predicate_applications
+            .predicate_applications
             .into_iter()
             .map(|expr| expr.reify(self.vcx, place_snap))
             .collect::<Vec<_>>()

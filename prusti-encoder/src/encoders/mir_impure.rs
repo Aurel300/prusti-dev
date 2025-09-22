@@ -8,8 +8,8 @@ use pcg::{
         unblock_graph::BorrowPcgUnblockAction,
     },
     coupling::PcgCoupledEdgeKind,
-    free_pcs::{RepackOp},
-    r#loop::LoopAnalysis,
+    free_pcs::RepackOp,
+    r#loop::{LoopAnalysis, LoopId, PlaceUsages},
     pcg::{CapabilityKind, EvalStmtPhase, Pcg, PcgNode, PcgSuccessor},
     results::PcgBasicBlock,
     utils::{maybe_old::MaybeLabelledPlace, CompilerCtxt, HasPlace, Place},
@@ -54,7 +54,6 @@ where
     pub local_defs: crate::encoders::MirLocalDefEncOutput<'vir>,
     pub body: &'enc mir::Body<'vir>,
 
-    pub loop_analysis: LoopAnalysis,
     pub wands: WandEncOutput<'vir>,
 
     pub tmp_ctr: usize,
@@ -517,8 +516,20 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         }
     }
 
+    fn loop_analysis(&mut self) -> &LoopAnalysis {
+        self.fpcs_analysis.analysis().loop_analysis()
+    }
+
+    fn loop_place_usages(&mut self, block: mir::BasicBlock) -> Option<PlaceUsages<'vir>> {
+        self.fpcs_analysis.analysis().loop_place_usages(block).cloned()
+    }
+
+    fn loop_head_of(&mut self, block: mir::BasicBlock) -> Option<LoopId> {
+        self.loop_analysis().loop_head_of(block)
+    }
+
     fn pcs_succ<'a>(&mut self, pcg_state: &Pcg<'_, 'vir>, succ: &'a PcgSuccessor<'_, 'vir>) {
-        let edge_to_loop = self.loop_analysis.loop_head_of(succ.block()).is_some();
+        let edge_to_loop = self.loop_head_of(succ.block()).is_some();
         self.pcg_actions(pcg_state, succ.actions(), edge_to_loop);
     }
 
@@ -769,9 +780,8 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
 
         // Calculate invariant at loop head
         let invariant = self
-            .loop_analysis
-            .loop_head_of(block)
-            .map(|lh| self.get_loop_inv(lh, &cfpcs))
+            .loop_place_usages(block)
+            .map(|place_usages| self.get_loop_inv(&cfpcs, &place_usages, self.pcg_ctxt()))
             .unwrap_or_default();
 
         self.current_fpcs = Some(cfpcs);

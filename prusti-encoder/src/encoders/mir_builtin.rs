@@ -3,7 +3,7 @@ use prusti_utils::config;
 use task_encoder::{EncodeFullError, EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 use vir::{CallableIdn, CastType, FunctionIdn};
 
-use crate::encoders::ty::{RustTyDecomposition, use_pure::TyUsePureEnc};
+use crate::encoders::ty::{RustTyDecomposition, generics::GParams, use_pure::TyUsePureEnc};
 
 pub struct MirBuiltinEnc;
 
@@ -389,7 +389,7 @@ impl MirBuiltinEnc {
             int_name(l_ty),
             int_name(r_ty)
         );
-        let res_ty_task = RustTyDecomposition::from_prim_ty(res_ty);
+        let res_ty_task = RustTyDecomposition::from_ty(res_ty, vcx.tcx(), GParams::empty());
         let e_res_ty = deps.require_dep::<TyUsePureEnc>(res_ty_task)?;
         let e_res_ty_snap = e_res_ty.snapshot.downcast_ty();
         let function = FunctionIdn::new(name, (e_l_ty_snap, e_r_ty_snap), e_res_ty_snap);

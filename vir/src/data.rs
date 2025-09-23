@@ -75,10 +75,10 @@ impl From<mir::BinOp> for BinOpKind {
             }
             mir::BinOp::Div => BinOpKind::Div,
             mir::BinOp::Rem => BinOpKind::Mod,
-            mir::BinOp::BitXor => todo!("bitwise operations"),
             // TODO: this is a temporary workaround,
             // we need to fix this for integers and
             // do non-short-circuiting for booleans.
+            mir::BinOp::BitXor => BinOpKind::CmpNe,
             mir::BinOp::BitAnd => BinOpKind::And,
             mir::BinOp::BitOr => BinOpKind::Or,
             mir::BinOp::Shl => todo!("bitwise operations"),

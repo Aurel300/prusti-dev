@@ -18,7 +18,7 @@ use crate::encoders::{
 pub struct MirSpecEnc;
 
 #[derive(Clone, Copy, Debug)]
-struct PledgeLhs<'vir> {
+pub struct PledgeLhs<'vir> {
     pub expr: vir::ExprBool<'vir>,
     pub span: Span,
 }
@@ -54,7 +54,7 @@ impl<'vir> VirPledge<'vir> {
 pub struct MirSpecEncOutput<'vir> {
     pub pres: Vec<vir::ExprBool<'vir>>,
     pub posts: Vec<vir::ExprBool<'vir>>,
-    pub pledges: Vec<VirPledge<'vir>>, // TODO: associate with a named lifetime
+    pub pledges: Vec<VirPledge<'vir>>,
     pub pre_args: &'vir [vir::ExprSnap<'vir>],
     #[allow(dead_code)]
     pub post_args: &'vir [vir::ExprSnap<'vir>],

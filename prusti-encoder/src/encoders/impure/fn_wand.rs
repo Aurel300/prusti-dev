@@ -171,8 +171,16 @@ impl<'vir> WandEncOutput<'vir> {
         local_defs: &'a MirLocalDefEncOutput<'vir>,
         deps: &'a mut TaskEncoderDependencies<'vir, E>,
     ) -> impl Iterator<Item = vir::ExprBool<'vir>> + 'a {
-        self.outputs()
-            .map(|g| self.encode_generic(vcx, deps, g, |i| local_defs[i].impure_snap))
+        let input_posts = self
+            .inputs()
+            .filter(|i| !self.wand_inputs().contains(i))
+            .map(|lp| {
+                self.encode_generic(vcx, deps, lp, |i| vcx.mk_old_expr(local_defs[i].impure_snap))
+            }).collect::<Vec<_>>().into_iter();
+        let output_posts = self.outputs().map(|g| {
+            self.encode_generic(vcx, deps, g, |i| local_defs[i].impure_snap)
+        });
+        input_posts.chain(output_posts)
     }
 
     pub fn wand_posts<'a, E: TaskEncoder>(
@@ -740,6 +748,13 @@ impl TaskEncoder for WandEnc {
 impl<'vir> WandEncOutput<'vir> {
     pub fn viper_wands(&self) -> Vec<VirWand<'vir>> {
         self.wands.clone()
+    }
+
+    pub fn wand_inputs(&self) -> FxHashSet<FunctionShapeInput> {
+        self.wands
+            .iter()
+            .flat_map(|wand| wand.lhs.iter().copied())
+            .collect()
     }
 
     pub fn inputs(&self) -> impl Iterator<Item = FunctionShapeInput> + '_ {

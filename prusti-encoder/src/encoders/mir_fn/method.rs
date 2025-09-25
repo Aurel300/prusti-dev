@@ -192,8 +192,8 @@ impl TaskEncoder for MethodEnc {
             posts.push(arg_defs[mir::RETURN_PLACE].impure_pred);
 
             // ..
-            // pres.extend(wands.indirect_pres(vcx, &arg_defs, deps));
-            // posts.extend(wands.indirect_posts(vcx, &arg_defs, deps));
+            pres.extend(wands.indirect_pres(vcx, &arg_defs, deps));
+            posts.extend(wands.indirect_posts(vcx, &arg_defs, deps));
             posts.extend(wands.wand_posts(vcx, &arg_defs, deps));
 
             // Do not encode the method body if it is external, trusted, just

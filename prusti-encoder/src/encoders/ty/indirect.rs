@@ -82,7 +82,6 @@ impl TaskEncoder for IndirectPredicatesEnc {
         deps: &mut TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self> {
         deps.emit_output_ref(*task_key, ())?;
-        eprintln!("Encoding indirect predicates for {:?}", task_key);
         vir::with_vcx(|vcx| {
             let ty = task_key.base();
             let self_ty_enc = deps.require_dep::<TyUsePureEnc>(ty)?;
@@ -105,29 +104,32 @@ impl TaskEncoder for IndirectPredicatesEnc {
                                 .kind
                         }),
                     ));
-                    let new_projection =
-                        LifetimeProjection::new(task_key.region(()), inner_ty, None, ()).unwrap();
-                    let inner_indirect =
-                        deps.require_dep::<IndirectPredicatesEnc>(new_projection)?;
-                    predicate_applications.extend(
-                        inner_indirect
-                            .predicate_applications
-                            .into_iter()
-                            .map(|inner_expr| {
-                                vcx.mk_lazy_expr(
-                                    "ref_inner_indirect",
-                                    vir::TYPE_BOOL,
-                                    Box::new(move |vcx, self_expr: vir::ExprGenSnap<_, _>| {
-                                        inner_expr
-                                            .reify(
-                                                vcx,
-                                                ref_domain.value_access(self_expr.downcast_ty()),
-                                            )
-                                            .kind
-                                    }),
-                                )
-                            }),
-                    );
+                    if let Some(new_projection) =
+                        LifetimeProjection::new(inner_ty, task_key.region(()), None, ())
+                    {
+                        let inner_indirect =
+                            deps.require_dep::<IndirectPredicatesEnc>(new_projection)?;
+                        predicate_applications.extend(
+                            inner_indirect
+                                .predicate_applications
+                                .into_iter()
+                                .map(|inner_expr| {
+                                    vcx.mk_lazy_expr(
+                                        "ref_inner_indirect",
+                                        vir::TYPE_BOOL,
+                                        Box::new(move |vcx, self_expr: vir::ExprGenSnap<_, _>| {
+                                            inner_expr
+                                                .reify(
+                                                    vcx,
+                                                    ref_domain
+                                                        .value_access(self_expr.downcast_ty()),
+                                                )
+                                                .kind
+                                        }),
+                                    )
+                                }),
+                        );
+                    }
                 }
                 TySpecifics::StructLike(data) => {
                     for (field_ty, accessor) in data.fields {
@@ -147,7 +149,8 @@ impl TaskEncoder for IndirectPredicatesEnc {
                         // recursive!
                         let field_ty = field_ty.decompose(ty.ty.params);
                         let new_projection =
-                            LifetimeProjection::new(task_key.region(()), field_ty, None, ()).unwrap();
+                            LifetimeProjection::new(field_ty, task_key.region(()), None, ())
+                                .unwrap();
                         let field_indirect =
                             deps.require_dep::<IndirectPredicatesEnc>(new_projection)?;
                         predicate_applications.extend(

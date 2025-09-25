@@ -42,10 +42,6 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         let state = &start.states[EvalStmtPhase::PreOperands];
         let loop_invariant_place_capabilities =
             cfpcs.loop_invariant_place_capabilities(loop_place_usages, ctxt);
-        eprintln!(
-            "loop_invariant_place_capabilities: {:#?}",
-            loop_invariant_place_capabilities
-        );
         for (place, capability) in loop_invariant_place_capabilities.iter() {
             if capability.is_write() {
                 continue; // TODO: bug with always live locals

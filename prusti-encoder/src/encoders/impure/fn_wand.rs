@@ -7,9 +7,14 @@ use crate::encoders::{
         indirect::{IndirectKey, IndirectPredicatesEnc},
     },
 };
-use pcg::{borrow_pcg::{
-    state::BorrowsState, unblock_graph::UnblockGraph, FunctionData, FunctionShape, FunctionShapeCoupledEdges, FunctionShapeInput, FunctionShapeNode, FunctionShapeOutput, MakeFunctionShapeError
-}, coupling::CoupleAbstractionError};
+use pcg::{
+    borrow_pcg::{
+        FunctionData, FunctionShape, FunctionShapeCoupledEdges, FunctionShapeInput,
+        FunctionShapeNode, FunctionShapeOutput, MakeFunctionShapeError, state::BorrowsState,
+        unblock_graph::UnblockGraph,
+    },
+    coupling::CoupleAbstractionError,
+};
 use prusti_interface::{PrustiError, environment::EnvQuery};
 use prusti_rustc_interface::{
     data_structures::fx::{FxHashMap, FxHashSet},
@@ -103,6 +108,8 @@ type Pledges<'vir> = Vec<VirPledge<'vir>>;
 pub struct WandEncOutput<'vir> {
     /// The function data. This is optional in order to have `WandEncOutput: Default`.
     function_data: Option<FunctionData<'vir>>,
+    inputs: Vec<FunctionShapeInput>,
+    outputs: Vec<FunctionShapeOutput>,
     wands: Vec<VirWand<'vir>>,
 }
 
@@ -124,13 +131,11 @@ impl<'vir> WandEncOutput<'vir> {
         &self,
         vcx: &'vir vir::VirCtxt<'vir>,
         deps: &mut TaskEncoderDependencies<'vir, impl TaskEncoder>,
-        g: FunctionShapeNode,
+        g: impl Into<FunctionShapeNode>,
         mut snap: impl FnMut(mir::Local) -> vir::ExprSnap<'vir>,
     ) -> vir::ExprBool<'vir> {
         use vir::Reify;
-        // There may not be any parameters for this generic, for example, if the
-        // generic is the `Self` type of a trait but the function doesn't take a
-        // `self` parameter.
+        let g = g.into();
         let fn_sig = self.fn_sig(vcx);
         let ty = RustTyDecomposition::from_ty(g.ty(fn_sig), self.g_params(vcx));
         let predicates = deps
@@ -150,25 +155,25 @@ impl<'vir> WandEncOutput<'vir> {
         )
     }
 
-    // pub fn indirect_pres<'a, E: TaskEncoder>(
-    //     &'a self,
-    //     vcx: &'vir vir::VirCtxt<'vir>,
-    //     local_defs: &'a MirLocalDefEncOutput<'vir>,
-    //     deps: &'a mut TaskEncoderDependencies<'vir, E>,
-    // ) -> impl Iterator<Item = vir::ExprBool<'vir>> + 'a {
-    //     self.inputs()
-    //         .filter_map(|g| self.encode_generic(vcx, deps, g, true, |i| local_defs[i].impure_snap))
-    // }
+    pub fn indirect_pres<'a, E: TaskEncoder>(
+        &'a self,
+        vcx: &'vir vir::VirCtxt<'vir>,
+        local_defs: &'a MirLocalDefEncOutput<'vir>,
+        deps: &'a mut TaskEncoderDependencies<'vir, E>,
+    ) -> impl Iterator<Item = vir::ExprBool<'vir>> + 'a {
+        self.inputs()
+            .map(|g| self.encode_generic(vcx, deps, g, |i| local_defs[i].impure_snap))
+    }
 
-    // pub fn indirect_posts<'a, E: TaskEncoder>(
-    //     &'a self,
-    //     vcx: &'vir vir::VirCtxt<'vir>,
-    //     local_defs: &'a MirLocalDefEncOutput<'vir>,
-    //     deps: &'a mut TaskEncoderDependencies<'vir, E>,
-    // ) -> impl Iterator<Item = vir::ExprBool<'vir>> + 'a {
-    //     self.outputs()
-    //         .filter_map(|g| self.encode_generic(vcx, deps, g, false, |i| local_defs[i].impure_snap))
-    // }
+    pub fn indirect_posts<'a, E: TaskEncoder>(
+        &'a self,
+        vcx: &'vir vir::VirCtxt<'vir>,
+        local_defs: &'a MirLocalDefEncOutput<'vir>,
+        deps: &'a mut TaskEncoderDependencies<'vir, E>,
+    ) -> impl Iterator<Item = vir::ExprBool<'vir>> + 'a {
+        self.outputs()
+            .map(|g| self.encode_generic(vcx, deps, g, |i| local_defs[i].impure_snap))
+    }
 
     pub fn wand_posts<'a, E: TaskEncoder>(
         &'a self,
@@ -343,6 +348,13 @@ impl<'tcx> WandEncTask<'tcx> {
         self.data.def_id()
     }
 
+    pub fn function_shape(
+        &self,
+        vcx: &vir::VirCtxt<'tcx>,
+    ) -> Result<FunctionShape, MakeFunctionShapeError> {
+        self.data.shape(vcx.tcx())
+    }
+
     pub fn coupled_edges(
         &self,
         vcx: &vir::VirCtxt<'tcx>,
@@ -458,12 +470,19 @@ impl TaskEncoder for WandEnc {
             let substs = ecx.identity_substs(def_id);
 
             let fn_sig = ecx.get_fn_sig(def_id, substs).skip_binder();
-            let coupled_edges = task_key.coupled_edges(vcx).map_err(|e| {
+            let shape = task_key.function_shape(vcx).map_err(|e| {
+                EncodeFullError::EncodingError(
+                    WandEncError::Unsupported(format!("function shape: {e:?}")),
+                    None,
+                )
+            })?;
+            let coupled_edges = shape.coupled_edges().map_err(|e| {
                 EncodeFullError::EncodingError(
                     WandEncError::Unsupported(format!("coupled edges: {e:?}")),
                     None,
                 )
             })?;
+            let (inputs, outputs) = shape.take_inputs_and_outputs();
             let spec = deps.require_dep::<MirSpecEnc>((def_id, false))?;
             if coupled_edges.is_empty() {
                 assert!(spec.pledges.is_empty());
@@ -471,6 +490,8 @@ impl TaskEncoder for WandEnc {
                     (),
                     WandEncOutput {
                         function_data: Some(task_key.data),
+                        inputs,
+                        outputs,
                         wands: vec![],
                     },
                 ));
@@ -493,6 +514,8 @@ impl TaskEncoder for WandEnc {
                 .collect();
             let output: WandEncOutput<'vir> = WandEncOutput {
                 function_data: Some(task_key.data),
+                inputs,
+                outputs,
                 wands,
             };
             let output = ((), output);
@@ -717,5 +740,13 @@ impl TaskEncoder for WandEnc {
 impl<'vir> WandEncOutput<'vir> {
     pub fn viper_wands(&self) -> Vec<VirWand<'vir>> {
         self.wands.clone()
+    }
+
+    pub fn inputs(&self) -> impl Iterator<Item = FunctionShapeInput> + '_ {
+        self.inputs.iter().copied()
+    }
+
+    pub fn outputs(&self) -> impl Iterator<Item = FunctionShapeOutput> + '_ {
+        self.outputs.iter().copied()
     }
 }

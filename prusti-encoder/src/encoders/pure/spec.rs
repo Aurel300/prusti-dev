@@ -30,13 +30,13 @@ impl<'vir> PledgeLhs<'vir> {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct VirPledge<'vir> {
+pub struct EncodedPledge<'vir> {
     pub lhs: Option<PledgeLhs<'vir>>,
     pub rhs: vir::ExprBool<'vir>,
     pub span: Span,
 }
 
-impl<'vir> VirPledge<'vir> {
+impl<'vir> EncodedPledge<'vir> {
     pub fn lhs_expr(&self) -> Option<vir::ExprBool<'vir>> {
         self.lhs.map(|lhs| lhs.expr)
     }
@@ -54,7 +54,7 @@ impl<'vir> VirPledge<'vir> {
 pub struct MirSpecEncOutput<'vir> {
     pub pres: Vec<vir::ExprBool<'vir>>,
     pub posts: Vec<vir::ExprBool<'vir>>,
-    pub pledges: Vec<VirPledge<'vir>>,
+    pub pledges: Vec<EncodedPledge<'vir>>,
     pub pre_args: &'vir [vir::ExprSnap<'vir>],
     #[allow(dead_code)]
     pub post_args: &'vir [vir::ExprSnap<'vir>],
@@ -240,7 +240,7 @@ impl TaskEncoder for MirSpecEnc {
                         });
                         let rhs_expr = rhs_expr.reify(vcx, (*rhs_def_id, pledge_args));
                         let rhs_span = vcx.tcx().def_span(rhs_def_id);
-                        VirPledge::new(
+                        EncodedPledge::new(
                             lhs_expr.map(|lhs_expr| {
                                 let lhs_span = vcx.tcx().def_span(lhs_def_id.unwrap());
                                 PledgeLhs::new(

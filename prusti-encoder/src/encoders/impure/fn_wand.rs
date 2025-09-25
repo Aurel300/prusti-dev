@@ -1,6 +1,6 @@
 use crate::encoders::{
     ImpureEncVisitor, MirLocalDefEncOutput, MirSpecEnc,
-    pure::spec::VirPledge,
+    pure::spec::EncodedPledge,
     ty::{
         RustTyDecomposition,
         generics::GParams,
@@ -57,19 +57,13 @@ impl<'vir, E: TaskEncoder> ImpureEncVisitor<'vir, '_, E> {
             vcx.mk_old_expr(ld.impure_snap)
         };
 
-        for VirWand { lhs, rhs, pledges } in self.wands.viper_wands() {
-            if lhs.is_empty() {
-                continue;
-            }
+        for WandData { lhs, rhs, pledges } in self.wands.viper_wands() {
             let wand = self
                 .wands
                 .mk_wand(&lhs, &rhs, &pledges, snap_lhs, snap_rhs, vcx, self.deps)
                 .unwrap();
             let mut package_script = Vec::new();
             for rhs in rhs.iter() {
-                if rhs.mir_local() == mir::RETURN_PLACE {
-                    continue;
-                }
                 let ug = UnblockGraph::for_node(
                     mir::Place::from(rhs.mir_local()),
                     final_borrow_state,
@@ -82,7 +76,7 @@ impl<'vir, E: TaskEncoder> ImpureEncVisitor<'vir, '_, E> {
                 package_script.extend(unblock);
             }
 
-            for VirPledge { rhs, span, .. } in pledges.iter().copied() {
+            for EncodedPledge { rhs, span, .. } in pledges.iter().copied() {
                 self.vcx.with_span(span, |vcx| {
                     vcx.handle_error("exhale.failed:assertion.false", move |_| {
                         Some(vec![PrustiError::verification(
@@ -102,7 +96,7 @@ impl<'vir, E: TaskEncoder> ImpureEncVisitor<'vir, '_, E> {
     }
 }
 
-type Pledges<'vir> = Vec<VirPledge<'vir>>;
+type Pledges<'vir> = Vec<EncodedPledge<'vir>>;
 
 #[derive(Clone, Debug, Default)]
 pub struct WandEncOutput<'vir> {
@@ -110,7 +104,7 @@ pub struct WandEncOutput<'vir> {
     function_data: Option<FunctionData<'vir>>,
     inputs: Vec<FunctionShapeInput>,
     outputs: Vec<FunctionShapeOutput>,
-    wands: Vec<VirWand<'vir>>,
+    wands: Vec<WandData<'vir>>,
 }
 
 impl<'vir> WandEncOutput<'vir> {
@@ -173,13 +167,17 @@ impl<'vir> WandEncOutput<'vir> {
     ) -> impl Iterator<Item = vir::ExprBool<'vir>> + 'a {
         let input_posts = self
             .inputs()
-            .filter(|i| !self.wand_inputs().contains(i))
+            .filter(|i| !self.blocked_inputs().contains(i))
             .map(|lp| {
-                self.encode_generic(vcx, deps, lp, |i| vcx.mk_old_expr(local_defs[i].impure_snap))
-            }).collect::<Vec<_>>().into_iter();
-        let output_posts = self.outputs().map(|g| {
-            self.encode_generic(vcx, deps, g, |i| local_defs[i].impure_snap)
-        });
+                self.encode_generic(vcx, deps, lp, |i| {
+                    vcx.mk_old_expr(local_defs[i].impure_snap)
+                })
+            })
+            .collect::<Vec<_>>()
+            .into_iter();
+        let output_posts = self
+            .outputs()
+            .map(|g| self.encode_generic(vcx, deps, g, |i| local_defs[i].impure_snap));
         input_posts.chain(output_posts)
     }
 
@@ -192,7 +190,7 @@ impl<'vir> WandEncOutput<'vir> {
         // TODO: wands for late-bound regions
         self.viper_wands()
             .into_iter()
-            .map(|VirWand { lhs, rhs, pledges }| {
+            .map(|WandData { lhs, rhs, pledges }| {
                 let mut snaps = FxHashMap::default();
                 let snap_lhs = |i| {
                     snaps
@@ -235,7 +233,7 @@ impl<'vir> WandEncOutput<'vir> {
         };
         let snap_rhs =
             |l: mir::Local| vcx.mk_local_labelled_old_expr(arguments[l.as_usize()], label_pre);
-        for VirWand { lhs, rhs, pledges } in self.viper_wands() {
+        for WandData { lhs, rhs, pledges } in self.viper_wands() {
             if lhs.is_empty() {
                 continue;
             }
@@ -267,7 +265,7 @@ impl<'vir> WandEncOutput<'vir> {
             vcx.mk_old_expr(ld.impure_snap)
         };
 
-        for VirWand { lhs, rhs, pledges } in self.viper_wands() {
+        for WandData { lhs, rhs, pledges } in self.viper_wands() {
             if lhs.is_empty() {
                 continue;
             }
@@ -275,7 +273,7 @@ impl<'vir> WandEncOutput<'vir> {
                 .mk_wand(&lhs, &rhs, &pledges, snap_lhs, snap_rhs, vcx, visitor.deps)
                 .unwrap();
             let mut package_script = Vec::new();
-            for lifetime_projection in rhs {
+            for lifetime_projection in lhs {
                 let local = lifetime_projection.mir_local();
                 if local == mir::RETURN_PLACE {
                     continue;
@@ -292,7 +290,7 @@ impl<'vir> WandEncOutput<'vir> {
                 package_script.extend(unblock);
             }
 
-            for VirPledge {
+            for EncodedPledge {
                 rhs: spec, span, ..
             } in pledges.iter().copied()
             {
@@ -317,8 +315,8 @@ impl<'vir> WandEncOutput<'vir> {
 
     fn mk_wand<'a, E: TaskEncoder>(
         &'a self,
-        lhs: &[WandInputKey],
-        rhs: &[WandOutputKey],
+        lhs: &[WandLhsKey],
+        rhs: &[WandRhsKey],
         pledge: &Pledges<'vir>,
         mut snap_lhs: impl FnMut(mir::Local) -> vir::ExprSnap<'vir>,
         mut snap_rhs: impl FnMut(mir::Local) -> vir::ExprSnap<'vir>,
@@ -335,7 +333,7 @@ impl<'vir> WandEncOutput<'vir> {
         }
         let lhs = lhs
             .iter()
-            .map(|g| self.encode_generic(vcx, deps, g.to_function_shape_node(), &mut snap_lhs));
+            .map(|g| self.encode_generic(vcx, deps, *g, &mut snap_lhs));
         let lhs = lhs.chain(pledge.iter().filter_map(|pledge| pledge.lhs_expr()));
         let lhs = vcx.mk_conj(vcx.alloc_slice(&lhs.collect::<Vec<_>>()));
         Ok(vcx.mk_wand(lhs, rhs))
@@ -429,23 +427,19 @@ impl<'tcx> WandEncTask<'tcx> {
 //     }
 // }
 
-pub type WandInputKey = FunctionShapeInput;
-pub type WandOutputKey = FunctionShapeOutput;
+pub type WandRhsKey = FunctionShapeInput;
+pub type WandLhsKey = FunctionShapeNode;
 
 #[derive(Clone, Debug)]
-pub struct VirWand<'vir> {
-    lhs: Vec<WandInputKey>,
-    rhs: Vec<WandOutputKey>,
+pub struct WandData<'vir> {
+    rhs: Vec<WandRhsKey>,
+    lhs: Vec<WandLhsKey>,
     pledges: Pledges<'vir>,
 }
 
-impl<'vir> VirWand<'vir> {
-    pub fn new(lhs: Vec<WandInputKey>, rhs: Vec<WandOutputKey>, pledges: Pledges<'vir>) -> Self {
-        Self { lhs, rhs, pledges }
-    }
-
-    pub fn has_lhs(&self) -> bool {
-        !self.lhs.is_empty()
+impl<'vir> WandData<'vir> {
+    pub fn new(lhs: Vec<WandLhsKey>, rhs: Vec<WandRhsKey>, pledges: Pledges<'vir>) -> Self {
+        Self { rhs, lhs, pledges }
     }
 }
 
@@ -513,11 +507,11 @@ impl TaskEncoder for WandEnc {
                     None,
                 ));
             }
-            let wands: Vec<VirWand<'vir>> = coupled_edges
+            let wands: Vec<WandData<'vir>> = coupled_edges
                 .into_iter()
                 .map(|hyper_edge| {
-                    let (inputs, outputs) = hyper_edge.into_tuple();
-                    VirWand::new(inputs, outputs, pledges.clone())
+                    let (sources, targets) = hyper_edge.into_tuple();
+                    WandData::new(targets, sources, pledges.clone())
                 })
                 .collect();
             let output: WandEncOutput<'vir> = WandEncOutput {
@@ -746,14 +740,14 @@ impl TaskEncoder for WandEnc {
 }
 
 impl<'vir> WandEncOutput<'vir> {
-    pub fn viper_wands(&self) -> Vec<VirWand<'vir>> {
+    pub fn viper_wands(&self) -> Vec<WandData<'vir>> {
         self.wands.clone()
     }
 
-    pub fn wand_inputs(&self) -> FxHashSet<FunctionShapeInput> {
+    pub fn blocked_inputs(&self) -> FxHashSet<FunctionShapeInput> {
         self.wands
             .iter()
-            .flat_map(|wand| wand.lhs.iter().copied())
+            .flat_map(|wand| wand.rhs.iter().copied())
             .collect()
     }
 

@@ -4,26 +4,19 @@ use crate::encoders::{
     ty::{
         RustTyDecomposition,
         generics::GParams,
-        indirect::{IndirectKey, IndirectPredicatesEnc},
+        indirect::IndirectPredicatesEnc,
     },
 };
-use pcg::{
-    borrow_pcg::{
-        FunctionData, FunctionShape, FunctionShapeCoupledEdges, FunctionShapeInput,
+use pcg::borrow_pcg::{
+        FunctionData, FunctionShape, FunctionShapeInput,
         FunctionShapeNode, FunctionShapeOutput, MakeFunctionShapeError, state::BorrowsState,
         unblock_graph::UnblockGraph,
-    },
-    coupling::CoupleAbstractionError,
-};
-use prusti_interface::{PrustiError, environment::EnvQuery};
+    };
+use prusti_interface::PrustiError;
 use prusti_rustc_interface::{
     data_structures::fx::{FxHashMap, FxHashSet},
-    infer::infer::region_constraints::GenericKind,
     middle::{mir, ty},
-    span::{
-        Span,
-        def_id::{DefId, LocalDefId},
-    },
+    span::def_id::DefId
 };
 use task_encoder::{EncodeFullError, EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 use vir::HasType;
@@ -60,8 +53,7 @@ impl<'vir, E: TaskEncoder> ImpureEncVisitor<'vir, '_, E> {
         for WandData { lhs, rhs, pledges } in self.wands.viper_wands() {
             let wand = self
                 .wands
-                .mk_wand(&lhs, &rhs, &pledges, snap_lhs, snap_rhs, vcx, self.deps)
-                .unwrap();
+                .mk_wand(&lhs, &rhs, &pledges, snap_lhs, snap_rhs, vcx, self.deps);
             let mut package_script = Vec::new();
             for rhs in rhs.iter() {
                 let ug = UnblockGraph::for_node(
@@ -76,7 +68,10 @@ impl<'vir, E: TaskEncoder> ImpureEncVisitor<'vir, '_, E> {
                 package_script.extend(unblock);
             }
 
-            for EncodedPledge { spec: rhs, span, .. } in pledges.iter().copied() {
+            for EncodedPledge {
+                spec: rhs, span, ..
+            } in pledges.iter().copied()
+            {
                 self.vcx.with_span(span, |vcx| {
                     vcx.handle_error("exhale.failed:assertion.false", move |_| {
                         Some(vec![PrustiError::verification(
@@ -108,10 +103,9 @@ pub struct WandEncOutput<'vir> {
     /// The lifetime projections of all arguments to the function.
     inputs: Vec<FunctionShapeInput>,
 
-    /// The lifetime projections of the function's result.
-    ///
-    /// __TODO__: I think this also includes lifetime projections of nested lifetimes in the
-    /// function arguments?
+    /// The lifetime projections of all function outputs (according to the
+    /// corresponding [`FunctionShape`]). This *includes* lifetime projections
+    /// of nested lifetimes in the function arguments.
     outputs: Vec<FunctionShapeOutput>,
 
     /// Encoded VIR expressions for the magic wands.
@@ -132,7 +126,7 @@ impl<'vir> WandEncOutput<'vir> {
         )
     }
 
-    fn encode_generic(
+    fn encode_predicates_for_function_shape_node(
         &self,
         vcx: &'vir vir::VirCtxt<'vir>,
         deps: &mut TaskEncoderDependencies<'vir, impl TaskEncoder>,
@@ -167,7 +161,7 @@ impl<'vir> WandEncOutput<'vir> {
         deps: &'a mut TaskEncoderDependencies<'vir, E>,
     ) -> impl Iterator<Item = vir::ExprBool<'vir>> + 'a {
         self.inputs()
-            .map(|g| self.encode_generic(vcx, deps, g, |i| local_defs[i].impure_snap))
+            .map(|g| self.encode_predicates_for_function_shape_node(vcx, deps, g, |i| local_defs[i].impure_snap))
     }
 
     pub fn indirect_posts<'a, E: TaskEncoder>(
@@ -176,15 +170,16 @@ impl<'vir> WandEncOutput<'vir> {
         local_defs: &'a MirLocalDefEncOutput<'vir>,
         deps: &'a mut TaskEncoderDependencies<'vir, E>,
     ) -> impl Iterator<Item = vir::ExprBool<'vir>> + 'a {
-
         // The encoded predicates for the input lifetime projections that are
         // not blocked by any of the result lifetime projections. These will be
-        // encoded as part of the postcondition of the function.
+        // encoded as part of the postcondition of the function (in contrast,
+        // the predicates for the blocked inputs will appear on the right-hand
+        // side of a magic wand in the postcondition).
         let unblocked_input_posts = self
             .inputs()
             .filter(|i| !self.blocked_inputs().contains(i))
             .map(|lp| {
-                self.encode_generic(vcx, deps, lp, |i| {
+                self.encode_predicates_for_function_shape_node(vcx, deps, lp, |i| {
                     vcx.mk_old_expr(local_defs[i].impure_snap)
                 })
             })
@@ -193,7 +188,7 @@ impl<'vir> WandEncOutput<'vir> {
 
         let output_posts = self
             .outputs()
-            .map(|g| self.encode_generic(vcx, deps, g, |i| local_defs[i].impure_snap));
+            .map(|g| self.encode_predicates_for_function_shape_node(vcx, deps, g, |i| local_defs[i].impure_snap));
         unblocked_input_posts.chain(output_posts)
     }
 
@@ -219,16 +214,12 @@ impl<'vir> WandEncOutput<'vir> {
                         .1
                 };
                 let snap_rhs = |i| vcx.mk_old_expr(local_defs[i].impure_snap);
-                match self.mk_wand(&lhs, &rhs, &pledges, snap_lhs, snap_rhs, vcx, deps) {
-                    Ok(wand) => {
-                        snaps
-                            .into_iter()
-                            .fold(vcx.mk_wand_expr(wand), |acc, (local, (name, _))| {
-                                vcx.mk_let_expr(name, local_defs[local].impure_snap, acc)
-                            })
-                    }
-                    Err(rhs) => rhs,
-                }
+                let wand = self.mk_wand(&lhs, &rhs, &pledges, snap_lhs, snap_rhs, vcx, deps);
+                snaps
+                    .into_iter()
+                    .fold(vcx.mk_wand_expr(wand), |acc, (local, (name, _))| {
+                        vcx.mk_let_expr(name, local_defs[local].impure_snap, acc)
+                    })
             })
     }
 
@@ -250,83 +241,10 @@ impl<'vir> WandEncOutput<'vir> {
         let snap_rhs =
             |l: mir::Local| vcx.mk_local_labelled_old_expr(arguments[l.as_usize()], label_pre);
         for WandData { lhs, rhs, pledges } in self.viper_wands() {
-            if lhs.is_empty() {
-                continue;
-            }
             let wand = self
-                .mk_wand(&lhs, &rhs, &pledges, snap_lhs, snap_rhs, vcx, visitor.deps)
-                .unwrap();
+                .mk_wand(&lhs, &rhs, &pledges, snap_lhs, snap_rhs, vcx, visitor.deps);
             visitor.stmt(visitor.vcx.mk_apply_stmt(wand));
         }
-    }
-
-    pub fn package_wands<E: TaskEncoder>(
-        &self,
-        final_borrow_state: &BorrowsState<'_, 'vir>,
-        visitor: &mut ImpureEncVisitor<'vir, '_, E>,
-    ) -> Vec<vir::Stmt<'vir>> {
-        let mut wand_packages = Vec::new();
-        let vcx = visitor.vcx;
-        let label = visitor.new_label("package_post");
-        let snap_lhs = |l| {
-            let ld: crate::encoders::LocalDef<'vir> = visitor.local_defs.locals[l];
-            if l == mir::RETURN_PLACE {
-                vcx.mk_local_labelled_old_expr(ld.impure_snap, label)
-            } else {
-                vcx.mk_old_expr(ld.impure_snap)
-            }
-        };
-        let snap_rhs = |l| {
-            let ld: crate::encoders::LocalDef<'vir> = visitor.local_defs.locals[l];
-            vcx.mk_old_expr(ld.impure_snap)
-        };
-
-        for WandData { lhs, rhs, pledges } in self.viper_wands() {
-            if lhs.is_empty() {
-                continue;
-            }
-            let wand = self
-                .mk_wand(&lhs, &rhs, &pledges, snap_lhs, snap_rhs, vcx, visitor.deps)
-                .unwrap();
-            let mut package_script = Vec::new();
-            for lifetime_projection in lhs {
-                let local = lifetime_projection.mir_local();
-                if local == mir::RETURN_PLACE {
-                    continue;
-                }
-                let ug = UnblockGraph::for_node(
-                    mir::Place::from(local),
-                    final_borrow_state,
-                    visitor.pcg_ctxt(),
-                );
-                let actions = ug.actions(visitor.pcg_ctxt()).unwrap();
-                let unblock = visitor.block(|visitor| {
-                    visitor.pcs_unblock_actions(final_borrow_state, &actions, Some(label));
-                });
-                package_script.extend(unblock);
-            }
-
-            for EncodedPledge {
-                spec, span, ..
-            } in pledges.iter().copied()
-            {
-                visitor.vcx.with_span(span, |vcx| {
-                    vcx.handle_error("exhale.failed:assertion.false", move |_| {
-                        Some(vec![PrustiError::verification(
-                            "pledge postcondition might not hold",
-                            (span).into(),
-                        )])
-                    });
-                    package_script.push(vcx.mk_exhale_stmt(spec));
-                });
-            }
-            wand_packages.push(
-                visitor
-                    .vcx
-                    .mk_package_stmt(wand, visitor.vcx.alloc_slice(&package_script)),
-            );
-        }
-        wand_packages
     }
 
     fn mk_wand<'a, E: TaskEncoder>(
@@ -338,21 +256,23 @@ impl<'vir> WandEncOutput<'vir> {
         mut snap_rhs: impl FnMut(mir::Local) -> vir::ExprSnap<'vir>,
         vcx: &'vir vir::VirCtxt<'vir>,
         deps: &mut TaskEncoderDependencies<'vir, E>,
-    ) -> Result<vir::Wand<'vir>, vir::ExprBool<'vir>> {
+    ) -> vir::Wand<'vir> {
+        debug_assert!(!lhs.is_empty());
         let rhs = rhs
             .iter()
-            .map(|g| self.encode_generic(vcx, deps, *g, &mut snap_rhs));
+            .map(|g| self.encode_predicates_for_function_shape_node(vcx, deps, *g, &mut snap_rhs));
         let rhs = rhs.chain(pledge.iter().map(|pledge| pledge.spec));
         let rhs = vcx.mk_conj(vcx.alloc_slice(&rhs.collect::<Vec<_>>()));
-        if lhs.is_empty() {
-            return Err(rhs);
-        }
         let lhs = lhs
             .iter()
-            .map(|g| self.encode_generic(vcx, deps, *g, &mut snap_lhs));
-        let lhs = lhs.chain(pledge.iter().filter_map(|pledge| pledge.expiry_obligation_expr()));
+            .map(|g| self.encode_predicates_for_function_shape_node(vcx, deps, *g, &mut snap_lhs));
+        let lhs = lhs.chain(
+            pledge
+                .iter()
+                .filter_map(|pledge| pledge.expiry_obligation_expr()),
+        );
         let lhs = vcx.mk_conj(vcx.alloc_slice(&lhs.collect::<Vec<_>>()));
-        Ok(vcx.mk_wand(lhs, rhs))
+        vcx.mk_wand(lhs, rhs)
     }
 }
 
@@ -362,10 +282,6 @@ pub struct WandEncTask<'tcx> {
 }
 
 impl<'tcx> WandEncTask<'tcx> {
-    pub fn new(data: FunctionData<'tcx>) -> Self {
-        Self { data }
-    }
-
     pub fn def_id(&self) -> DefId {
         self.data.def_id()
     }
@@ -377,84 +293,26 @@ impl<'tcx> WandEncTask<'tcx> {
         self.data.shape(vcx.tcx())
     }
 
-    pub fn coupled_edges(
-        &self,
-        vcx: &vir::VirCtxt<'tcx>,
-    ) -> Result<FunctionShapeCoupledEdges, CoupleAbstractionError> {
-        self.data.coupled_edges(vcx.tcx())
-    }
 }
-
-// #[derive(Clone, Debug, Default)]
-// struct WandEncEdges {
-//     /// for b in inputs { requires b }
-//     inputs: Vec<WandKey>,
-//     /// for a in outputs { ensures a }
-//     outputs: Vec<WandKey>,
-//     /// for (a, b) in edges { ensures a --* b }
-//     edges: Vec<(WandKey, WandKey)>,
-// }
-
-// impl WandEncEdges {
-//     fn input(&mut self, key: IndirectKey) {
-//         debug_assert!(!self.inputs.contains(&key), "input {key:?} already exists");
-//         self.inputs.push(key);
-//     }
-
-//     fn output(&mut self, key: IndirectKey) {
-//         debug_assert!(
-//             !self.outputs.contains(&key),
-//             "output {key:?} already exists"
-//         );
-//         self.outputs.push(key);
-//     }
-
-//     fn input_and_output(&mut self, key: IndirectKey, skip_output: bool) {
-//         if !skip_output {
-//             self.output(key);
-//         }
-//         self.input(key);
-//         self.edge(key, key);
-//     }
-
-//     /// Adds an edge of `output --* input`.
-//     fn edge(&mut self, output: IndirectKey, input: IndirectKey) {
-//         debug_assert!(
-//             self.inputs.contains(&input),
-//             "input {input:?} does not exist"
-//         );
-//         debug_assert!(
-//             self.outputs.contains(&output),
-//             "output {output:?} does not exist"
-//         );
-//         debug_assert!(
-//             !self.edges.contains(&(output, input)),
-//             "edge {output:?} --* {input:?} already exists"
-//         );
-//         let output_param = matches!(output, IndirectKey::Param(..));
-//         let input_param = matches!(input, IndirectKey::Param(..));
-//         if input_param ^ output_param {
-//             // TODO: handle generics that are instantiated with a lifetime type
-//             // and are nested under another lifetime, e.g.
-//             // fn foo<T>(x: &mut T) -> &mut T (with `T -> &mut i32`)
-//             return;
-//         }
-//         self.edges.push((output, input));
-//     }
-// }
 
 pub type WandRhsKey = FunctionShapeInput;
 pub type WandLhsKey = FunctionShapeNode;
 
 #[derive(Clone, Debug)]
 pub struct WandData<'vir> {
+    /// Lifetime projections on the right-hand side of the wand. Guaranteed to be
+    /// non-empty.
     rhs: Vec<WandRhsKey>,
+    /// Lifetime projections on the left-hand side of the wand. Guaranteed to be
+    /// non-empty.
     lhs: Vec<WandLhsKey>,
     pledges: EncodedPledges<'vir>,
 }
 
 impl<'vir> WandData<'vir> {
     pub fn new(lhs: Vec<WandLhsKey>, rhs: Vec<WandRhsKey>, pledges: EncodedPledges<'vir>) -> Self {
+        debug_assert!(!lhs.is_empty());
+        debug_assert!(!rhs.is_empty());
         Self { rhs, lhs, pledges }
     }
 }
@@ -483,23 +341,21 @@ impl TaskEncoder for WandEnc {
         deps.emit_output_ref(task_key.clone(), ())?;
         vir::with_vcx(|vcx| {
             let def_id = task_key.def_id();
-            let tcx = vcx.tcx();
-            let ecx = EnvQuery::new(tcx);
-            let substs = ecx.identity_substs(def_id);
 
-            let fn_sig = ecx.get_fn_sig(def_id, substs).skip_binder();
             let shape = task_key.function_shape(vcx).map_err(|e| {
                 EncodeFullError::EncodingError(
                     WandEncError::Unsupported(format!("function shape: {e:?}")),
                     None,
                 )
             })?;
+
             let coupled_edges = shape.coupled_edges().map_err(|e| {
                 EncodeFullError::EncodingError(
                     WandEncError::Unsupported(format!("coupled edges: {e:?}")),
                     None,
                 )
             })?;
+
             let (inputs, outputs) = shape.take_inputs_and_outputs();
             let spec = deps.require_dep::<MirSpecEnc>((def_id, false))?;
             if coupled_edges.is_empty() {
@@ -536,221 +392,7 @@ impl TaskEncoder for WandEnc {
                 outputs,
                 wands,
             };
-            let output = ((), output);
-            Ok(output)
-            // let args = [fn_sig.skip_binder().output()]
-            //     .into_iter()
-            //     .chain(fn_sig.skip_binder().inputs().iter().copied())
-            //     .enumerate();
-            // let mut generic_to_param: FxHashMap<IndirectKey, Vec<_>> = Default::default();
-
-            // let mut gidx_map: FxHashMap<IndirectKey, Result<ty::Variance, usize>> =
-            //     Default::default();
-            // let mut edges = WandEncEdges::default();
-
-            // for (i, ty) in args {
-            //     for ga in ty.walk() {
-            //         let Some(key) = IndirectKey::from_generic_arg(ga) else {
-            //             continue;
-            //         };
-            //         let local = mir::Local::from_usize(i);
-            //         if let IndirectKey::Late(..) = key {
-            //             // A late bound lifetime is guaranteed to not be nested
-            //             // (otherwise it would have an outlives and not be late bound).
-            //             if local == mir::RETURN_PLACE {
-            //                 match gidx_map.insert(key, Ok(ty::Variance::Covariant)) {
-            //                     Some(Ok(ty::Variance::Covariant)) => {}
-            //                     None => edges.output(key),
-            //                     _ => unreachable!(),
-            //                 }
-            //             } else {
-            //                 use std::collections::hash_map::Entry;
-            //                 match gidx_map.entry(key) {
-            //                     Entry::Occupied(mut o) => match o.get() {
-            //                         Ok(ty::Variance::Covariant) => {
-            //                             o.insert(Ok(ty::Variance::Invariant)).ok();
-            //                             edges.input_and_output(key, true);
-            //                         }
-            //                         Ok(ty::Variance::Contravariant | ty::Variance::Invariant) => {}
-            //                         _ => unreachable!(),
-            //                     },
-            //                     Entry::Vacant(v) => {
-            //                         v.insert(Ok(ty::Variance::Contravariant));
-            //                         edges.input(key);
-            //                     }
-            //                 }
-            //             }
-            //         }
-            //         generic_to_param.entry(key).or_default().push((local, ty));
-            //     }
-            // }
-
-            // let outlives_env = ecx.outlives_env(def_id);
-
-            // let variances = tcx.variances_of(def_id);
-            // let generics = tcx.generics_of(def_id);
-            // assert_eq!(generics.count(), variances.len());
-            // // Old way of collecting late bound regions, not used anymore.
-            // debug_assert!(
-            //     generics.has_late_bound_regions.is_some()
-            //         || tcx.collect_referenced_late_bound_regions(fn_sig).is_empty()
-            // );
-
-            // for i in 0..generics.count() {
-            //     let g = generics.param_at(i, tcx);
-            //     let key = match g.kind {
-            //         ty::GenericParamDefKind::Lifetime => {
-            //             IndirectKey::Early(g.to_early_bound_region_data())
-            //         }
-            //         ty::GenericParamDefKind::Type { .. } => IndirectKey::Param(ty::ParamTy {
-            //             index: g.index,
-            //             name: g.name,
-            //         }),
-            //         // TODO: skip here?
-            //         ty::GenericParamDefKind::Const { .. } => continue,
-            //     };
-            //     gidx_map.insert(key, Err(i));
-            //     match variances[i] {
-            //         ty::Variance::Covariant => {
-            //             edges.output(key);
-            //         }
-            //         ty::Variance::Contravariant => {
-            //             edges.input(key);
-            //         }
-            //         ty::Variance::Invariant => {
-            //             edges.input_and_output(key, false);
-            //         }
-            //         ty::Variance::Bivariant => todo!("not sure what this means/how to handle it"),
-            //     }
-            // }
-
-            // // `b` outlives `a`
-            // let mut insert_edge = |a, b| {
-            //     let (v_a, v_b) = (
-            //         gidx_map[&a].unwrap_or_else(|i| variances[i]),
-            //         gidx_map[&b].unwrap_or_else(|i| variances[i]),
-            //     );
-            //     if let (
-            //         ty::Variance::Covariant | ty::Variance::Invariant,
-            //         ty::Variance::Contravariant | ty::Variance::Invariant,
-            //     ) = (v_a, v_b)
-            //     {
-            //         edges.edge(a, b);
-            //     }
-            // };
-
-            // let frm = outlives_env.free_region_map();
-            // let rbp = outlives_env.region_bound_pairs();
-
-            // // FIXME: hopefully the quadratic thing here isn't an issue
-            // for r_a in frm.elements() {
-            //     for r_b in frm.elements() {
-            //         if r_a == r_b {
-            //             continue;
-            //         }
-            //         if !frm.sub_free_regions(tcx, r_a, r_b) {
-            //             continue;
-            //         }
-            //         let (ty::RegionKind::ReEarlyParam(a), ty::RegionKind::ReEarlyParam(b)) =
-            //             (r_a.kind(), r_b.kind())
-            //         else {
-            //             return Err(EncodeFullError::EncodingError(
-            //                 WandEncError::Unsupported(format!(
-            //                     "region bound pair: ({r_a:?}, {r_b:?})"
-            //                 )),
-            //                 None,
-            //             ));
-            //         };
-            //         insert_edge(IndirectKey::Early(a), IndirectKey::Early(b));
-            //     }
-            // }
-
-            // for pred in rbp {
-            //     let GenericKind::Param(b) = pred.0 else {
-            //         return Err(EncodeFullError::EncodingError(
-            //             WandEncError::Unsupported(format!("region bound pair: {pred:?}")),
-            //             None,
-            //         ));
-            //     };
-            //     let Some(a) = IndirectKey::from_region(pred.1) else {
-            //         return Err(EncodeFullError::EncodingError(
-            //             WandEncError::Unsupported(format!("region bound pair: {pred:?}")),
-            //             None,
-            //         ));
-            //     };
-            //     // This edge may be skipped, see TODO in `WandEncEdges::edge`.
-            //     insert_edge(a, IndirectKey::Param(b));
-            // }
-
-            // // convert edges to viper-supported wands
-
-            // // Indexed by the `rhs` of wands
-            // let mut edge_rhs: FxHashMap<IndirectKey, Vec<IndirectKey>> = Default::default();
-            // // Indexed by the `lhs` of wands
-            // let mut edge_lhs: FxHashMap<IndirectKey, Vec<IndirectKey>> = Default::default();
-            // let mut wands: Vec<VirWand<'vir>> = Default::default();
-
-            // for (lhs, rhs) in edges.edges.iter().copied() {
-            //     edge_lhs.entry(lhs).or_default().push(rhs);
-            //     edge_rhs.entry(rhs).or_default().push(lhs);
-            // }
-
-            // let mut skip = FxHashSet::default();
-            // for rhs in edges.inputs.iter().copied() {
-            //     if !skip.insert(rhs) {
-            //         continue;
-            //     }
-            //     let Some(lhss) = edge_rhs.get(&rhs) else {
-            //         wands.push(VirWand::new(vec![], vec![rhs], vec![]));
-            //         continue;
-            //     };
-            //     let lhs = lhss.first().unwrap();
-            //     let rhss = &edge_lhs[lhs];
-            //     for lhs_other in lhss {
-            //         let rhss_other = &edge_lhs[lhs_other];
-            //         if rhss != rhss_other {
-            //             return Err(EncodeFullError::EncodingError(
-            //                 WandEncError::Unsupported(format!(
-            //                     "two outputs do not block the same set of inputs: {lhs:?} blocks {rhss:?}, {lhs_other:?} blocks {rhss_other:?}"
-            //                 )),
-            //                 None,
-            //             ));
-            //         }
-            //     }
-            //     for rhs_other in rhss {
-            //         let lhss_other = &edge_rhs[rhs_other];
-            //         if lhss != lhss_other {
-            //             return Err(EncodeFullError::EncodingError(
-            //                 WandEncError::Unsupported(format!(
-            //                     "two inputs are not blocked by the same set of outputs: {rhs:?} blocked by {lhss:?}, {rhs_other:?} blocked by {lhss_other:?}"
-            //                 )),
-            //                 None,
-            //             ));
-            //         }
-            //     }
-            //     wands.push(VirWand::new(lhss.clone(), rhss.clone(), vec![]));
-            //     skip.extend(rhss);
-            // }
-            // if !pledges.is_empty() {
-            //     let mut actual_wands = wands.iter_mut().filter(|wand| wand.has_lhs());
-            //     let wand = actual_wands.next();
-            //     assert!(wand.is_some(), "pledge for function with no wands");
-            //     assert!(
-            //         actual_wands.next().is_none(),
-            //         "pledge for function with multiple wands"
-            //     );
-            //     wand.unwrap().pledges = pledges.clone();
-            // }
-
-            // Ok((
-            //     WandEncOutput {
-            //         edges,
-            //         generic_to_param,
-            //         pledges,
-            //         wands,
-            //     },
-            //     (),
-            // ))
+            Ok(((), output))
         })
     }
 }

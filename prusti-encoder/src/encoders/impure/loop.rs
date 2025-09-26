@@ -38,6 +38,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         let state = &start.states[EvalStmtPhase::PreOperands];
         let loop_invariant_place_capabilities =
             cfpcs.loop_invariant_place_capabilities(loop_place_usages, ctxt);
+
         for (place, capability) in loop_invariant_place_capabilities.iter() {
             if capability.is_write() {
                 continue; // TODO: bug with always live locals
@@ -49,40 +50,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             let pred = ty_out.ref_to_pred(self.vcx, place_res.expr.expect_predicate(), None);
             inv.push(pred);
         }
-        // let borrows = &*start.borrows[EvalStmtPhase::PreOperands];
-        // self.stmt(self.vcx.mk_comment_stmt(
-        //     vir::vir_format!(self.vcx, "_borrows: {:#?}", borrows),
-        // ));
-        // for cap_local in state.owned_pcg().iter() {
-        //     if cap_local.is_unallocated() {
-        //         continue;
-        //     }
-        //     let cap = cap_local.get_allocated();
-        //     for place in cap.leaf_places(self.pcg_ctxt()).iter() {
-        //         if !state.capabilities().is_exclusive(*place, self.pcg_ctxt()) {
-        //             continue;
-        //         }
-        //         let (place_res, snap, _, _) = self.encode_place_snap(*place);
-        //         let ty = (*place).ty(self.pcg_ctxt());
-        //         let ty_out = self.deps.require_local::<TyImpureEnc>(ty.ty).unwrap();
-        //         let pred = ty_out.ref_to_pred(self.vcx, place_res.expr, None);
-        //         inv.push(pred);
 
-        //         let regions = ty.ty.walk().flat_map(IndirectKey::from_generic_arg);
-        //         for region in regions {
-        //             let indirect = self
-        //                 .deps
-        //                 .require_ref::<IndirectPredicatesEnc>((ty.ty, region))
-        //                 .unwrap();
-        //             inv.extend(
-        //                 indirect
-        //                     .covariant
-        //                     .into_iter()
-        //                     .map(|expr| expr.reify(self.vcx, snap)),
-        //             );
-        //         }
-        //     }
-        // }
         for (inputs, outputs) in self.get_abstraction_edges(state.borrow_pcg().graph()) {
             let mut let_bind = WandOldOuter::LetBind(Vec::new());
             let mut wand_rhs = Vec::new();

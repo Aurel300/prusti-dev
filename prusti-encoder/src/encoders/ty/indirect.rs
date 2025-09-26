@@ -52,6 +52,20 @@ impl TaskEncoder for IndirectPredicatesEnc {
             let combined = ty.ty.zip(self_ty_enc);
             let mut predicate_applications = vec![];
             match combined.specifics {
+                                // Optimisation: if there are no type arguments, there cannot be
+                // anything behind a ref inside (except for 'static, which we
+                // ignore for now). Plus it skips unsupported types if they
+                // don't have lifetimes.
+                _ if ty.args.args().is_empty() => (),
+                TySpecifics::Primitive(_) | TySpecifics::ImmRef(_) => (),
+                // TODO: it's not valid to have nothing for these. We should fix
+                // this by using an opaque predicate to represent potential
+                // indirect stuff. For example:
+                // fn foo<'a, T: Trait<'a>>(x: T) -> &'a mut i32 { x.get() }
+                // Here, `T` could be instantiated as `&'a mut i32` in which
+                // case we would want a wand with `i32(result) --* opaque_behind_a(x)`.
+                // This is why we should return `opaque_behind_a(x)` here.
+                TySpecifics::Param(_) | TySpecifics::Opaque(_) => (),
                 TySpecifics::MutRef((data, ref_domain)) => {
                     let inner_ty = data.decompose_normalize(ty.args);
                     let inner_ty_enc = deps.require_dep::<TyUseImpureEnc>(inner_ty)?;

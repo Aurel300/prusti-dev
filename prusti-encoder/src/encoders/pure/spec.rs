@@ -17,34 +17,46 @@ use crate::encoders::{
 };
 pub struct MirSpecEnc;
 
+/// The VIR expression and span corresponding to an `assert_on_expiry`
+/// predicate. It will be conjoined to the left-hand side of the wand for the
+/// encoded pledge.
 #[derive(Clone, Copy, Debug)]
-pub struct PledgeLhs<'vir> {
+pub struct PledgeExpiryObligation<'vir> {
     pub expr: vir::ExprBool<'vir>,
+    #[allow(unused)]
     pub span: Span,
 }
 
-impl<'vir> PledgeLhs<'vir> {
+impl<'vir> PledgeExpiryObligation<'vir> {
     pub fn new(expr: vir::ExprBool<'vir>, span: Span) -> Self {
         Self { expr, span }
     }
 }
 
+/// VIR expressions for a pledge, including a user-written `assert_on_expiry`
+/// predicate if present.
 #[derive(Clone, Copy, Debug)]
 pub struct EncodedPledge<'vir> {
-    pub lhs: Option<PledgeLhs<'vir>>,
-    pub rhs: vir::ExprBool<'vir>,
+    /// The VIR expression and span corresponding to the `assert_on_expiry`
+    /// predicate, if present.
+    pub expiry_obligation: Option<PledgeExpiryObligation<'vir>>,
+    pub spec: vir::ExprBool<'vir>,
     pub span: Span,
 }
 
 impl<'vir> EncodedPledge<'vir> {
-    pub fn lhs_expr(&self) -> Option<vir::ExprBool<'vir>> {
-        self.lhs.map(|lhs| lhs.expr)
+    pub fn expiry_obligation_expr(&self) -> Option<vir::ExprBool<'vir>> {
+        self.expiry_obligation.map(|lhs| lhs.expr)
     }
 
-    pub fn new(lhs: Option<PledgeLhs<'vir>>, rhs: vir::ExprBool<'vir>, span: Span) -> Self {
+    pub fn new(
+        lhs: Option<PledgeExpiryObligation<'vir>>,
+        rhs: vir::ExprBool<'vir>,
+        span: Span,
+    ) -> Self {
         Self {
-            lhs,
-            rhs,
+            expiry_obligation: lhs,
+            spec: rhs,
             span,
         }
     }
@@ -243,7 +255,7 @@ impl TaskEncoder for MirSpecEnc {
                         EncodedPledge::new(
                             lhs_expr.map(|lhs_expr| {
                                 let lhs_span = vcx.tcx().def_span(lhs_def_id.unwrap());
-                                PledgeLhs::new(
+                                PledgeExpiryObligation::new(
                                     vcx.with_span(lhs_span, |_| to_bool(lhs_expr).downcast_ty()),
                                     lhs_span,
                                 )

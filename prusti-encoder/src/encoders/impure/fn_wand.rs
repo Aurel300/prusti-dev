@@ -76,12 +76,12 @@ impl<'vir, E: TaskEncoder> ImpureEncVisitor<'vir, '_, E> {
                 package_script.extend(unblock);
             }
 
-            for EncodedPledge { rhs, span, .. } in pledges.iter().copied() {
+            for EncodedPledge { spec: rhs, span, .. } in pledges.iter().copied() {
                 self.vcx.with_span(span, |vcx| {
                     vcx.handle_error("exhale.failed:assertion.false", move |_| {
                         Some(vec![PrustiError::verification(
                             "pledge postcondition might not hold",
-                            (span).into(),
+                            span.into(),
                         )])
                     });
                     package_script.push(vcx.mk_exhale_stmt(rhs));
@@ -96,14 +96,25 @@ impl<'vir, E: TaskEncoder> ImpureEncVisitor<'vir, '_, E> {
     }
 }
 
-type Pledges<'vir> = Vec<EncodedPledge<'vir>>;
+type EncodedPledges<'vir> = Vec<EncodedPledge<'vir>>;
 
 #[derive(Clone, Debug, Default)]
 pub struct WandEncOutput<'vir> {
-    /// The function data. This is optional in order to have `WandEncOutput: Default`.
+    /// Information about the corresponding function. This is wrapped in an
+    /// `Option` in order to have `WandEncOutput: Default`; when explicitly
+    /// constructed, it should always be present.
     function_data: Option<FunctionData<'vir>>,
+
+    /// The lifetime projections of all arguments to the function.
     inputs: Vec<FunctionShapeInput>,
+
+    /// The lifetime projections of the function's result.
+    ///
+    /// __TODO__: I think this also includes lifetime projections of nested lifetimes in the
+    /// function arguments?
     outputs: Vec<FunctionShapeOutput>,
+
+    /// Encoded VIR expressions for the magic wands.
     wands: Vec<WandData<'vir>>,
 }
 
@@ -165,7 +176,11 @@ impl<'vir> WandEncOutput<'vir> {
         local_defs: &'a MirLocalDefEncOutput<'vir>,
         deps: &'a mut TaskEncoderDependencies<'vir, E>,
     ) -> impl Iterator<Item = vir::ExprBool<'vir>> + 'a {
-        let input_posts = self
+
+        // The encoded predicates for the input lifetime projections that are
+        // not blocked by any of the result lifetime projections. These will be
+        // encoded as part of the postcondition of the function.
+        let unblocked_input_posts = self
             .inputs()
             .filter(|i| !self.blocked_inputs().contains(i))
             .map(|lp| {
@@ -175,10 +190,11 @@ impl<'vir> WandEncOutput<'vir> {
             })
             .collect::<Vec<_>>()
             .into_iter();
+
         let output_posts = self
             .outputs()
             .map(|g| self.encode_generic(vcx, deps, g, |i| local_defs[i].impure_snap));
-        input_posts.chain(output_posts)
+        unblocked_input_posts.chain(output_posts)
     }
 
     pub fn wand_posts<'a, E: TaskEncoder>(
@@ -291,7 +307,7 @@ impl<'vir> WandEncOutput<'vir> {
             }
 
             for EncodedPledge {
-                rhs: spec, span, ..
+                spec, span, ..
             } in pledges.iter().copied()
             {
                 visitor.vcx.with_span(span, |vcx| {
@@ -317,7 +333,7 @@ impl<'vir> WandEncOutput<'vir> {
         &'a self,
         lhs: &[WandLhsKey],
         rhs: &[WandRhsKey],
-        pledge: &Pledges<'vir>,
+        pledge: &EncodedPledges<'vir>,
         mut snap_lhs: impl FnMut(mir::Local) -> vir::ExprSnap<'vir>,
         mut snap_rhs: impl FnMut(mir::Local) -> vir::ExprSnap<'vir>,
         vcx: &'vir vir::VirCtxt<'vir>,
@@ -326,7 +342,7 @@ impl<'vir> WandEncOutput<'vir> {
         let rhs = rhs
             .iter()
             .map(|g| self.encode_generic(vcx, deps, *g, &mut snap_rhs));
-        let rhs = rhs.chain(pledge.iter().map(|pledge| pledge.rhs));
+        let rhs = rhs.chain(pledge.iter().map(|pledge| pledge.spec));
         let rhs = vcx.mk_conj(vcx.alloc_slice(&rhs.collect::<Vec<_>>()));
         if lhs.is_empty() {
             return Err(rhs);
@@ -334,7 +350,7 @@ impl<'vir> WandEncOutput<'vir> {
         let lhs = lhs
             .iter()
             .map(|g| self.encode_generic(vcx, deps, *g, &mut snap_lhs));
-        let lhs = lhs.chain(pledge.iter().filter_map(|pledge| pledge.lhs_expr()));
+        let lhs = lhs.chain(pledge.iter().filter_map(|pledge| pledge.expiry_obligation_expr()));
         let lhs = vcx.mk_conj(vcx.alloc_slice(&lhs.collect::<Vec<_>>()));
         Ok(vcx.mk_wand(lhs, rhs))
     }
@@ -434,11 +450,11 @@ pub type WandLhsKey = FunctionShapeNode;
 pub struct WandData<'vir> {
     rhs: Vec<WandRhsKey>,
     lhs: Vec<WandLhsKey>,
-    pledges: Pledges<'vir>,
+    pledges: EncodedPledges<'vir>,
 }
 
 impl<'vir> WandData<'vir> {
-    pub fn new(lhs: Vec<WandLhsKey>, rhs: Vec<WandRhsKey>, pledges: Pledges<'vir>) -> Self {
+    pub fn new(lhs: Vec<WandLhsKey>, rhs: Vec<WandRhsKey>, pledges: EncodedPledges<'vir>) -> Self {
         Self { rhs, lhs, pledges }
     }
 }
@@ -744,6 +760,8 @@ impl<'vir> WandEncOutput<'vir> {
         self.wands.clone()
     }
 
+    /// All lifetime projections in the arguments that are blocked by any of the
+    /// lifetime projections in the function's result.
     pub fn blocked_inputs(&self) -> FxHashSet<FunctionShapeInput> {
         self.wands
             .iter()

@@ -50,12 +50,12 @@ impl<'vir, E: TaskEncoder> ImpureEncVisitor<'vir, '_, E> {
             vcx.mk_old_expr(ld.impure_snap)
         };
 
-        for WandData { lhs, rhs, pledges } in self.wands.viper_wands() {
+        for wand_data in self.wands.viper_wands() {
             let wand = self
                 .wands
-                .mk_wand(&lhs, &rhs, &pledges, snap_lhs, snap_rhs, vcx, self.deps);
+                .mk_wand(&wand_data, snap_lhs, snap_rhs, vcx, self.deps);
             let mut package_script = Vec::new();
-            for rhs in rhs.iter() {
+            for rhs in wand_data.rhs.iter() {
                 let ug = UnblockGraph::for_node(
                     mir::Place::from(rhs.mir_local()),
                     final_borrow_state,
@@ -68,10 +68,7 @@ impl<'vir, E: TaskEncoder> ImpureEncVisitor<'vir, '_, E> {
                 package_script.extend(unblock);
             }
 
-            for EncodedPledge {
-                spec: rhs, span, ..
-            } in pledges.iter().copied()
-            {
+            for EncodedPledge { spec, span, .. } in wand_data.pledges.iter().copied() {
                 self.vcx.with_span(span, |vcx| {
                     vcx.handle_error("exhale.failed:assertion.false", move |_| {
                         Some(vec![PrustiError::verification(
@@ -79,7 +76,7 @@ impl<'vir, E: TaskEncoder> ImpureEncVisitor<'vir, '_, E> {
                             span.into(),
                         )])
                     });
-                    package_script.push(vcx.mk_exhale_stmt(rhs));
+                    package_script.push(vcx.mk_exhale_stmt(spec));
                 });
             }
             wand_packages.push(
@@ -201,7 +198,7 @@ impl<'vir> WandEncOutput<'vir> {
         // TODO: wands for late-bound regions
         self.viper_wands()
             .into_iter()
-            .map(|WandData { lhs, rhs, pledges }| {
+            .map(|wand_data| {
                 let mut snaps = FxHashMap::default();
                 let snap_lhs = |i| {
                     snaps
@@ -214,7 +211,7 @@ impl<'vir> WandEncOutput<'vir> {
                         .1
                 };
                 let snap_rhs = |i| vcx.mk_old_expr(local_defs[i].impure_snap);
-                let wand = self.mk_wand(&lhs, &rhs, &pledges, snap_lhs, snap_rhs, vcx, deps);
+                let wand = self.mk_wand(&wand_data, snap_lhs, snap_rhs, vcx, deps);
                 snaps
                     .into_iter()
                     .fold(vcx.mk_wand_expr(wand), |acc, (local, (name, _))| {
@@ -240,34 +237,32 @@ impl<'vir> WandEncOutput<'vir> {
         };
         let snap_rhs =
             |l: mir::Local| vcx.mk_local_labelled_old_expr(arguments[l.as_usize()], label_pre);
-        for WandData { lhs, rhs, pledges } in self.viper_wands() {
+        for wand_data in self.viper_wands() {
             let wand = self
-                .mk_wand(&lhs, &rhs, &pledges, snap_lhs, snap_rhs, vcx, visitor.deps);
+                .mk_wand(&wand_data, snap_lhs, snap_rhs, vcx, visitor.deps);
             visitor.stmt(visitor.vcx.mk_apply_stmt(wand));
         }
     }
 
     fn mk_wand<'a, E: TaskEncoder>(
         &'a self,
-        lhs: &[WandLhsKey],
-        rhs: &[WandRhsKey],
-        pledge: &EncodedPledges<'vir>,
+        wand_data: &WandData<'vir>,
         mut snap_lhs: impl FnMut(mir::Local) -> vir::ExprSnap<'vir>,
         mut snap_rhs: impl FnMut(mir::Local) -> vir::ExprSnap<'vir>,
         vcx: &'vir vir::VirCtxt<'vir>,
         deps: &mut TaskEncoderDependencies<'vir, E>,
     ) -> vir::Wand<'vir> {
-        debug_assert!(!lhs.is_empty());
-        let rhs = rhs
+        debug_assert!(!wand_data.lhs.is_empty());
+        let rhs = wand_data.rhs
             .iter()
             .map(|g| self.encode_predicates_for_function_shape_node(vcx, deps, *g, &mut snap_rhs));
-        let rhs = rhs.chain(pledge.iter().map(|pledge| pledge.spec));
+        let rhs = rhs.chain(wand_data.pledges.iter().map(|pledge| pledge.spec));
         let rhs = vcx.mk_conj(vcx.alloc_slice(&rhs.collect::<Vec<_>>()));
-        let lhs = lhs
+        let lhs = wand_data.lhs
             .iter()
             .map(|g| self.encode_predicates_for_function_shape_node(vcx, deps, *g, &mut snap_lhs));
         let lhs = lhs.chain(
-            pledge
+            wand_data.pledges
                 .iter()
                 .filter_map(|pledge| pledge.expiry_obligation_expr()),
         );

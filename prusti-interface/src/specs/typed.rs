@@ -477,7 +477,7 @@ impl SpecGraph<ProcedureSpecification> {
 
     /// Attaches the `pledge` to the base spec and all constrained specs.
     pub fn add_pledge(&mut self, pledge: Pledge) {
-        self.base_spec.pledges.push(pledge.clone());
+        self.base_spec.pledges.push(pledge);
         self.specs_with_constraints
             .values_mut()
             .for_each(|s| s.pledges.push(pledge));
@@ -552,7 +552,11 @@ pub struct Pledge {
 
 impl Pledge {
     pub fn new(lhs: Option<DefId>, rhs: DefId) -> Self {
-        Self { reference: None, lhs, rhs }
+        Self {
+            reference: None,
+            lhs,
+            rhs,
+        }
     }
 }
 

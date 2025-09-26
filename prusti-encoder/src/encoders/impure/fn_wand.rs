@@ -1,22 +1,17 @@
 use crate::encoders::{
     ImpureEncVisitor, MirLocalDefEncOutput, MirSpecEnc,
     pure::spec::EncodedPledge,
-    ty::{
-        RustTyDecomposition,
-        generics::GParams,
-        indirect::IndirectPredicatesEnc,
-    },
+    ty::{RustTyDecomposition, generics::GParams, indirect::IndirectPredicatesEnc},
 };
 use pcg::borrow_pcg::{
-        FunctionData, FunctionShape, FunctionShapeInput,
-        FunctionShapeNode, FunctionShapeOutput, MakeFunctionShapeError, state::BorrowsState,
-        unblock_graph::UnblockGraph,
-    };
+    FunctionData, FunctionShape, FunctionShapeInput, FunctionShapeNode, FunctionShapeOutput,
+    MakeFunctionShapeError, state::BorrowsState, unblock_graph::UnblockGraph,
+};
 use prusti_interface::PrustiError;
 use prusti_rustc_interface::{
     data_structures::fx::{FxHashMap, FxHashSet},
     middle::{mir, ty},
-    span::def_id::DefId
+    span::def_id::DefId,
 };
 use task_encoder::{EncodeFullError, EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 use vir::HasType;
@@ -157,8 +152,11 @@ impl<'vir> WandEncOutput<'vir> {
         local_defs: &'a MirLocalDefEncOutput<'vir>,
         deps: &'a mut TaskEncoderDependencies<'vir, E>,
     ) -> impl Iterator<Item = vir::ExprBool<'vir>> + 'a {
-        self.inputs()
-            .map(|g| self.encode_predicates_for_function_shape_node(vcx, deps, g, |i| local_defs[i].impure_snap))
+        self.inputs().map(|g| {
+            self.encode_predicates_for_function_shape_node(vcx, deps, g, |i| {
+                local_defs[i].impure_snap
+            })
+        })
     }
 
     pub fn indirect_posts<'a, E: TaskEncoder>(
@@ -183,9 +181,11 @@ impl<'vir> WandEncOutput<'vir> {
             .collect::<Vec<_>>()
             .into_iter();
 
-        let output_posts = self
-            .outputs()
-            .map(|g| self.encode_predicates_for_function_shape_node(vcx, deps, g, |i| local_defs[i].impure_snap));
+        let output_posts = self.outputs().map(|g| {
+            self.encode_predicates_for_function_shape_node(vcx, deps, g, |i| {
+                local_defs[i].impure_snap
+            })
+        });
         unblocked_input_posts.chain(output_posts)
     }
 
@@ -196,28 +196,26 @@ impl<'vir> WandEncOutput<'vir> {
         deps: &'a mut TaskEncoderDependencies<'vir, E>,
     ) -> impl Iterator<Item = vir::ExprBool<'vir>> + 'a {
         // TODO: wands for late-bound regions
-        self.viper_wands()
-            .into_iter()
-            .map(|wand_data| {
-                let mut snaps = FxHashMap::default();
-                let snap_lhs = |i| {
-                    snaps
-                        .entry(i)
-                        .or_insert_with(|| {
-                            let name = vir::vir_format!(vcx, "wand{:?}", i);
-                            let decl = vcx.mk_local_decl(name, local_defs[i].local_snap.ty());
-                            (decl, vcx.mk_local_ex(decl))
-                        })
-                        .1
-                };
-                let snap_rhs = |i| vcx.mk_old_expr(local_defs[i].impure_snap);
-                let wand = self.mk_wand(&wand_data, snap_lhs, snap_rhs, vcx, deps);
+        self.viper_wands().into_iter().map(|wand_data| {
+            let mut snaps = FxHashMap::default();
+            let snap_lhs = |i| {
                 snaps
-                    .into_iter()
-                    .fold(vcx.mk_wand_expr(wand), |acc, (local, (name, _))| {
-                        vcx.mk_let_expr(name, local_defs[local].impure_snap, acc)
+                    .entry(i)
+                    .or_insert_with(|| {
+                        let name = vir::vir_format!(vcx, "wand{:?}", i);
+                        let decl = vcx.mk_local_decl(name, local_defs[i].local_snap.ty());
+                        (decl, vcx.mk_local_ex(decl))
                     })
-            })
+                    .1
+            };
+            let snap_rhs = |i| vcx.mk_old_expr(local_defs[i].impure_snap);
+            let wand = self.mk_wand(&wand_data, snap_lhs, snap_rhs, vcx, deps);
+            snaps
+                .into_iter()
+                .fold(vcx.mk_wand_expr(wand), |acc, (local, (name, _))| {
+                    vcx.mk_let_expr(name, local_defs[local].impure_snap, acc)
+                })
+        })
     }
 
     pub fn apply_wands<E: TaskEncoder>(
@@ -238,8 +236,7 @@ impl<'vir> WandEncOutput<'vir> {
         let snap_rhs =
             |l: mir::Local| vcx.mk_local_labelled_old_expr(arguments[l.as_usize()], label_pre);
         for wand_data in self.viper_wands() {
-            let wand = self
-                .mk_wand(&wand_data, snap_lhs, snap_rhs, vcx, visitor.deps);
+            let wand = self.mk_wand(&wand_data, snap_lhs, snap_rhs, vcx, visitor.deps);
             visitor.stmt(visitor.vcx.mk_apply_stmt(wand));
         }
     }
@@ -253,16 +250,19 @@ impl<'vir> WandEncOutput<'vir> {
         deps: &mut TaskEncoderDependencies<'vir, E>,
     ) -> vir::Wand<'vir> {
         debug_assert!(!wand_data.lhs.is_empty());
-        let rhs = wand_data.rhs
+        let rhs = wand_data
+            .rhs
             .iter()
             .map(|g| self.encode_predicates_for_function_shape_node(vcx, deps, *g, &mut snap_rhs));
         let rhs = rhs.chain(wand_data.pledges.iter().map(|pledge| pledge.spec));
         let rhs = vcx.mk_conj(vcx.alloc_slice(&rhs.collect::<Vec<_>>()));
-        let lhs = wand_data.lhs
+        let lhs = wand_data
+            .lhs
             .iter()
             .map(|g| self.encode_predicates_for_function_shape_node(vcx, deps, *g, &mut snap_lhs));
         let lhs = lhs.chain(
-            wand_data.pledges
+            wand_data
+                .pledges
                 .iter()
                 .filter_map(|pledge| pledge.expiry_obligation_expr()),
         );
@@ -287,7 +287,6 @@ impl<'tcx> WandEncTask<'tcx> {
     ) -> Result<FunctionShape, MakeFunctionShapeError> {
         self.data.shape(vcx.tcx())
     }
-
 }
 
 pub type WandRhsKey = FunctionShapeInput;

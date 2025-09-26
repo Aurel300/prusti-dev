@@ -1,11 +1,9 @@
 use pcg::{
     borrow_pcg::{
-        AbstractionInputTarget, AbstractionOutputTarget,
-        graph::{BorrowsGraph},
-        state::BorrowsState,
+        AbstractionInputTarget, AbstractionOutputTarget, graph::BorrowsGraph, state::BorrowsState,
         unblock_graph::UnblockGraph,
     },
-    coupling::{CouplingResults, PcgCoupledEdgeKind, PcgCoupledEdges},
+    coupling::PcgCoupledEdgeKind,
     pcg::PcgNode,
 };
 use task_encoder::TaskEncoder;
@@ -38,7 +36,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
     ) -> Vec<(Inputs<'vir>, Outputs<'vir>)> {
         g.coupled_edges()
             .into_iter()
-            .filter_map(|edge| self.without_remote_places(&edge.value()))
+            .filter_map(|edge| self.without_remote_places(edge.value()))
             .collect()
     }
 

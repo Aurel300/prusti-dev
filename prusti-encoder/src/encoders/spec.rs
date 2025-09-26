@@ -2,7 +2,9 @@ use std::cell::RefCell;
 
 use prusti_interface::specs::{
     specifications::SpecQuery,
-    typed::{DefSpecificationMap, ExternSpecKind, ProcedureSpecification, Pledge, SpecificationItem},
+    typed::{
+        DefSpecificationMap, ExternSpecKind, Pledge, ProcedureSpecification, SpecificationItem,
+    },
 };
 use prusti_rustc_interface::{middle::ty, span::def_id::DefId};
 use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};

@@ -1,4 +1,4 @@
-use pcg::{borrow_checker::r#impl::NllBorrowCheckerImpl, borrow_pcg::FunctionData, r#loop::LoopAnalysis};
+use pcg::{borrow_checker::r#impl::NllBorrowCheckerImpl, borrow_pcg::FunctionData};
 use prusti_rustc_interface::{middle::mir, span::def_id::DefId};
 use task_encoder::{EncodeFullResult, OutputRefAny, TaskEncoder, TaskEncoderDependencies};
 use vir::MethodIdn;
@@ -174,7 +174,12 @@ impl TaskEncoder for MethodEnc {
             let mut posts = Vec::new();
             let spec = deps.require_dep_spanned::<MirSpecEnc>((def_id, false), span)?;
             let function_data = FunctionData::new(def_id, params.rust_params(), None);
-            let wands = deps.require_dep_spanned::<WandEnc>(WandEncTask { data: function_data }, span)?;
+            let wands = deps.require_dep_spanned::<WandEnc>(
+                WandEncTask {
+                    data: function_data,
+                },
+                span,
+            )?;
 
             let gparams = GParams::from(def_id);
             // Add direct resources for inputs and outputs to the pre- and

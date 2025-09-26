@@ -1,46 +1,10 @@
 use pcg::borrow_pcg::region_projection::LifetimeProjection;
-use prusti_rustc_interface::middle::ty::{self};
 use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 use vir::{CastType, Reify};
 
-use crate::encoders::ty::{RustTyDecomposition, pure::TyPureEnc};
+use crate::encoders::ty::RustTyDecomposition;
 
 use super::{data::TySpecifics, use_impure::TyUseImpureEnc, use_pure::TyUsePureEnc};
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum IndirectKey {
-    Early(ty::EarlyParamRegion),
-    Late(ty::BoundRegionKind),
-    Var(ty::RegionVid),
-    Param(ty::ParamTy),
-}
-
-impl IndirectKey {
-    pub fn from_generic_arg(ga: ty::GenericArg) -> Option<Self> {
-        match ga.kind() {
-            ty::GenericArgKind::Lifetime(region) => Self::from_region(region),
-            ty::GenericArgKind::Type(ty) => match *ty.kind() {
-                ty::TyKind::Param(p) => Some(IndirectKey::Param(p)),
-                _ => None,
-            },
-            ty::GenericArgKind::Const(_) => None,
-        }
-    }
-
-    pub fn from_region(region: ty::Region) -> Option<Self> {
-        use ty::RegionKind;
-        match region.kind() {
-            RegionKind::ReEarlyParam(e) => Some(IndirectKey::Early(e)),
-            RegionKind::ReBound(_, g) => Some(IndirectKey::Late(g.kind)),
-            RegionKind::ReLateParam(_r) => None, // TODO: Some(IndirectKey::Late(r.bound_region)),
-            RegionKind::ReVar(r) => Some(IndirectKey::Var(r)),
-            RegionKind::RePlaceholder(..) | RegionKind::ReError(..) | RegionKind::ReErased => {
-                unreachable!("{region:?}")
-            }
-            RegionKind::ReStatic => None,
-        }
-    }
-}
 
 pub struct IndirectPredicatesEnc;
 

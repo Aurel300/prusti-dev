@@ -1,9 +1,14 @@
 use pcg::{
-    action::{BorrowPcgAction, PcgAction, PcgActions}, borrow_pcg::{
+    PcgOutput,
+    action::{BorrowPcgAction, PcgAction, PcgActions},
+    borrow_pcg::{
         action::BorrowPcgActionKind,
         borrow_pcg_edge::BorrowPcgEdge,
         borrow_pcg_expansion::BorrowPcgExpansion,
-        edge::{abstraction::{AbstractionEdge, FunctionCallOrLoop}, kind::BorrowPcgEdgeKind},
+        edge::{
+            abstraction::{AbstractionEdge, FunctionCallOrLoop},
+            kind::BorrowPcgEdgeKind,
+        },
         state::BorrowsState,
         unblock_graph::BorrowPcgUnblockAction,
     },
@@ -12,8 +17,7 @@ use pcg::{
     r#loop::{LoopAnalysis, LoopId, PlaceUsages},
     pcg::{CapabilityKind, EvalStmtPhase, Pcg, PcgNode, PcgSuccessor},
     results::PcgBasicBlock,
-    utils::{maybe_old::MaybeLabelledPlace, CompilerCtxt, HasPlace, Place},
-    PcgOutput
+    utils::{CompilerCtxt, HasPlace, Place, maybe_old::MaybeLabelledPlace},
 };
 use prusti_interface::{PrustiError, specs::specifications::SpecQuery};
 use prusti_rustc_interface::{
@@ -340,7 +344,9 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             BorrowPcgEdgeKind::BorrowPcgExpansion(expansion) => {
                 self.pcs_borrow_expansion(expansion.clone(), add, label);
             }
-            BorrowPcgEdgeKind::Coupled(PcgCoupledEdgeKind(FunctionCallOrLoop::FunctionCall(call_edge))) => {
+            BorrowPcgEdgeKind::Coupled(PcgCoupledEdgeKind(FunctionCallOrLoop::FunctionCall(
+                call_edge,
+            ))) => {
                 if add {
                     // The wand will be introduced by the method call itself.
                     return;
@@ -383,7 +389,13 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 }
             }
             BorrowPcgEdgeKind::Abstraction(at @ AbstractionEdge::Loop(_)) => {
-                self.pcs_handle_wand(borrows_state, add, &at.clone().into_singleton_coupled_edge(), label, edge_to_loop);
+                self.pcs_handle_wand(
+                    borrows_state,
+                    add,
+                    &at.clone().into_singleton_coupled_edge(),
+                    label,
+                    edge_to_loop,
+                );
             }
             other => comment!(self, "(ignoring) {other:?}"),
         }
@@ -521,7 +533,10 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
     }
 
     fn loop_place_usages(&mut self, block: mir::BasicBlock) -> Option<PlaceUsages<'vir>> {
-        self.fpcs_analysis.analysis().loop_place_usages(block).cloned()
+        self.fpcs_analysis
+            .analysis()
+            .loop_place_usages(block)
+            .cloned()
     }
 
     fn loop_head_of(&mut self, block: mir::BasicBlock) -> Option<LoopId> {

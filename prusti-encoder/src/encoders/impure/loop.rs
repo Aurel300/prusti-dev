@@ -2,7 +2,7 @@ use pcg::{
     borrow_pcg::region_projection::{
         LifetimeProjection, PcgLifetimeProjectionBase, PcgLifetimeProjectionBaseLike,
     },
-    r#loop::{LoopId, PlaceUsages},
+    r#loop::PlaceUsages,
     pcg::{EvalStmtPhase, PcgNode},
     results::PcgBasicBlock,
     utils::{
@@ -17,11 +17,7 @@ use vir::Reify;
 
 use crate::encoders::{
     ImpureEncVisitor, TyUseImpureEnc,
-    ty::{
-        RustTyDecomposition,
-        indirect::{IndirectKey, IndirectPredicatesEnc},
-        use_impure::TyUseImpure,
-    },
+    ty::{RustTyDecomposition, indirect::IndirectPredicatesEnc, use_impure::TyUseImpure},
 };
 
 pub(super) enum WandOldOuter<'vir> {
@@ -46,7 +42,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             if capability.is_write() {
                 continue; // TODO: bug with always live locals
             }
-            let (place_res, snap, _, _) = self.encode_place_snap(*place);
+            let (place_res, _snap, _, _) = self.encode_place_snap(*place);
             let ty = (*place).ty(self.pcg_ctxt());
             let task = RustTyDecomposition::from_ty(ty.ty, self.def_id);
             let ty_out = self.deps.require_dep::<TyUseImpureEnc>(task).unwrap();

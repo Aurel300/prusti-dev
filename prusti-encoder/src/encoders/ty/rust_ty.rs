@@ -1,10 +1,13 @@
 use std::ops::Deref;
 
 use itertools::Itertools;
-use pcg::borrow_pcg::region_projection::{HasRegions, HasTy, PcgRegion, RegionIdx};
-use prusti_rustc_interface::{abi, hir, index::{self, IndexVec}, middle::ty, span::symbol};
-
-use crate::encoders::{Pure, Purity, ty::TyUseEnc};
+use pcg::borrow_pcg::region_projection::{HasRegions, PcgRegion, RegionIdx};
+use prusti_rustc_interface::{
+    abi, hir,
+    index::{self, IndexVec},
+    middle::ty,
+    span::symbol,
+};
 
 use super::{
     data::*,

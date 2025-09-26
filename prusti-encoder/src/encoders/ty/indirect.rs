@@ -52,7 +52,7 @@ impl TaskEncoder for IndirectPredicatesEnc {
             let combined = ty.ty.zip(self_ty_enc);
             let mut predicate_applications = vec![];
             match combined.specifics {
-                                // Optimisation: if there are no type arguments, there cannot be
+                // Optimisation: if there are no type arguments, there cannot be
                 // anything behind a ref inside (except for 'static, which we
                 // ignore for now). Plus it skips unsupported types if they
                 // don't have lifetimes.

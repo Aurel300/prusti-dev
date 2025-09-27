@@ -290,7 +290,6 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                             .and_then(|tos| tos.iter().find(|(t, _)| t == to))
                             .map(|(_, decl)| *decl);
                         let decl = decl.unwrap_or_else(|| {
-                            // TODO: the `from -> to` flag hasn't been set yet!
                             let name = vir::vir_format!(
                                 self.vcx,
                                 "_from_bb{}_to_bb{}",

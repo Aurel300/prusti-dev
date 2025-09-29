@@ -85,12 +85,10 @@ impl<'vir, E: TaskEncoder> ImpureEncVisitor<'vir, '_, E> {
 
 type EncodedPledges<'vir> = Vec<EncodedPledge<'vir>>;
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone)]
 pub struct WandEncOutput<'vir> {
-    /// Information about the corresponding function. This is wrapped in an
-    /// `Option` in order to have `WandEncOutput: Default`; when explicitly
-    /// constructed, it should always be present.
-    function_data: Option<FunctionData<'vir>>,
+    /// Information about the corresponding function.
+    function_data: FunctionData<'vir>,
 
     /// The lifetime projections of all arguments to the function.
     inputs: Vec<FunctionShapeInput>,
@@ -106,14 +104,13 @@ pub struct WandEncOutput<'vir> {
 
 impl<'vir> WandEncOutput<'vir> {
     pub(crate) fn fn_sig(&self, vcx: &'vir vir::VirCtxt<'vir>) -> ty::FnSig<'vir> {
-        self.function_data.unwrap().instantiated_fn_sig(vcx.tcx())
+        self.function_data.instantiated_fn_sig(vcx.tcx())
     }
 
     pub(crate) fn g_params(&self, vcx: &'vir vir::VirCtxt<'vir>) -> GParams<'vir> {
-        let function_data = self.function_data.unwrap();
         GParams::new(
-            function_data.substs(),
-            function_data.param_env(vcx.tcx()),
+            self.function_data.substs(),
+            self.function_data.param_env(vcx.tcx()),
             false,
         )
     }
@@ -357,7 +354,7 @@ impl TaskEncoder for WandEnc {
                 return Ok((
                     (),
                     WandEncOutput {
-                        function_data: Some(task_key.data),
+                        function_data: task_key.data,
                         inputs,
                         outputs,
                         wands: vec![],
@@ -381,7 +378,7 @@ impl TaskEncoder for WandEnc {
                 })
                 .collect();
             let output: WandEncOutput<'vir> = WandEncOutput {
-                function_data: Some(task_key.data),
+                function_data: task_key.data,
                 inputs,
                 outputs,
                 wands,

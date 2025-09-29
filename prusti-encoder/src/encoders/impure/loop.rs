@@ -41,7 +41,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
 
         for (place, capability) in loop_invariant_place_capabilities.iter() {
             if capability.is_write() {
-                continue; // TODO: bug with always live locals
+                continue; // No permissions are encoded for places with write capabilities currently
             }
             let (place_res, _snap, _, _) = self.encode_place_snap(*place);
             let ty = (*place).ty(self.pcg_ctxt());

@@ -211,10 +211,10 @@ impl TaskEncoder for MirSpecEnc {
                 .iter()
                 .map(
                     |Pledge {
-                         lhs: lhs_def_id,
-                         rhs: rhs_def_id,
-                         ..
-                     }| {
+                        lhs: lhs_def_id,
+                        rhs: rhs_def_id,
+                        ..
+                    }| {
                         // TODO: report error locations
                         let lhs_expr = lhs_def_id.map(|lhs_def_id| {
                             deps.require_dep::<crate::encoders::MirPureEnc>(

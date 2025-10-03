@@ -273,7 +273,7 @@ impl<'tcx> TyData<'tcx, RustTyDatas> {
         (
             Self::new(
                 data,
-                !ty.is_privately_uninhabited(tcx, ty::TypingEnv::fully_monomorphized()),
+                inhabited,
                 specifics,
             )
             .alloc(),

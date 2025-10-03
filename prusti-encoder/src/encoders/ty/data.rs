@@ -243,10 +243,11 @@ impl<'vir, D: TyDatas<'vir>> StructData<'vir, D> {
         other: &'vir StructData<'vir, D2>,
     ) -> StructData<'vir, (D, D2)> {
         assert_eq!(self.fields.len(), other.fields.len());
+        assert_eq!(self.inhabited, other.inhabited);
         let fields = self.fields.iter().zip(other.fields.iter());
         StructData {
             data: (&self.data, &other.data),
-            inhabited: self.inhabited || other.inhabited,
+            inhabited: self.inhabited,
             fields: fields.collect(),
         }
     }
@@ -258,10 +259,11 @@ impl<'vir, D: TyDatas<'vir>> EnumData<'vir, D> {
         other: &'vir EnumData<'vir, D2>,
     ) -> EnumData<'vir, (D, D2)> {
         assert_eq!(self.variants.len(), other.variants.len());
+        assert_eq!(self.inhabited, other.inhabited);
         let variants = self.variants.iter().zip(other.variants.iter());
         EnumData {
             data: (&self.data, &other.data),
-            inhabited: self.inhabited || other.inhabited,
+            inhabited: self.inhabited,
             variants: variants.map(|(v1, v2)| v1.zip(v2)).collect(),
         }
     }
@@ -349,9 +351,10 @@ macro_rules! impl_zip {
     ($container:ident$(.$field:ident)?) => {
 impl<'vir, D: TyDatas<'vir>> $container<'vir, D> {
     pub fn zip<D2: TyDatas<'vir>>(&'vir self, other: &'vir $container<'vir, D2>) -> $container<'vir, (D, D2)> {
+        assert_eq!(self.inhabited, other.inhabited);
         $container {
             data: (&self.data, &other.data),
-            inhabited: self.inhabited || other.inhabited,
+            inhabited: self.inhabited,
             $($field: self.$field.zip(&other.$field),)?
         }
     }

@@ -63,8 +63,8 @@ impl<'tcx> RustTyDecomposition<'tcx> {
     /// unfolding), one should walk the `decomp.ty.specifics` and call
     /// `RustFieldData::decompose_compare_normalize` with `decomp.ty.params`
     /// and `decomp.args`.
-    pub fn from_ty(ty: ty::Ty<'tcx>, context: impl Into<GParams<'tcx>>) -> Self {
-        let (ty, args) = TyData::<'tcx, RustTyDatas>::from_ty(ty, context.into());
+    pub fn from_ty(ty: ty::Ty<'tcx>, tcx: ty::TyCtxt<'tcx>, context: impl Into<GParams<'tcx>>) -> Self {
+        let (ty, args) = TyData::<'tcx, RustTyDatas>::from_ty(ty, tcx, context.into());
         Self { ty, args }
     }
 
@@ -243,7 +243,11 @@ impl<'tcx> Deref for RustFieldData<'tcx> {
 }
 
 impl<'tcx> TyData<'tcx, RustTyDatas> {
-    fn from_ty(ty: ty::Ty<'tcx>, context: GParams<'tcx>) -> (RustTy<'tcx>, GArgs<'tcx>) {
+    fn from_ty(
+        ty: ty::Ty<'tcx>,
+        tcx: ty::TyCtxt<'tcx>,
+        context: GParams<'tcx>,
+    ) -> (RustTy<'tcx>, GArgs<'tcx>) {
         // We normalize since we may be translating a type such as the field of
         // `struct MyStruct<T: Iterator<Item = i32>>(T::Item);` where `ty` is
         // `T::Item` and `context` is `<T: Iterator<Item = i32>>`. In this case
@@ -259,7 +263,15 @@ impl<'tcx> TyData<'tcx, RustTyDatas> {
             params,
         };
         let specifics = TySpecifics::from_ty(ty);
-        (Self::new(data, specifics).alloc(), args)
+        (
+            Self::new(
+                data,
+                !ty.is_privately_uninhabited(tcx, ty::TypingEnv::fully_monomorphized()),
+                specifics,
+            )
+            .alloc(),
+            args,
+        )
     }
 
     fn from_prim_ty(ty: ty::Ty<'tcx>) -> (RustTy<'tcx>, GArgs<'tcx>) {

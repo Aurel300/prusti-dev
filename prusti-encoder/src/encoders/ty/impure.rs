@@ -182,7 +182,7 @@ impl TaskEncoder for TyImpureEnc {
                 ref_to_snap: snap_func_ident.cast_ty(snap_func_ident.arity()),
                 method_assign,
             };
-            let output = TyData::new(data, specifics).alloc();
+            let output = TyData::new(data, ty.inhabited, specifics).alloc();
 
             Ok((builder.inner.build(), output))
         })

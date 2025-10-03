@@ -27,6 +27,7 @@ pub trait TyDatas<'vir>: Debug + Clone + Copy {
 pub type Ty<'vir, D> = &'vir TyData<'vir, D>;
 
 pub struct TyData<'vir, D: TyDatas<'vir>> {
+    pub inhabited: bool,
     pub data: D::TyData,
     pub specifics: TySpecifics<'vir, D>,
 }
@@ -43,16 +44,19 @@ pub enum TySpecifics<'vir, D: TyDatas<'vir>> {
 
 pub struct StructData<'vir, D: TyDatas<'vir>> {
     pub data: D::StructData,
+    pub inhabited: bool,
     pub fields: Vec<D::FieldData>,
 }
 
 pub struct EnumData<'vir, D: TyDatas<'vir>> {
     pub data: D::EnumData,
+    pub inhabited: bool,
     pub variants: Vec<VariantData<'vir, D>>,
 }
 
 pub struct VariantData<'vir, D: TyDatas<'vir>> {
     pub data: D::VariantData,
+    pub inhabited: bool,
     pub inner: StructData<'vir, D>,
 }
 
@@ -95,12 +99,12 @@ impl<'vir, D: TyDatas<'vir>> TySpecifics<'vir, D> {
         Self::MutRef(data)
     }
 
-    pub fn mk_structlike(data: D::StructData, fields: Vec<D::FieldData>) -> Self {
-        Self::StructLike(StructData::new(data, fields))
+    pub fn mk_structlike(data: D::StructData, inhabited: bool, fields: Vec<D::FieldData>) -> Self {
+        Self::StructLike(StructData::new(data, inhabited, fields))
     }
 
-    pub fn mk_enumlike(data: D::EnumData, variants: Vec<VariantData<'vir, D>>) -> Self {
-        Self::EnumLike(EnumData::new(data, variants))
+    pub fn mk_enumlike(data: D::EnumData, inhabited: bool, variants: Vec<VariantData<'vir, D>>) -> Self {
+        Self::EnumLike(EnumData::new(data, inhabited, variants))
     }
 
     pub fn is_param(&self) -> bool {
@@ -242,6 +246,7 @@ impl<'vir, D: TyDatas<'vir>> StructData<'vir, D> {
         let fields = self.fields.iter().zip(other.fields.iter());
         StructData {
             data: (&self.data, &other.data),
+            inhabited: self.inhabited || other.inhabited,
             fields: fields.collect(),
         }
     }
@@ -256,6 +261,7 @@ impl<'vir, D: TyDatas<'vir>> EnumData<'vir, D> {
         let variants = self.variants.iter().zip(other.variants.iter());
         EnumData {
             data: (&self.data, &other.data),
+            inhabited: self.inhabited || other.inhabited,
             variants: variants.map(|(v1, v2)| v1.zip(v2)).collect(),
         }
     }
@@ -281,8 +287,8 @@ impl<'vir, D1: TyDatas<'vir>, D2: TyDatas<'vir>> TyDatas<'vir> for (D1, D2) {
 macro_rules! impls {
     ($container:ident$( { $field:ident: $ty:ty })?) => {
 impl<'vir, D: TyDatas<'vir>> $container<'vir, D> {
-    pub fn new(data: D::$container $(, $field: $ty)?) -> Self {
-        Self { data, $($field,)? }
+    pub fn new(data: D::$container, inhabited: bool $(, $field: $ty)?) -> Self {
+        Self { data, inhabited, $($field,)? }
     }
 }
 
@@ -294,7 +300,7 @@ impl<'vir, D: TyDatas<'vir>> Debug for $container<'vir, D> {
 
 impl<'vir, D: TyDatas<'vir>> Clone for $container<'vir, D> {
     fn clone(&self) -> Self {
-        Self { data: self.data.clone(), $($field: self.$field.clone())? }
+        Self { data: self.data.clone(), inhabited: self.inhabited, $($field: self.$field.clone())? }
     }
 }
 
@@ -345,6 +351,7 @@ impl<'vir, D: TyDatas<'vir>> $container<'vir, D> {
     pub fn zip<D2: TyDatas<'vir>>(&'vir self, other: &'vir $container<'vir, D2>) -> $container<'vir, (D, D2)> {
         $container {
             data: (&self.data, &other.data),
+            inhabited: self.inhabited || other.inhabited,
             $($field: self.$field.zip(&other.$field),)?
         }
     }

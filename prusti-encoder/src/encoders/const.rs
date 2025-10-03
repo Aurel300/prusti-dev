@@ -71,7 +71,7 @@ impl ConstEnc {
         context: GParams<'vir>,
     ) -> Result<vir::ExprCSnap<'vir>, EncodeFullError<'vir, Self>> {
         vir::with_vcx(|vcx| {
-            let ty_task = RustTyDecomposition::from_ty(ty, context);
+            let ty_task = RustTyDecomposition::from_ty(ty, vcx.tcx(), context);
             let kind = deps.require_dep::<TyUsePureEnc>(ty_task)?;
             Ok(match val {
                 ConstValue::Scalar(Scalar::Int(int)) => {
@@ -104,7 +104,7 @@ impl ConstEnc {
                 ConstValue::Slice { .. } if ty.peel_refs().is_str() => {
                     let ref_ty = kind.expect_immref();
                     let str_ty = ty.peel_refs();
-                    let str_ty_task = RustTyDecomposition::from_ty(str_ty, context);
+                    let str_ty_task = RustTyDecomposition::from_ty(str_ty, vcx.tcx(), context);
                     let str_snap = deps.require_dep::<TyUsePureEnc>(str_ty_task)?;
                     let str_snap = str_snap.expect_opaque();
                     // first, we create a string snapshot

@@ -63,7 +63,11 @@ impl<'tcx> RustTyDecomposition<'tcx> {
     /// unfolding), one should walk the `decomp.ty.specifics` and call
     /// `RustFieldData::decompose_compare_normalize` with `decomp.ty.params`
     /// and `decomp.args`.
-    pub fn from_ty(ty: ty::Ty<'tcx>, tcx: ty::TyCtxt<'tcx>, context: impl Into<GParams<'tcx>>) -> Self {
+    pub fn from_ty(
+        ty: ty::Ty<'tcx>,
+        tcx: ty::TyCtxt<'tcx>,
+        context: impl Into<GParams<'tcx>>,
+    ) -> Self {
         let (ty, args) = TyData::<'tcx, RustTyDatas>::from_ty(ty, tcx, context.into());
         Self { ty, args }
     }
@@ -108,7 +112,7 @@ impl<'tcx> LazyRustTy<'tcx> {
     /// when recursing over the fields of a containing `RustTy`).
     /// The passed `params` should be those of the containing `RustTy::params`.
     pub fn decompose(&self, params: GParams<'tcx>) -> RustTyDecomposition<'tcx> {
-        RustTyDecomposition::from_ty(self.0, params)
+        vir::with_vcx(|vcx| RustTyDecomposition::from_ty(self.0, vcx.tcx(), params))
     }
 
     /// Decomposes the field's type into a `RustTyDecomposition` (to be used
@@ -120,7 +124,9 @@ impl<'tcx> LazyRustTy<'tcx> {
     /// `struct Foo<T>(T);` would yield `i32` instead of `T` when called on the
     /// field of `Foo`.
     pub fn decompose_normalize(&self, args: GArgs<'tcx>) -> RustTyDecomposition<'tcx> {
-        RustTyDecomposition::from_ty(args.normalize(self.0), args.context())
+        vir::with_vcx(|vcx| {
+            RustTyDecomposition::from_ty(args.normalize(self.0), vcx.tcx(), args.context())
+        })
     }
 
     /// Similarly to `Self::decompose`, this decomposes the fields type.
@@ -263,6 +269,7 @@ impl<'tcx> TyData<'tcx, RustTyDatas> {
             params,
         };
         let specifics = TySpecifics::from_ty(ty);
+        let inhabited = !ty.is_privately_uninhabited(tcx, ty::TypingEnv::fully_monomorphized());
         (
             Self::new(
                 data,
@@ -283,7 +290,7 @@ impl<'tcx> TyData<'tcx, RustTyDatas> {
             params,
         };
         let specifics = TySpecifics::from_prim_ty(ty);
-        (Self::new(data, specifics).alloc(), args)
+        (Self::new(data, true, specifics).alloc(), args)
     }
 
     fn ty_name(ty: ty::Ty<'tcx>) -> String {
@@ -432,7 +439,7 @@ impl<'tcx> TySpecifics<'tcx, RustTyDatas> {
                         ty: LazyRustTy(Self::new_param_ty(i as u32)),
                     })
                     .collect::<Vec<_>>();
-                TySpecifics::mk_structlike((), fields)
+                TySpecifics::mk_structlike((), true, fields)
             }
             ty::TyKind::Array(..) | ty::TyKind::Slice(..) => {
                 // TODO: add array/slice support
@@ -460,13 +467,13 @@ impl<'tcx> TySpecifics<'tcx, RustTyDatas> {
                         ty: LazyRustTy(ty),
                     })
                     .collect::<Vec<_>>();
-                TySpecifics::mk_structlike((), fields)
+                TySpecifics::mk_structlike((), true, fields)
             }
             ty::TyKind::Never => {
                 let data = vir::with_vcx(|vcx| RustEnumData {
                     discr: vcx.tcx().types.isize,
                 });
-                TySpecifics::mk_enumlike(data, Vec::new())
+                TySpecifics::mk_enumlike(data, false, Vec::new())
             }
             // TODO: add str support
             ty::TyKind::Str => TySpecifics::mk_opaque(()),
@@ -486,7 +493,7 @@ impl<'tcx> TySpecifics<'tcx, RustTyDatas> {
                 fid: abi::FieldIdx::from_usize(0),
                 ty: LazyRustTy(Self::new_param_ty(0)),
             }];
-            return TySpecifics::mk_structlike((), fields);
+            return TySpecifics::mk_structlike((), true, fields);
         }
 
         match adt.adt_kind() {
@@ -507,7 +514,7 @@ impl<'tcx> TySpecifics<'tcx, RustTyDatas> {
 
     fn from_struct(variant: &ty::VariantDef) -> StructData<'tcx, RustTyDatas> {
         let fields = Self::from_fields(&variant.fields);
-        StructData::new((), fields)
+        StructData::new((), true, fields)
     }
 
     fn from_enum(adt: ty::AdtDef<'tcx>) -> EnumData<'tcx, RustTyDatas> {
@@ -526,11 +533,12 @@ impl<'tcx> TySpecifics<'tcx, RustTyDatas> {
                             vid,
                             discr_val: discr.val,
                         },
-                        StructData::new((), fields),
+                        true,
+                        StructData::new((), true, fields),
                     )
                 })
                 .collect::<Vec<_>>();
-            EnumData::new(data, variants)
+            EnumData::new(data, true, variants)
         })
     }
 

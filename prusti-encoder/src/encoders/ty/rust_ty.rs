@@ -184,6 +184,7 @@ impl<'tcx> TyDatas<'tcx> for RustTyDatas {
     type TyData = RustTyData<'tcx>;
     type PrimitiveData = ty::Ty<'tcx>;
     type ParamData = ();
+    type ArrayData = LazyRustTy<'tcx>;
     type ImmRefData = LazyRustTy<'tcx>;
     type MutRefData = LazyRustTy<'tcx>;
     type StructData = ();
@@ -317,6 +318,7 @@ impl<'tcx> TyData<'tcx, RustTyDatas> {
             }),
             ty::TyKind::FnPtr(..) => String::from("FnPtr"),
             ty::TyKind::Array(..) => String::from("Array"),
+            ty::TyKind::Slice(..) => String::from("Slice"),
             other => unimplemented!("ty_name for {:?}", other),
         }
     }
@@ -444,9 +446,19 @@ impl<'tcx> TySpecifics<'tcx, RustTyDatas> {
                     .collect::<Vec<_>>();
                 TySpecifics::mk_structlike((), true, fields)
             }
-            ty::TyKind::Array(..) | ty::TyKind::Slice(..) => {
-                // TODO: add array/slice support
-                TySpecifics::mk_opaque(())
+            ty::TyKind::Array(_, _) => {
+                TySpecifics::ArrayLike(ArrayData {
+                    slice: false,
+                    inhabited: true,
+                    data: LazyRustTy(Self::new_param_ty(1)),
+                })
+            }
+            ty::TyKind::Slice(_) => {
+                TySpecifics::ArrayLike(ArrayData {
+                    slice: true,
+                    inhabited: true,
+                    data: LazyRustTy(Self::new_param_ty(0)),
+                })
             }
             ty::TyKind::Ref(_, _, mutability) => match mutability {
                 ty::Mutability::Mut => {

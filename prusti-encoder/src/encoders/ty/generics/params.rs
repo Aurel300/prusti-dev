@@ -188,7 +188,7 @@ pub struct GenericParams<'vir> {
     const_exprs: Vec<vir::ExprCSnap<'vir>>,
 
     // maps generic param index to either ty or const index
-    indicies: Vec<Result<usize, usize>>,
+    indices: Vec<Result<usize, usize>>,
 }
 
 impl<'vir> GenericParams<'vir> {
@@ -221,7 +221,7 @@ impl<'vir> GenericParams<'vir> {
     }
 
     fn map_idx(&self, index: u32) -> Result<usize, usize> {
-        let result = self.indicies[index as usize];
+        let result = self.indices[index as usize];
         assert!(
             result.ok().is_none_or(|i| i != usize::MAX),
             "trying to map invalid generic param index {index} (possibly a region?)"
@@ -322,7 +322,7 @@ impl TaskEncoder for GenericParamsEnc {
                 const_args,
                 const_decls,
                 const_exprs,
-                indicies,
+                indices: indicies,
             };
             Ok(((), output))
         })

@@ -24,6 +24,7 @@ type FieldCaster<'vir> = GArgCaster<'vir, Impure>;
 impl<'vir> TyDatas<'vir> for UseImpureTyDatas {
     type TyData = TyUseImpureData<'vir>;
     type PrimitiveData = ();
+    type ArrayData = TyUseImpureArrayData<'vir>;
     type ImmRefData = TyUseImpureImmRef<'vir>;
     type MutRefData = TyUseImpureMutRef<'vir>;
     type FieldData = TyUseImpureField<'vir>;
@@ -34,6 +35,7 @@ impl<'vir> TyDatas<'vir> for UseImpureTyDatas {
 
 pub type TyUseImpure<'vir> = Ty<'vir, UseImpureTyDatas>;
 
+pub type TyUseImpureArray<'vir> = ArrayData<'vir, UseImpureTyDatas>;
 pub type TyUseImpureStruct<'vir> = StructData<'vir, UseImpureTyDatas>;
 pub type TyUseImpureEnum<'vir> = EnumData<'vir, UseImpureTyDatas>;
 
@@ -59,6 +61,15 @@ pub struct TyUseImpureMutRef<'vir> {
     caster: FieldCaster<'vir>,
     args: GArgsTy<'vir>,
     impure: <ImpureTyDatas as TyDatas<'vir>>::MutRefData,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct TyUseImpureArrayData<'vir> {
+    args: GArgsTy<'vir>,
+    ref_to_pred: PredicateIdn<'vir, (vir::Ref, vir::ManyTyVal, vir::ManyCSnap)>,
+    #[allow(dead_code)]
+    impure: <ImpureTyDatas as TyDatas<'vir>>::ArrayData,
+    element_caster: FieldCaster<'vir>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -152,6 +163,9 @@ impl<'a, 'vir> TyUseImpureWalker<'a, 'vir> {
                     impure: *data.1,
                 })
             }
+            TySpecifics::ArrayLike(data) => {
+                TySpecifics::ArrayLike(self.encode_array(data, ty.1.ref_to_pred, ty.0.params))
+            }
             TySpecifics::StructLike(data) => {
                 TySpecifics::StructLike(self.encode_structlike(data, ty.1.ref_to_pred, ty.0.params))
             }
@@ -175,6 +189,24 @@ impl<'a, 'vir> TyUseImpureWalker<'a, 'vir> {
         self.deps
             .require_dep::<GArgsCastEnc<Impure>>(normalized)
             .unwrap()
+    }
+
+    fn encode_array(
+        &mut self,
+        data: &ArrayData<'vir, (RustTyDatas, ImpureTyDatas)>,
+        ref_to_pred: PredicateIdn<'vir, (vir::Ref, vir::ManyTyVal, vir::ManyCSnap)>,
+        params: GParams<'vir>,
+    ) -> ArrayData<'vir, UseImpureTyDatas> {
+        let caster = self.encode_normalized(*data.0, params);
+        let slice = data.slice;
+        let inhabited = data.inhabited;
+        let data = TyUseImpureArrayData {
+            args: self.args_t,
+            ref_to_pred,
+            impure: *data.data.1,
+            element_caster: caster,
+        };
+        ArrayData::new(data, inhabited, slice)
     }
 
     fn encode_structlike(
@@ -299,6 +331,7 @@ impl<'vir> TyData<'vir, UseImpureTyDatas> {
         match &self.specifics {
             TySpecifics::Param(_) | TySpecifics::Primitive(_) => unreachable!(),
             TySpecifics::Opaque(_) => panic!("cannot fold opaque type"),
+            TySpecifics::ArrayLike(_) => panic!("cannot fold array type without index"),
             TySpecifics::ImmRef(..) => Vec::new(),
             TySpecifics::MutRef(data) => data.fold(self_ref, label).into_iter().collect(),
             TySpecifics::StructLike(data) => data.fold(self_ref, perm).collect(),
@@ -327,6 +360,7 @@ impl<'vir> TyData<'vir, UseImpureTyDatas> {
         match &self.specifics {
             TySpecifics::Param(_) | TySpecifics::Primitive(_) => unreachable!(),
             TySpecifics::Opaque(_) => panic!("cannot unfold opaque type"),
+            TySpecifics::ArrayLike(_) => panic!("cannot unfold array type without index"),
             TySpecifics::ImmRef(..) => Vec::new(),
             TySpecifics::MutRef(data) => data.unfold(self_ref, old).into_iter().collect(),
             TySpecifics::StructLike(data) => data.unfold(self_ref, perm).collect(),
@@ -335,6 +369,56 @@ impl<'vir> TyData<'vir, UseImpureTyDatas> {
                 vec![vir::with_vcx(|vcx| vcx.mk_unfold_stmt(pred_app))]
             }
         }
+    }
+
+    /// Unfold an array-like predicate at the given index (including generic casts).
+    pub fn unfold_index(
+        &self,
+        self_ref: vir::ExprRef<'vir>,
+        index: vir::ExprInt<'vir>,
+        _perm: Option<vir::ExprPerm<'vir>>,
+    ) -> Vec<vir::Stmt<'vir>> {
+        let TySpecifics::ArrayLike(array) = &self.specifics else { panic!("cannot unfold_index non-array type"); };
+        [
+            vir::with_vcx(|vcx| vcx.alloc(vir::StmtData::new(vcx.alloc((array.data.impure.method_unfold)(
+                index,
+                self_ref,
+                self.args.get_ty(),
+                self.args.get_const(),
+            ))))),
+        ].into_iter()
+            .chain(array.element_caster.cast_to_caller_ctx((array.impure.index_access)(self_ref)))
+            .collect()
+    }
+
+    /// Fold an array-like predicate at the given index (including generic casts).
+    pub fn fold_index(
+        &self,
+        self_ref: vir::ExprRef<'vir>,
+        index: vir::ExprInt<'vir>,
+        _perm: Option<vir::ExprPerm<'vir>>,
+    ) -> Vec<vir::Stmt<'vir>> {
+        let TySpecifics::ArrayLike(array) = &self.specifics else { panic!("cannot fold_index non-array type"); };
+        array.element_caster.cast_to_callee_ctx((array.impure.index_access)(self_ref))
+            .into_iter()
+            .chain([
+                vir::with_vcx(|vcx| vcx.alloc(vir::StmtData::new(vcx.alloc((array.data.impure.method_fold)(
+                    index,
+                    self_ref,
+                    self.args.get_ty(),
+                    self.args.get_const(),
+                ))))),
+            ])
+            .collect()
+    }
+}
+
+impl<'vir> TyUseImpureArray<'vir> {
+    pub fn ref_to_index_ref<Curr, Next>(
+        &self,
+        self_ref: vir::ExprGenRef<'vir, Curr, Next>,
+    ) -> vir::ExprGenRef<'vir, Curr, Next> {
+        self.data.impure.index_access.call()(self_ref)
     }
 }
 

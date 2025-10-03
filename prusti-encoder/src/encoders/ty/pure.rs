@@ -28,6 +28,7 @@ pub(super) type PureTyDatas = ViperTyDatas<Pure>;
 impl<'vir> TyDatas<'vir> for PureTyDatas {
     type TyData = TyPureRef<'vir>;
     type OpaqueData = TyPureOpaqueData<'vir>;
+    type ArrayData = TyPureArrayData<'vir>;
     type PrimitiveData = TyPurePrimData<'vir>;
     type ImmRefData = TyPureImmRefData<'vir>;
     type MutRefData = TyPureMutRefData<'vir>;
@@ -38,6 +39,7 @@ impl<'vir> TyDatas<'vir> for PureTyDatas {
 }
 
 pub type TyPure<'vir> = Ty<'vir, PureTyDatas>;
+pub type TyPureArray<'vir> = <PureTyDatas as TyDatas<'vir>>::ArrayData;
 pub type TyPureParam<'vir> = <PureTyDatas as TyDatas<'vir>>::ParamData;
 pub type TyPureOpaque<'vir> = <PureTyDatas as TyDatas<'vir>>::OpaqueData;
 pub type TyPurePrimitive<'vir> = <PureTyDatas as TyDatas<'vir>>::PrimitiveData;
@@ -49,6 +51,14 @@ pub struct TyPureOpaqueData<'vir> {
     /// Some arbitrary value of this type. Should probably be removed
     /// eventually, but used for now in e.g. the str-const encoding.
     pub arbitrary: FunctionIdn<'vir, (), vir::CSnap>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct TyPureArrayData<'vir> {
+    /// Function to access the value at the given index.
+    pub(super) index_access: FunctionIdn<'vir, (vir::CSnap, vir::Int), vir::PSnap>,
+    /// Function to read the length of the array.
+    pub(super) len: FunctionIdn<'vir, vir::CSnap, vir::Int>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -207,6 +217,10 @@ impl TaskEncoder for TyPureEnc {
                 TySpecifics::Opaque(opaque) => {
                     let builder = builder.set_domain_builder();
                     TySpecifics::Opaque(super::kinds::opaque::ty_pure(opaque, deps, builder)?)
+                }
+                TySpecifics::ArrayLike(array) => {
+                    let builder = builder.set_domain_builder();
+                    TySpecifics::ArrayLike(super::kinds::arraylike::ty_pure(array, deps, builder)?)
                 }
                 TySpecifics::Primitive(prim) => {
                     let builder = builder.set_domain_builder();

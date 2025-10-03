@@ -103,7 +103,11 @@ impl<'vir, D: TyDatas<'vir>> TySpecifics<'vir, D> {
         Self::StructLike(StructData::new(data, inhabited, fields))
     }
 
-    pub fn mk_enumlike(data: D::EnumData, inhabited: bool, variants: Vec<VariantData<'vir, D>>) -> Self {
+    pub fn mk_enumlike(
+        data: D::EnumData,
+        inhabited: bool,
+        variants: Vec<VariantData<'vir, D>>,
+    ) -> Self {
         Self::EnumLike(EnumData::new(data, inhabited, variants))
     }
 

@@ -1203,7 +1203,8 @@ pub fn encode_place_element<'vir, 'enc, T: TaskEncoder>(
     place_ref: Option<ExprRetRef<'vir>>,
 ) -> (ExprRet<'vir>, Option<ExprRetRef<'vir>>) {
     let context = context.into();
-    let ty_task = vir::with_vcx(|vcx| RustTyDecomposition::from_ty(place_ty.ty, vcx.tcx(), context));
+    let ty_task =
+        vir::with_vcx(|vcx| RustTyDecomposition::from_ty(place_ty.ty, vcx.tcx(), context));
     match elem {
         mir::ProjectionElem::Deref => {
             assert!(place_ty.variant_index.is_none());
@@ -1232,7 +1233,9 @@ pub fn encode_place_element<'vir, 'enc, T: TaskEncoder>(
                         .require_dep::<TyUsePureEnc>(ty_task)
                         .unwrap()
                         .expect_mutref();
-                    let inner_ty = vir::with_vcx(|vcx| RustTyDecomposition::from_ty(*inner_ty, vcx.tcx(), context));
+                    let inner_ty = vir::with_vcx(|vcx| {
+                        RustTyDecomposition::from_ty(*inner_ty, vcx.tcx(), context)
+                    });
                     let inner_ty_out = deps.require_dep::<TyUseImpureEnc>(inner_ty).unwrap();
                     let ref_expr = e_ty.deref_access(expr);
                     let ref_val_expr = inner_ty_out.ref_to_snap(unsafe {

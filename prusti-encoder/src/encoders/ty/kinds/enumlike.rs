@@ -41,7 +41,11 @@ pub(crate) fn ty_pure<'vir>(
                 builder,
             )?;
 
-            Ok(VariantData::new(TyPureVariantData { discr }, variant.inhabited, specifics))
+            Ok(VariantData::new(
+                TyPureVariantData { discr },
+                variant.inhabited,
+                specifics,
+            ))
         })
         .collect::<Result<Vec<_>, _>>()?;
 

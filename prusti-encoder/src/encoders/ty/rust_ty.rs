@@ -270,15 +270,7 @@ impl<'tcx> TyData<'tcx, RustTyDatas> {
         };
         let specifics = TySpecifics::from_ty(ty);
         let inhabited = !ty.is_privately_uninhabited(tcx, ty::TypingEnv::fully_monomorphized());
-        (
-            Self::new(
-                data,
-                inhabited,
-                specifics,
-            )
-            .alloc(),
-            args,
-        )
+        (Self::new(data, inhabited, specifics).alloc(), args)
     }
 
     fn from_prim_ty(ty: ty::Ty<'tcx>) -> (RustTy<'tcx>, GArgs<'tcx>) {

@@ -5,22 +5,18 @@ use prusti_interface::{data::VerificationTask, environment::Environment, specs::
 use prusti_utils::{config, report::user};
 
 #[tracing::instrument(name = "prusti::verify", level = "debug", skip(env))]
-pub fn verify(env: Environment<'_>, def_spec: typed::DefSpecificationMap) {
+pub fn verify<'tcx>(
+    env: Environment<'tcx>,
+    def_spec: typed::DefSpecificationMap,
+    verification_task: VerificationTask<'tcx>,
+) {
     if env.diagnostic.has_errors() {
         warn!("The compiler reported an error, so the program will not be verified.");
     } else {
-        debug!("Prepare verification task...");
-        // TODO: can we replace `get_annotated_procedures` with information
-        // that is already in `def_spec`?
-        let (annotated_procedures, types) = env.get_annotated_procedures_and_types();
-        let verification_task = VerificationTask {
-            procedures: annotated_procedures,
-            types,
-        };
         debug!("Verification task: {:?}", &verification_task);
-
         user::message(format!(
-            "Verification of {} items...",
+            "{}erification of {} items...",
+            if verification_task.selective { "Selective v" } else { "V" },
             verification_task.procedures.len()
         ));
 
@@ -41,10 +37,22 @@ pub fn verify(env: Environment<'_>, def_spec: typed::DefSpecificationMap) {
         // encode the crate to a RequestWithContext
         // TODO: push RequestWithContext through (replace VerificationRequest
         //   which is constructed further inside `prusti_server`)
+<<<<<<< HEAD
         let request = prusti_encoder::test_entrypoint(env.tcx(), env.body, def_spec);
+=======
+        let request = prusti_encoder::test_entrypoint(
+            env.tcx(),
+            env.body,
+            def_spec,
+            if verification_task.selective { Some(verification_task.procedures) } else { None },
+            &env.diagnostic,
+        );
+
+>>>>>>> ide/rewrite-2023-assistant-features
         let program = request.program;
         let mut success = true;
 
+<<<<<<< HEAD
         for prusti_error in prusti_encoder::early_errors() {
             success = false;
             prusti_error.emit(&env.diagnostic);
@@ -90,6 +98,22 @@ pub fn verify(env: Environment<'_>, def_spec: typed::DefSpecificationMap) {
             //             && config::allow_unreachable_unsupported_code())
             // );
             std::process::exit(1);
+=======
+        let result = prusti_server::verify_programs(&env.diagnostic, vec![program]);
+
+        println!("verification result: {result:?}");
+
+        if matches!(result, VerificationResult::Failure) {
+            // TODO: This will be unnecessary if diagnostic errors are emitted
+            // earlier, it's useful for now to ensure that Prusti returns an
+            // error code when verification fails
+            env.diagnostic.span_err_with_help_and_notes(
+                MultiSpan::new(),
+                "Verification failed",
+                &None,
+                &[],
+            );
+>>>>>>> ide/rewrite-2023-assistant-features
         }
 
         //let verification_result =

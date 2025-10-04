@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 use std::cell::RefCell;
 
 use prusti_interface::specs::{
@@ -5,6 +6,17 @@ use prusti_interface::specs::{
     typed::{
         DefSpecificationMap, ExternSpecKind, Pledge, ProcedureSpecification, SpecificationItem,
     },
+=======
+use prusti_rustc_interface::{
+    //middle::{mir, ty},
+    span::def_id::DefId,
+};
+use prusti_interface::specs::typed::{DefSpecificationMap, ProcedureSpecification};
+use task_encoder::{
+    TaskEncoder,
+    TaskEncoderDependencies,
+    EncodeFullResult,
+>>>>>>> ide/rewrite-2023-assistant-features
 };
 use prusti_rustc_interface::{middle::ty, span::def_id::DefId};
 use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
@@ -99,7 +111,11 @@ impl TaskEncoder for SpecEnc {
         task_key: &Self::TaskKey<'vir>,
         deps: &mut TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self> {
+<<<<<<< HEAD
         deps.emit_output_ref(*task_key, ())?;
+=======
+        deps.emit_output_ref(task_key.clone(), ())?;
+>>>>>>> ide/rewrite-2023-assistant-features
         vir::with_vcx(|vcx| {
             let (extern_spec, pres, posts, pledges) = with_proc_spec(
                 SpecQuery::GetProcKind(

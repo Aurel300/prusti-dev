@@ -1,5 +1,13 @@
+<<<<<<< HEAD
 use prusti_rustc_interface::{middle::ty, span::def_id::DefId};
 use std::fmt::Write;
+=======
+use std::fmt::Write;
+use prusti_rustc_interface::{
+    span::def_id::DefId,
+    middle::ty
+};
+>>>>>>> ide/rewrite-2023-assistant-features
 use vir::VirCtxt;
 
 #[derive(Hash, PartialEq, Eq, Clone, Copy, Debug)]
@@ -10,6 +18,7 @@ pub struct FunctionCallTaskDescription<'tcx> {
     pub caller_def_id: DefId,
 }
 
+<<<<<<< HEAD
 impl<'tcx> FunctionCallTaskDescription<'tcx> {
     pub fn new(def_id: DefId, substs: ty::GenericArgsRef<'tcx>, caller_def_id: DefId) -> Self {
         Self {
@@ -17,6 +26,11 @@ impl<'tcx> FunctionCallTaskDescription<'tcx> {
             substs,
             caller_def_id,
         }
+=======
+impl <'tcx> FunctionCallTaskDescription<'tcx> {
+    pub fn new(def_id: DefId, substs: ty::GenericArgsRef<'tcx>, caller_def_id: DefId) -> Self {
+        Self { def_id, substs, caller_def_id }
+>>>>>>> ide/rewrite-2023-assistant-features
     }
 
     pub fn vir_function_ident<'vir>(&self, vcx: &'vir VirCtxt<'tcx>) -> vir::ViperIdent<'vir> {
@@ -28,6 +42,7 @@ impl<'tcx> FunctionCallTaskDescription<'tcx> {
 
     fn get_mangled_name(&self, vcx: &VirCtxt<'tcx>) -> String {
         let mut name = vcx.tcx().def_path_str_with_args(self.def_id, self.substs);
+<<<<<<< HEAD
         write!(
             name,
             "_CALLER_{}_{}",
@@ -37,4 +52,10 @@ impl<'tcx> FunctionCallTaskDescription<'tcx> {
         .unwrap();
         name
     }
+=======
+        write!(name, "_CALLER_{}_{}", self.caller_def_id.krate, self.caller_def_id.index.index()).unwrap();
+        name
+    }
+
+>>>>>>> ide/rewrite-2023-assistant-features
 }

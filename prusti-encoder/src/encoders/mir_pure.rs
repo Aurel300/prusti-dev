@@ -13,6 +13,7 @@ use prusti_rustc_interface::{
     abi,
     data_structures::graph,
     index::IndexVec,
+<<<<<<< HEAD
     middle::{
         mir,
         ty::{self, Binder, FnSig, TyKind},
@@ -22,6 +23,32 @@ use prusti_rustc_interface::{
 use std::{collections::HashMap, fmt};
 use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 use vir::{CastType, CompType, add_debug_note};
+=======
+    middle::{mir::{self, Body}, ty::{self, GenericArgs}},
+    span::def_id::DefId,
+    type_ir::sty::TyKind, ast,
+};
+use rustc_middle::ty::{Binder, FnSig};
+use task_encoder::{
+    TaskEncoder,
+    TaskEncoderDependencies,
+    EncodeFullResult,
+};
+use vir::add_debug_note;
+use std::collections::HashMap;
+// TODO: replace uses of `PredicateEnc` with `SnapshotEnc`
+use crate::encoders::{lifted::cast::{CastArgs, CastToEnc}, ConstEnc, MirBuiltinEnc, ViperTupleEnc};
+use super::{
+    lifted::{
+        aggregate_cast::{AggregateSnapArgsCastEnc, AggregateSnapArgsCastEncTask},
+        casters::CastTypePure,
+        rust_ty_cast::RustTyCastersEnc,
+    },
+    rust_ty_predicates::RustTyPredicatesEnc,
+    rust_ty_snapshots::RustTySnapshotsEnc
+};
+use crate::encoder_traits::pure_func_app_enc::PureFuncAppEnc;
+>>>>>>> ide/rewrite-2023-assistant-features
 
 pub struct MirPureEnc;
 
@@ -66,10 +93,17 @@ pub struct MirPureEncTask<'vir> {
     //   can we integrate the lazy context into the identifier system?
     pub encoding_depth: usize,
     pub kind: PureKind,
+<<<<<<< HEAD
     pub parent_def_id: DefId,             // ID of the function
     pub param_env: ty::ParamEnv<'vir>,    // param environment at the usage site
     pub substs: ty::GenericArgsRef<'vir>, // type substitutions at the usage site
     pub caller_def_id: Option<DefId>,     // ID of the caller function, if any
+=======
+    pub parent_def_id: DefId, // ID of the function
+    pub param_env: ty::ParamEnv<'vir>, // param environment at the usage site
+    pub substs: ty::GenericArgsRef<'vir>, // type substitutions at the usage site
+    pub caller_def_id: Option<DefId>, // ID of the caller function, if any
+>>>>>>> ide/rewrite-2023-assistant-features
 }
 
 impl TaskEncoder for MirPureEnc {
@@ -78,11 +112,19 @@ impl TaskEncoder for MirPureEnc {
     type TaskDescription<'vir> = MirPureEncTask<'vir>;
 
     type TaskKey<'vir> = (
+<<<<<<< HEAD
         usize,                    // encoding depth
         PureKind,                 // encoding a pure function?
         DefId,                    // ID of the function
         ty::GenericArgsRef<'vir>, // ? this should be the "signature", after applying the env/substs
         Option<DefId>,            // Caller/Use DefID
+=======
+        usize, // encoding depth
+        PureKind, // encoding a pure function?
+        DefId, // ID of the function
+        ty::GenericArgsRef<'vir>, // ? this should be the "signature", after applying the env/substs
+        Option<DefId>, // Caller/Use DefID
+>>>>>>> ide/rewrite-2023-assistant-features
     );
 
     type OutputFullDependency<'vir> = MirPureEncOutput<'vir>;
@@ -127,7 +169,11 @@ impl TaskEncoder for MirPureEnc {
                 }
             };
 
+<<<<<<< HEAD
             let expr_inner = Enc::new(vcx, task_key.0, def_id, k, &body, deps).encode_body();
+=======
+            let expr_inner = Enc::new(vcx, cfg!(feature="mono_function_encoding"), task_key.0, def_id, &body, deps).encode_body();
+>>>>>>> ide/rewrite-2023-assistant-features
 
             // We wrap the expression with an additional lazy that will perform
             // some sanity checks. These requirements cannot be expressed using
@@ -219,6 +265,7 @@ impl<'vir> Update<'vir> {
 }
 
 struct Enc<'vir: 'enc, 'enc> {
+<<<<<<< HEAD
     vcx: &'vir vir::VirCtxt<'vir>,
     encoding_depth: usize,
     def_id: DefId,
@@ -227,6 +274,16 @@ struct Enc<'vir: 'enc, 'enc> {
     rev_doms: rev_doms::ReverseDominators,
     deps: &'enc mut TaskEncoderDependencies<'vir, MirPureEnc>,
     /// Always holds the next version to be used for a local.
+=======
+    monomorphize: bool,
+    vcx: &'vir vir::VirCtxt<'vir>,
+    encoding_depth: usize,
+    def_id: DefId,
+    body: &'enc mir::Body<'vir>,
+    rev_doms: rev_doms::ReverseDominators,
+    deps: &'enc mut TaskEncoderDependencies<'vir, MirPureEnc>,
+    visited: IndexVec<mir::BasicBlock, bool>,
+>>>>>>> ide/rewrite-2023-assistant-features
     version_ctr: IndexVec<mir::Local, usize>,
     phi_ctr: usize,
     old_mode: bool,
@@ -235,12 +292,55 @@ struct Enc<'vir: 'enc, 'enc> {
     before_expiry_mode: bool,
 }
 
+<<<<<<< HEAD
 impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
     fn new(
         vcx: &'vir vir::VirCtxt<'vir>,
         encoding_depth: usize,
         def_id: DefId,
         kind: Option<ExternSpecKind>,
+=======
+impl <'vir, 'enc> PureFuncAppEnc<'vir, MirPureEnc> for Enc<'vir, 'enc> {
+    fn vcx(&self) -> &'vir vir::VirCtxt<'vir> {
+        self.vcx
+    }
+
+    type EncodeOperandArgs = HashMap<mir::Local, usize>;
+
+    type Curr = ExprInput<'vir>;
+
+    type Next = vir::ExprKind<'vir>;
+
+    type LocalDeclsSrc = Body<'vir>;
+
+    fn deps(&mut self) -> &mut TaskEncoderDependencies<'vir, MirPureEnc> {
+        self.deps
+    }
+
+    fn local_decls_src(&self) -> &Self::LocalDeclsSrc {
+        self.body
+    }
+
+    fn encode_operand(
+        &mut self,
+        args: &Self::EncodeOperandArgs,
+        operand: &mir::Operand<'vir>,
+    ) -> vir::ExprGen<'vir, Self::Curr, Self::Next> {
+        self.encode_operand(args, operand)
+    }
+
+    fn monomorphize(&self) -> bool {
+        self.monomorphize
+    }
+}
+
+impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
+    fn new(
+        vcx: &'vir vir::VirCtxt<'vir>,
+        monomorphize: bool,
+        encoding_depth: usize,
+        def_id: DefId,
+>>>>>>> ide/rewrite-2023-assistant-features
         body: &'enc mir::Body<'vir>,
         deps: &'enc mut TaskEncoderDependencies<'vir, MirPureEnc>,
     ) -> Self {
@@ -250,6 +350,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
         );
         let rev_doms = rev_doms::ReverseDominators::new(&body.basic_blocks);
         Self {
+            monomorphize,
             vcx,
             encoding_depth,
             def_id,
@@ -274,10 +375,17 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
 
     fn get_ty_for_local(&mut self, local: mir::Local) -> vir::TypeSnap<'vir> {
         let ty = self.body.local_decls[local].ty;
+<<<<<<< HEAD
         let ty_task = RustTyDecomposition::from_ty(ty, self.vcx.tcx(), self.context);
         self.deps
             .require_ref::<TyUsePureEnc>(ty_task)
             .unwrap()
+=======
+        self.deps
+            .require_ref::<RustTySnapshotsEnc>(ty)
+            .unwrap()
+            .generic_snapshot
+>>>>>>> ide/rewrite-2023-assistant-features
             .snapshot
     }
 
@@ -555,6 +663,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                     // A fn call in pure can only be one of two kinds: a
                     // call to another pure function, or a call to a prusti
                     // builtin function.
+<<<<<<< HEAD
                     let is_pure = crate::encoders::with_proc_spec(
                         SpecQuery::GetProcKind(
                             def_id,
@@ -581,6 +690,40 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                         let sig = self.vcx.tcx().fn_sig(def_id);
                         let sig = sig.instantiate_identity();
                         self.encode_prusti_builtin(def_id, sig, arg_tys, args, &new_curr_ver)
+=======
+                    let is_pure = crate::encoders::with_proc_spec(def_id, |def_spec|
+                        def_spec.kind.is_pure().unwrap_or_default()
+                    ).unwrap_or_default();
+                    let sig = self.vcx().tcx().fn_sig(def_id);
+                    let sig = if self.monomorphize {
+                        let param_env = self.vcx().tcx().param_env(self.def_id);
+                        self.vcx().tcx().subst_and_normalize_erasing_regions(
+                            arg_tys,
+                            param_env,
+                            sig
+                        )
+                    } else {
+                        sig.instantiate_identity()
+                    };
+                    if is_pure {
+                        self.encode_pure_func_app(
+                            def_id,
+                            sig,
+                            arg_tys,
+                            args,
+                            destination,
+                            self.def_id,
+                            &new_curr_ver,
+                        )
+                    } else {
+                        self.encode_prusti_builtin(
+                            def_id,
+                            sig,
+                            arg_tys,
+                            args,
+                            &new_curr_ver,
+                        )
+>>>>>>> ide/rewrite-2023-assistant-features
                     }
                 };
 
@@ -601,9 +744,14 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
 
     fn encode_stmt(
         &mut self,
+<<<<<<< HEAD
         curr_ver: &HashMap<mir::Local, Version<'vir>>,
         stmt: &mir::Statement<'vir>,
         location: mir::Location,
+=======
+        curr_ver: &HashMap<mir::Local, usize>,
+        stmt: &mir::Statement<'vir>,
+>>>>>>> ide/rewrite-2023-assistant-features
     ) -> Update<'vir> {
         let mut update = Update::new();
         match &stmt.kind {
@@ -627,7 +775,11 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
 
     fn encode_rvalue(
         &mut self,
+<<<<<<< HEAD
         curr_ver: &HashMap<mir::Local, Version<'vir>>,
+=======
+        curr_ver: &HashMap<mir::Local, usize>,
+>>>>>>> ide/rewrite-2023-assistant-features
         rvalue: &mir::Rvalue<'vir>,
     ) -> ExprRet<'vir> {
         let rvalue_ty = rvalue.ty(self.body, self.vcx.tcx());
@@ -637,6 +789,13 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
             mir::Rvalue::Ref(_, kind, place) => {
                 let rvalue_snapshot_encoding = self.ty_use(rvalue_ty);
                 let (snap, place_ref) = self.encode_place_with_ref(curr_ver, place);
+<<<<<<< HEAD
+=======
+                let place_ty = place.ty(self.body, self.vcx.tcx()).ty;
+                let cast = self.deps.require_local::<RustTyCastersEnc<CastTypePure>>(place_ty).unwrap();
+                // The snapshot of the referenced value should be encoded as a generic `Param`
+                let snap = cast.cast_to_generic_if_necessary(self.vcx, snap);
+>>>>>>> ide/rewrite-2023-assistant-features
                 if kind.mutability().is_mut() {
                     let e_rvalue_ty = rvalue_snapshot_encoding.expect_mutref();
                     // We want to distinguish if `place` is a value that lives
@@ -700,10 +859,15 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                     .upcast_ty()
             }
             mir::Rvalue::Aggregate(box kind, fields) => match kind {
+<<<<<<< HEAD
                 mir::AggregateKind::Adt(..)
                 | mir::AggregateKind::Tuple
                 | mir::AggregateKind::Closure(..) => {
                     let e_rvalue_ty = self.ty_use(rvalue_ty);
+=======
+                mir::AggregateKind::Adt(..) | mir::AggregateKind::Tuple | mir::AggregateKind::Closure(..) => {
+                    let e_rvalue_ty = self.deps.require_ref::<RustTyPredicatesEnc>(rvalue_ty).unwrap();
+>>>>>>> ide/rewrite-2023-assistant-features
                     let sl = match kind {
                         mir::AggregateKind::Adt(_, vidx, _, _, _) => {
                             e_rvalue_ty.get_variant_any(*vidx)
@@ -753,7 +917,11 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
 
     fn encode_operand(
         &mut self,
+<<<<<<< HEAD
         curr_ver: &HashMap<mir::Local, Version<'vir>>,
+=======
+        curr_ver: &HashMap<mir::Local, usize>,
+>>>>>>> ide/rewrite-2023-assistant-features
         operand: &mir::Operand<'vir>,
     ) -> ExprRet<'vir> {
         match operand {
@@ -775,7 +943,11 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
 
     fn encode_place(
         &mut self,
+<<<<<<< HEAD
         curr_ver: &HashMap<mir::Local, Version<'vir>>,
+=======
+        curr_ver: &HashMap<mir::Local, usize>,
+>>>>>>> ide/rewrite-2023-assistant-features
         place: &mir::Place<'vir>,
     ) -> ExprRet<'vir> {
         self.encode_place_with_ref(curr_ver, place).0
@@ -783,9 +955,15 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
 
     fn encode_place_with_ref(
         &mut self,
+<<<<<<< HEAD
         curr_ver: &HashMap<mir::Local, Version<'vir>>,
         place: &mir::Place<'vir>,
     ) -> (ExprRet<'vir>, Option<ExprRetRef<'vir>>) {
+=======
+        curr_ver: &HashMap<mir::Local, usize>,
+        place: &mir::Place<'vir>,
+    ) -> (ExprRet<'vir>, Option<ExprRet<'vir>>) {
+>>>>>>> ide/rewrite-2023-assistant-features
         // TODO: remove (debug)
         assert!(curr_ver.contains_key(&place.local));
 
@@ -839,21 +1017,98 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
 
     fn encode_place_element(
         &mut self,
+<<<<<<< HEAD
         place_ty: mir::PlaceTy<'vir>,
         elem: mir::PlaceElem<'vir>,
         expr: ExprCRet<'vir>,
         place_ref: Option<ExprRetRef<'vir>>,
     ) -> (ExprRet<'vir>, Option<ExprRetRef<'vir>>) {
         encode_place_element(self.deps, self.context, place_ty, elem, expr, place_ref)
+=======
+        place_ty: mir::tcx::PlaceTy<'vir>,
+        elem: mir::PlaceElem<'vir>,
+        expr: ExprRet<'vir>,
+        place_ref: Option<ExprRet<'vir>>,
+    ) -> (ExprRet<'vir>, Option<ExprRet<'vir>>) {
+        match elem {
+            mir::ProjectionElem::Deref => {
+                assert!(place_ty.variant_index.is_none());
+                let e_ty = self
+                    .deps
+                    .require_local::<RustTySnapshotsEnc>(place_ty.ty)
+                    .unwrap()
+                    .generic_snapshot
+                    .specifics
+                    .expect_structlike();
+                let place_ref = e_ty
+                    .field_access
+                    .get(1)
+                    .map(|r| r.read.apply(self.vcx, [expr]));
+                let expr = e_ty.field_access[0]
+                    .read
+                    .apply(self.vcx, [expr]);
+                let place_ty = place_ty.projection_ty(self.vcx.tcx(), elem);
+                // Since the `expr` is the target of a reference, it is encoded as a `Param`.
+                // If it is not a type parameter, we cast it to its concrete Snapshot.
+                let cast = self.deps.require_local::<RustTyCastersEnc<CastTypePure>>(place_ty.ty).unwrap();
+                let expr = cast.cast_to_concrete_if_possible(self.vcx, expr);
+                (expr, place_ref)
+            }
+            mir::ProjectionElem::Field(field_idx, ty) => {
+                let tykind = place_ty.ty.kind();
+                let e_ty = self.deps.require_ref::<RustTyPredicatesEnc>(place_ty.ty).unwrap();
+                let struct_like = e_ty
+                    .generic_predicate
+                    .expect_variant_opt(place_ty.variant_index);
+                let proj = struct_like.snap_data.field_access[field_idx.as_usize()].read;
+                let proj_app = proj.apply(self.vcx, [expr]);
+                let proj_app = if let TyKind::Adt(def, _) = tykind {
+                    // The ADT type for the field might be generic, concretize if necessary
+                    let variant = def.variant(place_ty.variant_index.unwrap_or(
+                        abi::FIRST_VARIANT
+                    ));
+                    let generic_field_ty = variant.fields[field_idx].ty(
+                        self.vcx.tcx(),
+                        GenericArgs::identity_for_item(self.vcx.tcx(), def.did())
+                    );
+                    let cast_args = CastArgs {
+                        expected: ty,
+                        actual: generic_field_ty
+                    };
+                    self.deps.require_ref::<CastToEnc<CastTypePure>>(cast_args)
+                        .unwrap().apply_cast_if_necessary(self.vcx, proj_app)
+                } else if let TyKind::Tuple(_) = tykind {
+                    self
+                        .deps.require_local::<RustTyCastersEnc<CastTypePure>>(ty)
+                        .unwrap().cast_to_concrete_if_possible(self.vcx, proj_app)
+                } else {
+                    proj_app
+                };
+                let place_ref = place_ref.map(|pr| {
+                    struct_like.ref_to_field_refs[field_idx.as_usize()].apply(self.vcx, [pr])
+                });
+                (proj_app, place_ref)
+            }
+            mir::ProjectionElem::Downcast(..) => (expr, place_ref),
+            _ => todo!("Unsupported ProjectionElem {:?}", elem),
+        }
+>>>>>>> ide/rewrite-2023-assistant-features
     }
 
     fn encode_prusti_builtin(
         &mut self,
         def_id: DefId,
+<<<<<<< HEAD
         _sig: Binder<'vir, FnSig<'vir>>,
         arg_tys: ty::GenericArgsRef<'vir>,
         args: &[Spanned<mir::Operand<'vir>>],
         curr_ver: &HashMap<mir::Local, Version<'vir>>,
+=======
+        sig: Binder<'vir, FnSig<'vir>>,
+        arg_tys: ty::GenericArgsRef<'vir>,
+        args: &Vec<mir::Operand<'vir>>,
+        curr_ver: &HashMap<mir::Local, usize>,
+>>>>>>> ide/rewrite-2023-assistant-features
     ) -> ExprRet<'vir> {
         #[derive(Debug)]
         enum PrustiBuiltin {
@@ -909,6 +1164,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                 self.vcx.mk_eq_expr(lhs, rhs)
             }
             PrustiBuiltin::Forall => {
+<<<<<<< HEAD
                 assert_eq!(arg_tys.len(), 3);
 
                 let encoded_args = args
@@ -923,6 +1179,19 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                 let closure_ty = arg_tys[2].expect_ty();
 
                 let (qvar_tys, _upvar_tys, cl_kind, cl_def_id) = match closure_ty.kind() {
+=======
+                assert_eq!(arg_tys.len(), 2);
+
+                let encoded_args = self.encode_fn_args(sig, arg_tys, args, curr_ver);
+                // TODO: for now, let's expect this to give us these four:
+                //   - type of the trigger param (unit unless triggers provided)
+                //   - type of the body param (a closure type)
+                //   - expression for the triggers
+                //   - expression for the body
+                assert_eq!(encoded_args.len(), 4);
+
+                let (qvar_tys, upvar_tys, cl_def_id) = match arg_tys[1].expect_ty().peel_refs().kind() {
+>>>>>>> ide/rewrite-2023-assistant-features
                     TyKind::Closure(cl_def_id, cl_args) => (
                         match cl_args.as_closure().sig().skip_binder().inputs()[0].kind() {
                             TyKind::Tuple(list) => list,
@@ -958,6 +1227,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                 //   alternatively, can we have an "unlift"
                 //   operation, which will work like reify
                 //   but panicking on a Lazy(..)?
+<<<<<<< HEAD
                 let closure_ref = unsafe {
                     std::mem::transmute::<ExprRet<'_>, vir::ExprGen<'_, (), !, vir::Snap>>(
                         encoded_args[1],
@@ -969,6 +1239,14 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
 
                 reify_args.push(closure_ref);
                 reify_args.extend(qvars.iter().map(|qvar| self.vcx.mk_local_ex(qvar)));
+=======
+                reify_args.push(unsafe {
+                    std::mem::transmute(encoded_args[3])
+                });
+                reify_args.extend(qvars.iter().map(|qvar| {
+                    self.vcx.mk_local_ex(qvar.name, qvar.ty)
+                }));
+>>>>>>> ide/rewrite-2023-assistant-features
 
                 // TODO: recursively invoke MirPure encoder to encode
                 // the body of the closure; pass the closure as the
@@ -1060,6 +1338,7 @@ mod rev_doms {
         pub end: mir::BasicBlock,
     }
     impl ReverseDominators {
+<<<<<<< HEAD
         #[allow(clippy::needless_lifetimes)]
         pub fn new<'a, 'vir>(blocks: &'a mir::BasicBlocks<'vir>) -> Self {
             let no_succ_blocks = blocks
@@ -1076,6 +1355,12 @@ mod rev_doms {
                 })
                 .map(|(bb, _)| bb)
                 .collect();
+=======
+        pub fn new<'a, 'vir>(blocks: &'a mir::BasicBlocks<'vir>) -> Self {
+            let no_succ_blocks = blocks.iter_enumerated().filter(|(_, data)|
+                data.terminator().successors().next().is_none()
+            ).map(|(bb, _)| bb).collect();
+>>>>>>> ide/rewrite-2023-assistant-features
             let rbb = RevBasicBlocks(blocks, no_succ_blocks);
             Self {
                 dom: dominators::dominators(&rbb),

@@ -1,7 +1,11 @@
 use crate::verifier::verify;
+use ide::{IdeInfo, fake_error};
+use prusti_utils::config;
 use prusti_interface::{
+    data::VerificationTask,
     environment::{mir_storage, Environment},
     specs::{self, cross_crate::CrossCrateSpecs, is_spec_fn},
+    PrustiError,
 };
 use prusti_rustc_interface::{
     borrowck::consumers,
@@ -14,9 +18,10 @@ use prusti_rustc_interface::{
         mir, query::queries::mir_borrowck::ProvidedValue as MirBorrowck, ty::TyCtxt,
         util::Providers,
     },
-    session::Session,
+    session::{EarlyErrorHandler, Session},
+    span::DUMMY_SP,
 };
-use prusti_utils::config;
+use ::log::{debug, info};
 
 #[derive(Default)]
 pub struct PrustiCompilerCalls;
@@ -149,22 +154,81 @@ impl prusti_rustc_interface::driver::Callbacks for PrustiCompilerCalls {
         }
         CrossCrateSpecs::import_export_cross_crate(&mut env, &mut def_spec);
         if !config::no_verify() {
-            /*
-            if config::test_free_pcs() {
-                for proc_id in env.get_annotated_procedures_and_types().0.iter() {
-                    let name = env.name.get_unique_item_name(*proc_id);
-                    println!("Calculating FPCS for: {name}");
-
-                    let current_procedure = env.get_procedure(*proc_id);
-                    let mir = current_procedure.get_mir_rc();
-                    test_free_pcs(&mir, tcx);
-                }
-            } else {*/
             verify(env, def_spec);
-            //}
         }
 
         compiler.sess.dcx().abort_if_errors();
+            CrossCrateSpecs::import_export_cross_crate(&mut env, &mut def_spec);
+
+            // TODO: can we replace `get_annotated_procedures` with information
+            // that is already in `def_spec`?
+            let (annotated_procedures, types) = env.get_annotated_procedures_and_types();
+
+            if config::show_ide_info() && !config::no_verify() {
+                let compiler_info =
+                    IdeInfo::collect(&env, &annotated_procedures, &def_spec);
+                let out = serde_json::to_string(&compiler_info).unwrap();
+                PrustiError::message(format!("compilerInfo{out}"), DUMMY_SP.into())
+                    .emit(&env.diagnostic);
+            }
+            // as long as we have to throw a fake error we need to check this
+            // note that is_single_file will still be false if this is run through x.py.
+            // it will find a manifest in prusti-launch but CARGO_PRIMARY_PACKAGE will still
+            // not be ok. meaning that selective verification can't currently be tested through
+            // x.py if the target is a single-file program.
+            let is_single_file = !std::env::var("CARGO_MANIFEST_DIR").is_ok();
+            let is_primary_package =  is_single_file || std::env::var("CARGO_PRIMARY_PACKAGE").is_ok();
+
+            // collect and output Information used by IDE:
+            if !config::no_verify() && !config::skip_verification() {
+                let target_def_paths = config::verify_only_defpaths();
+                debug!(
+                    "Received def paths: {:?}. Package is primary: {}, Package is single-file: {}",
+                    target_def_paths,
+                    is_primary_package,
+                    is_single_file,
+                );
+                if !target_def_paths.is_empty() {
+                    // if we do selective verification, then definitely only
+                    // for methods of the primary package. Check needed because
+                    // of the fake_error, otherwise verification stops early
+                    // with local dependencies
+                    if is_primary_package {
+                        let env_diagnostic = env.diagnostic.clone();
+                        let procedures = annotated_procedures
+                            .into_iter()
+                            .filter(|x| target_def_paths.contains(&env.name.get_unique_item_name(*x)))
+                            .collect::<Vec<_>>();
+                        if !procedures.is_empty() {
+                            let selective_task = VerificationTask {
+                                procedures,
+                                types,
+                                selective: true
+                            };
+                            // fake_error because otherwise a verification-success
+                            // (for a single method for example) will cause this result
+                            // to be cached by compiler at the moment
+                            verify(env, def_spec, selective_task);
+                        } else {
+                            info!("Passed selective defpaths were empty or had no matching procedures - skipping verification.");
+                        }
+                        fake_error(&env_diagnostic);
+                    }
+                } else {
+                    let verification_task = VerificationTask {
+                        procedures: annotated_procedures,
+                        types,
+                        selective: false,
+                    };
+                    verify(env, def_spec, verification_task);
+                }
+            } else if config::skip_verification() && !config::no_verify() && is_primary_package {
+                // add a fake error, reason explained in issue #1261
+                fake_error(&env.diagnostic);
+            }
+        });
+
+        compiler.session().abort_if_errors();
         if config::full_compilation() {
             Compilation::Continue
         } else {

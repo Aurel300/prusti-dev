@@ -6,6 +6,18 @@ use cfg_if::cfg_if;
 use prusti_rustc_interface::middle::ty;
 use std::fmt::Debug;
 
+<<<<<<< HEAD
+=======
+macro_rules! const_expr {
+    ($expr_kind:expr) => {
+        &ExprGenData {
+            kind: $expr_kind,
+            debug_info: DEBUGINFO_NONE,
+            span: None,
+        }
+    };
+}
+>>>>>>> ide/rewrite-2023-assistant-features
 cfg_if! {
     if #[cfg(debug_assertions)] {
 
@@ -48,11 +60,16 @@ cfg_if! {
                 }
                 StmtKindGenData::Inhale(e) |
                 StmtKindGenData::Exhale(e) => {
+<<<<<<< HEAD
                     check_expr_bindings(m, e.as_dyn());
+=======
+                    check_expr_bindings(m, e);
+>>>>>>> ide/rewrite-2023-assistant-features
                 }
                 StmtKindGenData::Unfold(app) | StmtKindGenData::Fold(app) => {
                     check_predicate_app_bindings(m, app);
                 }
+<<<<<<< HEAD
                 StmtKindGenData::Package(_wand, stmts) => {
                     // TODO: check types in wand
                     for stmt in stmts.iter() {
@@ -62,6 +79,8 @@ cfg_if! {
                 StmtKindGenData::Apply(_wand) => {
                     // TODO: check types in wand
                 }
+=======
+>>>>>>> ide/rewrite-2023-assistant-features
                 StmtKindGenData::MethodCall(MethodCallGenData {
                     args,
                     ..
@@ -70,6 +89,7 @@ cfg_if! {
                         check_expr_bindings(m, *arg);
                     }
                 }
+<<<<<<< HEAD
                 StmtKindGenData::If(e, thn, els) => {
                     check_expr_bindings(m, e.as_dyn());
                     for thn in thn.iter() {
@@ -80,6 +100,8 @@ cfg_if! {
                     }
                 }
                 StmtKindGenData::Label(_) => {},
+=======
+>>>>>>> ide/rewrite-2023-assistant-features
                 StmtKindGenData::Comment(_) => {},
                 StmtKindGenData::Dummy(_) => todo!(),
             }
@@ -340,6 +362,7 @@ impl<'tcx> VirCtxt<'tcx> {
 
     pub fn mk_let_expr<'vir, Curr, Next, V: CompType, T: CompType>(
         &'vir self,
+<<<<<<< HEAD
         decl: LocalDecl<'vir, V>,
         val: ExprGen<'vir, Curr, Next, V>,
         expr: ExprGen<'vir, Curr, Next, T>,
@@ -362,6 +385,22 @@ impl<'tcx> VirCtxt<'tcx> {
         cfg_if! {
             if #[cfg(debug_assertions)] {
                 check_expr_bindings(&mut HashMap::new(), let_expr.as_dyn());
+=======
+        name: &'vir str,
+        val: ExprGen<'vir, Curr, Next>,
+        expr: ExprGen<'vir, Curr, Next>,
+    ) -> ExprGen<'vir, Curr, Next> {
+        let let_expr = self.alloc(
+            ExprGenData::new(
+                self.alloc(ExprKindGenData::Let(
+                    self.alloc(LetGenData { name, val, expr })
+                ))
+            )
+        );
+        cfg_if! {
+            if #[cfg(debug_assertions)] {
+                check_expr_bindings(&mut HashMap::new(), let_expr);
+>>>>>>> ide/rewrite-2023-assistant-features
             }
         }
         let_expr
@@ -597,6 +636,7 @@ impl<'tcx> VirCtxt<'tcx> {
         let args = A::locals(self, args);
         // TODO: Typecheck pre and post conditions
         if let Some(body) = expr {
+<<<<<<< HEAD
             if body.ty() != ret {
                 typecheck_error!(
                     "Function {} has inconsistent return type. Expected: {:?}, Actual: {:?}",
@@ -605,13 +645,22 @@ impl<'tcx> VirCtxt<'tcx> {
                     body.ty()
                 );
             }
+=======
+            assert!(body.ty() == ret);
+>>>>>>> ide/rewrite-2023-assistant-features
             cfg_if! {
                 if #[cfg(debug_assertions)] {
                     let mut m = HashMap::new();
                     for arg in args {
+<<<<<<< HEAD
                         m.insert(arg.name, arg.ty_dyn());
                     }
                     check_expr_bindings(&mut m, body.as_dyn());
+=======
+                        m.insert(arg.name, arg.ty);
+                    }
+                    check_expr_bindings(&mut m, body);
+>>>>>>> ide/rewrite-2023-assistant-features
                 }
             }
         }
@@ -691,7 +740,13 @@ impl<'tcx> VirCtxt<'tcx> {
         &'vir self,
         expr: ExprGenBool<'vir, Curr, Next>,
     ) -> StmtGen<'vir, Curr, Next> {
+<<<<<<< HEAD
         self.alloc(StmtGenData::new(self.alloc(StmtKindGenData::Exhale(expr))))
+=======
+        self.alloc(StmtGenData::new(
+            self.alloc(StmtKindGenData::Exhale(expr)),
+        ))
+>>>>>>> ide/rewrite-2023-assistant-features
     }
 
     pub fn mk_unfold_stmt<'vir, Curr, Next>(
@@ -717,13 +772,25 @@ impl<'tcx> VirCtxt<'tcx> {
         wand: WandGen<'vir, Curr, Next>,
         stmts: &'vir [StmtGen<'vir, Curr, Next>],
     ) -> StmtGen<'vir, Curr, Next> {
+<<<<<<< HEAD
         self.alloc(StmtGenData::new(
             self.alloc(StmtKindGenData::Package(wand, stmts)),
+=======
+        assert_eq!(lhs.ty(),rhs.ty());
+        self.alloc(StmtGenData::new(
+            self.alloc(StmtKindGenData::PureAssign(
+                self.alloc(PureAssignGenData {
+                    lhs,
+                    rhs,
+                }),
+            )),
+>>>>>>> ide/rewrite-2023-assistant-features
         ))
     }
 
     pub fn mk_apply_stmt<'vir, Curr, Next>(
         &'vir self,
+<<<<<<< HEAD
         wand: WandGen<'vir, Curr, Next>,
     ) -> StmtGen<'vir, Curr, Next> {
         self.alloc(StmtGenData::new(self.alloc(StmtKindGenData::Apply(wand))))
@@ -776,6 +843,14 @@ impl<'tcx> VirCtxt<'tcx> {
         label: &'vir str,
     ) -> StmtGen<'vir, Curr, Next> {
         self.alloc(StmtGenData::new(self.alloc(StmtKindGenData::Label(label))))
+=======
+        local: LocalDecl<'vir>,
+        expr: Option<ExprGen<'vir, Curr, Next>>
+    ) ->  StmtGen<'vir, Curr, Next> {
+        self.alloc(StmtGenData::new(
+            self.alloc(StmtKindGenData::LocalDecl(local, expr)),
+        ))
+>>>>>>> ide/rewrite-2023-assistant-features
     }
 
     pub fn mk_assume_false_stmt<'vir, Curr, Next>(
@@ -802,7 +877,13 @@ impl<'tcx> VirCtxt<'tcx> {
         &'vir self,
         msg: &'vir str,
     ) -> StmtGen<'vir, Curr, Next> {
+<<<<<<< HEAD
         self.alloc(StmtGenData::new(self.alloc(StmtKindGenData::Comment(msg))))
+=======
+        self.alloc(StmtGenData::new(
+            self.alloc(StmtKindGenData::Comment(msg)),
+        ))
+>>>>>>> ide/rewrite-2023-assistant-features
     }
 
     pub fn mk_goto_if_stmt<'vir, Curr, Next>(
@@ -848,7 +929,11 @@ impl<'tcx> VirCtxt<'tcx> {
         })
     }
 
+<<<<<<< HEAD
     pub fn mk_method<'vir, Curr, Next, A: Arity>(
+=======
+    pub fn mk_method<'vir, Curr, Next, A: Arity<'vir> + CheckTypes<'vir> + Debug>(
+>>>>>>> ide/rewrite-2023-assistant-features
         &'vir self,
         ident: MethodIdn<'vir, A>,
         args: A::Locals<'_, 'vir>,
@@ -857,9 +942,25 @@ impl<'tcx> VirCtxt<'tcx> {
         posts: &'vir [ExprGenBool<'vir, Curr, Next>],
         blocks: Option<&'vir [CfgBlockGen<'vir, Curr, Next>]>, // first one is the entrypoint
     ) -> MethodGen<'vir, Curr, Next> {
+<<<<<<< HEAD
         let args = A::locals(self, args);
         A::types_match(ident.arity(), args, ident.debug_info());
         self.mk_method_unchecked(ident.name().to_str(), args, rets, pres, posts, blocks)
+=======
+        assert!(ident.arity().types_match(args),
+            "Method {} could not be created. Identifier arity: {:?}, Method decls: {args:?}",
+            ident.name_str(),
+            ident.arity()
+        );
+        self.mk_method_unchecked(
+            ident.name().to_str(),
+            args,
+            rets,
+            pres,
+            posts,
+            blocks
+        )
+>>>>>>> ide/rewrite-2023-assistant-features
     }
 
     pub fn mk_method_unchecked<'vir, Curr, Next>(
@@ -876,7 +977,11 @@ impl<'tcx> VirCtxt<'tcx> {
                 if let Some(blocks) = blocks {
                     let mut m = HashMap::new();
                     for arg in args {
+<<<<<<< HEAD
                         m.insert(arg.name, arg.ty_dyn());
+=======
+                        m.insert(arg.name, arg.ty);
+>>>>>>> ide/rewrite-2023-assistant-features
                     }
                     for block in blocks {
                         for stmt in block.stmts {

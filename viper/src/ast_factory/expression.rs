@@ -1254,7 +1254,7 @@ impl<'a> AstFactory<'a> {
         variables: &[LocalVarDecl],
         triggers: &[Trigger],
         expr: Expr,
-        _pos: Position, // FIXME: Why???
+        pos: Position,
     ) -> Expr<'a> {
         build_ast_node_with_pos!(
             self,
@@ -1263,7 +1263,7 @@ impl<'a> AstFactory<'a> {
             self.jni.new_seq(&map_to_jobjects!(variables)),
             self.jni.new_seq(&map_to_jobjects!(triggers)),
             expr.to_jobject(),
-            self.no_position().to_jobject()
+            pos.to_jobject()
         )
     }
 

@@ -375,8 +375,13 @@ pub fn rel_end<const E: usize>() {}
 /// Universal quantifier.
 ///
 /// This is a Prusti-internal representation of the `forall` syntax.
+<<<<<<< HEAD
 #[cfg(feature = "prusti")]
 pub fn forall<T, A: core::marker::Tuple, F: Fn<A>>(_trigger_set: T, _closure: &F) -> bool {
+=======
+#[prusti::builtin="forall"]
+pub fn forall<T, F>(_trigger_set: T, _closure: &F) -> bool {
+>>>>>>> ide/rewrite-2023-assistant-features
     true
 }
 

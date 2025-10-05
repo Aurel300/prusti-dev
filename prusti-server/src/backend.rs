@@ -1,70 +1,45 @@
-<<<<<<< HEAD
-use crate::dump_viper_program;
-use prusti_utils::{config, Stopwatch};
-use viper::{VerificationContext, VerificationResult};
-=======
-use crate::{ServerMessage, VIPER};
+use crate::{dump_viper_program, ServerMessage, VIPER};
 use log::{debug, info};
-use prusti_utils::{
-    config,
-};
-use std::{
-    sync::mpsc,
-    thread, time,
-    collections::HashSet,
-};
-use viper::{jni_utils::JniUtils, VerificationContext, VerificationResultKind};
-use viper_sys::wrappers::{viper::*};
-use viper_sys::wrappers::java;
->>>>>>> ide/rewrite-2023-assistant-features
+use prusti_utils::{config, Stopwatch};
+use std::{collections::HashSet, sync::mpsc, thread, time};
+use viper::{jni_utils::JniUtils, VerificationContext, VerificationResult, VerificationResultKind};
+use viper_sys::wrappers::{java, viper::*};
+use prusti_rustc_interface::data_structures::fx::FxHashSet;
 
 pub enum Backend<'a> {
     Viper(
         viper::Verifier<'a>,
         &'a VerificationContext<'a>,
-        jni::objects::GlobalRef,
+        jni::objects::GlobalRef
     ),
 }
 
-<<<<<<< HEAD
-impl Backend<'_> {
-    pub fn verify(&mut self, program: vir::ProgramRef) -> VerificationResult {
-=======
 impl<'a> Backend<'a> {
     pub fn verify(
         &mut self,
-        procedures: HashSet<String>,
+        procedures: FxHashSet<String>,
         sender: mpsc::Sender<ServerMessage>,
     ) -> VerificationResultKind {
->>>>>>> ide/rewrite-2023-assistant-features
         match self {
-            Backend::Viper(ref mut verifier, viper_thread, viper_program_ref) => {
-
-                let ast_utils = viper_thread.new_ast_utils();
+            Backend::Viper(ref mut verifier, context, viper_program_ref) => {
+                let ast_utils = context.new_ast_utils();
 
                 ast_utils.with_local_frame(16, || {
-<<<<<<< HEAD
                     let ast_factory = context.new_ast_factory();
 
-                    let viper_program = vir::with_vcx(|vcx| {
-                        let program = vcx.get_program(program);
-                        prusti_viper::program_to_viper(program, &ast_factory)
-                    });
+                    let viper_program = viper::Program::new(viper_program_ref.as_obj());
 
-                    if config::dump_viper_program() {
-                        stopwatch.start_next("dumping viper program");
-                        dump_viper_program(
-                            &ast_utils,
-                            viper_program,
-                            program.get_name_with_check_mode(),
-                        );
-=======
                     let viper_program = viper::Program::new(viper_program_ref.as_obj());
                     if config::report_viper_messages() {
-                        verify_and_poll_msgs(verifier, viper_thread, viper_program, procedures, sender)
+                        verify_and_poll_msgs(
+                            verifier,
+                            context,
+                            viper_program,
+                            procedures,
+                            sender,
+                        )
                     } else {
                         verifier.verify(viper_program, None)
->>>>>>> ide/rewrite-2023-assistant-features
                     }
                 })
             }
@@ -76,7 +51,7 @@ fn verify_and_poll_msgs(
     verifier: &mut viper::Verifier,
     verification_context: &viper::VerificationContext,
     viper_program: viper::Program,
-    procedures: HashSet<String>,
+    procedures: FxHashSet<String>,
     sender: mpsc::Sender<ServerMessage>,
 ) -> VerificationResultKind {
     let mut kind = VerificationResultKind::Success;
@@ -103,7 +78,7 @@ fn verify_and_poll_msgs(
 
 fn polling_function(
     rep_glob_ref: &jni::objects::GlobalRef,
-    procedures: HashSet<String>,
+    procedures: FxHashSet<String>,
     sender: mpsc::Sender<ServerMessage>,
 ) -> HashSet<u64> {
     debug!("attach polling thread to JVM.");
@@ -156,7 +131,7 @@ fn polling_function(
                             _ => info!("Unexpected quantifier name {}", q_name),
                         }
                     }
-                },
+                }
                 "viper.silver.reporter.QuantifierChosenTriggersMessage" => {
                     let obj_wrapper = java::lang::Object::with(env);
                     let positioned_wrapper = silver::ast::Positioned::with(env);
@@ -173,8 +148,8 @@ fn polling_function(
                     if let Some(pos_id_index) = pos_string.rfind('.') {
                         let pos_id = pos_string[pos_id_index + 1..].parse::<usize>().unwrap();
 
-                        let viper_triggers =
-                            jni.get_string(jni.unwrap_result(msg_wrapper.call_triggers__string(msg)));
+                        let viper_triggers = jni
+                            .get_string(jni.unwrap_result(msg_wrapper.call_triggers__string(msg)));
                         debug!(
                             "QuantifierChosenTriggersMessage: {} {} {}",
                             viper_quant_str, viper_triggers, pos_id
@@ -189,7 +164,7 @@ fn polling_function(
                     } else {
                         debug!("quantifier chosen trigger for {viper_quant_str} had no position.");
                     }
-                },
+                }
                 "viper.silver.reporter.VerificationTerminationMessage" => return error_hashes,
                 "viper.silver.reporter.EntitySuccessMessage" => {
                     let msg_wrapper = silver::reporter::EntitySuccessMessage::with(env);
@@ -201,7 +176,8 @@ fn polling_function(
                         debug!("Entity success for method: {method_name}");
                         // this should only match local methods
                         if procedures.contains(&method_name) {
-                            let verification_time = jni.unwrap_result(msg_wrapper.call_verificationTime(msg));
+                            let verification_time =
+                                jni.unwrap_result(msg_wrapper.call_verificationTime(msg));
                             // verification_time is a long -> i64. but we are using u128
                             if verification_time >= 0 {
                                 let verification_time_u128 = verification_time as u64 as u128;
@@ -213,13 +189,16 @@ fn polling_function(
                                     })
                                     .unwrap();
                             } else {
-                                debug!("EntitySuccessMessage for {} had negative verification time {}", method_name, verification_time);
+                                debug!(
+                                    "EntitySuccessMessage for {} had negative verification time {}",
+                                    method_name, verification_time
+                                );
                             }
                         }
                     } else {
                         debug!("Entity is not a method");
                     }
-                },
+                }
                 "viper.silver.reporter.EntityFailureMessage" => {
                     let msg_wrapper = silver::reporter::EntityFailureMessage::with(env);
                     let concerning = jni.unwrap_result(msg_wrapper.call_concerning(msg));
@@ -230,73 +209,78 @@ fn polling_function(
                         debug!("Entity failure for method: {method_name}");
                         // this should only match local methods
                         if procedures.contains(&method_name) {
-                            let verification_time = jni.unwrap_result(msg_wrapper.call_verificationTime(msg));
+                            let verification_time =
+                                jni.unwrap_result(msg_wrapper.call_verificationTime(msg));
                             // verification_time is a long -> i64. but we are using u128
                             if verification_time >= 0 {
-                                    let viper_result = jni.unwrap_result(msg_wrapper.call_result(msg));
-                                    let result = viper::extract_errors(&jni, &env, viper_result, Some(&mut error_hashes));
-                                    let verification_time_u128 = verification_time as u64 as u128;
-                                    sender
-                                        .send(ServerMessage::MethodTermination {
-                                            viper_method_name: method_name.to_string(),
-                                            result,
-                                            verification_time: verification_time_u128,
-                                        })
-                                        .unwrap();
+                                let viper_result = jni.unwrap_result(msg_wrapper.call_result(msg));
+                                let result = viper::extract_errors(
+                                    &jni,
+                                    &env,
+                                    viper_result,
+                                    Some(&mut error_hashes),
+                                );
+                                let verification_time_u128 = verification_time as u64 as u128;
+                                sender
+                                    .send(ServerMessage::MethodTermination {
+                                        viper_method_name: method_name.to_string(),
+                                        result,
+                                        verification_time: verification_time_u128,
+                                    })
+                                    .unwrap();
                             } else {
-                                debug!("EntityFailureMessage for {} had negative verification time {}", method_name, verification_time);
+                                debug!(
+                                    "EntityFailureMessage for {} had negative verification time {}",
+                                    method_name, verification_time
+                                );
                             }
                         }
                     } else {
                         debug!("Received entity was not a method");
                     }
-
-                },
-                "viper.silver.reporter.BlockReachedMessage" => { 
+                }
+                "viper.silver.reporter.BlockReachedMessage" => {
                     let msg_wrapper = silver::reporter::BlockReachedMessage::with(env);
-                    let method_name = 
+                    let method_name =
                         jni.get_string(jni.unwrap_result(msg_wrapper.call_methodName(msg)));
-                    let label = 
-                        jni.get_string(jni.unwrap_result(msg_wrapper.call_label(msg)));
+                    let label = jni.get_string(jni.unwrap_result(msg_wrapper.call_label(msg)));
                     let path_id = jni.unwrap_result(msg_wrapper.call_pathId(msg));
                     sender
-                      .send(ServerMessage::BlockReached {
-                          viper_method: method_name,
-                          vir_label: label,
-                          path_id: path_id,
+                        .send(ServerMessage::BlockReached {
+                            viper_method: method_name,
+                            vir_label: label,
+                            path_id: path_id,
                         })
                         .unwrap();
-                },
+                }
                 "viper.silver.reporter.BlockFailureMessage" => {
                     let msg_wrapper = silver::reporter::BlockFailureMessage::with(env);
-                    let method_name = 
+                    let method_name =
                         jni.get_string(jni.unwrap_result(msg_wrapper.call_methodName(msg)));
-                    let label = 
-                        jni.get_string(jni.unwrap_result(msg_wrapper.call_label(msg)));
+                    let label = jni.get_string(jni.unwrap_result(msg_wrapper.call_label(msg)));
                     let path_id = jni.unwrap_result(msg_wrapper.call_pathId(msg));
                     sender
-                      .send(ServerMessage::BlockFailure {
-                          viper_method: method_name,
-                          vir_label: label,
-                          path_id: path_id,
+                        .send(ServerMessage::BlockFailure {
+                            viper_method: method_name,
+                            vir_label: label,
+                            path_id: path_id,
                         })
                         .unwrap();
-                },
+                }
                 "viper.silver.reporter.PathProcessedMessage" => {
                     let msg_wrapper = silver::reporter::PathProcessedMessage::with(env);
-                    let method_name = 
+                    let method_name =
                         jni.get_string(jni.unwrap_result(msg_wrapper.call_methodName(msg)));
                     let path_id = jni.unwrap_result(msg_wrapper.call_pathId(msg));
-                    let result = 
-                        jni.get_string(jni.unwrap_result(msg_wrapper.call_result(msg)));
+                    let result = jni.get_string(jni.unwrap_result(msg_wrapper.call_result(msg)));
                     sender
-                      .send(ServerMessage::PathProcessed {
-                          viper_method: method_name,
-                          path_id: path_id,
-                          result: result,
+                        .send(ServerMessage::PathProcessed {
+                            viper_method: method_name,
+                            path_id: path_id,
+                            result: result,
                         })
                         .unwrap();
-                },
+                }
                 _ => (),
             }
         }

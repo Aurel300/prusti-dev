@@ -11,6 +11,7 @@ use prusti_utils::{
     Stopwatch,
     report::log::{report, to_legal_file_name},
 };
+use prusti_rustc_interface::data_structures::fx::FxHashSet;
 use crate::{ServerMessage, Backend};
 use std::{
     sync::{self, mpsc, OnceLock},
@@ -36,7 +37,7 @@ pub(crate) enum ServerRequest {
 /// Specifies the kind of backend to be used for verification and carries necessary data.
 pub(crate) enum ServerVerificationRequest {
     // viper program, backend config, set of viper identifiers
-    JVMViperRequest(jni::objects::GlobalRef, ViperBackendConfig, HashSet<String>),
+    JVMViperRequest(jni::objects::GlobalRef, ViperBackendConfig, FxHashSet<String>),
 }
 
 impl ServerVerificationRequest {
@@ -83,7 +84,7 @@ impl ServerVerificationRequest {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct VerificationRequest {
     pub program: vir::ProgramRef,
-    pub procedures: HashSet<String>,
+    pub procedures: FxHashSet<String>,
     pub backend_config: ViperBackendConfig,
 }
 
@@ -150,17 +151,6 @@ impl VerificationRequest {
             },
         }
     }
-}
-
-pub fn dump_viper_program(
-    ast_utils: &viper::AstUtils,
-    program: viper::Program,
-    program_name: &str,
-) {
-    let namespace = "viper_program";
-    let filename = format!("{program_name}.vpr");
-    info!("Dumping Viper program to '{}/{}'", namespace, filename);
-    report(namespace, filename, ast_utils.pretty_print(program));
 }
 
 /// The configuration for the viper backend, (i.e. verifier).
@@ -312,4 +302,16 @@ fn new_viper_verifier<'v, 't: 'v>(
         boogie_path,
         smt_manager,
     )
+}
+
+
+pub fn dump_viper_program(
+    ast_utils: &viper::AstUtils,
+    program: viper::Program,
+    program_name: &str,
+) {
+    let namespace = "viper_program";
+    let filename = format!("{program_name}.vpr");
+    info!("Dumping Viper program to '{}/{}'", namespace, filename);
+    report(namespace, filename, ast_utils.pretty_print(program));
 }

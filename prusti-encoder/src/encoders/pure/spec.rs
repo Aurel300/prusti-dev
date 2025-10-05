@@ -1,23 +1,14 @@
-<<<<<<< HEAD
 use prusti_interface::{
     PrustiError,
     specs::{specifications::find_trait_method_substs, typed::Pledge},
 };
-=======
-use prusti_interface::PrustiError;
->>>>>>> ide/rewrite-2023-assistant-features
 use prusti_rustc_interface::{
     middle::{mir, ty},
     span::{Span, def_id::DefId},
 };
 
-<<<<<<< HEAD
 use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 use vir::{CastType, HasType, Reify};
-=======
-use task_encoder::{TaskEncoder, TaskEncoderDependencies, EncodeFullResult};
-use vir::Reify;
->>>>>>> ide/rewrite-2023-assistant-features
 
 use crate::encoders::{
     MirPureEnc,
@@ -101,7 +92,6 @@ impl TaskEncoder for MirSpecEnc {
         task_key: &Self::TaskKey<'vir>,
         deps: &mut TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self> {
-<<<<<<< HEAD
         let (def_id, pure) = *task_key;
         deps.emit_output_ref(*task_key, ())?;
 
@@ -109,19 +99,6 @@ impl TaskEncoder for MirSpecEnc {
             deps.require_dep::<crate::encoders::local_def::MirLocalDefEnc>((def_id, false))?;
         let specs =
             deps.require_dep::<crate::encoders::SpecEnc>(crate::encoders::SpecEncTask { def_id })?;
-=======
-        let (def_id, substs, caller_def_id, pure) = *task_key;
-        deps.emit_output_ref(*task_key, ())?;
-
-        let local_defs = deps
-            .require_local::<crate::encoders::local_def::MirLocalDefEnc>((
-                def_id,
-                substs,
-                caller_def_id,
-            ))?;
-        let specs = deps
-            .require_local::<crate::encoders::SpecEnc>(crate::encoders::SpecEncTask { def_id })?;
->>>>>>> ide/rewrite-2023-assistant-features
 
         vir::with_vcx(|vcx| {
             let substs = ty::GenericArgs::identity_for_item(vcx.tcx(), def_id);
@@ -145,16 +122,10 @@ impl TaskEncoder for MirSpecEnc {
             };
 
             let to_bool = deps
-<<<<<<< HEAD
                 .require_dep::<TyUsePureEnc>(RustTyDecomposition::from_prim_ty(
                     vcx.tcx().types.bool,
                 ))?
                 .expect_primitive()
-=======
-                .require_ref::<RustTyPredicatesEnc>(vcx.tcx().types.bool)?
-                .generic_predicate
-                .expect_prim()
->>>>>>> ide/rewrite-2023-assistant-features
                 .snap_to_prim;
 
             let substs = find_trait_method_substs(vcx.tcx(), def_id, substs)
@@ -182,13 +153,7 @@ impl TaskEncoder for MirSpecEnc {
                         .downcast_ty();
                     let expr = expr.reify(vcx, (*spec_def_id, pre_args));
                     let span = vcx.tcx().def_span(spec_def_id);
-<<<<<<< HEAD
                     vcx.with_span(span, |_| to_bool(expr).downcast_ty())
-=======
-                    vcx.with_span(span, |vcx| {
-                        to_bool.apply(vcx, [expr])
-                    })
->>>>>>> ide/rewrite-2023-assistant-features
                 })
                 .collect::<Vec<vir::ExprBool<'_>>>();
 
@@ -209,7 +174,6 @@ impl TaskEncoder for MirSpecEnc {
                     let span = vcx.tcx().def_span(spec_def_id);
                     vcx.with_span(span, |vcx| {
                         vcx.handle_error("postcondition.violated:assertion.false", move |_| {
-<<<<<<< HEAD
                             Some(vec![PrustiError::verification(
                                 "postcondition might not hold",
                                 span.into(),
@@ -220,15 +184,6 @@ impl TaskEncoder for MirSpecEnc {
                                 crate::encoders::MirPureEncTask {
                                     encoding_depth: 0,
                                     kind: PureKind::Spec(specs.extern_spec),
-=======
-                            Some(vec![PrustiError::verification("postcondition might not hold", span.into())])
-                        });
-                        let expr = deps
-                            .require_local::<crate::encoders::MirPureEnc>(
-                                crate::encoders::MirPureEncTask {
-                                    encoding_depth: 0,
-                                    kind: PureKind::Spec,
->>>>>>> ide/rewrite-2023-assistant-features
                                     parent_def_id: *spec_def_id,
                                     param_env: vcx.tcx().param_env(spec_def_id),
                                     substs,
@@ -237,16 +192,10 @@ impl TaskEncoder for MirSpecEnc {
                                 },
                             )
                             .unwrap()
-<<<<<<< HEAD
                             .expr
                             .downcast_ty();
                         let expr = expr.reify(vcx, (*spec_def_id, post_args));
                         to_bool(expr).downcast_ty()
-=======
-                            .expr;
-                        let expr = expr.reify(vcx, (*spec_def_id, post_args));
-                        to_bool.apply(vcx, [expr])
->>>>>>> ide/rewrite-2023-assistant-features
                     })
                 })
                 .collect::<Vec<vir::ExprBool<'_>>>();

@@ -5,7 +5,7 @@ use prusti_rustc_interface::{
         intravisit::{self, Visitor},
         Expr, ExprKind,
     },
-    middle::{hir::map::Map, ty::TyCtxt},
+    middle::ty::TyCtxt,
     span::Span,
 };
 
@@ -45,12 +45,8 @@ impl<'tcx> CallSpanFinder<'tcx> {
 }
 
 impl<'tcx> Visitor<'tcx> for CallSpanFinder<'tcx> {
-    type Map = Map<'tcx>;
     type NestedFilter = prusti_rustc_interface::middle::hir::nested_filter::OnlyBodies;
 
-    fn nested_visit_map(&mut self) -> Self::Map {
-        self.env_query.hir()
-    }
     fn visit_expr(&mut self, expr: &'tcx Expr) {
         intravisit::walk_expr(self, expr);
         match expr.kind {

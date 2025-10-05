@@ -34,7 +34,6 @@ fn sanitize_char(c: char) -> Option<String> {
     match c {
         '<' => Some("$lt$".to_string()),
         '>' => Some("$gt$".to_string()),
-<<<<<<< HEAD
         ' ' => Some("$sp$".to_string()),
         ',' => Some("$com$".to_string()),
         ':' => Some("$col$".to_string()),
@@ -43,11 +42,6 @@ fn sanitize_char(c: char) -> Option<String> {
         '-' => Some("$hyp$".to_string()),
         '(' => Some("$lp$".to_string()),
         ')' => Some("$rp$".to_string()),
-=======
-        ' ' => Some("$space$".to_string()),
-        ',' => Some("$comma$".to_string()),
-        ':' => Some("$colon$".to_string()),
->>>>>>> ide/rewrite-2023-assistant-features
         _ => None,
     }
 }

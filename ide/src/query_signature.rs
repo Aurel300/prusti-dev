@@ -1,4 +1,5 @@
 use prusti_utils::config;
+use prusti_rustc_interface::middle::ty::print::PrintTraitRefExt;
 use std::{collections::HashMap, fmt};
 
 use crate::ProcDef;
@@ -36,7 +37,7 @@ enum ExternSpecBlock {
 
 impl ExternSpecBlock {
     fn from_defid(tcx: TyCtxt<'_>, defid: DefId) -> Option<Self> {
-        let def_kind = tcx.opt_def_kind(defid)?;
+        let def_kind = tcx.def_kind(defid);
         let signature = FunctionSignature::from_defid(tcx, defid)?;
         match def_kind {
             DefKind::Fn => {
@@ -255,7 +256,7 @@ impl FunctionSignature {
         let name = tcx.opt_item_name(defid)?.to_string();
         let sig = tcx.fn_sig(defid).skip_binder();
         let arg_types = sig.inputs().iter();
-        let arg_names = tcx.fn_arg_names(defid);
+        let arg_names = tcx.fn_arg_idents(defid);
         let output = sig.output().skip_binder();
         let return_type = if output.is_unit() {
             None
@@ -266,7 +267,7 @@ impl FunctionSignature {
         let arguments: Vec<(String, String)> = arg_names
             .iter()
             .zip(arg_types)
-            .map(|(name, ty)| (name.to_string(), ty.skip_binder().to_string()))
+            .map(|(name, ty)| (name.unwrap().to_string(), ty.skip_binder().to_string()))
             .collect();
 
         let generics = generic_params(tcx, defid);
@@ -311,7 +312,7 @@ fn generic_params(tcx: TyCtxt<'_>, defid: DefId) -> Vec<GenericArg> {
     let generics = tcx.generics_of(defid);
 
     generics
-        .params
+        .own_params
         .iter()
         .filter_map(|param| {
             let ident = param.name.to_string();
@@ -361,9 +362,9 @@ fn trait_bounds(tcx: TyCtxt<'_>, defid: DefId) -> HashMap<String, Vec<TraitBound
                 }
             }
             ClauseKind::Projection(p) => {
-                let item_id = p.projection_ty.def_id;
-                let self_ty = format!("{}", p.projection_ty.self_ty());
-                let trait_defid: DefId = p.projection_ty.trait_def_id(tcx);
+                let item_id = p.projection_term.def_id;
+                let self_ty = format!("{}", p.projection_term.self_ty());
+                let trait_defid: DefId = p.projection_term.trait_def_id(tcx);
                 let trait_defpath = tcx.def_path_str(trait_defid);
 
                 let item_name = tcx.item_name(item_id).to_string();

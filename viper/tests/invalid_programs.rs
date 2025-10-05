@@ -28,7 +28,7 @@ fn runtime_error() {
 
     let mut verifier =
         verification_context.new_verifier_with_default_smt(viper::VerificationBackend::Silicon);
-    let verification_result = verifier.verify(program);
+    let verification_result = verifier.verify(program, None);
 
     assert!(matches!(
         verification_result,
@@ -97,7 +97,7 @@ where
     let mut verifier =
         verification_context.new_verifier_with_default_smt(viper::VerificationBackend::Silicon);
 
-    let verification_result = verifier.verify(program);
+    let verification_result = verifier.verify(program, None);
     match verification_result {
         VerificationResultKind::ConsistencyErrors(_) => (),
         other => panic!("consistency errors not identified, instead found {other:?}"),

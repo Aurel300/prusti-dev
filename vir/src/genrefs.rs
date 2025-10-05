@@ -43,12 +43,8 @@ pub type PureAssignGen<'vir, Curr, Next> =
     &'vir crate::gendata::PureAssignGenData<'vir, Curr, Next>;
 pub type StmtGen<'vir, Curr, Next> = &'vir crate::gendata::StmtGenData<'vir, Curr, Next>;
 pub type StmtKindGen<'vir, Curr, Next> = &'vir crate::gendata::StmtKindGenData<'vir, Curr, Next>;
-<<<<<<< HEAD
 pub type TerminatorStmtGen<'vir, Curr, Next> =
     &'vir crate::gendata::TerminatorStmtGenData<'vir, Curr, Next>;
-=======
-pub type TerminatorStmtGen<'vir, Curr, Next> = &'vir crate::gendata::TerminatorStmtGenData<'vir, Curr, Next>;
->>>>>>> ide/rewrite-2023-assistant-features
 pub type TernaryGen<'vir, Curr, Next> = &'vir crate::gendata::TernaryGenData<'vir, Curr, Next>;
 pub type TriggerGen<'vir, Curr, Next> = &'vir crate::gendata::TriggerGenData<'vir, Curr, Next>;
 pub type UnOpGen<'vir, Curr, Next> = &'vir crate::gendata::UnOpGenData<'vir, Curr, Next>;

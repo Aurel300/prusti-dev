@@ -139,7 +139,6 @@ impl<'vir> Debug for DomainFunctionData<'vir> {
 
 impl<'vir, Curr, Next> Debug for AdtGenData<'vir, Curr, Next> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-<<<<<<< HEAD
         writeln!(f, "  adt {}", self.name)?;
         if !self.typarams.is_empty() {
             write!(f, "[")?;
@@ -166,8 +165,6 @@ impl<'vir, Curr, Next> Debug for AdtConstructorGenData<'vir, Curr, Next> {
 
 impl<'vir, Curr, Next, T: CompType> Debug for ExprGenData<'vir, Curr, Next, T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-=======
->>>>>>> ide/rewrite-2023-assistant-features
         if let Some(span) = self.span {
             write!(f, "/*p:{}*/", span.id)?;
         }
@@ -375,10 +372,7 @@ impl<'vir, Curr, Next> Debug for StmtGenData<'vir, Curr, Next> {
 
 impl<'vir, Curr, Next> Debug for StmtKindGenData<'vir, Curr, Next> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-<<<<<<< HEAD
         let indent = f.width().unwrap_or_default();
-=======
->>>>>>> ide/rewrite-2023-assistant-features
         match self {
             Self::LocalDecl(decl, expr) => {
                 write!(f, "var {decl:indent$?}")?;

@@ -13,20 +13,12 @@ impl<'vir, Curr: Copy, NextA, NextB, T: CompType> Reify<'vir, Curr>
 {
     type Next = ExprGen<'vir, NextA, NextB, T>;
     fn reify<'tcx>(&self, vcx: &'vir VirCtxt<'tcx>, lctx: Curr) -> Self::Next {
-<<<<<<< HEAD
         vcx.alloc(ExprGenData::new_inner(
             self.kind.reify(vcx, lctx),
             self.debug_info,
             self.span,
             self.ty(),
         ))
-=======
-        vcx.alloc(ExprGenData {
-            kind: self.kind.reify(vcx, lctx),
-            debug_info: self.debug_info,
-            span: self.span,
-        })
->>>>>>> ide/rewrite-2023-assistant-features
     }
 }
 

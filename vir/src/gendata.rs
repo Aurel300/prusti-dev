@@ -1,6 +1,5 @@
 use std::fmt::Debug;
 
-<<<<<<< HEAD
 use crate::{
     data::*,
     debug_info::{DebugInfo, DEBUGINFO_NONE},
@@ -9,14 +8,6 @@ use crate::{
     spans::VirSpan,
     typecheck_error, with_vcx, CastType, CompType, Dyn,
 };
-=======
-use crate::data::*;
-use crate::debug_info::DebugInfo;
-use crate::genrefs::*;
-use crate::refs::*;
-use crate::spans::VirSpan;
-use crate::with_vcx;
->>>>>>> ide/rewrite-2023-assistant-features
 
 use vir_proc_macro::*;
 
@@ -152,7 +143,6 @@ impl<A, B: GenRow> GenRow for fn(A) -> B {
 #[derive(VirHash, VirSerde)]
 pub struct ExprGenData<'vir, Curr: 'vir, Next: 'vir, T: CompType> {
     pub kind: ExprKindGen<'vir, Curr, Next>,
-<<<<<<< HEAD
     #[vir(reify_pass)]
     pub debug_info: DebugInfo<'vir>,
     #[vir(reify_pass)]
@@ -202,19 +192,6 @@ impl<'vir, Curr: 'vir, Next: 'vir, T: CompType> ExprGenData<'vir, Curr, Next, T>
             span,
             ty,
         }
-=======
-    #[vir(reify_pass)] pub debug_info: DebugInfo<'vir>,
-    #[vir(reify_pass)] pub span: Option<&'vir VirSpan<'vir>>,
-}
-
-impl <'vir, Curr: 'vir, Next: 'vir> ExprGenData<'vir, Curr, Next> {
-    pub fn new(kind: ExprKindGen<'vir, Curr, Next>) -> Self {
-        with_vcx(|vcx| Self {
-            kind,
-            debug_info: DebugInfo::new(vcx),
-            span: vcx.top_span(),
-        })
->>>>>>> ide/rewrite-2023-assistant-features
     }
 }
 
@@ -466,18 +443,11 @@ pub struct MethodCallGenData<'vir, Curr, Next> {
 pub struct StmtGenData<'vir, Curr, Next> {
     pub kind: StmtKindGen<'vir, Curr, Next>,
     // #[vir(reify_pass)] pub debug_info: DebugInfo<'vir>,
-<<<<<<< HEAD
     #[vir(reify_pass)]
     pub span: Option<&'vir VirSpan<'vir>>,
 }
 
 impl<'vir, Curr: 'vir, Next: 'vir> StmtGenData<'vir, Curr, Next> {
-=======
-    #[vir(reify_pass)] pub span: Option<&'vir VirSpan<'vir>>,
-}
-
-impl <'vir, Curr: 'vir, Next: 'vir> StmtGenData<'vir, Curr, Next> {
->>>>>>> ide/rewrite-2023-assistant-features
     pub fn new(kind: StmtKindGen<'vir, Curr, Next>) -> Self {
         with_vcx(|vcx| Self {
             kind,

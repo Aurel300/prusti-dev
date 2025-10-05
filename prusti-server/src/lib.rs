@@ -5,16 +5,10 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 #![warn(clippy::disallowed_types)]
-#![feature(rustc_private)]
 
-<<<<<<< HEAD
-use log::info;
 use once_cell::sync::Lazy;
 use prusti_utils::{config, Stopwatch};
-use viper::{PersistentCache, Viper};
-=======
 use ::log::{debug, error, info};
-use prusti_utils::{config, Stopwatch};
 use prusti_interface::{
     data::VerificationResult,
     environment::EnvDiagnostic,
@@ -34,7 +28,6 @@ use crate::{
     ViperBackendConfig,
     VerificationRequestProcessing,
 };
->>>>>>> ide/rewrite-2023-assistant-features
 
 mod client;
 mod process_verification;
@@ -57,7 +50,6 @@ use serde_json::json;
 use async_stream::stream;
 use futures_util::{pin_mut, Stream, StreamExt};
 use std::sync::{self, Arc};
-use once_cell::sync::Lazy;
 
 /// Verify a list of programs.
 pub fn verify_programs(
@@ -85,13 +77,13 @@ pub fn verify_programs(
         .enable_all()
         .build()
         .expect("failed to construct Tokio runtime");
-        
+
     let overall_result = rt.block_on(async {
         if let Some(server_address) = config::server_address() {
             let verification_messages = verify_requests_server(verification_requests, server_address);
             handle_stream(env_diagnostic, verification_messages).await
         } else {
-            let cache = Lazy::new(move || 
+            let cache = Lazy::new(move ||
                 Arc::new(sync::Mutex::new(PersistentCache::load_cache(config::cache_path())))
             );
             let vrp = Lazy::new(VerificationRequestProcessing::new);
@@ -109,7 +101,7 @@ async fn handle_stream(
 ) -> VerificationResult {
     let mut overall_result = VerificationResult::Success;
     // let encoding_errors_count = self.encoder.count_encoding_errors();
-    
+
     // we want quantifier_pos_ID + program_name + q_name as identifier because there are
     // different q_names for the same ID and each program reports independent results
     // key: (pos_id, program_name), key to result: q_name result: num_instantiations
@@ -191,7 +183,7 @@ async fn handle_stream(
             } => handle_block_processing_message(
                 env_diagnostic,
                 viper_method,
-                None,                
+                None,
                 path_id,
                 None,
             ),
@@ -376,7 +368,7 @@ fn handle_quantifier_instantiation_message(
 ) {
     if config::report_viper_messages() {
         debug!("Received #{insts} quantifier instantiations of {q_name} for position id {pos_id} durign verification");
-        vir::with_vcx(|vcx| {          
+        vir::with_vcx(|vcx| {
             match vcx.get_span_from_id(pos_id.try_into().unwrap()) {
                 Some(span) => {
                     let program_name = "program".to_owned();

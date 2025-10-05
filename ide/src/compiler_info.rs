@@ -1,9 +1,9 @@
+use crate::{call_finder, query_signature, VscSpan};
 use prusti_interface::{environment::Environment, specs::typed};
 use prusti_rustc_interface::{
     hir::def_id::DefId,
     span::{source_map::SourceMap, Span},
 };
-use crate::{VscSpan, call_finder, query_signature};
 use serde::Serialize;
 
 /// This struct will be passed to prusti-assistant containing information
@@ -65,40 +65,39 @@ fn collect_procedures(
     let mut procs = Vec::new();
     for defid in procedures {
         let defpath = env.name.get_unique_item_name(*defid);
-        if let Some(span) = env.query.get_def_span(defid) {
-            let vscspan = VscSpan::from_span(&span, sourcemap);
+        let span = env.query.get_def_span(defid);
+        let vscspan = VscSpan::from_span(&span, sourcemap);
 
-            // Filter out the predicates and trusted methods,
-            // since we don't want to allow selective verification
-            // for them
-            let mut is_predicate = false;
-            let mut is_trusted = false;
+        // Filter out the predicates and trusted methods,
+        // since we don't want to allow selective verification
+        // for them
+        let mut is_predicate = false;
+        let mut is_trusted = false;
 
-            let proc_spec_opt = def_spec.get_proc_spec(defid);
-            if let Some(proc_spec) = proc_spec_opt {
-                let kind_spec = proc_spec
-                    .base_spec
-                    .kind
-                    .extract_with_selective_replacement();
-                let trusted_spec = proc_spec
-                    .base_spec
-                    .trusted
-                    .extract_with_selective_replacement();
-                if let Some(typed::ProcedureSpecificationKind::Predicate(..)) = kind_spec {
-                    is_predicate = true;
-                }
-                if let Some(true) = trusted_spec {
-                    is_trusted = true;
-                }
+        let proc_spec_opt = def_spec.get_proc_spec(defid);
+        if let Some(proc_spec) = proc_spec_opt {
+            let kind_spec = proc_spec
+                .base_spec
+                .kind
+                .extract_with_selective_replacement();
+            let trusted_spec = proc_spec
+                .base_spec
+                .trusted
+                .extract_with_selective_replacement();
+            if let Some(typed::ProcedureSpecificationKind::Predicate(..)) = kind_spec {
+                is_predicate = true;
             }
-
-            if !is_trusted && !is_predicate {
-                procs.push(ProcDef {
-                    name: defpath,
-                    defid: *defid,
-                    span: vscspan,
-                });
+            if let Some(true) = trusted_spec {
+                is_trusted = true;
             }
+        }
+
+        if !is_trusted && !is_predicate {
+            procs.push(ProcDef {
+                name: defpath,
+                defid: *defid,
+                span: vscspan,
+            });
         }
     }
     procs
@@ -108,8 +107,7 @@ fn collect_procedures(
 /// templates for it
 fn collect_fncalls(env: &Environment<'_>) -> Vec<(String, DefId, Span)> {
     let mut fnvisitor = call_finder::CallSpanFinder::new(env);
-    env.tcx()
-        .hir_visit_all_item_likes_in_crate(&mut fnvisitor);
+    env.tcx().hir_visit_all_item_likes_in_crate(&mut fnvisitor);
 
     fnvisitor.called_functions
 }

@@ -17,16 +17,10 @@ mod refs;
 mod reify;
 mod serde;
 mod spans;
-<<<<<<< HEAD
-// mod callable_idents;
 mod callable;
-=======
-mod callable_idents;
->>>>>>> ide/rewrite-2023-assistant-features
 mod viper_ident;
 mod r#type;
 
-// pub use callable_idents::*;
 pub use callable::*;
 pub use context::*;
 pub use data::*;
@@ -36,10 +30,6 @@ pub use r#type::*;
 pub use refs::*;
 pub use reify::*;
 pub use spans::VirSpan;
-<<<<<<< HEAD
-=======
-pub use callable_idents::*;
->>>>>>> ide/rewrite-2023-assistant-features
 pub use viper_ident::*;
 
 // for all arena-allocated types, there are two type definitions: one with

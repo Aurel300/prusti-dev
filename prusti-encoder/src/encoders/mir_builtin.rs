@@ -1,22 +1,9 @@
-<<<<<<< HEAD
 use prusti_rustc_interface::middle::{mir, ty};
 use prusti_utils::config;
 use task_encoder::{EncodeFullError, EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 use vir::{CallableIdn, CastType, FunctionIdn};
 
 use crate::encoders::ty::{RustTyDecomposition, use_pure::TyUsePureEnc};
-=======
-use prusti_rustc_interface::{
-    middle::ty,
-    middle::mir,
-};
-use task_encoder::{
-    TaskEncoder,
-    TaskEncoderDependencies,
-    EncodeFullResult,
-};
-use vir::{UnknownArity, FunctionIdent, CallableIdent};
->>>>>>> ide/rewrite-2023-assistant-features
 
 pub struct MirBuiltinEnc;
 
@@ -78,7 +65,6 @@ impl TaskEncoder for MirBuiltinEnc {
         task_key: &Self::TaskKey<'vir>,
         deps: &mut TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self> {
-<<<<<<< HEAD
         vir::with_vcx(|vcx| match *task_key {
             MirBuiltinEncTask::UnOp(res_ty, op, operand_ty) => {
                 assert_eq!(res_ty, operand_ty);
@@ -93,23 +79,6 @@ impl TaskEncoder for MirBuiltinEnc {
                 let function =
                     Self::handle_checked_bin_op(vcx, deps, *task_key, res_ty, op, l_ty, r_ty)?;
                 Ok((MirBuiltinEncOutput { function }, ()))
-=======
-        vir::with_vcx(|vcx| {
-            match *task_key {
-                MirBuiltinEncTask::UnOp(res_ty, op, operand_ty) => {
-                    assert_eq!(res_ty, operand_ty);
-                    let function = Self::handle_un_op(vcx, deps, *task_key, op, operand_ty);
-                    Ok((MirBuiltinEncOutput { function }, ()))
-                }
-                MirBuiltinEncTask::BinOp(res_ty, op, l_ty, r_ty) => {
-                    let function = Self::handle_bin_op(vcx, deps, *task_key, res_ty, op, l_ty, r_ty);
-                    Ok((MirBuiltinEncOutput { function }, ()))
-                }
-                MirBuiltinEncTask::CheckedBinOp(res_ty, op, l_ty, r_ty) => {
-                    let function = Self::handle_checked_bin_op(vcx, deps, *task_key, res_ty, op, l_ty, r_ty);
-                    Ok((MirBuiltinEncOutput { function }, ()))
-                }
->>>>>>> ide/rewrite-2023-assistant-features
             }
         })
     }
@@ -139,7 +108,6 @@ impl MirBuiltinEnc {
         key: <Self as TaskEncoder>::TaskKey<'vir>,
         op: mir::UnOp,
         ty: ty::Ty<'vir>,
-<<<<<<< HEAD
     ) -> Result<vir::Function<'vir>, EncodeFullError<'vir, Self>> {
         let ty_task = RustTyDecomposition::from_prim_ty(ty);
         let e_ty = deps.require_dep::<TyUsePureEnc>(ty_task)?;
@@ -148,20 +116,6 @@ impl MirBuiltinEnc {
         let e_ty_snap = e_ty.snapshot.downcast_ty();
         let function = FunctionIdn::new(name, e_ty_snap, e_ty_snap);
         deps.emit_output_ref(key, MirBuiltinEncOutputRef::UnOp(function))?;
-=======
-    ) -> vir::Function<'vir> {
-        let e_ty = deps
-            .require_local::<RustTySnapshotsEnc>(ty)
-            .unwrap()
-            .generic_snapshot;
-
-        let name = vir::vir_format_identifier!(vcx, "mir_unop_{op:?}_{}", int_name(ty));
-        let arity = UnknownArity::new(vcx.alloc_slice(&[e_ty.snapshot]));
-        let function = FunctionIdent::new(name, arity, e_ty.snapshot);
-        deps.emit_output_ref(key, MirBuiltinEncOutputRef {
-            function,
-        });
->>>>>>> ide/rewrite-2023-assistant-features
 
         let snap_arg_decl = vcx.mk_local_decl("arg", e_ty_snap);
         let prim_res_ty = e_ty.expect_primitive();
@@ -193,11 +147,7 @@ impl MirBuiltinEnc {
         op: mir::BinOp,
         l_ty: ty::Ty<'vir>,
         r_ty: ty::Ty<'vir>,
-<<<<<<< HEAD
     ) -> Result<vir::Function<'vir>, EncodeFullError<'vir, Self>> {
-=======
-    ) -> vir::Function<'vir> {
->>>>>>> ide/rewrite-2023-assistant-features
         use mir::BinOp::*;
         let l_ty_task = RustTyDecomposition::from_prim_ty(l_ty);
         let e_l_ty = deps.require_dep::<TyUsePureEnc>(l_ty_task)?;
@@ -212,25 +162,11 @@ impl MirBuiltinEnc {
         let e_r_ty_snap = e_r_ty.snapshot.downcast_ty();
         let e_res_ty_snap = e_res_ty.snapshot.downcast_ty();
 
-<<<<<<< HEAD
         let name = vir::vir_format_identifier!(
             vcx,
             "mir_binop_{op:?}_{}_{}",
             int_name(l_ty),
             int_name(r_ty)
-=======
-        let name = vir::vir_format_identifier!(vcx, "mir_binop_{op:?}_{}_{}", int_name(l_ty), int_name(r_ty));
-        let arity = UnknownArity::new(vcx.alloc_slice(&[e_l_ty.snapshot, e_r_ty.snapshot]));
-        let function = FunctionIdent::new(name, arity, e_res_ty.snapshot);
-        deps.emit_output_ref(key, MirBuiltinEncOutputRef {
-            function,
-        });
-        let lhs = prim_l_ty.snap_to_prim.apply(vcx,
-            [vcx.mk_local_ex("arg1", e_l_ty.snapshot)],
-        );
-        let mut rhs = prim_r_ty.snap_to_prim.apply(vcx,
-            [vcx.mk_local_ex("arg2", e_r_ty.snapshot)],
->>>>>>> ide/rewrite-2023-assistant-features
         );
         let function = FunctionIdn::new(name, (e_l_ty_snap, e_r_ty_snap), e_res_ty_snap);
         deps.emit_output_ref(key, MirBuiltinEncOutputRef::BinOp(function))?;
@@ -429,13 +365,8 @@ impl MirBuiltinEnc {
         op: mir::BinOp,
         l_ty: ty::Ty<'vir>,
         r_ty: ty::Ty<'vir>,
-<<<<<<< HEAD
     ) -> Result<vir::Function<'vir>, EncodeFullError<'vir, Self>> {
         // `op` can only be `Add`, `Sub` or `Mul`, or their overflowing version
-=======
-    ) -> vir::Function<'vir> {
-        // `op` can only be `Add`, `Sub` or `Mul`
->>>>>>> ide/rewrite-2023-assistant-features
         assert!(matches!(
             op,
             mir::BinOp::Add
@@ -458,7 +389,6 @@ impl MirBuiltinEnc {
             int_name(l_ty),
             int_name(r_ty)
         );
-<<<<<<< HEAD
         let res_ty_task = RustTyDecomposition::from_prim_ty(res_ty);
         let e_res_ty = deps.require_dep::<TyUsePureEnc>(res_ty_task)?;
         let e_res_ty_snap = e_res_ty.snapshot.downcast_ty();
@@ -467,15 +397,6 @@ impl MirBuiltinEnc {
 
         let lhs_decl = vcx.mk_local_decl("arg1", e_l_ty_snap);
         let rhs_decl = vcx.mk_local_decl("arg2", e_r_ty_snap);
-=======
-        let arity = UnknownArity::new(vcx.alloc_slice(&[e_l_ty.snapshot, e_r_ty.snapshot]));
-        let e_res_ty = deps
-            .require_local::<RustTySnapshotsEnc>(res_ty)
-            .unwrap()
-            .generic_snapshot;
-        let function = FunctionIdent::new(name, arity, e_res_ty.snapshot);
-        deps.emit_output_ref(key, MirBuiltinEncOutputRef { function });
->>>>>>> ide/rewrite-2023-assistant-features
 
         // The result of a checked add will always be `(T, bool)`, get the `T`
         // type

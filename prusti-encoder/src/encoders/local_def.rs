@@ -6,12 +6,8 @@ use prusti_rustc_interface::{
     span::def_id::DefId,
 };
 
-<<<<<<< HEAD
 use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 use vir::HasType;
-=======
-use task_encoder::{TaskEncoder, TaskEncoderDependencies, EncodeFullResult};
->>>>>>> ide/rewrite-2023-assistant-features
 
 use crate::{
     encoders::{
@@ -86,12 +82,7 @@ impl TaskEncoder for MirLocalDefEnc {
 
     type TaskDescription<'vir> = (
         DefId, // ID of the function
-<<<<<<< HEAD
         bool,  // `true` = include non-argument locals (if available)
-=======
-        ty::GenericArgsRef<'vir>, // ? this should be the "signature", after applying the env/substs
-        Option<DefId>, // ID of the caller function, if any
->>>>>>> ide/rewrite-2023-assistant-features
     );
 
     type OutputRef<'vir> = MirLocalDefEncOutputRef;
@@ -107,7 +98,6 @@ impl TaskEncoder for MirLocalDefEnc {
         task_key: &Self::TaskKey<'vir>,
         deps: &mut TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self> {
-<<<<<<< HEAD
         let (def_id, all_locals) = *task_key;
 
         fn mk_local_def<'vir>(
@@ -121,19 +111,6 @@ impl TaskEncoder for MirLocalDefEnc {
             let local_snap = vcx.mk_local_decl(snap_local, ty.snapshot());
             let local_ex = vcx.mk_local_ex(local);
             let impure_snap = ty.ref_to_snap(local_ex);
-=======
-        let (def_id, substs, caller_def_id) = *task_key;
-        deps.emit_output_ref(*task_key, ())?;
-
-        fn mk_local_def<'vir>(
-            vcx: &'vir vir::VirCtxt<'vir>,
-            name: &'vir str,
-            ty: RustTyPredicatesEncOutputRef<'vir>,
-        ) -> LocalDef<'vir> {
-            let local = vcx.mk_local(name, &vir::TypeData::Ref);
-            let local_ex = vcx.mk_local_ex_local(local);
-            let impure_snap = ty.ref_to_snap(vcx, local_ex);
->>>>>>> ide/rewrite-2023-assistant-features
             let impure_pred = ty.ref_to_pred(vcx, local_ex, None);
             LocalDef {
                 local,

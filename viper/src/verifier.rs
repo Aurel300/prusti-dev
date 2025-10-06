@@ -187,6 +187,10 @@ impl<'a> Verifier<'a> {
                     .get_string(self.jni.unwrap_result(has_identifier_wrapper.call_id(pos))),
             )
         } else {
+            eprintln!(
+                "Class has no identifier: {}",
+                self.jni.class_name(pos)
+            );
             None
         }
     }

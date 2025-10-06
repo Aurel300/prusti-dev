@@ -177,6 +177,7 @@ impl<'tcx> VirCtxt<'tcx> {
             }
             span_opt = span.parent.as_ref();
         }
+        eprintln!("no handler found for error kind: {error_kind}");
         None
     }
 

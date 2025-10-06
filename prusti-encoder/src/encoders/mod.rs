@@ -26,6 +26,7 @@ pub use ty::{
     use_pure::TyUsePureEnc,
     viper_tuple::{ViperTupleEnc, ViperTupleEncOutput},
 };
+pub use prusti_rustc_interface::span::Span;
 
 /// Some encoders work for both pure and impure encodings, though might output
 /// something slightly different for the two. This allows them to be generic in

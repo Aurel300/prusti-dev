@@ -1,7 +1,7 @@
 //! A module that invokes the verifier `prusti-viper`
 
 use log::{debug, warn};
-use prusti_interface::{data::VerificationTask, environment::Environment, specs::typed};
+use prusti_interface::{data::{VerificationResult, VerificationTask}, environment::Environment, specs::typed};
 use prusti_utils::{config, report::user};
 
 #[tracing::instrument(name = "prusti::verify", level = "debug", skip(env))]
@@ -56,12 +56,13 @@ pub fn verify<'tcx>(
             // TODO: This will be unnecessary if diagnostic errors are emitted
             // earlier, it's useful for now to ensure that Prusti returns an
             // error code when verification fails
-            env.diagnostic.span_err_with_help_and_notes(
-                MultiSpan::new(),
-                "Verification failed",
-                &None,
-                &[],
-            );
+            // env.diagnostic.span_err_with_help_and_notes(
+            //     MultiSpan::new(),
+            //     "Verification failed",
+            //     &None,
+            //     &[],
+            // );
+            todo!();
         }
     }
 }

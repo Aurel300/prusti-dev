@@ -16,7 +16,8 @@ use prusti_rustc_interface::{
     interface::{interface::Compiler, Config},
     middle::{
         mir,
-        query::{queries::mir_borrowck::ProvidedValue as MirBorrowck, ExternProviders, Providers},
+        query::{queries::mir_borrowck::ProvidedValue as MirBorrowck, ExternProviders},
+        util::Providers,
         ty::TyCtxt,
     },
     session::Session,
@@ -79,6 +80,10 @@ fn mir_promoted<'tcx>(
     result
 }
 
+struct NoAnn;
+
+impl prusti_rustc_interface::ast_pretty::pprust::PpAnn for NoAnn {}
+
 impl prusti_rustc_interface::driver::Callbacks for PrustiCompilerCalls {
     fn config(&mut self, config: &mut Config) {
         assert!(config.override_queries.is_none());
@@ -136,7 +141,7 @@ impl prusti_rustc_interface::driver::Callbacks for PrustiCompilerCalls {
     fn after_analysis<'tcx>(
         &mut self,
         compiler: &Compiler,
-        queries: &'tcx Queries<'tcx>,
+        tcx: TyCtxt<'tcx>,
     ) -> Compilation {
         compiler.sess.dcx().abort_if_errors();
         let mut env = Environment::new(tcx, env!("CARGO_PKG_VERSION"));
@@ -187,11 +192,11 @@ impl prusti_rustc_interface::driver::Callbacks for PrustiCompilerCalls {
                 // of the fake_error, otherwise verification stops early
                 // with local dependencies
                 if is_primary_package {
-                    let env_diagnostic = env.diagnostic.clone();
                     let procedures = annotated_procedures
                         .into_iter()
                         .filter(|x| target_def_paths.contains(&env.name.get_unique_item_name(*x)))
                         .collect::<Vec<_>>();
+                    let env_diagnostic = env.diagnostic.clone();
                     if !procedures.is_empty() {
                         let selective_task = VerificationTask {
                             procedures,

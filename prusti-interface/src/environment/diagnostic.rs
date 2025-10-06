@@ -2,18 +2,19 @@ use prusti_rustc_interface::{
     errors::{Diag, EmissionGuarantee, MultiSpan},
     middle::ty::TyCtxt,
 };
-use std::cell::RefCell;
+use std::{cell::RefCell, rc::Rc};
 
+#[derive(Clone)]
 pub struct EnvDiagnostic<'tcx> {
     tcx: TyCtxt<'tcx>,
-    warn_buffer: RefCell<Vec<prusti_rustc_interface::errors::Diag<'tcx, ()>>>,
+    warn_buffer: Rc<RefCell<Vec<prusti_rustc_interface::errors::Diag<'tcx, ()>>>>,
 }
 
 impl<'tcx> EnvDiagnostic<'tcx> {
     pub fn new(tcx: TyCtxt<'tcx>) -> Self {
         EnvDiagnostic {
             tcx,
-            warn_buffer: RefCell::new(Vec::new()),
+            warn_buffer: Rc::new(RefCell::new(Vec::new())),
         }
     }
 

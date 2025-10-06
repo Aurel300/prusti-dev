@@ -46,23 +46,9 @@ pub fn verify<'tcx>(
         );
 
         let program = request.program;
-        let mut success = true;
 
         let result = prusti_server::verify_programs(&env.diagnostic, vec![program]);
 
         println!("verification result: {result:?}");
-
-        if matches!(result, VerificationResult::Failure) {
-            // TODO: This will be unnecessary if diagnostic errors are emitted
-            // earlier, it's useful for now to ensure that Prusti returns an
-            // error code when verification fails
-            // env.diagnostic.span_err_with_help_and_notes(
-            //     MultiSpan::new(),
-            //     "Verification failed",
-            //     &None,
-            //     &[],
-            // );
-            todo!();
-        }
     }
 }

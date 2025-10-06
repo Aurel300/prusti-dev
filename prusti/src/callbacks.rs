@@ -203,14 +203,11 @@ impl prusti_rustc_interface::driver::Callbacks for PrustiCompilerCalls {
                             types,
                             selective: true,
                         };
-                        // fake_error because otherwise a verification-success
-                        // (for a single method for example) will cause this result
-                        // to be cached by compiler at the moment
                         verify(env, def_spec, selective_task);
                     } else {
                         info!("Passed selective defpaths were empty or had no matching procedures - skipping verification.");
                     }
-                    fake_error(&env_diagnostic);
+                    // fake_error(&env_diagnostic);
                 }
             } else {
                 let verification_task = VerificationTask {

@@ -81,10 +81,10 @@ impl<'tcx> EnvDiagnostic<'tcx> {
 
     /// Emits a note
     pub fn span_note<S: Into<MultiSpan> + Clone>(&self, sp: S, msg: &str) {
-        todo!()
-        // self.tcx
-        //     .sess
-        //     .span_note_without_error(sp.clone(), msg.to_string());
+        self.tcx
+            .sess
+            .dcx()
+            .span_note(sp.clone(), msg.to_string());
     }
 
     /// Returns true if an error has been emitted

@@ -112,7 +112,7 @@ fn build_program<'a>(ast: &'a AstFactory) -> Program<'a> {
                         ast.local_var("box", ast.ref_type(), ast.no_position()),
                         ast.field("value", ast.int_type()),
                     ),
-                    Some(ast.full_perm()),
+                    ast.full_perm(),
                 ),
                 ast.func_app(
                     "even",
@@ -147,7 +147,7 @@ fn build_program<'a>(ast: &'a AstFactory) -> Program<'a> {
                     &[ast.local_var("box", ast.ref_type(), ast.no_position())],
                     "EvenNumBox",
                 ),
-                Some(ast.full_perm()),
+                ast.full_perm(),
             ),
         ],
         Some(ast.seqn(
@@ -179,7 +179,7 @@ fn build_program<'a>(ast: &'a AstFactory) -> Program<'a> {
                         &[ast.local_var("box", ast.ref_type(), ast.no_position())],
                         "EvenNumBox",
                     ),
-                    Some(ast.full_perm()),
+                    ast.full_perm(),
                 )),
             ],
             &[],

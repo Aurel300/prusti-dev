@@ -47,6 +47,10 @@ impl<'tcx> CallSpanFinder<'tcx> {
 impl<'tcx> Visitor<'tcx> for CallSpanFinder<'tcx> {
     type NestedFilter = prusti_rustc_interface::middle::hir::nested_filter::OnlyBodies;
 
+    fn maybe_tcx(&mut self) -> Self::MaybeTyCtxt {
+        self.tcx
+    }
+
     fn visit_expr(&mut self, expr: &'tcx Expr) {
         intravisit::walk_expr(self, expr);
         match expr.kind {

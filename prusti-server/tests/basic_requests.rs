@@ -1,15 +1,6 @@
 #![feature(rustc_private)]
 use lazy_static::lazy_static;
-<<<<<<< HEAD
-use prusti_server::spawn_server_thread;
-=======
-use prusti_common::vir::*;
-use prusti_server::{
-    spawn_server_thread, tokio::runtime::Builder, PrustiClient, VerificationRequest,
-    ViperBackendConfig,
-};
-use viper::VerificationResultKind;
->>>>>>> ide/rewrite-2023-assistant-features
+use prusti_server::server::spawn_server_thread;
 
 lazy_static! {
     // only start the jvm & server once
@@ -25,25 +16,16 @@ lazy_static! {
 //         });
 //     });
 
-<<<<<<< HEAD
 //     match result {
 //         VerificationResult::ConsistencyErrors(errors) => assert_eq!(errors.len(), 1),
 //         other => panic!("consistency errors not identified, instead found {other:?}"),
 //     }
 // }
-=======
-    match result {
-        VerificationResultKind::ConsistencyErrors(errors) => assert_eq!(errors.len(), 1),
-        other => panic!("consistency errors not identified, instead found {other:?}"),
-    }
-}
->>>>>>> ide/rewrite-2023-assistant-features
 
 // #[test]
 // fn empty_program() {
 //     let result = process_program(|_| ());
 
-<<<<<<< HEAD
 //     match result {
 //         VerificationResult::Success => {}
 //         other => panic!("empty program not verified successfully, instead found {other:?}"),
@@ -55,19 +37,6 @@ lazy_static! {
 //     F: FnOnce(&mut Program),
 // {
 //     let client = PrustiClient::new(SERVER_ADDRESS.clone()).expect("Could not connect to server!");
-=======
-    match result {
-        VerificationResultKind::Success => {}
-        other => panic!("empty program not verified successfully, instead found {other:?}"),
-    }
-}
-
-fn process_program<F>(configure: F) -> VerificationResultKind
-where
-    F: FnOnce(&mut Program),
-{
-    let client = PrustiClient::new(SERVER_ADDRESS.clone()).expect("Could not connect to server!");
->>>>>>> ide/rewrite-2023-assistant-features
 
 //     let mut program = Program {
 //         name: "dummy".to_string(),

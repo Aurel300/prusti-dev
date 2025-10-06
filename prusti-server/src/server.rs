@@ -51,7 +51,7 @@ static VERIFICATION_REQUEST_PROCESSING: Lazy<VerificationRequestProcessing> =
     Lazy::new(|| VerificationRequestProcessing::new());
 // TODO: caching currently does not work properly. The subject of caching needs to be redetermined.
 // currently, it is the whole program, and the returned result is the final errors (without
-// per-method ones). 
+// per-method ones).
 static CACHE: Lazy<Arc<sync::Mutex<PersistentCache>>> =
     Lazy::new(|| Arc::new(sync::Mutex::new(PersistentCache::load_cache(config::cache_path()))));
 
@@ -65,7 +65,7 @@ where
         vir::init_vcx(vir::VirCtxt::new_without_tcx());
         data
     }
-    
+
     fn handle_json_websocket_message(msg: warp::ws::Message) -> VerificationRequest {
         msg
             .to_str()

@@ -6,8 +6,7 @@ use prusti_rustc_interface::{
     span::{
         def_id::{DefId, LOCAL_CRATE},
         source_map::SourceMap,
-        Span,
-        DUMMY_SP,
+        Span, DUMMY_SP,
     },
 };
 

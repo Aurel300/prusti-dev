@@ -1,16 +1,16 @@
 use crate::{dump_viper_program, ServerMessage, VIPER};
 use log::{debug, info};
+use prusti_rustc_interface::data_structures::fx::FxHashSet;
 use prusti_utils::{config, Stopwatch};
 use std::{collections::HashSet, sync::mpsc, thread, time};
 use viper::{jni_utils::JniUtils, VerificationContext, VerificationResult, VerificationResultKind};
 use viper_sys::wrappers::{java, viper::*};
-use prusti_rustc_interface::data_structures::fx::FxHashSet;
 
 pub enum Backend<'a> {
     Viper(
         viper::Verifier<'a>,
         &'a VerificationContext<'a>,
-        jni::objects::GlobalRef
+        jni::objects::GlobalRef,
     ),
 }
 
@@ -31,13 +31,7 @@ impl<'a> Backend<'a> {
 
                     let viper_program = viper::Program::new(viper_program_ref.as_obj());
                     if config::report_viper_messages() {
-                        verify_and_poll_msgs(
-                            verifier,
-                            context,
-                            viper_program,
-                            procedures,
-                            sender,
-                        )
+                        verify_and_poll_msgs(verifier, context, viper_program, procedures, sender)
                     } else {
                         verifier.verify(viper_program, None)
                     }

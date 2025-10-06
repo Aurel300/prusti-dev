@@ -4,10 +4,11 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-use crate::{VerificationRequestProcessing, ServerMessage, VerificationRequest};
+use crate::{ServerMessage, VerificationRequest, VerificationRequestProcessing};
 use futures_util::{pin_mut, SinkExt, StreamExt};
 use log::info;
 use once_cell::sync::Lazy;
+use prusti_utils::config;
 use std::{
     net::{Ipv4Addr, SocketAddr},
     sync::{self, mpsc, Arc},
@@ -16,7 +17,6 @@ use std::{
 use tokio::runtime::Builder;
 use viper::{Cache, PersistentCache, VerificationResultKind};
 use warp::Filter;
-use prusti_utils::config;
 
 #[derive(Debug)]
 struct BincodeReject(#[allow(dead_code)] bincode::Error);
@@ -52,8 +52,11 @@ static VERIFICATION_REQUEST_PROCESSING: Lazy<VerificationRequestProcessing> =
 // TODO: caching currently does not work properly. The subject of caching needs to be redetermined.
 // currently, it is the whole program, and the returned result is the final errors (without
 // per-method ones).
-static CACHE: Lazy<Arc<sync::Mutex<PersistentCache>>> =
-    Lazy::new(|| Arc::new(sync::Mutex::new(PersistentCache::load_cache(config::cache_path()))));
+static CACHE: Lazy<Arc<sync::Mutex<PersistentCache>>> = Lazy::new(|| {
+    Arc::new(sync::Mutex::new(PersistentCache::load_cache(
+        config::cache_path(),
+    )))
+});
 
 fn listen_on_port_with_address_callback<F>(port: u16, address_callback: F) -> !
 where
@@ -67,8 +70,7 @@ where
     }
 
     fn handle_json_websocket_message(msg: warp::ws::Message) -> VerificationRequest {
-        msg
-            .to_str()
+        msg.to_str()
             .and_then(|s: &str| serde_json::from_str(s).unwrap())
             .unwrap()
     }
@@ -86,30 +88,30 @@ where
     let json_verify = warp::path!("json" / "verify")
         .and(warp::filters::ws::ws())
         .map(init_vcx)
-        .map(move |ws: warp::filters::ws::Ws|
+        .map(move |ws: warp::filters::ws::Ws| {
             on_upgrade(
                 ws,
                 handle_json_websocket_message,
-                make_json_websocket_message
+                make_json_websocket_message,
             )
-        );
+        });
 
     let bincode_verify = warp::path!("bincode" / "verify")
         .and(warp::filters::ws::ws())
         .map(init_vcx)
-        .map(move |ws: warp::filters::ws::Ws|
+        .map(move |ws: warp::filters::ws::Ws| {
             on_upgrade(
                 ws,
                 handle_bincode_websocket_message,
-                make_bincode_websocket_message
+                make_bincode_websocket_message,
             )
-        );
+        });
 
     let save_cache = warp::post()
         .and(warp::path("save"))
         .and(warp::path::end())
         .map(move || {
-            if let Some(cache) = Lazy::get(&CACHE){
+            if let Some(cache) = Lazy::get(&CACHE) {
                 cache.lock().unwrap().save();
                 warp::reply::html("Saved")
             } else {
@@ -164,40 +166,39 @@ where
                 Some(mut result) => {
                     info!(
                         "Using cached result {:?} for program {}",
-                        &result,
-                        &program_name
+                        &result, &program_name
                     );
                     result.cached = true;
-                    futures::stream::once(async move {
-                        ServerMessage::Termination(result)
-                    })
-                    .left_stream()
-                },
-                None => VERIFICATION_REQUEST_PROCESSING.verify(verification_request).right_stream()
+                    futures::stream::once(async move { ServerMessage::Termination(result) })
+                        .left_stream()
+                }
+                None => VERIFICATION_REQUEST_PROCESSING
+                    .verify(verification_request)
+                    .right_stream(),
             }
         } else {
-            VERIFICATION_REQUEST_PROCESSING.verify(verification_request).right_stream()
+            VERIFICATION_REQUEST_PROCESSING
+                .verify(verification_request)
+                .right_stream()
         };
         pin_mut!(stream);
 
         while let Some(server_msg) = stream.next().await {
             if let ServerMessage::Termination(result) = &server_msg {
-                if config::enable_cache() && !matches!(result.kind, VerificationResultKind::JavaException(_)) {
+                if config::enable_cache()
+                    && !matches!(result.kind, VerificationResultKind::JavaException(_))
+                {
                     if !result.cached {
                         info!(
                             "Storing new cached result {:?} for program {}",
-                            &result,
-                            &program_name
+                            &result, &program_name
                         );
                         CACHE.insert(request_hash, result.clone());
                     }
                 }
             };
             let msg = make_websocket_message(&server_msg);
-            ws_send
-                .send(msg)
-                .await
-                .unwrap();
+            ws_send.send(msg).await.unwrap();
         }
         ws_send.close().await.unwrap();
         // receive the client close to complete the handshake

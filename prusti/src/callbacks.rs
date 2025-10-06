@@ -17,8 +17,8 @@ use prusti_rustc_interface::{
     middle::{
         mir,
         query::{queries::mir_borrowck::ProvidedValue as MirBorrowck, ExternProviders},
-        util::Providers,
         ty::TyCtxt,
+        util::Providers,
     },
     session::Session,
     span::DUMMY_SP,
@@ -138,11 +138,7 @@ impl prusti_rustc_interface::driver::Callbacks for PrustiCompilerCalls {
     }
 
     #[tracing::instrument(level = "debug", skip_all)]
-    fn after_analysis<'tcx>(
-        &mut self,
-        compiler: &Compiler,
-        tcx: TyCtxt<'tcx>,
-    ) -> Compilation {
+    fn after_analysis<'tcx>(&mut self, compiler: &Compiler, tcx: TyCtxt<'tcx>) -> Compilation {
         compiler.sess.dcx().abort_if_errors();
         let mut env = Environment::new(tcx, env!("CARGO_PKG_VERSION"));
         let spec_checker = specs::checker::SpecChecker::new();

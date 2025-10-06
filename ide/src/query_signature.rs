@@ -1,11 +1,11 @@
-use prusti_utils::config;
 use prusti_rustc_interface::middle::ty::print::PrintTraitRefExt;
+use prusti_utils::config;
 use std::{collections::HashMap, fmt};
 
 use crate::ProcDef;
 use prusti_rustc_interface::{
     hir::{def::DefKind, def_id::DefId},
-    middle::ty::{ImplSubject, ClauseKind, TyCtxt},
+    middle::ty::{ClauseKind, ImplSubject, TyCtxt},
 };
 
 /// Data structure used to generate an external specification template.
@@ -345,11 +345,12 @@ fn trait_bounds(tcx: TyCtxt<'_>, defid: DefId) -> HashMap<String, Vec<TraitBound
                 if self_ty == "Self" {
                     continue;
                 }
-                let trait_args = bound_traitref.args
-                        .iter()
-                        .skip(1) // the first one is the self type
-                        .map(|ty| format!("{ty}"))
-                        .collect::<Vec<String>>();
+                let trait_args = bound_traitref
+                    .args
+                    .iter()
+                    .skip(1) // the first one is the self type
+                    .map(|ty| format!("{ty}"))
+                    .collect::<Vec<String>>();
                 let bound = TraitBound {
                     name: trait_name,
                     args: trait_args,

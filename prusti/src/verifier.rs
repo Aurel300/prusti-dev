@@ -1,7 +1,11 @@
 //! A module that invokes the verifier `prusti-viper`
 
 use log::{debug, warn};
-use prusti_interface::{data::{VerificationResult, VerificationTask}, environment::Environment, specs::typed};
+use prusti_interface::{
+    data::{VerificationResult, VerificationTask},
+    environment::Environment,
+    specs::typed,
+};
 use prusti_utils::{config, report::user};
 
 #[tracing::instrument(name = "prusti::verify", level = "debug", skip(env))]
@@ -16,7 +20,11 @@ pub fn verify<'tcx>(
         debug!("Verification task: {:?}", &verification_task);
         user::message(format!(
             "{}erification of {} items...",
-            if verification_task.selective { "Selective v" } else { "V" },
+            if verification_task.selective {
+                "Selective v"
+            } else {
+                "V"
+            },
             verification_task.procedures.len()
         ));
 
@@ -41,7 +49,11 @@ pub fn verify<'tcx>(
             env.tcx(),
             env.body,
             def_spec,
-            if verification_task.selective { Some(verification_task.procedures) } else { None },
+            if verification_task.selective {
+                Some(verification_task.procedures)
+            } else {
+                None
+            },
             &env.diagnostic,
         );
 

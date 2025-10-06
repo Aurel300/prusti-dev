@@ -9,9 +9,11 @@ mod encoders;
 mod trait_support;
 pub mod request;
 
-use prusti_interface::{environment::{EnvBody, EnvDiagnostic}, PrustiError};
-use prusti_rustc_interface::middle::ty;
-use prusti_rustc_interface::span::def_id::DefId;
+use prusti_interface::{
+    PrustiError,
+    environment::{EnvBody, EnvDiagnostic},
+};
+use prusti_rustc_interface::{middle::ty, span::def_id::DefId};
 use prusti_utils::config;
 use task_encoder::TaskEncoder;
 
@@ -34,12 +36,12 @@ thread_local!(
 );
 
 pub fn is_selected(def_id: &DefId) -> bool {
-    SELECTIVE_TASKS.with(|selective_tasks|
+    SELECTIVE_TASKS.with(|selective_tasks| {
         selective_tasks
             .get()
             .as_ref()
             .map_or(true, |procs| procs.contains(&def_id))
-    )
+    })
 }
 
 pub fn test_entrypoint<'tcx>(
@@ -73,9 +75,7 @@ pub fn test_entrypoint<'tcx>(
     */
 
     if config::show_ide_info() {
-        vir::with_vcx(|vcx| vcx.emit_contract_spans(
-            &env_diagnostic,
-        ));
+        vir::with_vcx(|vcx| vcx.emit_contract_spans(&env_diagnostic));
     }
     let mut program = task_encoder::Program::default();
 

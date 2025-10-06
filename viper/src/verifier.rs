@@ -11,15 +11,16 @@ use crate::{
     silicon_counterexample::SiliconCounterexample,
     smt_manager::SmtManager,
     verification_backend::VerificationBackend,
-    verification_result::{VerificationError, VerificationResultKind}, ConsistencyError,
+    verification_result::{VerificationError, VerificationResultKind},
+    ConsistencyError,
 };
 use jni::{errors::Result, objects::JObject, JNIEnv};
 use log::{debug, error, info};
 use std::{
-    path::PathBuf,
     collections::{hash_map::DefaultHasher, HashSet},
-    thread::ScopedJoinHandle,
     hash::{Hash, Hasher},
+    path::PathBuf,
+    thread::ScopedJoinHandle,
 };
 use viper_sys::wrappers::{scala, viper::*};
 
@@ -187,10 +188,7 @@ impl<'a> Verifier<'a> {
                     .get_string(self.jni.unwrap_result(has_identifier_wrapper.call_id(pos))),
             )
         } else {
-            eprintln!(
-                "Class has no identifier: {}",
-                self.jni.class_name(pos)
-            );
+            eprintln!("Class has no identifier: {}", self.jni.class_name(pos));
             None
         }
     }
@@ -304,29 +302,19 @@ impl Drop for Verifier<'_> {
 }
 
 /// Extract a position identifier from a `Position` object.
-fn extract_pos_id(
-    jni_utils: &JniUtils<'_>,
-    env: &JNIEnv<'_>,
-    pos: JObject<'_>
-) -> Option<String> {
+fn extract_pos_id(jni_utils: &JniUtils<'_>, env: &JNIEnv<'_>, pos: JObject<'_>) -> Option<String> {
     let has_identifier_wrapper = silver::ast::HasIdentifier::with(env);
 
-    if jni_utils
-        .is_instance_of(pos, "viper/silver/ast/HasIdentifier")
-    {
-        Some(
-            jni_utils.get_string(
-                jni_utils
-                    .unwrap_result(has_identifier_wrapper.call_id(pos)),
-            ),
-        )
+    if jni_utils.is_instance_of(pos, "viper/silver/ast/HasIdentifier") {
+        Some(jni_utils.get_string(jni_utils.unwrap_result(has_identifier_wrapper.call_id(pos))))
     } else {
         None
     }
 }
 
 fn get_java_object_hash(env: &JNIEnv, obj: JObject) -> i32 {
-    let hash_code = env.call_method(obj, "hashCode", "()I", &[])
+    let hash_code = env
+        .call_method(obj, "hashCode", "()I", &[])
         .expect("Failed to call hashCode")
         .i()
         .expect("Failed to get hashCode as int");
@@ -341,9 +329,9 @@ pub fn extract_errors(
 ) -> VerificationResultKind {
     let mut errors: Vec<VerificationError> = vec![];
 
-    let viper_errors = jni_utils.seq_to_vec(jni_utils.unwrap_result(
-        silver::verifier::Failure::with(env).call_errors(viper_result),
-    ));
+    let viper_errors = jni_utils.seq_to_vec(
+        jni_utils.unwrap_result(silver::verifier::Failure::with(env).call_errors(viper_result)),
+    );
 
     let verification_error_wrapper = silver::verifier::VerificationError::with(env);
     let error_node_positioned_wrapper = silver::ast::Positioned::with(env);
@@ -351,21 +339,18 @@ pub fn extract_errors(
     let error_reason_wrapper = silver::verifier::ErrorReason::with(env);
 
     for viper_error in viper_errors {
-
-        let is_verification_error = jni_utils
-            .is_instance_of(viper_error, "viper/silver/verifier/VerificationError");
+        let is_verification_error =
+            jni_utils.is_instance_of(viper_error, "viper/silver/verifier/VerificationError");
 
         if !is_verification_error {
-            let is_aborted_exceptionally = jni_utils
-                .is_instance_of(viper_error, "viper/silver/verifier/AbortedExceptionally");
+            let is_aborted_exceptionally =
+                jni_utils.is_instance_of(viper_error, "viper/silver/verifier/AbortedExceptionally");
 
             if is_aborted_exceptionally {
                 let exception = jni_utils.unwrap_result(
-                    silver::verifier::AbortedExceptionally::with(env)
-                        .call_cause(viper_error),
+                    silver::verifier::AbortedExceptionally::with(env).call_cause(viper_error),
                 );
-                let stack_trace =
-                    jni_utils.unwrap_result(jni_utils.get_stack_trace(exception));
+                let stack_trace = jni_utils.unwrap_result(jni_utils.get_stack_trace(exception));
                 error!(
                     "The verification aborted due to the following exception: {}",
                     stack_trace
@@ -384,11 +369,9 @@ pub fn extract_errors(
             );
         };
 
-        let reason = jni_utils
-            .unwrap_result(verification_error_wrapper.call_reason(viper_error));
+        let reason = jni_utils.unwrap_result(verification_error_wrapper.call_reason(viper_error));
 
-        let reason_pos = jni_utils
-            .unwrap_result(error_reason_wrapper.call_pos(reason));
+        let reason_pos = jni_utils.unwrap_result(error_reason_wrapper.call_pos(reason));
 
         let reason_pos_id = extract_pos_id(jni_utils, env, reason_pos);
         if reason_pos_id.is_none() {
@@ -399,12 +382,10 @@ pub fn extract_errors(
         }
 
         let error_full_id = jni_utils.get_string(
-            jni_utils
-                .unwrap_result(verification_error_wrapper.call_fullId(viper_error)),
+            jni_utils.unwrap_result(verification_error_wrapper.call_fullId(viper_error)),
         );
 
-        let pos = jni_utils
-            .unwrap_result(verification_error_wrapper.call_pos(viper_error));
+        let pos = jni_utils.unwrap_result(verification_error_wrapper.call_pos(viper_error));
 
         let pos_id = extract_pos_id(jni_utils, env, pos);
         if pos_id.is_none() {
@@ -414,11 +395,11 @@ pub fn extract_errors(
             );
         }
 
-        let offending_node = jni_utils
-            .unwrap_result(verification_error_wrapper.call_offendingNode(viper_error));
+        let offending_node =
+            jni_utils.unwrap_result(verification_error_wrapper.call_offendingNode(viper_error));
 
-        let offending_pos = jni_utils
-            .unwrap_result(error_node_positioned_wrapper.call_pos(offending_node));
+        let offending_pos =
+            jni_utils.unwrap_result(error_node_positioned_wrapper.call_pos(offending_node));
 
         let offending_pos_id = extract_pos_id(jni_utils, env, offending_pos);
         if offending_pos_id.is_none() {
@@ -441,21 +422,19 @@ pub fn extract_errors(
             (error_hashes).insert(error_hash);
         }
 
-        let message = jni_utils
-            .to_string(jni_utils.unwrap_result(
-                verification_error_wrapper.call_readableMessage(viper_error),
-            ));
+        let message = jni_utils.to_string(
+            jni_utils.unwrap_result(verification_error_wrapper.call_readableMessage(viper_error)),
+        );
 
-        let mut failure_contexts = jni_utils.seq_to_vec(jni_utils
-        .unwrap_result(verification_error_wrapper.call_failureContexts(viper_error)));
+        let mut failure_contexts = jni_utils.seq_to_vec(
+            jni_utils.unwrap_result(verification_error_wrapper.call_failureContexts(viper_error)),
+        );
 
         let counterexample: Option<SiliconCounterexample> = {
             if let Some(failure_context) = failure_contexts.pop() {
                 let option_original_counterexample = jni_utils
                     .unwrap_result(failure_context_wrapper.call_counterExample(failure_context));
-                if !jni_utils
-                    .is_instance_of(option_original_counterexample, "scala/None$")
-                {
+                if !jni_utils.is_instance_of(option_original_counterexample, "scala/None$") {
                     let original_counterexample = jni_utils.unwrap_result(
                         scala::Some::with(env).call_get(option_original_counterexample),
                     );
@@ -498,7 +477,7 @@ fn hash_error(
     full_id: &str,
     pos_id: &Option<String>,
     offending_pos_id: &Option<String>,
-    reason_pos_id: &Option<String>
+    reason_pos_id: &Option<String>,
 ) -> u64 {
     let mut hasher = DefaultHasher::new();
     full_id.hash(&mut hasher);

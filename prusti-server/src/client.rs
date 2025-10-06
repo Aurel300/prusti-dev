@@ -30,7 +30,7 @@ impl PrustiClient {
 
         let server_url = Url::parse(address.as_str()).unwrap();
         let use_json = config::json_communication();
-        
+
         let uri = server_url
             .join(if use_json { "json/" } else { "bincode/" })
             .unwrap()
@@ -70,7 +70,7 @@ impl PrustiClient {
                 _ => Some(msg),
             }
         };
-        
+
         socket
             .filter_map(filter_close)
             .map(if use_json { json_map } else { bin_map })

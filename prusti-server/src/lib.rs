@@ -6,28 +6,17 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 #![warn(clippy::disallowed_types)]
 
-use once_cell::sync::Lazy;
-use prusti_utils::{config, Stopwatch};
-use ::log::{debug, error, info};
-use prusti_interface::{
-    data::VerificationResult,
-    environment::EnvDiagnostic,
-    PrustiError,
-};
-use prusti_rustc_interface::{
-    span::DUMMY_SP,
-    data_structures::fx::FxHashMap,
-};
-use viper::{self, PersistentCache, Cache};
-use ide::IdeVerificationResult;
 use crate::{
-    server::spawn_server_thread,
-    PrustiClient,
-    ServerMessage,
-    VerificationRequest,
-    ViperBackendConfig,
-    VerificationRequestProcessing,
+    server::spawn_server_thread, PrustiClient, ServerMessage, VerificationRequest,
+    VerificationRequestProcessing, ViperBackendConfig,
 };
+use ::log::{debug, error, info};
+use ide::IdeVerificationResult;
+use once_cell::sync::Lazy;
+use prusti_interface::{data::VerificationResult, environment::EnvDiagnostic, PrustiError};
+use prusti_rustc_interface::{data_structures::fx::FxHashMap, span::DUMMY_SP};
+use prusti_utils::{config, Stopwatch};
+use viper::{self, Cache, PersistentCache};
 
 mod client;
 mod process_verification;
@@ -36,35 +25,38 @@ mod server_message;
 mod verification_request;
 mod backend;
 
-pub use server::start_server_on_port;
 pub(crate) use backend::*;
 pub(crate) use client::*;
 pub(crate) use process_verification::*;
+pub use server::start_server_on_port;
 pub(crate) use server_message::*;
 pub(crate) use verification_request::*;
 
 // Futures returned by `Client` need to be executed in a compatible tokio runtime.
-pub use tokio;
-use tokio::runtime::Builder;
-use serde_json::json;
 use async_stream::stream;
 use futures_util::{pin_mut, Stream, StreamExt};
+use serde_json::json;
 use std::sync::{self, Arc};
+pub use tokio;
+use tokio::runtime::Builder;
 
 /// Verify a list of programs.
 pub fn verify_programs(
     env_diagnostic: &EnvDiagnostic<'_>,
-    programs: Vec<vir::ProgramRef>
-    ) -> VerificationResult {
-    let verification_requests = programs.into_iter().map(|program| {
-        let procedures = vir::with_vcx(|vcx| vcx.get_viper_identifiers());
-        let backend = config::viper_backend().parse().unwrap();
-        VerificationRequest {
-            program,
-            procedures,
-            backend_config: ViperBackendConfig::new(backend),
-        }
-    }).collect();
+    programs: Vec<vir::ProgramRef>,
+) -> VerificationResult {
+    let verification_requests = programs
+        .into_iter()
+        .map(|program| {
+            let procedures = vir::with_vcx(|vcx| vcx.get_viper_identifiers());
+            let backend = config::viper_backend().parse().unwrap();
+            VerificationRequest {
+                program,
+                procedures,
+                backend_config: ViperBackendConfig::new(backend),
+            }
+        })
+        .collect();
 
     let stopwatch = Stopwatch::start("prusti-server", "verifying Viper program");
     // runtime used either for client connecting to server sequentially
@@ -80,12 +72,15 @@ pub fn verify_programs(
 
     let overall_result = rt.block_on(async {
         if let Some(server_address) = config::server_address() {
-            let verification_messages = verify_requests_server(verification_requests, server_address);
+            let verification_messages =
+                verify_requests_server(verification_requests, server_address);
             handle_stream(env_diagnostic, verification_messages).await
         } else {
-            let cache = Lazy::new(move ||
-                Arc::new(sync::Mutex::new(PersistentCache::load_cache(config::cache_path())))
-            );
+            let cache = Lazy::new(move || {
+                Arc::new(sync::Mutex::new(PersistentCache::load_cache(
+                    config::cache_path(),
+                )))
+            });
             let vrp = Lazy::new(VerificationRequestProcessing::new);
             let verification_messages = verify_requests_local(verification_requests, &cache, &vrp);
             handle_stream(env_diagnostic, verification_messages).await
@@ -118,19 +113,19 @@ async fn handle_stream(
                 env_diagnostic,
                 result,
                 &mut prusti_errors,
-                &mut overall_result
+                &mut overall_result,
             ),
             ServerMessage::MethodTermination {
                 viper_method_name,
                 result,
                 verification_time,
-             } => handle_method_termination_message(
+            } => handle_method_termination_message(
                 env_diagnostic,
                 viper_method_name,
                 result,
                 verification_time,
                 &mut prusti_errors,
-                &mut overall_result
+                &mut overall_result,
             ),
             ServerMessage::QuantifierInstantiation {
                 q_name,
@@ -141,7 +136,7 @@ async fn handle_stream(
                 q_name,
                 insts,
                 pos_id,
-                &mut quantifier_instantiations
+                &mut quantifier_instantiations,
             ),
             ServerMessage::QuantifierChosenTriggers {
                 viper_quant,
@@ -151,7 +146,7 @@ async fn handle_stream(
                 env_diagnostic,
                 viper_quant,
                 triggers,
-                pos_id
+                pos_id,
             ),
             ServerMessage::BlockReached {
                 viper_method,
@@ -162,7 +157,7 @@ async fn handle_stream(
                 viper_method,
                 Some(vir_label),
                 path_id,
-                None
+                None,
             ),
             ServerMessage::BlockFailure {
                 viper_method,
@@ -180,13 +175,7 @@ async fn handle_stream(
                 viper_method,
                 path_id,
                 result: _,
-            } => handle_block_processing_message(
-                env_diagnostic,
-                viper_method,
-                None,
-                path_id,
-                None,
-            ),
+            } => handle_block_processing_message(env_diagnostic, viper_method, None, path_id, None),
         }
     }
 
@@ -211,31 +200,30 @@ fn handle_result(
     env_diagnostic: &EnvDiagnostic<'_>,
     result: viper::VerificationResult,
     prusti_errors: &mut Vec<PrustiError>,
-    overall_result: &mut VerificationResult
+    overall_result: &mut VerificationResult,
 ) {
     match result.kind {
         // nothing to do
         viper::VerificationResultKind::Success => (),
         viper::VerificationResultKind::ConsistencyErrors(errors) => {
             for error in errors {
-                PrustiError::internal(
-                    format!("consistency error: {error:?}"),
-                    DUMMY_SP.into(),
-                )
-                .emit(env_diagnostic);
+                PrustiError::internal(format!("consistency error: {error:?}"), DUMMY_SP.into())
+                    .emit(env_diagnostic);
             }
             *overall_result = VerificationResult::Failure;
         }
         viper::VerificationResultKind::Failure(errors) => {
             errors
                 .into_iter()
-                .flat_map(|error| prusti_encoder::backtranslate_error(
-                    &error.full_id,
-                    error.offending_pos_id.unwrap().parse::<usize>().unwrap(),
-                    error.reason_pos_id.and_then(|id| id.parse::<usize>().ok()),
-                )
-                .expect("verification error could not be backtranslated")
-                .into_iter())
+                .flat_map(|error| {
+                    prusti_encoder::backtranslate_error(
+                        &error.full_id,
+                        error.offending_pos_id.unwrap().parse::<usize>().unwrap(),
+                        error.reason_pos_id.and_then(|id| id.parse::<usize>().ok()),
+                    )
+                    .expect("verification error could not be backtranslated")
+                    .into_iter()
+                })
                 .for_each(|prusti_error| {
                     debug!("Prusti error: {:?}", prusti_error);
                     if prusti_error.is_disabled() {
@@ -302,11 +290,7 @@ fn handle_result(
         }
         viper::VerificationResultKind::JavaException(exception) => {
             error!("Java exception: {}", exception.get_stack_trace());
-            PrustiError::internal(
-                format!("in: {exception}"),
-                DUMMY_SP.into(),
-            )
-            .emit(env_diagnostic);
+            PrustiError::internal(format!("in: {exception}"), DUMMY_SP.into()).emit(env_diagnostic);
             *overall_result = VerificationResult::Failure;
         }
     }
@@ -318,9 +302,10 @@ fn handle_method_termination_message(
     result_kind: viper::VerificationResultKind,
     verification_time: u128,
     prusti_errors: &mut Vec<PrustiError>,
-    overall_result: &mut VerificationResult
+    overall_result: &mut VerificationResult,
 ) {
-    if let Some(rust_method) = vir::with_vcx(|vcx| vcx.viper_to_rust_identifier(&viper_method_name)) {
+    if let Some(rust_method) = vir::with_vcx(|vcx| vcx.viper_to_rust_identifier(&viper_method_name))
+    {
         let result = viper::VerificationResult {
             item_name: rust_method,
             kind: result_kind,
@@ -330,7 +315,9 @@ fn handle_method_termination_message(
 
         handle_termination_message(env_diagnostic, result, prusti_errors, overall_result);
     } else {
-        debug!("Could not map method identifier to def id in termination message: {viper_method_name}");
+        debug!(
+            "Could not map method identifier to def id in termination message: {viper_method_name}"
+        );
     }
 }
 
@@ -338,9 +325,12 @@ fn handle_termination_message(
     env_diagnostic: &EnvDiagnostic<'_>,
     result: viper::VerificationResult,
     prusti_errors: &mut Vec<PrustiError>,
-    overall_result: &mut VerificationResult
+    overall_result: &mut VerificationResult,
 ) {
-    debug!("Received termination message for {} with result {result:?} during verification", result.item_name);
+    debug!(
+        "Received termination message for {} with result {result:?} during verification",
+        result.item_name
+    );
     if config::show_ide_info() {
         PrustiError::message(
             format!(
@@ -350,7 +340,8 @@ fn handle_termination_message(
                     success: result.is_success(),
                     cached: result.cached,
                     time_ms: result.time_ms,
-                }).unwrap()
+                })
+                .unwrap()
             ),
             DUMMY_SP.into(),
         )
@@ -364,7 +355,7 @@ fn handle_quantifier_instantiation_message(
     q_name: String,
     insts: u64,
     pos_id: usize,
-    quantifier_instantiations: &mut FxHashMap<(usize, String), FxHashMap<String, u64>>
+    quantifier_instantiations: &mut FxHashMap<(usize, String), FxHashMap<String, u64>>,
 ) {
     if config::report_viper_messages() {
         debug!("Received #{insts} quantifier instantiations of {q_name} for position id {pos_id} durign verification");
@@ -419,7 +410,7 @@ fn handle_quantifier_chosen_triggers_message(
     env_diagnostic: &EnvDiagnostic<'_>,
     viper_quant: String,
     triggers: String,
-    pos_id: usize
+    pos_id: usize,
 ) {
     if config::report_viper_messages() && pos_id != 0 {
         debug!("Received quantifier triggers {triggers} for quantifier {viper_quant} for position id {pos_id} during verification");
@@ -459,7 +450,9 @@ fn handle_block_processing_message(
             if let Some(def_id) = vcx.get_viper_identifier(&viper_method) {
                 let rust_method = vcx.get_unique_item_name(&def_id);
                 if let Some(vir_label) = vir_label {
-                    if vir_label == "start" { return }
+                    if vir_label == "start" {
+                        return;
+                    }
                     let key = (def_id, vir_label);
                     if let Some(span) = vcx.get_block_span(&key) {
                         PrustiError::message(
@@ -472,17 +465,27 @@ fn handle_block_processing_message(
                                 },
                             ), span.clone().into()
                         ).emit(env_diagnostic);
-                    } else { debug!("Could not map vir label {} to a position in {rust_method}", key.1) }
+                    } else {
+                        debug!(
+                            "Could not map vir label {} to a position in {rust_method}",
+                            key.1
+                        )
+                    }
                 } else {
                     // no label means this is a pathProcessedMessage. This also covers the case of label == "end"
                     PrustiError::message(
-                        format!("{}{}",
+                        format!(
+                            "{}{}",
                             "pathProcessedMessage",
                             json!({"method": rust_method, "path_id": path_id})
-                        ), DUMMY_SP.into()
-                    ).emit(env_diagnostic);
+                        ),
+                        DUMMY_SP.into(),
+                    )
+                    .emit(env_diagnostic);
                 }
-            } else { debug!("Could not map method identifier to def id: {viper_method}") }
+            } else {
+                debug!("Could not map method identifier to def id: {viper_method}")
+            }
         })
     }
 }
@@ -507,8 +510,14 @@ fn verify_requests_server(
 
 fn verify_requests_local<'a>(
     verification_requests: Vec<VerificationRequest>,
-    cache: &'a Lazy<Arc<sync::Mutex<PersistentCache>>, impl FnOnce() -> Arc<sync::Mutex<PersistentCache>>>,
-    vrp: &'a Lazy<VerificationRequestProcessing, impl FnMut() -> VerificationRequestProcessing + 'a>,
+    cache: &'a Lazy<
+        Arc<sync::Mutex<PersistentCache>>,
+        impl FnOnce() -> Arc<sync::Mutex<PersistentCache>>,
+    >,
+    vrp: &'a Lazy<
+        VerificationRequestProcessing,
+        impl FnMut() -> VerificationRequestProcessing + 'a,
+    >,
 ) -> impl Stream<Item = ServerMessage> + 'a {
     let verification_stream = stream! {
         for request in verification_requests {

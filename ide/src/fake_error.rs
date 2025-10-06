@@ -11,6 +11,5 @@ pub fn fake_error(env_diagnostic: &EnvDiagnostic<'_>) {
     let help = None;
     let notes = [];
 
-    env_diagnostic
-        .span_err_with_help_and_notes(sp, &message, &help, &notes);
+    env_diagnostic.span_err_with_help_and_notes(sp, &message, &help, &notes);
 }

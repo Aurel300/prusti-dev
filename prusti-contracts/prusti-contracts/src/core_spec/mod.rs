@@ -14,7 +14,6 @@ pub(super) mod type_eq {
     impl<T> SealedTypeEq<T> for T {}
 }
 
-
 #[extern_spec(core::panicking)]
 #[requires(false)]
 fn panic(expr: &'static str) -> !;

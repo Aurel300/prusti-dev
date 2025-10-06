@@ -4,20 +4,23 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+use crate::{Backend, ServerMessage};
 use log::info;
-use viper::{self, VerificationBackend, Viper, VerificationResultKind, smt_manager::SmtManager, VerificationResult};
+use prusti_rustc_interface::data_structures::fx::FxHashSet;
 use prusti_utils::{
     config,
-    Stopwatch,
     report::log::{report, to_legal_file_name},
+    Stopwatch,
 };
-use prusti_rustc_interface::data_structures::fx::FxHashSet;
-use crate::{ServerMessage, Backend};
 use std::{
-    sync::{self, mpsc, OnceLock},
+    collections::HashSet,
     fs::create_dir_all,
     path::PathBuf,
-    collections::HashSet,
+    sync::{self, mpsc, OnceLock},
+};
+use viper::{
+    self, smt_manager::SmtManager, VerificationBackend, VerificationResult, VerificationResultKind,
+    Viper,
 };
 
 /// The JVM object should only instantiated once, so it is stored in a
@@ -37,16 +40,17 @@ pub(crate) enum ServerRequest {
 /// Specifies the kind of backend to be used for verification and carries necessary data.
 pub(crate) enum ServerVerificationRequest {
     // viper program, backend config, set of viper identifiers
-    JVMViperRequest(jni::objects::GlobalRef, ViperBackendConfig, FxHashSet<String>),
+    JVMViperRequest(
+        jni::objects::GlobalRef,
+        ViperBackendConfig,
+        FxHashSet<String>,
+    ),
 }
 
 impl ServerVerificationRequest {
     /// Process and consume the request
     // FIXME: can we do without the "program" strings?
-    pub fn process<'v, 't: 'v>(
-        self,
-        sender: &mpsc::Sender<ServerMessage>,
-    ) {
+    pub fn process<'v, 't: 'v>(self, sender: &mpsc::Sender<ServerMessage>) {
         let mut stopwatch = Stopwatch::start("prusti-server", "verifier startup");
         let mut result = VerificationResult {
             item_name: "program".to_string(),
@@ -56,7 +60,11 @@ impl ServerVerificationRequest {
         };
 
         match self {
-            ServerVerificationRequest::JVMViperRequest(viper_program_ref, backend_config, procedures) => {
+            ServerVerificationRequest::JVMViperRequest(
+                viper_program_ref,
+                backend_config,
+                procedures,
+            ) => {
                 let viper = VIPER.get().expect("ServerVerificationRequest: Viper was not instantiated before processing a request");
                 let verification_context = viper.attach_current_thread();
                 let mut backend = match backend_config.backend {
@@ -95,10 +103,7 @@ impl VerificationRequest {
 
     /// Builds a more specific request based on the backend configuration and sends it.
     /// This includes the vir-viper translation if the Viper backend is used.
-    pub(crate) fn send(
-        &self,
-        mtx_tx_verreq: &sync::Mutex<mpsc::Sender<ServerRequest>>,
-    ) {
+    pub(crate) fn send(&self, mtx_tx_verreq: &sync::Mutex<mpsc::Sender<ServerRequest>>) {
         let request = self.build_request();
 
         mtx_tx_verreq
@@ -111,10 +116,10 @@ impl VerificationRequest {
     fn build_request(&self) -> ServerVerificationRequest {
         match self.backend_config.backend {
             VerificationBackend::Carbon | VerificationBackend::Silicon => {
-                let mut stopwatch =
-                    Stopwatch::start("prusti-server backend", "JVM startup");
-                let viper = VIPER
-                    .get_or_init(|| Viper::new_with_args(&config::viper_home(), config::extra_jvm_args()));
+                let mut stopwatch = Stopwatch::start("prusti-server backend", "JVM startup");
+                let viper = VIPER.get_or_init(|| {
+                    Viper::new_with_args(&config::viper_home(), config::extra_jvm_args())
+                });
                 stopwatch.start_next("attach current thread to the JVM");
                 let context = viper.attach_current_thread();
                 let ast_utils = context.new_ast_utils();
@@ -148,7 +153,7 @@ impl VerificationRequest {
                         self.procedures.clone(),
                     )
                 })
-            },
+            }
         }
     }
 }
@@ -303,7 +308,6 @@ fn new_viper_verifier<'v, 't: 'v>(
         smt_manager,
     )
 }
-
 
 pub fn dump_viper_program(
     ast_utils: &viper::AstUtils,

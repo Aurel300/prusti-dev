@@ -1,6 +1,6 @@
+use crate::vsc_span::VscSpan;
 use prusti_rustc_interface::span::{source_map::SourceMap, Span};
 use serde::Serialize;
-use crate::vsc_span::VscSpan;
 
 /// Represents the locations of specifications of a function call.
 /// Generated for each encoded function call to be used by prusti-assistant.
@@ -19,9 +19,9 @@ impl SpanOfCallContracts {
         defpath: String,
         call_span: Span,
         contracts_spans: Vec<Span>,
-        source_map: &SourceMap
+        source_map: &SourceMap,
     ) -> Self {
-        let call_span =  VscSpan::from_span(&call_span, source_map);
+        let call_span = VscSpan::from_span(&call_span, source_map);
         let contracts_spans = contracts_spans
             .iter()
             .map(|sp| VscSpan::from_span(sp, source_map))
@@ -44,4 +44,3 @@ impl EncodingInfo {
         serde_json::to_string(&self).unwrap()
     }
 }
-

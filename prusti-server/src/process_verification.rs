@@ -4,7 +4,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-use crate::{ServerMessage, VerificationRequest, ServerRequest};
+use crate::{ServerMessage, ServerRequest, VerificationRequest};
 use futures::{lock, stream::Stream};
 use log::{debug, info};
 use prusti_utils::report::log::report;
@@ -92,14 +92,13 @@ fn verification_thread(
 
     while let Ok(request) = rx_verreq.recv() {
         match request {
-            ServerRequest::Verification(verification_request) => verification_request.process(
-                &tx_servermsg,
-            ),
+            ServerRequest::Verification(verification_request) => {
+                verification_request.process(&tx_servermsg)
+            }
         }
     }
     debug!("Verification thread finished.");
 }
-
 
 /// The pretty printing of Viper adt field discriminators is currently broken,
 /// this is a workaround for that. Remove once we're on a Viper version where

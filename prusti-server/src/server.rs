@@ -44,7 +44,7 @@ pub fn spawn_server_thread() -> SocketAddr {
 // It has to have a static lifetime because warp websockets need their closures to have a static
 // lifetime and we need to access this object in them.
 static VERIFICATION_REQUEST_PROCESSING: Lazy<VerificationRequestProcessing> =
-    Lazy::new(|| VerificationRequestProcessing::new());
+    Lazy::new(VerificationRequestProcessing::new);
 // TODO: caching currently does not work properly. The subject of caching needs to be redetermined.
 // currently, it is the whole program, and the returned result is the final errors (without
 // per-method ones).
@@ -127,7 +127,7 @@ where
         .expect("failed to construct Tokio runtime");
 
     runtime.block_on(async {
-        info!("Prusti Server binding to port {}", port);
+        info!("Prusti Server binding to port {port}");
         let (address, server_loop) =
             warp::serve(endpoints).bind_ephemeral((Ipv4Addr::LOCALHOST, port));
 
@@ -183,14 +183,13 @@ where
             if let ServerMessage::Termination(result) = &server_msg {
                 if config::enable_cache()
                     && !matches!(result.kind, VerificationResultKind::JavaException(_))
+                    && !result.cached
                 {
-                    if !result.cached {
-                        info!(
-                            "Storing new cached result {:?} for program {}",
-                            &result, &program_name
-                        );
-                        CACHE.insert(request_hash, result.clone());
-                    }
+                    info!(
+                        "Storing new cached result {:?} for program {}",
+                        &result, &program_name
+                    );
+                    CACHE.insert(request_hash, result.clone());
                 }
             };
             let msg = make_websocket_message(&server_msg);

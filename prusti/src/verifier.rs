@@ -1,11 +1,7 @@
 //! A module that invokes the verifier `prusti-viper`
 
 use log::{debug, warn};
-use prusti_interface::{
-    data::VerificationTask,
-    environment::Environment,
-    specs::typed,
-};
+use prusti_interface::{data::VerificationTask, environment::Environment, specs::typed};
 use prusti_utils::{config, report::user};
 
 #[tracing::instrument(name = "prusti::verify", level = "debug", skip(env))]

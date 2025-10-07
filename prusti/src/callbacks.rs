@@ -15,9 +15,7 @@ use prusti_rustc_interface::{
     index::IndexVec,
     interface::{interface::Compiler, Config},
     middle::{
-        mir,
-        query::{queries::mir_borrowck::ProvidedValue as MirBorrowck},
-        ty::TyCtxt,
+        mir, query::queries::mir_borrowck::ProvidedValue as MirBorrowck, ty::TyCtxt,
         util::Providers,
     },
     session::Session,
@@ -172,15 +170,14 @@ impl prusti_rustc_interface::driver::Callbacks for PrustiCompilerCalls {
         // it will find a manifest in prusti-launch but CARGO_PRIMARY_PACKAGE will still
         // not be ok. meaning that selective verification can't currently be tested through
         // x.py if the target is a single-file program.
-        let is_single_file = !std::env::var("CARGO_MANIFEST_DIR").is_ok();
+        let is_single_file = std::env::var("CARGO_MANIFEST_DIR").is_err();
         let is_primary_package = is_single_file || std::env::var("CARGO_PRIMARY_PACKAGE").is_ok();
 
         // collect and output Information used by IDE:
         if !config::no_verify() && !config::skip_verification() {
             let target_def_paths = config::verify_only_defpaths();
             debug!(
-                "Received def paths: {:?}. Package is primary: {}, Package is single-file: {}",
-                target_def_paths, is_primary_package, is_single_file,
+                "Received def paths: {target_def_paths:?}. Package is primary: {is_primary_package}, Package is single-file: {is_single_file}"
             );
             if !target_def_paths.is_empty() {
                 // if we do selective verification, then definitely only

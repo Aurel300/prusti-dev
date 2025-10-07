@@ -224,7 +224,7 @@ impl<'tcx> VirCtxt<'tcx> {
     /// Return the set of all viper identifiers with encoded bodies
     pub fn get_viper_identifiers(&'tcx self) -> FxHashSet<String> {
         let manager = self.spans.borrow();
-        manager.viper_identifiers.keys().cloned().collect()
+        FxHashSet::from_iter(manager.viper_identifiers.keys().cloned())
     }
 
     /// The unique itemname is of form `<crate name>::<defpath>`

@@ -192,7 +192,7 @@ fn bounds_where_block(traitbounds: &HashMap<String, Vec<TraitBound>>) -> String 
 
 /// If a function or impl block has a list of generic arguments, this
 /// will generate the string for it such as <T, S, J>.
-fn generic_args_str(arglist: &Vec<GenericArg>, include_bounds: bool) -> String {
+fn generic_args_str(arglist: &[GenericArg], include_bounds: bool) -> String {
     if !arglist.is_empty() {
         let res = arglist
             .iter()
@@ -212,7 +212,7 @@ fn generic_args_str(arglist: &Vec<GenericArg>, include_bounds: bool) -> String {
 }
 
 /// example result: Sized + PartialEq + Eq
-fn traitbounds_string(boundlist: &Vec<TraitBound>) -> String {
+fn traitbounds_string(boundlist: &[TraitBound]) -> String {
     if !boundlist.is_empty() {
         let res = boundlist
             .iter()
@@ -407,7 +407,7 @@ fn get_parent_chain(defid: DefId, tcx: TyCtxt<'_>) -> String {
 }
 
 /// indent all lines that are not empty by one tab
-fn indent(input: &String) -> String {
+fn indent(input: &str) -> String {
     let mut res = String::from("\t");
     let len = input.len();
     for (i, c) in input.chars().enumerate() {

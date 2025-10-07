@@ -495,14 +495,11 @@ impl<'tcx> EnvQuery<'tcx> {
 
         match norm_res {
             Ok(normalized) => {
-                debug!("Normalized {:?}: {:?}", normalizable, normalized);
+                debug!("Normalized {normalizable:?}: {normalized:?}");
                 normalized
             }
             Err(err) => {
-                debug!(
-                    "Error while resolving associated types for {:?}: {:?}",
-                    normalizable, err
-                );
+                debug!("Error while resolving associated types for {normalizable:?}: {err:?}");
                 normalizable
             }
         }

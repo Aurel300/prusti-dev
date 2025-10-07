@@ -137,7 +137,7 @@ impl VerificationRequest {
                         dump_viper_program(
                             &ast_utils,
                             viper_program,
-                            &self.program.get_name_with_check_mode(),
+                            self.program.get_name_with_check_mode(),
                         );
                     }
 
@@ -315,6 +315,6 @@ pub fn dump_viper_program(
 ) {
     let namespace = "viper_program";
     let filename = format!("{program_name}.vpr");
-    info!("Dumping Viper program to '{}/{}'", namespace, filename);
+    info!("Dumping Viper program to '{namespace}/{filename}'");
     report(namespace, filename, ast_utils.pretty_print(program));
 }

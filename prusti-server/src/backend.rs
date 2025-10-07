@@ -1,7 +1,6 @@
 use crate::{ServerMessage, VIPER};
 use log::{debug, info};
-use prusti_rustc_interface::data_structures::fx::FxHashSet;
-use std::{collections::HashSet, sync::mpsc, thread, time};
+use std::{sync::mpsc, thread, time};
 use viper::{jni_utils::JniUtils, VerificationContext, VerificationResultKind};
 use viper_sys::wrappers::{java, viper::*};
 
@@ -16,9 +15,14 @@ pub enum Backend<'a> {
 impl<'a> Backend<'a> {
     pub fn verify(
         &mut self,
-        procedures: FxHashSet<String>,
+        procedures: prusti_rustc_interface::data_structures::fx::FxHashSet<String>,
         sender: mpsc::Sender<ServerMessage>,
     ) -> VerificationResultKind {
+        // Convert FxHashSet to std HashSet for viper compatibility
+        #[allow(clippy::disallowed_types)]
+        let procedures_hashset: std::collections::HashSet<String> =
+            procedures.iter().cloned().collect();
+
         match self {
             Backend::Viper(ref mut verifier, context, viper_program_ref) => {
                 let ast_utils = context.new_ast_utils();
@@ -27,7 +31,13 @@ impl<'a> Backend<'a> {
                     let viper_program = viper::Program::new(viper_program_ref.as_obj());
 
                     if prusti_utils::config::report_viper_messages() {
-                        verify_and_poll_msgs(verifier, context, viper_program, procedures, sender)
+                        verify_and_poll_msgs(
+                            verifier,
+                            context,
+                            viper_program,
+                            procedures_hashset,
+                            sender,
+                        )
                     } else {
                         verifier.verify(viper_program, None)
                     }
@@ -37,11 +47,12 @@ impl<'a> Backend<'a> {
     }
 }
 
+#[allow(clippy::disallowed_types)]
 fn verify_and_poll_msgs(
     verifier: &mut viper::Verifier,
     verification_context: &viper::VerificationContext,
     viper_program: viper::Program,
-    procedures: FxHashSet<String>,
+    procedures: std::collections::HashSet<String>,
     sender: mpsc::Sender<ServerMessage>,
 ) -> VerificationResultKind {
     let mut kind = VerificationResultKind::Success;
@@ -66,11 +77,12 @@ fn verify_and_poll_msgs(
     kind
 }
 
+#[allow(clippy::disallowed_types)]
 fn polling_function(
     rep_glob_ref: &jni::objects::GlobalRef,
-    procedures: FxHashSet<String>,
+    procedures: std::collections::HashSet<String>,
     sender: mpsc::Sender<ServerMessage>,
-) -> HashSet<u64> {
+) -> std::collections::HashSet<u64> {
     debug!("attach polling thread to JVM.");
     let verification_context = VIPER
         .get()
@@ -81,7 +93,7 @@ fn polling_function(
     let reporter_instance = rep_glob_ref.as_obj();
     let reporter_wrapper = silver::reporter::PollingReporter::with(env);
 
-    let mut error_hashes = HashSet::new();
+    let mut error_hashes: std::collections::HashSet<u64> = std::collections::HashSet::new();
     loop {
         while reporter_wrapper
             .call_hasNewMessage(reporter_instance)
@@ -118,7 +130,7 @@ fn polling_function(
                                     })
                                     .unwrap();
                             }
-                            _ => info!("Unexpected quantifier name {}", q_name),
+                            _ => info!("Unexpected quantifier name {q_name}"),
                         }
                     }
                 }
@@ -141,8 +153,7 @@ fn polling_function(
                         let viper_triggers = jni
                             .get_string(jni.unwrap_result(msg_wrapper.call_triggers__string(msg)));
                         debug!(
-                            "QuantifierChosenTriggersMessage: {} {} {}",
-                            viper_quant_str, viper_triggers, pos_id
+                            "QuantifierChosenTriggersMessage: {viper_quant_str} {viper_triggers} {pos_id}"
                         );
                         sender
                             .send(ServerMessage::QuantifierChosenTriggers {
@@ -180,9 +191,8 @@ fn polling_function(
                                     .unwrap();
                             } else {
                                 debug!(
-                                    "EntitySuccessMessage for {} had negative verification time {}",
-                                    method_name, verification_time
-                                );
+                                      "EntitySuccessMessage for {method_name} had negative verification time {verification_time}"
+                                  );
                             }
                         }
                     } else {
@@ -206,7 +216,7 @@ fn polling_function(
                                 let viper_result = jni.unwrap_result(msg_wrapper.call_result(msg));
                                 let result = viper::extract_errors(
                                     &jni,
-                                    &env,
+                                    env,
                                     viper_result,
                                     Some(&mut error_hashes),
                                 );
@@ -220,9 +230,8 @@ fn polling_function(
                                     .unwrap();
                             } else {
                                 debug!(
-                                    "EntityFailureMessage for {} had negative verification time {}",
-                                    method_name, verification_time
-                                );
+                                      "EntityFailureMessage for {method_name} had negative verification time {verification_time}"
+                                  );
                             }
                         }
                     } else {

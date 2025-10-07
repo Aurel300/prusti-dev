@@ -32,7 +32,7 @@ use crate::encoders::{
 // Because currently, it does not have the crate name available to it. But that crate name
 // is part of the defpaths passed through the option.
 thread_local!(
-    pub static SELECTIVE_TASKS: std::cell::OnceCell<Vec<DefId>> = std::cell::OnceCell::new()
+    pub static SELECTIVE_TASKS: std::cell::OnceCell<Vec<DefId>> = const { std::cell::OnceCell::new() }
 );
 
 pub fn is_selected(def_id: &DefId) -> bool {
@@ -40,7 +40,7 @@ pub fn is_selected(def_id: &DefId) -> bool {
         selective_tasks
             .get()
             .as_ref()
-            .map_or(true, |procs| procs.contains(&def_id))
+            .is_none_or(|procs| procs.contains(def_id))
     })
 }
 
@@ -75,7 +75,7 @@ pub fn test_entrypoint<'tcx>(
     */
 
     if config::show_ide_info() {
-        vir::with_vcx(|vcx| vcx.emit_contract_spans(&env_diagnostic));
+        vir::with_vcx(|vcx| vcx.emit_contract_spans(env_diagnostic));
     }
     let mut program = task_encoder::Program::default();
 

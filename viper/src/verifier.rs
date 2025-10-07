@@ -116,7 +116,7 @@ impl<'a> Verifier<'a> {
             let build_version = jni.to_string(
                 jni.unwrap_result(verifier_wrapper.call_buildVersion(verifier_instance)),
             );
-            info!("Using backend {} version {}", name, build_version);
+            info!("Using backend {name} version {build_version}");
             Ok(verifier_instance)
         }));
 
@@ -324,10 +324,7 @@ pub fn extract_errors(
                     silver::verifier::AbortedExceptionally::with(env).call_cause(viper_error),
                 );
                 let stack_trace = jni_utils.unwrap_result(jni_utils.get_stack_trace(exception));
-                error!(
-                    "The verification aborted due to the following exception: {}",
-                    stack_trace
-                );
+                error!("The verification aborted due to the following exception: {stack_trace}");
             } else {
                 error!(
                     "The verifier returned an unhandled error of type {}: {}",

@@ -7,8 +7,8 @@
 #![warn(clippy::disallowed_types)]
 
 use crate::{
-    PrustiClient, ServerMessage, VerificationRequest,
-    VerificationRequestProcessing, ViperBackendConfig,
+    PrustiClient, ServerMessage, VerificationRequest, VerificationRequestProcessing,
+    ViperBackendConfig,
 };
 use ::log::{debug, error, info};
 use ide::IdeVerificationResult;
@@ -28,7 +28,7 @@ mod backend;
 pub(crate) use backend::*;
 pub(crate) use client::*;
 pub(crate) use process_verification::*;
-pub use server::{start_server_on_port, spawn_server_thread};
+pub use server::{spawn_server_thread, start_server_on_port};
 pub(crate) use server_message::*;
 pub(crate) use verification_request::*;
 
@@ -185,7 +185,7 @@ async fn handle_stream(
         prusti_errors.sort();
 
         for prusti_error in prusti_errors {
-            debug!("Prusti error: {:?}", prusti_error);
+            debug!("Prusti error: {prusti_error:?}");
             prusti_error.emit(env_diagnostic);
         }
     }
@@ -225,7 +225,7 @@ fn handle_result(
                     .into_iter()
                 })
                 .for_each(|prusti_error| {
-                    debug!("Prusti error: {:?}", prusti_error);
+                    debug!("Prusti error: {prusti_error:?}");
                     if prusti_error.is_disabled() {
                         prusti_error.cancel();
                     } else if config::show_ide_info() {
@@ -360,7 +360,7 @@ fn handle_quantifier_instantiation_message(
     if config::report_viper_messages() {
         debug!("Received #{insts} quantifier instantiations of {q_name} for position id {pos_id} durign verification");
         vir::with_vcx(|vcx| {
-            match vcx.get_span_from_id(pos_id.try_into().unwrap()) {
+            match vcx.get_span_from_id(pos_id) {
                 Some(span) => {
                     let program_name = "program".to_owned();
                     let key = (pos_id, program_name.clone());
@@ -395,7 +395,7 @@ fn handle_quantifier_instantiation_message(
                             // at once rather than having different programs for each method (as in the original PR).
                             // if it stays that way, the logic can be simplified.
                             json!({"instantiations": n, "method": "program"}),
-                        ), span.clone().into()
+                        ), span.into()
                     ).emit(env_diagnostic);
                 },
                 None => error!(
@@ -415,12 +415,12 @@ fn handle_quantifier_chosen_triggers_message(
     if config::report_viper_messages() && pos_id != 0 {
         debug!("Received quantifier triggers {triggers} for quantifier {viper_quant} for position id {pos_id} during verification");
         vir::with_vcx(|vcx| {
-            match vcx.get_span_from_id(pos_id.try_into().unwrap()) {
+            match vcx.get_span_from_id(pos_id) {
                 Some(span) => {
                     PrustiError::message(
                         format!("quantifierChosenTriggersMessage{}",
                             json!({"viper_quant": viper_quant, "triggers": triggers}),
-                        ), span.clone().into()
+                        ), span.into()
                     ).emit(env_diagnostic);
                 },
                 None => error!("Invalid position id {pos_id} for viper quantifier {viper_quant} during verification"),
@@ -463,7 +463,7 @@ fn handle_block_processing_message(
                                 } else {
                                     json!({"method": rust_method, "path_id": path_id})
                                 },
-                            ), span.clone().into()
+                            ), span.into()
                         ).emit(env_diagnostic);
                     } else {
                         debug!(
@@ -499,7 +499,7 @@ fn verify_requests_server(
     } else {
         server_address
     };
-    info!("Connecting to Prusti server at {}", server_address);
+    info!("Connecting to Prusti server at {server_address}");
     let verification_stream = stream! {
         for request in verification_requests {
             yield PrustiClient::verify(server_address.clone(), request).await;

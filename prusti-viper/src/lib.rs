@@ -189,9 +189,7 @@ impl<'vir, 'v> ToViper<'vir, 'v> for vir::AccField<'vir> {
                 self.field.to_viper_no_pos(ctx),
                 pos,
             ),
-            self.perm
-                .map(|v| v.to_viper_no_pos(ctx))
-                .unwrap_or_else(|| ctx.ast.full_perm()),
+            self.perm.map(|v| v.to_viper_no_pos(ctx)),
             pos,
         )
     }
@@ -706,9 +704,8 @@ impl<'vir, 'v> ToViper<'vir, 'v> for vir::PredicateApp<'vir> {
                 self.target,
                 pos,
             ),
-            self.perm
-                .map(|v| v.to_viper_no_pos(ctx))
-                .unwrap_or_else(|| ctx.ast.full_perm()),
+            self.perm.map(|v| v.to_viper_no_pos(ctx)),
+            //.unwrap_or_else(|| ctx.ast.full_perm()),
             pos,
         )
     }

@@ -755,7 +755,7 @@ pub fn optimizations() -> Optimizations {
             "remove_unused_vars" => opt.remove_unused_vars = true,
             "remove_trivial_assertions" => opt.remove_trivial_assertions = true,
             "clean_cfg" => opt.clean_cfg = true,
-            _ => warn!("Ignoring Unkown optimization '{}'", trimmed),
+            _ => warn!("Ignoring Unkown optimization '{trimmed}'"),
         }
     }
 

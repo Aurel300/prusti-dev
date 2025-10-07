@@ -1543,7 +1543,7 @@ impl<'a> AstFactory<'a> {
                 self.jni
                     .unwrap_result(simplifier_object_wrapper.singleton()),
                 expr.to_jobject(),
-                // false,
+                false
             ),
         );
         Expr::new(obj)

@@ -190,9 +190,6 @@ async fn handle_stream(
         }
     }
 
-    // if encoding_errors_count != 0 {
-    //     overall_result = VerificationResult::Failure;
-    // }
     overall_result
 }
 
@@ -235,57 +232,6 @@ fn handle_result(
                     }
                 });
 
-            // // annotate with counterexample, if requested
-            // if config::counterexample() {
-            //     if config::unsafe_core_proof() {
-            //         if let Some(silicon_counterexample) =
-            //             &verification_error.counterexample
-            //         {
-            //             let error_manager = self.encoder.error_manager();
-            //             if let Some(def_id) = error_manager
-            //                 .get_def_id(&verification_error)
-            //             {
-            //                 let counterexample = counterexample_translation_refactored::backtranslate(
-            //                     &self.encoder,
-            //                     error_manager.position_manager(),
-            //                     def_id,
-            //                     silicon_counterexample,
-            //                 );
-            //                 prusti_error =
-            //                     counterexample.annotate_error(prusti_error);
-            //             } else {
-            //                 prusti_error = prusti_error.add_note(
-            //                     format!(
-            //                         "the verifier produced a counterexample for {program_name}, but it could not be mapped to source code"
-            //                     ),
-            //                     None,
-            //                 );
-            //             }
-            //         }
-            //     } else if let Some(silicon_counterexample) =
-            //         &verification_error.counterexample
-            //     {
-            //         if let Some(def_id) = self.encoder.error_manager()
-            //             .get_def_id(&verification_error)
-            //         {
-            //             let counterexample =
-            //                 counterexample_translation::backtranslate(
-            //                     &self.encoder,
-            //                     def_id,
-            //                     silicon_counterexample,
-            //                 );
-            //             prusti_error =
-            //                 counterexample.annotate_error(prusti_error);
-            //         } else {
-            //             prusti_error = prusti_error.add_note(
-            //                 format!(
-            //                     "the verifier produced a counterexample for {program_name}, but it could not be mapped to source code"
-            //                 ),
-            //                 None,
-            //             );
-            //         }
-            //     }
-            // }
             *overall_result = VerificationResult::Failure;
         }
         viper::VerificationResultKind::JavaException(exception) => {

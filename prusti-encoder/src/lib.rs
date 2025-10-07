@@ -64,16 +64,6 @@ pub fn test_entrypoint<'tcx>(
 
     crate::encoders::encode_all_in_crate(tcx);
 
-    /*
-    let source_path = std::path::Path::new("source/path"); // TODO: env.name.source_path();
-    let rust_program_name = source_path
-        .file_name()
-        .unwrap()
-        .to_str()
-        .unwrap()
-        .to_owned();
-    */
-
     if config::show_ide_info() {
         vir::with_vcx(|vcx| vcx.emit_contract_spans(env_diagnostic));
     }

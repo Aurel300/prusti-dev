@@ -47,7 +47,7 @@ jobs:
         run: python x.py test-package prusti_artifact
 
       - name: Upload Prusti artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: prusti-release-${{ matrix.os }}
           if-no-files-found: error
@@ -91,7 +91,7 @@ jobs:
         run: python x.py package release prusti_artifact
 
       - name: Upload Prusti artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: prusti-release-macos-arm
           if-no-files-found: error

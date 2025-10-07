@@ -2,7 +2,7 @@ name: Deploy
 
 on:
   push:
-    branches: 'master'
+    branches: ['master', 'zgrannan/ide']
     paths-ignore: 'docs/**'
 
 env:

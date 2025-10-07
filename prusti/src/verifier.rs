@@ -2,7 +2,7 @@
 
 use log::{debug, warn};
 use prusti_interface::{
-    data::{VerificationResult, VerificationTask},
+    data::VerificationTask,
     environment::Environment,
     specs::typed,
 };

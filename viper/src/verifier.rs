@@ -175,24 +175,6 @@ impl<'a> Verifier<'a> {
         self
     }
 
-    /// Extract a position identifier from a `Position` object.
-    fn extract_pos_id(&self, pos: JObject<'_>) -> Option<String> {
-        let has_identifier_wrapper = silver::ast::HasIdentifier::with(self.env);
-
-        if self
-            .jni
-            .is_instance_of(pos, "viper/silver/ast/HasIdentifier")
-        {
-            Some(
-                self.jni
-                    .get_string(self.jni.unwrap_result(has_identifier_wrapper.call_id(pos))),
-            )
-        } else {
-            eprintln!("Class has no identifier: {}", self.jni.class_name(pos));
-            None
-        }
-    }
-
     #[tracing::instrument(name = "viper::verify", level = "debug", skip_all)]
     pub fn verify(
         &mut self,
@@ -310,15 +292,6 @@ fn extract_pos_id(jni_utils: &JniUtils<'_>, env: &JNIEnv<'_>, pos: JObject<'_>) 
     } else {
         None
     }
-}
-
-fn get_java_object_hash(env: &JNIEnv, obj: JObject) -> i32 {
-    let hash_code = env
-        .call_method(obj, "hashCode", "()I", &[])
-        .expect("Failed to call hashCode")
-        .i()
-        .expect("Failed to get hashCode as int");
-    hash_code
 }
 
 pub fn extract_errors(

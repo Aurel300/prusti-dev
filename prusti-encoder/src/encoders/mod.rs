@@ -18,7 +18,6 @@ pub use mir_builtin::{MirBuiltinEnc, MirBuiltinEncTask};
 pub use mir_fn::{FunctionCallEnc, MethodCallEnc, encode_all_in_crate};
 pub use mir_impure::ImpureEncVisitor;
 pub use mir_pure::{MirPureEnc, MirPureEncTask, PureKind};
-pub use prusti_rustc_interface::span::Span;
 pub use pure::spec::MirSpecEnc;
 pub(super) use spec::with_proc_spec;
 pub use spec::{SpecEnc, SpecEncTask, is_function_trusted, is_type_trusted};

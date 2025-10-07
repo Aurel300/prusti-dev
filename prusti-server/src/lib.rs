@@ -7,7 +7,7 @@
 #![warn(clippy::disallowed_types)]
 
 use crate::{
-    server::spawn_server_thread, PrustiClient, ServerMessage, VerificationRequest,
+    PrustiClient, ServerMessage, VerificationRequest,
     VerificationRequestProcessing, ViperBackendConfig,
 };
 use ::log::{debug, error, info};
@@ -20,7 +20,7 @@ use viper::{self, Cache, PersistentCache};
 
 mod client;
 mod process_verification;
-mod server;
+pub mod server;
 mod server_message;
 mod verification_request;
 mod backend;
@@ -28,7 +28,7 @@ mod backend;
 pub(crate) use backend::*;
 pub(crate) use client::*;
 pub(crate) use process_verification::*;
-pub use server::start_server_on_port;
+pub use server::{start_server_on_port, spawn_server_thread};
 pub(crate) use server_message::*;
 pub(crate) use verification_request::*;
 

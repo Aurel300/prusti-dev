@@ -13,7 +13,6 @@ use prusti_utils::{
     Stopwatch,
 };
 use std::{
-    collections::HashSet,
     fs::create_dir_all,
     path::PathBuf,
     sync::{self, mpsc, OnceLock},

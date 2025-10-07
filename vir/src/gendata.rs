@@ -8,7 +8,6 @@ use crate::{
     spans::VirSpan,
     typecheck_error, with_vcx, CastType, CompType, Dyn,
 };
-use prusti_rustc_interface::span::Span;
 
 use vir_proc_macro::*;
 

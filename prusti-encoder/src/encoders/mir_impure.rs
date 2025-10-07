@@ -27,7 +27,7 @@ use prusti_rustc_interface::{
         mir,
         ty::{self, TyKind},
     },
-    span::{def_id::DefId, source_map::Spanned},
+    span::def_id::DefId,
 };
 use prusti_utils::config;
 use task_encoder::{TaskEncoder, TaskEncoderDependencies};
@@ -840,7 +840,7 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
     }
 
     fn visit_statement(&mut self, statement: &mir::Statement<'vir>, location: mir::Location) {
-        self.vcx.with_span(statement.source_info.span, |vcx| {
+        self.vcx.with_span(statement.source_info.span, |_vcx| {
         if self.deps.check_cycle().is_err() {
             return;
         }

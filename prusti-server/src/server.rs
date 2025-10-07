@@ -18,10 +18,6 @@ use tokio::runtime::Builder;
 use viper::{Cache, PersistentCache, VerificationResultKind};
 use warp::Filter;
 
-#[derive(Debug)]
-struct BincodeReject(#[allow(dead_code)] bincode::Error);
-impl warp::reject::Reject for BincodeReject {}
-
 pub fn start_server_on_port(port: u16) {
     listen_on_port_with_address_callback(port, move |address| {
         if port == 0 {

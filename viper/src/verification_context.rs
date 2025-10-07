@@ -29,7 +29,7 @@ impl<'a> VerificationContext<'a> {
         &self.env
     }
 
-    pub fn new_ast_factory(&self) -> AstFactory {
+    pub fn new_ast_factory(&self) -> AstFactory<'_> {
         AstFactory::new(&self.env)
     }
 

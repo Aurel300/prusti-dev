@@ -16,7 +16,7 @@ use prusti_rustc_interface::{
     interface::{interface::Compiler, Config},
     middle::{
         mir,
-        query::{queries::mir_borrowck::ProvidedValue as MirBorrowck, ExternProviders},
+        query::{queries::mir_borrowck::ProvidedValue as MirBorrowck},
         ty::TyCtxt,
         util::Providers,
     },
@@ -192,7 +192,6 @@ impl prusti_rustc_interface::driver::Callbacks for PrustiCompilerCalls {
                         .into_iter()
                         .filter(|x| target_def_paths.contains(&env.name.get_unique_item_name(*x)))
                         .collect::<Vec<_>>();
-                    let env_diagnostic = env.diagnostic.clone();
                     if !procedures.is_empty() {
                         let selective_task = VerificationTask {
                             procedures,

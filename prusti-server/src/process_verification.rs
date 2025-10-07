@@ -7,7 +7,6 @@
 use crate::{ServerMessage, ServerRequest, VerificationRequest};
 use futures::{lock, stream::Stream};
 use log::{debug, info};
-use prusti_utils::report::log::report;
 use std::{
     sync::{self, mpsc},
     thread,
@@ -98,23 +97,4 @@ fn verification_thread(
         }
     }
     debug!("Verification thread finished.");
-}
-
-/// The pretty printing of Viper adt field discriminators is currently broken,
-/// this is a workaround for that. Remove once we're on a Viper version where
-/// that is fixed.
-fn bodge_field_adt_discr(s: String) -> String {
-    assert_eq!(include_str!("../../viper-toolchain"), "v-2025-02-04-1042\n");
-    s.split('.')
-        .map(|s| {
-            let Some(space) = s.as_bytes().iter().position(|c| *c == b' ') else {
-                return std::borrow::Cow::Borrowed(s);
-            };
-            if space == 0 || s.as_bytes()[space - 1] != b'?' {
-                return std::borrow::Cow::Borrowed(s);
-            }
-            std::borrow::Cow::Owned(format!("is{}{}", &s[..space - 1], &s[space..]))
-        })
-        .collect::<Vec<_>>()
-        .join(".")
 }

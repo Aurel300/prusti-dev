@@ -32,7 +32,6 @@ jobs:
         uses: actions/setup-java@v1
         with:
           java-version: '15'
-          architecture: ${{ runner.os == 'macOS' && runner.arch || 'x64' }}
 
       - name: Install OpenSSL on Windows
         if: runner.os == 'Windows'

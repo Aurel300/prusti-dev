@@ -35,12 +35,19 @@ fn main() {
     let cargo_prusti = format!("cargo-prusti{}", if cfg!(windows) { ".exe" } else { "" });
     let cargo_prusti = bin_dir.join(cargo_prusti);
 
-    // On Windows, copy cargo-prusti to a temporary location before running it
+    // On Windows, copy cargo-prusti and its dependencies to a temporary location before running it
     // to avoid locking the file in target/release, which would prevent rebuilds
     let cargo_prusti_to_run = if cfg!(windows) {
         let temp_dir = std::env::temp_dir();
-        let temp_cargo_prusti = temp_dir.join(format!("cargo-prusti-{}.exe", std::process::id()));
+        let pid = std::process::id();
+        let temp_cargo_prusti = temp_dir.join(format!("cargo-prusti-{}.exe", pid));
+        let temp_prusti_rustc = temp_dir.join(format!("prusti-rustc-{}.exe", pid));
+        let temp_prusti_driver = temp_dir.join(format!("prusti-driver-{}.exe", pid));
+
         std::fs::copy(&cargo_prusti, &temp_cargo_prusti).unwrap();
+        std::fs::copy(bin_dir.join("prusti-rustc.exe"), &temp_prusti_rustc).unwrap();
+        std::fs::copy(bin_dir.join("prusti-driver.exe"), &temp_prusti_driver).unwrap();
+
         temp_cargo_prusti
     } else {
         cargo_prusti
@@ -67,11 +74,13 @@ fn main() {
     let status = cmd.status().expect("Failed to run cargo-prusti!");
     assert!(status.success());
 
-    // Clean up temporary file on Windows
+    // Clean up temporary files on Windows
     if cfg!(windows) {
         let temp_dir = std::env::temp_dir();
-        let temp_cargo_prusti = temp_dir.join(format!("cargo-prusti-{}.exe", std::process::id()));
-        std::fs::remove_file(temp_cargo_prusti).ok();
+        let pid = std::process::id();
+        std::fs::remove_file(temp_dir.join(format!("cargo-prusti-{}.exe", pid))).ok();
+        std::fs::remove_file(temp_dir.join(format!("prusti-rustc-{}.exe", pid))).ok();
+        std::fs::remove_file(temp_dir.join(format!("prusti-driver-{}.exe", pid))).ok();
     }
 }
 

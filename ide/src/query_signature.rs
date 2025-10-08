@@ -49,7 +49,7 @@ impl ExternSpecBlock {
             }
             DefKind::AssocFn => {
                 // this will be None for traits
-                match tcx.impl_of_method(defid) {
+                match tcx.impl_of_assoc(defid) {
                     Some(impl_defid) => {
                         // function is part of impl block
                         let mut trait_name = None;

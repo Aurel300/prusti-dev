@@ -35,12 +35,23 @@ fn main() {
     let cargo_prusti = format!("cargo-prusti{}", if cfg!(windows) { ".exe" } else { "" });
     let cargo_prusti = bin_dir.join(cargo_prusti);
 
+    // On Windows, copy cargo-prusti to a temporary location before running it
+    // to avoid locking the file in target/release, which would prevent rebuilds
+    let cargo_prusti_to_run = if cfg!(windows) {
+        let temp_dir = std::env::temp_dir();
+        let temp_cargo_prusti = temp_dir.join(format!("cargo-prusti-{}.exe", std::process::id()));
+        std::fs::copy(&cargo_prusti, &temp_cargo_prusti).unwrap();
+        temp_cargo_prusti
+    } else {
+        cargo_prusti
+    };
+
     // In theory we should build to here (i.e. set `CARGO_TARGET_DIR` to this),
     // but this is hard to find for linking. So instead build to the `prusti-contracts` dir.
     // let out_dir = std::env::var("OUT_DIR").unwrap();
     // println!("cargo:warning=out_dir: {}", out_dir);
 
-    let mut cmd = Command::new(cargo_prusti);
+    let mut cmd = Command::new(cargo_prusti_to_run);
     cmd.env("CARGO_TARGET_DIR", target.as_os_str());
     cmd.current_dir(&prusti_contracts);
     if !cfg!(debug_assertions) {
@@ -55,6 +66,13 @@ fn main() {
 
     let status = cmd.status().expect("Failed to run cargo-prusti!");
     assert!(status.success());
+
+    // Clean up temporary file on Windows
+    if cfg!(windows) {
+        let temp_dir = std::env::temp_dir();
+        let temp_cargo_prusti = temp_dir.join(format!("cargo-prusti-{}.exe", std::process::id()));
+        std::fs::remove_file(temp_cargo_prusti).ok();
+    }
 }
 
 /// Cargo will rebuild prusti-contracts if any of those files changed, however we also want to

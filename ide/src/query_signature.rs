@@ -173,7 +173,7 @@ impl fmt::Display for GenericArg {
 
 /// the string for the where clause. Given a list of genericArgs, this would
 /// generate a string of the form:
-/// ```
+/// ```ignore
 /// where
 ///     T: bound1 + bound2,
 ///     S: anotherbound,

@@ -42,20 +42,6 @@ jobs:
           distribution: 'temurin'
           java-version: '23'
 
-      - name: Install OpenSSL on Windows x64
-        if: runner.os == 'Windows' && matrix.arch == 'x64'
-        run: |
-          vcpkg integrate install
-          vcpkg install openssl:x64-windows-static-md
-        shell: bash
-
-      - name: Install OpenSSL on Windows ARM64
-        if: runner.os == 'Windows' && matrix.arch == 'arm64'
-        run: |
-          vcpkg integrate install
-          vcpkg install openssl:arm64-windows-static-md
-        shell: bash
-
       - name: Set up the environment
         run: python x.py setup
 

@@ -14,7 +14,15 @@ jobs:
   build:
     strategy:
       matrix:
-        os: [ubuntu-22.04, windows-latest, macos-latest]
+        include:
+          - os: ubuntu-22.04
+            arch: x64
+          - os: windows-latest
+            arch: x64
+          - os: windows-latest
+            arch: arm64
+          - os: macos-latest
+            arch: x64
       fail-fast: false
     runs-on: ${{ matrix.os }}
     steps:
@@ -34,11 +42,18 @@ jobs:
           distribution: 'temurin'
           java-version: '23'
 
-      - name: Install OpenSSL on Windows
-        if: runner.os == 'Windows'
+      - name: Install OpenSSL on Windows x64
+        if: runner.os == 'Windows' && matrix.arch == 'x64'
         run: |
           vcpkg integrate install
           vcpkg install openssl:x64-windows-static-md
+        shell: bash
+
+      - name: Install OpenSSL on Windows ARM64
+        if: runner.os == 'Windows' && matrix.arch == 'arm64'
+        run: |
+          vcpkg integrate install
+          vcpkg install openssl:arm64-windows-static-md
         shell: bash
 
       - name: Set up the environment
@@ -59,7 +74,7 @@ jobs:
       - name: Upload Prusti artifact
         uses: actions/upload-artifact@v4
         with:
-          name: prusti-release-${{ matrix.os }}
+          name: prusti-release-${{ matrix.os }}-${{ matrix.arch }}
           if-no-files-found: error
           path: prusti_artifact/**
 
@@ -74,10 +89,10 @@ jobs:
       - name: Zip Prusti artifacts
         shell: bash
         run: |
-          for os in ubuntu-22.04 windows-latest macos-latest
+          for artifact in ubuntu-22.04-x64 windows-latest-x64 windows-latest-arm64 macos-latest-x64
           do
-            echo "Package Prusti artifact for $os"
-            cd prusti-release-$os
+            echo "Package Prusti artifact for $artifact"
+            cd prusti-release-$artifact
             zip -r prusti.zip *
             cd ..
           done
@@ -102,18 +117,28 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./prusti-release-ubuntu-22.04/prusti.zip
+          asset_path: ./prusti-release-ubuntu-22.04-x64/prusti.zip
           asset_name: prusti-release-ubuntu-22.04.zip
           asset_content_type: application/zip
 
-      - name: Upload release asset for Windows
+      - name: Upload release asset for Windows x64
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./prusti-release-windows-latest/prusti.zip
-          asset_name: prusti-release-windows.zip
+          asset_path: ./prusti-release-windows-latest-x64/prusti.zip
+          asset_name: prusti-release-windows-x64.zip
+          asset_content_type: application/zip
+
+      - name: Upload release asset for Windows ARM64
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./prusti-release-windows-latest-arm64/prusti.zip
+          asset_name: prusti-release-windows-arm64.zip
           asset_content_type: application/zip
 
       - name: Upload release asset for MacOS
@@ -122,6 +147,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./prusti-release-macos-latest/prusti.zip
+          asset_path: ./prusti-release-macos-latest-x64/prusti.zip
           asset_name: prusti-release-macos.zip
           asset_content_type: application/zip

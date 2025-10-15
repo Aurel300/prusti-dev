@@ -49,8 +49,16 @@ fn main() {
         std::fs::copy(bin_dir.join("prusti-driver.exe"), &temp_prusti_driver).unwrap();
 
         // Also copy without PID suffix so cargo-prusti can find them
-        std::fs::copy(bin_dir.join("prusti-rustc.exe"), temp_dir.join("prusti-rustc.exe")).unwrap();
-        std::fs::copy(bin_dir.join("prusti-driver.exe"), temp_dir.join("prusti-driver.exe")).unwrap();
+        std::fs::copy(
+            bin_dir.join("prusti-rustc.exe"),
+            temp_dir.join("prusti-rustc.exe"),
+        )
+        .unwrap();
+        std::fs::copy(
+            bin_dir.join("prusti-driver.exe"),
+            temp_dir.join("prusti-driver.exe"),
+        )
+        .unwrap();
 
         temp_cargo_prusti
     } else {

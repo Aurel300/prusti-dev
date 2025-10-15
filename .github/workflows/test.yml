@@ -67,7 +67,7 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
-          java-version: '15'
+          java-version: '16'
       - name: Set up the environment
         run: python x.py setup
       - name: Cache cargo
@@ -91,7 +91,7 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
-          java-version: '15'
+          java-version: '16'
       - name: Set up the environment
         run: python x.py setup
       - name: Cache cargo
@@ -128,7 +128,7 @@ jobs:
   #    - name: Set up Java
   #      uses: actions/setup-java@v1
   #      with:
-  #        java-version: '15'
+  #        java-version: '16'
   #    - name: Set up the environment
   #      run: python x.py setup
   #    - name: Cache cargo
@@ -163,7 +163,7 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
-          java-version: '15'
+          java-version: '16'
       - name: Set up the environment
         run: python x.py setup
       - name: Cache cargo
@@ -212,7 +212,7 @@ jobs:
   #    - name: Set up Java
   #      uses: actions/setup-java@v1
   #      with:
-  #        java-version: '15'
+  #        java-version: '16'
   #    - name: Set up the environment
   #      run: python x.py setup
   #    - name: Cache cargo

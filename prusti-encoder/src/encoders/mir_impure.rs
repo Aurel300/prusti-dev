@@ -888,7 +888,6 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                     //mir::Rvalue::ThreadLocalRef(DefId) => {}
                     //mir::Rvalue::AddressOf(Mutability, Place<'vir>) => {}
                     //mir::Rvalue::Cast(CastKind, Operand<'vir>, Ty<'vir>) => {}
-
                     mir::Rvalue::Len(place) => {
                         let place_ty = place.ty(self.local_decls, self.vcx.tcx());
                         let place_expr = self.encode_place_snap(Place::from(*place)).1;
@@ -900,10 +899,7 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                             .unwrap()
                             .len()
                             .unwrap();
-                        Some(
-                            len_function(place_expr.downcast_ty())
-                                .upcast_ty(),
-                        )
+                        Some(len_function(place_expr.downcast_ty()).upcast_ty())
                     }
 
                     mir::Rvalue::BinaryOp(op, box (l, r)) => {

@@ -354,15 +354,16 @@ impl<'tcx> TyData<'tcx, RustTyDatas> {
                 let gcst = TySpecifics::new_param_const(0).into();
                 let gty = TySpecifics::new_param_ty(1).into();
                 let gparams = Self::args_from_generics([gcst, gty]);
-                let predicate = vcx.tcx().mk_predicate(ty::Binder::dummy(
-                    ty::PredicateKind::Clause(ty::ClauseKind::ConstArgHasType(
-                        gcst.expect_const(),
-                        vcx.tcx().types.usize,
-                    )),
-                ));
-                let param_env = ty::ParamEnv::new(vcx.tcx().mk_clauses(&[
-                    predicate.expect_clause(),
-                ]));
+                let predicate =
+                    vcx.tcx()
+                        .mk_predicate(ty::Binder::dummy(ty::PredicateKind::Clause(
+                            ty::ClauseKind::ConstArgHasType(
+                                gcst.expect_const(),
+                                vcx.tcx().types.usize,
+                            ),
+                        )));
+                let param_env =
+                    ty::ParamEnv::new(vcx.tcx().mk_clauses(&[predicate.expect_clause()]));
                 (
                     GParams::new(gparams, param_env, false),
                     Self::args_from_generics([cst.into(), ty.into()]),

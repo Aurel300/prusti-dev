@@ -75,9 +75,7 @@ impl TaskEncoder for MirBuiltinEnc {
         deps: &mut TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self> {
         let function = vir::with_vcx(|vcx| match *task_key {
-            MirBuiltinEncTask::Len(arg_ty) => {
-                Self::handle_len(vcx, deps, *task_key, arg_ty)
-            }
+            MirBuiltinEncTask::Len(arg_ty) => Self::handle_len(vcx, deps, *task_key, arg_ty),
             MirBuiltinEncTask::UnOp(res_ty, op, operand_ty) => {
                 assert_eq!(res_ty, operand_ty);
                 Self::handle_un_op(vcx, deps, *task_key, op, operand_ty)

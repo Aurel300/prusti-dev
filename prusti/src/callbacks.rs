@@ -209,10 +209,7 @@ impl prusti_rustc_interface::driver::Callbacks for PrustiCompilerCalls {
                 };
                 verify(env, def_spec, verification_task);
             }
-        } else if config::skip_verification() && !config::no_verify() && is_primary_package {
-            // add a fake error, reason explained in issue #1261
-            fake_error(&env.diagnostic);
-        }
+        } 
 
         compiler.sess.dcx().abort_if_errors();
         if config::full_compilation() {

@@ -37,7 +37,13 @@ fn process(args: Vec<String>) -> Result<(), i32> {
 
     let libjvm_path =
         launch::find_libjvm(&java_home).expect("Failed to find JVM library. Check JAVA_HOME");
-    launch::add_to_loader_path(vec![libjvm_path], &mut cmd);
+
+    let prusti_sysroot = launch::prusti_sysroot().expect("Failed to find Rust's sysroot");
+
+    let compiler_bin = prusti_sysroot.join("bin");
+    let compiler_lib = prusti_sysroot.join("lib");
+
+    launch::add_to_loader_path(vec![libjvm_path, compiler_bin, compiler_lib], &mut cmd);
 
     launch::set_environment_settings(&mut cmd, &current_executable_dir, &java_home);
 

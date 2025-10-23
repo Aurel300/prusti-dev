@@ -17,12 +17,16 @@ jobs:
         include:
           - os: ubuntu-22.04
             arch: x64
+            label: ubuntu-22.04-x64
           - os: windows-latest
             arch: x64
-          - os: windows-latest
+            label: windows-latest-x64
+          - os: windows-11-arm
             arch: arm64
+            label: windows-latest-arm64
           - os: macos-latest
             arch: x64
+            label: macos-latest-x64
       fail-fast: false
     runs-on: ${{ matrix.os }}
     steps:
@@ -60,7 +64,7 @@ jobs:
       - name: Upload Prusti artifact
         uses: actions/upload-artifact@v4
         with:
-          name: prusti-release-${{ matrix.os }}-${{ matrix.arch }}
+          name: prusti-release-${{ matrix.label }}
           if-no-files-found: error
           path: prusti_artifact/**
 

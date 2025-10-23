@@ -153,14 +153,14 @@ pub fn get_rust_toolchain_channel() -> String {
 }
 
 /// Find Prusti's sysroot
-pub fn prusti_sysroot() -> Option<PathBuf> {
+pub fn prusti_sysroot() -> Result<PathBuf, String> {
     match env::var("RUST_SYSROOT") {
-        Ok(prusti_sysroot) => Some(PathBuf::from(prusti_sysroot)),
+        Ok(prusti_sysroot) => Ok(PathBuf::from(prusti_sysroot)),
         Err(_) => get_sysroot_from_rustup(),
     }
 }
 
-fn get_sysroot_from_rustup() -> Option<PathBuf> {
+fn get_sysroot_from_rustup() -> Result<PathBuf, String> {
     Command::new("rustup")
         .arg("run")
         .arg(get_rust_toolchain_channel())
@@ -168,10 +168,10 @@ fn get_sysroot_from_rustup() -> Option<PathBuf> {
         .arg("--print")
         .arg("sysroot")
         .output()
-        .ok()
+        .map_err(|e| e.to_string())
         .and_then(|out| {
             print!("{}", String::from_utf8(out.stderr).ok().unwrap());
-            String::from_utf8(out.stdout).ok()
+            String::from_utf8(out.stdout).map_err(|e| e.to_string())
         })
         .map(|s| PathBuf::from(s.trim().to_owned()))
 }

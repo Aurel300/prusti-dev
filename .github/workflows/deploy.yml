@@ -2,7 +2,7 @@ name: Deploy
 
 on:
   push:
-    branches: ['master']
+    branches: ['master', 'zgrannan/ide']
     paths-ignore: 'docs/**'
 
 env:
@@ -16,17 +16,13 @@ jobs:
       matrix:
         include:
           - os: ubuntu-22.04
-            arch: x64
             label: ubuntu-22.04-x64
           - os: windows-latest
-            arch: x64
             label: windows-latest-x64
           - os: windows-11-arm
-            arch: arm64
             label: windows-latest-arm64
           - os: macos-latest
-            arch: x64
-            label: macos-latest-x64
+            label: macos-latest-arm64
       fail-fast: false
     runs-on: ${{ matrix.os }}
     steps:
@@ -53,6 +49,7 @@ jobs:
         run: python x.py build --release --all
 
       - name: Run cargo tests --release
+        if: github.ref != 'refs/heads/zgrannan/ide'
         run: python x.py test --release --all
 
       - name: Package Prusti artifact
@@ -137,6 +134,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./prusti-release-macos-latest-x64/prusti.zip
+          asset_path: ./prusti-release-macos-latest-arm64/prusti.zip
           asset_name: prusti-release-macos.zip
           asset_content_type: application/zip

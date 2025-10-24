@@ -174,6 +174,65 @@ fn run_lifetimes_dump(group_name: &str) {
 }
 
 pub(crate) fn run() {
-    /* skip tests for now */
-    return;
+    // Spawn server process as child (so it stays around until main function terminates)
+    let server_address = spawn_server_thread();
+    env::set_var("PRUSTI_SERVER_ADDRESS", server_address.to_string());
+
+    /*
+    // Run (temporary) tests specific to Prusti v2.
+    println!("[v2]");
+    run_verification_no_overflow("v2");
+
+        let save_verification_cache =
+            || match ureq::post(&format!("http://{server_address}/save")).call() {
+                Ok(response) => {
+                    info!("Saving verification cache: {}", response.status_text());
+                }
+                Err(ureq::Error::Status(_code, response)) => {
+                    error!("Error while saving verification cache: {response:?}");
+                }
+                Err(err) => error!("Error while saving verification cache: {err}"),
+            };
+
+        // Test the parsing of specifications. This doesn't run the verifier.
+        println!("[parse]");
+        run_no_verification("parse");
+
+        // Test the type-checking of specifications. This doesn't run the verifier.
+        println!("[typecheck]");
+        run_no_verification("typecheck");
+    */
+
+    // Test the verifier.
+    println!("[verify]");
+    run_verification_no_overflow("verify");
+
+    /*
+        save_verification_cache();
+
+        // Test the verifier with overflow checks enabled.
+        println!("[verify_overflow]");
+        run_verification_overflow("verify_overflow");
+        save_verification_cache();
+
+        // Test the verifier with test cases that only partially verify due to known open issues.
+        // The purpose of these tests is two-fold: 1. these tests help prevent potential further
+        // regressions, because the tests also test code paths not covered by other tests; and
+        // 2. a failing test without any errors notifies the developer when a proper fix is in
+        // place. In this case, these test can be moved to the `verify/pass/` or
+        // `verify_overflow/pass` folders.
+        println!("[verify_partial]");
+        run_verification_overflow("verify_partial");
+        save_verification_cache();
+
+        // Test the verifier with panic checks disabled (i.e. verify only the core proof).
+        println!("[core_proof]");
+        run_verification_core_proof("core_proof");
+        save_verification_cache();
+
+        // Test the verifier with panic checks disabled (i.e. verify only the core proof).
+        println!("[lifetimes_dump]");
+        run_lifetimes_dump("lifetimes_dump");
+        save_verification_cache();
+    */
 }

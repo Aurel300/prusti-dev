@@ -55,8 +55,6 @@ pub fn verify<'tcx>(
 
         let program = request.program;
 
-        let result = prusti_server::verify_programs(&env.diagnostic, vec![program]);
-
-        println!("verification result: {result:?}");
+        prusti_server::verify_programs(&env.diagnostic, vec![program]);
     }
 }

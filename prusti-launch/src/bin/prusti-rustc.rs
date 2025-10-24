@@ -29,12 +29,13 @@ fn process(mut args: Vec<String>) -> Result<(), i32> {
     // should always be with `cargo` anyway (i.e. cargo_invoked == true)
     if !cargo_invoked {
         // Need to give references to standard prusti libraries
-        let target_dir = launch::get_prusti_contracts_dir(paths.current_executable_dir()).unwrap_or_else(|| {
-            panic!(
-                "Failed to find the path of the Prusti contracts from prusti home '{}'",
-                paths.current_executable_dir().display()
-            )
-        });
+        let target_dir = launch::get_prusti_contracts_dir(paths.current_executable_dir())
+            .unwrap_or_else(|| {
+                panic!(
+                    "Failed to find the path of the Prusti contracts from prusti home '{}'",
+                    paths.current_executable_dir().display()
+                )
+            });
         if target_dir.to_str().is_none() {
             panic!(
                 "Path to '{}' is not a valid utf-8 string!",
@@ -110,9 +111,9 @@ fn process(mut args: Vec<String>) -> Result<(), i32> {
         }
     }
 
-    let exit_status = cmd.status().unwrap_or_else(|e| {
-        panic!("failed to execute prusti-driver: {e}")
-    });
+    let exit_status = cmd
+        .status()
+        .unwrap_or_else(|e| panic!("failed to execute prusti-driver: {e}"));
 
     if exit_status.success() {
         Ok(())

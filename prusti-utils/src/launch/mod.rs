@@ -297,6 +297,12 @@ pub struct PrustiPaths {
     compiler_lib: PathBuf,
 }
 
+impl Default for PrustiPaths {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PrustiPaths {
     /// Create a new PrustiPaths instance by discovering all required paths
     pub fn new() -> Self {
@@ -304,8 +310,9 @@ impl PrustiPaths {
 
         let java_home = match env::var("JAVA_HOME") {
             Ok(java_home) => PathBuf::from(java_home),
-            Err(_) => find_java_home()
-                .expect("Failed to find Java home directory. Try setting JAVA_HOME"),
+            Err(_) => {
+                find_java_home().expect("Failed to find Java home directory. Try setting JAVA_HOME")
+            }
         };
 
         let libjvm_path =

@@ -2,7 +2,7 @@ name: Deploy
 
 on:
   push:
-    branches: ['master', 'zgrannan/ide']
+    branches: ['master']
     paths-ignore: 'docs/**'
 
 env:
@@ -49,7 +49,6 @@ jobs:
         run: python x.py build --release --all
 
       - name: Run cargo tests --release
-        if: github.ref != 'refs/heads/zgrannan/ide'
         run: python x.py test --release --all
 
       - name: Package Prusti artifact

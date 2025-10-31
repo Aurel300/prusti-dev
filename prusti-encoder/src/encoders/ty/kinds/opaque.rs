@@ -10,7 +10,7 @@ pub(crate) fn ty_pure<'vir>(
     _deps: &mut TaskEncoderDependencies<'vir, TyPureEnc>,
     builder: &mut DomainBuilder<'vir>,
 ) -> Result<TyPureOpaque<'vir>, EncodeFullError<'vir, TyPureEnc>> {
-    let arbitrary = builder.function("arbitrary", (), builder.self_type());
+    let arbitrary = builder.function("arbitrary", (), builder.self_type(), None);
     Ok(TyPureOpaqueData { arbitrary })
 }
 

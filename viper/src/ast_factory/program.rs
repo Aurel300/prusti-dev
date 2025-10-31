@@ -178,17 +178,34 @@ impl<'a> AstFactory<'a> {
         functions: &[DomainFunc],
         axioms: &[NamedDomainAxiom],
         type_vars: &[Type],
+        interpretation: &'static str,
     ) -> Domain<'a> {
-        build_ast_node!(
-            self,
-            Domain,
-            ast::Domain,
-            self.jni.new_string(name),
-            self.jni.new_seq(&map_to_jobjects!(functions)),
-            self.jni.new_seq(&map_to_jobjects!(axioms)),
-            self.jni.new_seq(&map_to_jobjects!(type_vars)),
-            self.jni.new_option(None)
-        )
+        if interpretation.is_empty() {
+            build_ast_node!(
+                self,
+                Domain,
+                ast::Domain,
+                self.jni.new_string(name),
+                self.jni.new_seq(&map_to_jobjects!(functions)),
+                self.jni.new_seq(&map_to_jobjects!(axioms)),
+                self.jni.new_seq(&map_to_jobjects!(type_vars)),
+                self.jni.new_option(None)
+            )
+        } else {
+            let mut interps = Vec::new();
+            interps.push(self.jni.new_tuple2(&(self.jni.new_string("SMTLIB"), self.jni.new_string(interpretation))));
+            build_ast_node!(
+                self,
+                Domain,
+                ast::Domain,
+                self.jni.new_string(name),
+                self.jni.new_seq(&map_to_jobjects!(functions)),
+                self.jni.new_seq(&map_to_jobjects!(axioms)),
+                self.jni.new_seq(&map_to_jobjects!(type_vars)),
+                self.jni.new_option(Some(self.jni.new_seq(interps.as_slice())))
+                //self.jni.new_option(None)
+            )
+        }
     }
 
     pub fn domain_func(
@@ -198,13 +215,14 @@ impl<'a> AstFactory<'a> {
         typ: Type,
         unique: bool,
         domain_name: &str,
+        interpretation: &str
     ) -> DomainFunc<'a> {
         let obj = self.jni.unwrap_result(ast::DomainFunc::with(self.env).new(
             self.jni.new_string(name),
             self.jni.new_seq(&map_to_jobjects!(formal_args)),
             typ.to_jobject(),
             unique,
-            self.jni.new_option(None),
+            self.jni.new_option(if interpretation.is_empty(){ None } else { Some(self.jni.new_string(interpretation)) }),
             self.no_position().to_jobject(),
             self.no_info(),
             self.jni.new_string(domain_name),

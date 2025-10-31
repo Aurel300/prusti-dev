@@ -219,6 +219,8 @@ pub struct DomainFunctionData<'vir> {
     pub args: &'vir [TypeDyn<'vir>],
     #[serde(with = "crate::serde::serde_ref")]
     pub ret: TypeDyn<'vir>,
+    #[serde(with = "crate::serde::serde_str")]
+    pub interpretation: &'vir str,
 }
 
 #[derive(PartialEq, Eq, Clone, Copy, Serialize, Deserialize, Hash)]

@@ -313,6 +313,7 @@ impl<'vir, 'v> ToViper<'vir, 'v> for vir::Domain<'vir> {
                 .iter()
                 .map(|v| v.to_viper_no_pos(ctx))
                 .collect::<Vec<_>>(),
+            self.interpretation,
         )
     }
 }
@@ -350,6 +351,7 @@ impl<'vir, 'v> ToViper<'vir, 'v> for vir::DomainFunction<'vir> {
             self.ret.to_viper_no_pos(ctx),
             self.unique,
             domain.name,
+            self.interpretation
         )
     }
 }
@@ -538,7 +540,7 @@ impl<'vir, 'v> ToViper<'vir, 'v> for vir::Function<'vir> {
                 .chain(decreases)
                 .collect::<Vec<_>>(),
             ctx.ast.no_position(), // TODO: position (each function should have its own)
-            self.expr.map(|v| v.to_viper_no_pos(ctx)),
+            self.expr.map(|v| v.to_viper_no_pos(ctx))
         )
     }
 }

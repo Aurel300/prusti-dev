@@ -128,6 +128,9 @@ fn main() {
             java_class!("scala.Product", vec![
                 method!("productElement", "(I)Ljava/lang/Object;"),
             ]),
+            java_class!("scala.Tuple2", vec![
+                constructor!(),
+            ]),
             java_class!("scala.reflect.ClassTag$", vec![
                 object_getter!(),
                 method!("apply"),

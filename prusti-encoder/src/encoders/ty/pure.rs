@@ -50,12 +50,51 @@ pub struct TyPureOpaqueData<'vir> {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct TyPurePrimData<'vir> {
+pub struct TyPurePrimDataNative<'vir> {
     pub prim_type: vir::TypePrim<'vir>,
     /// Snapshot of self as argument. Returns Viper primitive value.
     pub snap_to_prim: FunctionIdn<'vir, vir::CSnap, vir::Prim>,
     /// Viper primitive value as argument. Returns domain.
     pub prim_to_snap: FunctionIdn<'vir, vir::Prim, vir::CSnap>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct TyPurePrimDataFloat<'vir> {
+    // prim_to_snap: FunctionIdn<'vir, vir::Prim, vir::Dyn>, FunctionIdn<'vir, vir::Dyn, vir::CSnap>
+    pub fp_eq: FunctionIdn<'vir, (vir::CSnap, vir::CSnap), vir::Bool>
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum TyPurePrimData<'vir> {
+    Native(TyPurePrimDataNative<'vir>),
+    Float(TyPurePrimDataFloat<'vir>)
+}
+
+impl<'vir> TyPurePrimDataNative<'vir> {
+    pub fn new(prim_type: vir::TypePrim<'vir>, snap_to_prim: FunctionIdn<'vir, vir::CSnap, vir::Prim>, prim_to_snap: FunctionIdn<'vir, vir::Prim, vir::CSnap>) -> Self {
+        Self {
+            prim_type,
+            snap_to_prim,
+            prim_to_snap
+        }
+    }
+}
+
+impl<'vir> TyPurePrimDataFloat<'vir> {
+    pub fn new(fp_eq: FunctionIdn<'vir, (vir::CSnap, vir::CSnap), vir::Bool>) -> Self {
+        Self {
+            fp_eq
+        }
+    }
+}
+
+impl<'vir> TyPurePrimData<'vir> {
+    pub fn expect_native(&'vir self) -> &TyPurePrimDataNative<'vir> {
+        match self {
+            TyPurePrimData::Native(native) => native,
+            _ => unreachable!()
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -179,7 +218,7 @@ impl TaskEncoder for TyPureEnc {
                 }
                 TySpecifics::Primitive(prim) => {
                     let builder = builder.set_domain_builder();
-                    TySpecifics::Primitive(super::kinds::primitive::ty_pure(prim, deps, builder)?)
+                    TySpecifics::Primitive(super::kinds::primitive::ty_pure(vcx, prim, deps, builder)?)
                 }
                 TySpecifics::ImmRef(immref) => {
                     let builder = builder.set_adt_builder();
@@ -287,6 +326,7 @@ pub(crate) struct AdtBuilderData<'vir> {
 pub(crate) struct DomainBuilderData<'vir> {
     axioms: Vec<vir::DomainAxiom<'vir>>,
     functions: Vec<vir::DomainFunction<'vir>>,
+    interpretation: Option<&'static str>
 }
 
 #[derive(Clone, Copy)]
@@ -371,7 +411,7 @@ impl<'vir> TyPureBuilder<'vir> {
                 false_,
                 false_,
                 None,
-                None,
+                None
             )
         });
         let kind = self.build_kind();
@@ -389,6 +429,7 @@ impl<'vir> TyPureBuilder<'vir> {
                     &[],
                     self.vcx.alloc_slice(data.axioms.as_slice()),
                     self.vcx.alloc_slice(data.functions.as_slice()),
+                    data.interpretation,
                 );
                 TyPureEncLocalKind::Domain { domain }
             }
@@ -517,10 +558,11 @@ impl<'vir> DomainBuilder<'vir> {
         name: &str,
         args: A::Tys<'vir>,
         ret: Type<'vir, T>,
+        interpretation: Option<&'static str>
     ) -> FunctionIdn<'vir, A, T> {
         let name = vir::vir_format!(self.vcx, "{}_{name}", self.name);
         let ident = FunctionIdn::new(vir::ViperIdent::new(name), args, ret);
-        let function = self.vcx.mk_domain_function(ident, false);
+        let function = self.vcx.mk_domain_function(ident, false, interpretation);
         self.data().functions.push(function);
         ident
     }
@@ -530,9 +572,13 @@ impl<'vir> DomainBuilder<'vir> {
         let axiom = self.vcx.alloc(DomainAxiomData { name, expr });
         self.data().axioms.push(axiom);
     }
+
+    pub(crate) fn set_interpretation(&mut self, interp: &'static str) {
+        self.data().interpretation = Some(interp);
+    }
 }
 
-impl<'vir> TyPurePrimData<'vir> {
+impl<'vir> TyPurePrimDataNative<'vir> {
     pub fn expr_from_bits(&self, ty: ty::Ty<'vir>, value: u128) -> vir::ExprPrim<'vir> {
         match self.prim_type.kind() {
             vir::TypeKind::Bool => {

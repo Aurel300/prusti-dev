@@ -97,6 +97,11 @@ impl<'a> JniUtils<'a> {
         self.unwrap_result(scala::math::BigInt::with(self.env).new(java_big_integer))
     }
 
+    pub fn new_tuple2(&self, tuple: &(JObject<'a>, JObject<'a>)) -> JObject<'a> {
+        let object_wrapper = scala::Tuple2::with(self.env);
+        object_wrapper.new(tuple.0, tuple.1).unwrap()
+    }
+
     /// Converts a Rust Vec<JObject> to a Scala Seq
     pub fn new_seq(&self, objects: &[JObject]) -> JObject<'_> {
         let array_buffer_wrapper = scala::collection::mutable::ArrayBuffer::with(self.env);

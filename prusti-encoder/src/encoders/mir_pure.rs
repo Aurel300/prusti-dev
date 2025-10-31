@@ -453,7 +453,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                 // encode the discriminant operand
                 let discr_expr = self.encode_operand(&new_curr_ver, discr).downcast_ty();
                 let discr_ty = discr.ty(self.body, self.vcx.tcx());
-                let discr_ty_out = self.ty_use(discr_ty).expect_primitive();
+                let discr_ty_out = self.ty_use(discr_ty).expect_primitive().expect_native();
 
                 // walk `curr` -> `targets[i]` -> `join` for each target. The
                 // join point the bb which is an immediate reverse dominator of
@@ -733,7 +733,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                         ty.snap_to_discr_snap(self.encode_place(curr_ver, place).downcast_ty())
                     }
                     None => {
-                        let e_rvalue_ty = self.ty_use(rvalue_ty).expect_primitive();
+                        let e_rvalue_ty = self.ty_use(rvalue_ty).expect_primitive().expect_native();
                         // mir::Rvalue::Discriminant documents "Returns zero for types without discriminant"
                         let zero = self.vcx.mk_uint::<0>();
                         e_rvalue_ty.prim_to_snap.call()(zero.upcast_ty()).lift()
@@ -901,7 +901,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
         };
 
         let bool = self.ty_use(self.vcx.tcx().types.bool);
-        let bool = bool.expect_primitive();
+        let bool = bool.expect_primitive().expect_native();
 
         let prim = match builtin {
             PrustiBuiltin::SnapshotEquality => {

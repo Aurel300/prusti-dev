@@ -1,0 +1,111 @@
+
+use task_encoder::{OutputRefAny, TaskEncoder};
+use vir::{CastType, DomainGenData, DomainIdnCSnap, DomainIdnSnap, FunctionIdn, ViperIdent};
+
+#[derive(Eq, PartialEq, Hash, Debug, Clone, Copy)]
+pub enum BitVecSize {
+    BitVec16,
+    BitVec32,
+    BitVec64,
+    BitVec128
+}
+
+#[derive(Eq, PartialEq, Debug, Clone, Copy)]
+pub struct TyBitVec<'vir> {
+    pub from_int: FunctionIdn<'vir, vir::Int, vir::CSnap>,
+}
+
+impl<'vir> OutputRefAny for TyBitVec<'vir> {
+    
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct TyBitVecLocal<'vir> {
+    pub domain: vir::DomainIdn<'vir, vir::CSnap>
+}
+
+pub struct BitVecEnc;
+impl TaskEncoder for BitVecEnc{
+    task_encoder::encoder_cache!(BitVecEnc);
+
+    type TaskDescription<'vir> = BitVecSize;
+
+    // type OutputRef<'vir>
+    //   = TyBitVec<'vir>
+    // where
+    //     Self: 'vir;
+
+    /// Fully encoded output for this task. When encoding items which can be
+    /// dependencies (such as methods), this output should only be emitted in
+    /// one Viper program.
+    // type OutputFullLocal<'vir>
+    //     = ()
+    // where
+    //     Self: 'vir;
+
+    type OutputRef<'vir> = TyBitVec<'vir>;
+
+    /*type EnqueueingError = task_encoder::NeverError;
+
+    type EncodingError = task_encoder::NeverError;
+    */
+
+    type OutputFullLocal<'vir> = &'vir DomainGenData<'vir, (), !>;
+
+    type OutputFullDependency<'vir> = TyBitVecLocal<'vir>;
+
+    type EncodingError = ();
+
+    fn task_to_key<'vir>(task: &Self::TaskDescription<'vir>) -> Self::TaskKey<'vir> {
+        *task
+    }
+
+    fn emit_outputs<'vir>(program: &mut task_encoder::Program<'vir>) {
+        for output in BitVecEnc::all_outputs_local_no_errors() {
+            program.add_domain(output);
+        }
+    }
+
+    fn do_encode_full<'vir>(
+        task_key: &Self::TaskKey<'vir>,
+        deps: &mut task_encoder::TaskEncoderDependencies<'vir, Self>,
+    ) -> task_encoder::EncodeFullResult<'vir, Self> {
+
+        vir::with_vcx(|vcx| {
+            let domain_name = match *task_key {
+                BitVecSize::BitVec16 => "s_BitVec_16",
+                BitVecSize::BitVec32 => "s_BitVec_32",
+                BitVecSize::BitVec64 => "s_BitVec_64",
+                BitVecSize::BitVec128 => "s_BitVec_128",
+            };
+
+            let domain_ident = DomainIdnCSnap::new(vir::ViperIdent::new(domain_name));
+
+            let self_type = domain_ident();
+
+            let from_int_name = vir::vir_format!(vcx, "{}_from_int", domain_name);
+
+            let from_int = FunctionIdn::new(ViperIdent::new(from_int_name), vir::TYPE_INT, self_type);
+
+            let from_int_data = vcx.mk_domain_function(from_int, false, Some(match *task_key {
+                BitVecSize::BitVec16 => "(_ int2bv 16)",
+                BitVecSize::BitVec32 => "(_ int2bv 32)",
+                BitVecSize::BitVec64 => "(_ int2bv 64)",
+                BitVecSize::BitVec128 => "(_ int2bv 128)",
+            }));
+
+            let functions = &[from_int_data];
+
+            let domain_data = vcx.mk_domain::<(), !>(domain_ident.name(), &[], &[], vcx.alloc_slice(functions), match *task_key {
+                BitVecSize::BitVec16 => Some("(_ BitVec 16)"),
+                BitVecSize::BitVec32 => Some("(_ BitVec 32)"),
+                BitVecSize::BitVec64 => Some("(_ BitVec 64)"),
+                BitVecSize::BitVec128 => Some("(_ BitVec 128)"),
+            });
+
+            deps.emit_output_ref(*task_key, TyBitVec { from_int } )?;
+            Ok((domain_data, TyBitVecLocal { domain: domain_ident } ))
+        })
+        
+    }
+}

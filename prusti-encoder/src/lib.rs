@@ -12,6 +12,7 @@ pub mod request;
 use prusti_interface::{PrustiError, environment::EnvBody};
 use prusti_rustc_interface::middle::ty;
 use task_encoder::TaskEncoder;
+use crate::encoders::ty::bitvec::BitVecEnc;
 
 use crate::encoders::{
     Impure, Pure,
@@ -56,6 +57,7 @@ pub fn test_entrypoint<'tcx>(
 
     program.header("snapshots");
     crate::encoders::TyUsePureEnc::emit_outputs(&mut program);
+    BitVecEnc::emit_outputs(&mut program);
 
     program.header("predicates");
     crate::encoders::TyUseImpureEnc::emit_outputs(&mut program);

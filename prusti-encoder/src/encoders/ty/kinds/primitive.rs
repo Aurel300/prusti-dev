@@ -1,8 +1,6 @@
-use crate::encoders::ty::{
-    RustPrimitive,
-    impure::{PredicateBuilder, TyImpureEnc, TyImpurePrimitive},
-    pure::{DomainBuilder, TyPureEnc, TyPureEncError, TyPurePrimData, TyPurePrimDataNative, TyPurePrimDataFloat, TyPurePrimitive},
-};
+use crate::encoders::{ty::{
+    bitvec::{BitVecEnc, BitVecSize, TyBitVec}, generics::GArgs, impure::{PredicateBuilder, TyImpureEnc, TyImpurePrimitive}, pure::{DomainBuilder, TyPureEnc, TyPureEncError, TyPurePrimData, TyPurePrimDataFloat, TyPurePrimDataNative, TyPurePrimitive}, RustPrimitive, RustTyDecomposition
+}, TyUsePureEnc};
 use prusti_rustc_interface::middle::ty;
 use task_encoder::{EncodeFullError, TaskEncoderDependencies};
 use vir::{CSnap, CastType, Dyn, HasType, VirCtxt};
@@ -94,21 +92,26 @@ pub(crate) fn ty_pure<'vir>(
 
             let fp_eq = builder.function("eq", (builder.self_type(), builder.self_type()), vir::TYPE_BOOL, Some("fp.eq"));
 
-            //TODO The function below in a BV domain
-            //let cons_ident_1 = builder.function("primToBV", prim_type, Dyn, )
-            // TODO HOW TO SET DYN?
-            /*let cons_ident_2: vir::FunctionIdn<'vir, Dyn, vir::CSnap> = builder.function("snapFromBV", Dyn, builder.self_type(), match ty_kind {
+            let bit_vec = deps.require_dep::<BitVecEnc>(match ty_kind {
+                    ty::TyKind::Float(ty::FloatTy::F16) => BitVecSize::BitVec16,
+                    ty::TyKind::Float(ty::FloatTy::F32) => BitVecSize::BitVec32,
+                    ty::TyKind::Float(ty::FloatTy::F64) => BitVecSize::BitVec64,
+                    ty::TyKind::Float(ty::FloatTy::F128) => BitVecSize::BitVec128,
+                    _ => unreachable!()})?;
+            
+            let from_bv = builder.function("from_bv", (bit_vec.domain)(), builder.self_type(), match ty_kind {
                 ty::TyKind::Float(ty::FloatTy::F16) => Some("(_ to_fp 5 11)"),
                 ty::TyKind::Float(ty::FloatTy::F32) => Some("(_ to_fp 8 24)"),
                 ty::TyKind::Float(ty::FloatTy::F64) => Some("(_ to_fp 11 53)"),
                 ty::TyKind::Float(ty::FloatTy::F128) => Some("(_ to_fp 15 113)"),
                 _ => unreachable!()
-            });*/
+            });
 
             Ok(TyPurePrimData::Float(
                 TyPurePrimDataFloat::new(
+                    from_bv,
                     fp_eq,
-                    //None TODO crate::encoders::ty::pure::TyPurePrimPrimToSnap::ViaBVPrimToSnap(/* TODO */(), cons_ident_2)
+                    // TODO prim_to_snap
                 )
             ))
         }

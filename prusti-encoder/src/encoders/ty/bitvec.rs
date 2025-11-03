@@ -21,7 +21,8 @@ impl<'vir> OutputRefAny for TyBitVec<'vir> {
 
 #[derive(Debug, Clone, Copy)]
 pub struct TyBitVecLocal<'vir> {
-    pub domain: vir::DomainIdn<'vir, vir::CSnap>
+    pub domain: vir::DomainIdn<'vir, vir::CSnap>,
+    pub from_int: FunctionIdn<'vir, vir::Int, vir::CSnap>
 }
 
 pub struct BitVecEnc;
@@ -104,7 +105,7 @@ impl TaskEncoder for BitVecEnc{
             });
 
             deps.emit_output_ref(*task_key, TyBitVec { from_int } )?;
-            Ok((domain_data, TyBitVecLocal { domain: domain_ident } ))
+            Ok((domain_data, TyBitVecLocal { domain: domain_ident, from_int } ))
         })
         
     }

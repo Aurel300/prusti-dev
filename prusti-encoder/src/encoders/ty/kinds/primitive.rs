@@ -107,11 +107,17 @@ pub(crate) fn ty_pure<'vir>(
                 _ => unreachable!()
             });
 
+            let prim_to_snap: vir::FunctionIdn<'vir, vir::Int, CSnap> = builder.function("prim_to_snap", vir::TYPE_INT, builder.self_type(), None);
+
+            builder.axiom("ax_prim_to_snap", vir::expr! {
+                forall i: [vir::TYPE_INT] :: {[prim_to_snap](i)} ([prim_to_snap(i)]) == ([from_bv]([bit_vec.from_int](i)))
+            });
+
             Ok(TyPurePrimData::Float(
                 TyPurePrimDataFloat::new(
                     from_bv,
                     fp_eq,
-                    // TODO prim_to_snap
+                    prim_to_snap
                 )
             ))
         }

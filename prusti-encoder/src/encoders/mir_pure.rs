@@ -453,7 +453,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                 // encode the discriminant operand
                 let discr_expr = self.encode_operand(&new_curr_ver, discr).downcast_ty();
                 let discr_ty = discr.ty(self.body, self.vcx.tcx());
-                let discr_ty_out = self.ty_use(discr_ty).expect_primitive().expect_native();
+                let discr_ty_out = self.ty_use(discr_ty).expect_primitive();
 
                 // walk `curr` -> `targets[i]` -> `join` for each target. The
                 // join point the bb which is an immediate reverse dominator of
@@ -492,7 +492,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                     |expr, ((cond_val, _target), branch_update)| {
                         self.vcx.mk_ternary_expr(
                             self.vcx.mk_eq_expr(
-                                (discr_ty_out.snap_to_prim.call())(discr_expr),
+                                (discr_ty_out.expect_native().snap_to_prim.call())(discr_expr),
                                 discr_ty_out.expr_from_bits(discr_ty, cond_val).lift(),
                             ),
                             self.reify_branch(

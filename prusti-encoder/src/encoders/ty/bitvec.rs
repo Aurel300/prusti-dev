@@ -12,7 +12,7 @@ pub enum BitVecSize {
 
 #[derive(Eq, PartialEq, Debug, Clone, Copy)]
 pub struct TyBitVec<'vir> {
-    pub from_int: FunctionIdn<'vir, vir::Int, vir::CSnap>,
+    pub from_int: FunctionIdn<'vir, vir::Prim, vir::CSnap>,
 }
 
 impl<'vir> OutputRefAny for TyBitVec<'vir> {
@@ -22,7 +22,7 @@ impl<'vir> OutputRefAny for TyBitVec<'vir> {
 #[derive(Debug, Clone, Copy)]
 pub struct TyBitVecLocal<'vir> {
     pub domain: vir::DomainIdn<'vir, vir::CSnap>,
-    pub from_int: FunctionIdn<'vir, vir::Int, vir::CSnap>
+    pub from_int: FunctionIdn<'vir, vir::Prim, vir::CSnap>
 }
 
 pub struct BitVecEnc;
@@ -86,7 +86,7 @@ impl TaskEncoder for BitVecEnc{
 
             let from_int_name = vir::vir_format!(vcx, "{}_from_int", domain_name);
 
-            let from_int = FunctionIdn::new(ViperIdent::new(from_int_name), vir::TYPE_INT, self_type);
+            let from_int = FunctionIdn::new(ViperIdent::new(from_int_name), vir::TYPE_INT.upcast_ty(), self_type);
 
             let from_int_data = vcx.mk_domain_function(from_int, false, Some(match *task_key {
                 BitVecSize::BitVec16 => "(_ int2bv 16)",

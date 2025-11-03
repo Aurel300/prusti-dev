@@ -62,7 +62,7 @@ pub struct TyPurePrimDataNative<'vir> {
 pub struct TyPurePrimDataFloat<'vir> {
     pub from_bv: FunctionIdn<'vir, vir::CSnap, vir::CSnap>,
     pub fp_eq: FunctionIdn<'vir, (vir::CSnap, vir::CSnap), vir::Bool>,
-    pub prim_to_snap: FunctionIdn<'vir, vir::Int, vir::CSnap>
+    pub prim_to_snap: FunctionIdn<'vir, vir::Prim, vir::CSnap>
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -82,7 +82,7 @@ impl<'vir> TyPurePrimDataNative<'vir> {
 }
 
 impl<'vir> TyPurePrimDataFloat<'vir> {
-    pub fn new(from_bv: FunctionIdn<'vir, vir::CSnap, vir::CSnap>, fp_eq: FunctionIdn<'vir, (vir::CSnap, vir::CSnap), vir::Bool>, prim_to_snap: FunctionIdn<'vir, vir::Int, vir::CSnap>) -> Self {
+    pub fn new(from_bv: FunctionIdn<'vir, vir::CSnap, vir::CSnap>, fp_eq: FunctionIdn<'vir, (vir::CSnap, vir::CSnap), vir::Bool>, prim_to_snap: FunctionIdn<'vir, vir::Prim, vir::CSnap>) -> Self {
         Self {
             from_bv,
             fp_eq,
@@ -581,39 +581,54 @@ impl<'vir> DomainBuilder<'vir> {
     }
 }
 
-impl<'vir> TyPurePrimDataNative<'vir> {
-    pub fn expr_from_bits(&self, ty: ty::Ty<'vir>, value: u128) -> vir::ExprPrim<'vir> {
-        match self.prim_type.kind() {
-            vir::TypeKind::Bool => {
-                vir::with_vcx(|vcx| vcx.mk_const_expr(vir::ConstData::Bool(value != 0)))
-            }
-            vir::TypeKind::Int => {
-                let (bit_width, signed) = match ty.kind() {
-                    TyKind::Int(IntTy::Isize) => ((std::mem::size_of::<isize>() * 8) as u64, true),
-                    TyKind::Int(ty) => (ty.bit_width().unwrap(), true),
-                    TyKind::Uint(UintTy::Usize) => {
-                        ((std::mem::size_of::<usize>() * 8) as u64, true)
-                    }
-                    TyKind::Uint(ty) => (ty.bit_width().unwrap(), false),
-                    TyKind::Char => (32, false),
-                    kind => unreachable!("{kind:?}"),
-                };
-                let size = abi::Size::from_bits(bit_width);
-                let negative_value = if signed {
-                    let value = size.sign_extend(value);
-                    Some(value).filter(|value| value.is_negative())
-                } else {
-                    None
-                };
-                match negative_value {
-                    Some(value) => vir::with_vcx(|vcx| {
-                        let value = vcx.mk_const_expr(vir::ConstData::Int(value.unsigned_abs()));
-                        vcx.mk_unary_op_expr(vir::UnOpKind::Neg, value)
-                    }),
-                    None => vir::with_vcx(|vcx| vcx.mk_const_expr(vir::ConstData::Int(value))),
-                }
-            }
-            ref k => unreachable!("{k:?}"),
+impl<'vir> TyPurePrimData<'vir> {
+    pub fn get_prim_to_snap(&self) -> vir::FunctionIdn<'vir, vir::Prim, vir::CSnap> {
+        match self {
+            TyPurePrimData::Native(ty_pure_prim_data_native) => ty_pure_prim_data_native.prim_to_snap,
+            TyPurePrimData::Float(ty_pure_prim_data_float) => ty_pure_prim_data_float.prim_to_snap,
         }
+    }
+
+    pub fn expr_from_bits(&self, ty: ty::Ty<'vir>, value: u128) -> vir::ExprPrim<'vir> {
+        match self {
+            TyPurePrimData::Native(prim) => {
+                match prim.prim_type.kind() {
+                    vir::TypeKind::Bool => {
+                        vir::with_vcx(|vcx| vcx.mk_const_expr(vir::ConstData::Bool(value != 0)))
+                    }
+                    vir::TypeKind::Int => {
+                        let (bit_width, signed) = match ty.kind() {
+                            TyKind::Int(IntTy::Isize) => ((std::mem::size_of::<isize>() * 8) as u64, true),
+                            TyKind::Int(ty) => (ty.bit_width().unwrap(), true),
+                            TyKind::Uint(UintTy::Usize) => {
+                                ((std::mem::size_of::<usize>() * 8) as u64, true)
+                            }
+                            TyKind::Uint(ty) => (ty.bit_width().unwrap(), false),
+                            TyKind::Char => (32, false),
+                            kind => unreachable!("{kind:?}"),
+                        };
+                        let size = abi::Size::from_bits(bit_width);
+                        let negative_value = if signed {
+                            let value = size.sign_extend(value);
+                            Some(value).filter(|value| value.is_negative())
+                        } else {
+                            None
+                        };
+                        match negative_value {
+                            Some(value) => vir::with_vcx(|vcx| {
+                                let value = vcx.mk_const_expr(vir::ConstData::Int(value.unsigned_abs()));
+                                vcx.mk_unary_op_expr(vir::UnOpKind::Neg, value)
+                            }),
+                            None => vir::with_vcx(|vcx| vcx.mk_const_expr(vir::ConstData::Int(value))),
+                        }
+                    }
+                    ref k => unreachable!("{k:?}"),
+                }
+            },
+            TyPurePrimData::Float(_) => {
+                vir::with_vcx(|vcx| vcx.mk_const_expr(vir::ConstData::Int(value)))
+            },
+        }
+        
     }
 }

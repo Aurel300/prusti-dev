@@ -419,7 +419,10 @@ impl MirBuiltinEnc {
                     let res = (float_type.fp_div)(vcx.mk_local_ex(lhs_decl), vcx.mk_local_ex(rhs_decl));
                     Ok(vcx.mk_function(function, (lhs_decl, rhs_decl), &[], &[], None, Some(res)))
                 },
-                Rem => todo!(),
+                Rem => {
+                    let res = (float_type.fp_rem)(vcx.mk_local_ex(lhs_decl), vcx.mk_local_ex(rhs_decl));
+                    Ok(vcx.mk_function(function, (lhs_decl, rhs_decl), &[], &[], None, Some(res)))
+                },
                 BitXor => todo!(),
                 BitAnd => todo!(),
                 BitOr => todo!(),

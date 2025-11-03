@@ -62,7 +62,8 @@ pub struct TyPurePrimDataNative<'vir> {
 pub struct TyPurePrimDataFloat<'vir> {
     pub from_bv: FunctionIdn<'vir, vir::CSnap, vir::CSnap>,
     pub fp_eq: FunctionIdn<'vir, (vir::CSnap, vir::CSnap), vir::Bool>,
-    pub prim_to_snap: FunctionIdn<'vir, vir::Prim, vir::CSnap>
+    pub prim_to_snap: FunctionIdn<'vir, vir::Prim, vir::CSnap>,
+    pub fp_add: FunctionIdn<'vir, (vir::CSnap, vir::CSnap), vir::CSnap>
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -82,11 +83,12 @@ impl<'vir> TyPurePrimDataNative<'vir> {
 }
 
 impl<'vir> TyPurePrimDataFloat<'vir> {
-    pub fn new(from_bv: FunctionIdn<'vir, vir::CSnap, vir::CSnap>, fp_eq: FunctionIdn<'vir, (vir::CSnap, vir::CSnap), vir::Bool>, prim_to_snap: FunctionIdn<'vir, vir::Prim, vir::CSnap>) -> Self {
+    pub fn new(from_bv: FunctionIdn<'vir, vir::CSnap, vir::CSnap>, fp_eq: FunctionIdn<'vir, (vir::CSnap, vir::CSnap), vir::Bool>, prim_to_snap: FunctionIdn<'vir, vir::Prim, vir::CSnap>, fp_add: FunctionIdn<'vir, (vir::CSnap, vir::CSnap), vir::CSnap>) -> Self {
         Self {
             from_bv,
             fp_eq,
-            prim_to_snap
+            prim_to_snap,
+            fp_add
         }
     }
 }

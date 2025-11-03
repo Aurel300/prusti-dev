@@ -92,6 +92,8 @@ pub(crate) fn ty_pure<'vir>(
 
             let fp_eq = builder.function("eq", (builder.self_type(), builder.self_type()), vir::TYPE_BOOL, Some("fp.eq"));
 
+            let fp_add = builder.function("add", (builder.self_type(), builder.self_type()), builder.self_type(), Some("fp.add RNE"));
+
             let bit_vec = deps.require_dep::<BitVecEnc>(match ty_kind {
                     ty::TyKind::Float(ty::FloatTy::F16) => BitVecSize::BitVec16,
                     ty::TyKind::Float(ty::FloatTy::F32) => BitVecSize::BitVec32,
@@ -117,7 +119,8 @@ pub(crate) fn ty_pure<'vir>(
                 TyPurePrimDataFloat::new(
                     from_bv,
                     fp_eq,
-                    prim_to_snap
+                    prim_to_snap,
+                    fp_add
                 )
             ))
         }

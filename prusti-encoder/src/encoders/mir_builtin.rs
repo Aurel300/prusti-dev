@@ -427,9 +427,42 @@ impl MirBuiltinEnc {
                 ))
         } 
         crate::encoders::ty::pure::TyPurePrimData::Float(float_type) => {
-            let prim_res= (float_type.fp_eq)(vcx.mk_local_ex(lhs_decl), vcx.mk_local_ex(rhs_decl));
-            let val = (prim_res_ty.expect_native().prim_to_snap)(prim_res.upcast_ty());
-            Ok(vcx.mk_function(function, (lhs_decl, rhs_decl), &[], &[], None, Some(val)))
+            match op {
+                Add => {
+                    let res = (float_type.fp_add)(vcx.mk_local_ex(lhs_decl), vcx.mk_local_ex(rhs_decl));
+                    Ok(vcx.mk_function(function, (lhs_decl, rhs_decl), &[], &[], None, Some(res)))
+                },
+                AddUnchecked => todo!(),
+                AddWithOverflow => todo!(),
+                Sub => todo!(),
+                SubUnchecked => todo!(),
+                SubWithOverflow => todo!(),
+                Mul => todo!(),
+                MulUnchecked => todo!(),
+                MulWithOverflow => todo!(),
+                Div => todo!(),
+                Rem => todo!(),
+                BitXor => todo!(),
+                BitAnd => todo!(),
+                BitOr => todo!(),
+                Shl => todo!(),
+                ShlUnchecked => todo!(),
+                Shr => todo!(),
+                ShrUnchecked => todo!(),
+                Eq => {
+                    let prim_res= (float_type.fp_eq)(vcx.mk_local_ex(lhs_decl), vcx.mk_local_ex(rhs_decl));
+                    let val = (prim_res_ty.get_prim_to_snap())(prim_res.upcast_ty());
+                    Ok(vcx.mk_function(function, (lhs_decl, rhs_decl), &[], &[], None, Some(val)))
+                },
+                Lt => todo!(),
+                Le => todo!(),
+                Ne => todo!(),
+                Ge => todo!(),
+                Gt => todo!(),
+                Cmp => todo!(),
+                Offset => todo!(),
+            }
+            
         }
         }
     }

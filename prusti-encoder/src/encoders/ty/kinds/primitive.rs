@@ -94,6 +94,12 @@ pub(crate) fn ty_pure<'vir>(
 
             let fp_add = builder.function("add", (builder.self_type(), builder.self_type()), builder.self_type(), Some("fp.add RNE"));
 
+            let fp_sub = builder.function("sub", (builder.self_type(), builder.self_type()), builder.self_type(), Some("fp.sub RNE"));
+
+            let fp_mul = builder.function("mul", (builder.self_type(), builder.self_type()), builder.self_type(), Some("fp.mul RNE"));
+
+            let fp_div = builder.function("div", (builder.self_type(), builder.self_type()), builder.self_type(), Some("fp.div RNE"));
+
             let bit_vec = deps.require_dep::<BitVecEnc>(match ty_kind {
                     ty::TyKind::Float(ty::FloatTy::F16) => BitVecSize::BitVec16,
                     ty::TyKind::Float(ty::FloatTy::F32) => BitVecSize::BitVec32,
@@ -120,7 +126,10 @@ pub(crate) fn ty_pure<'vir>(
                     from_bv,
                     fp_eq,
                     prim_to_snap,
-                    fp_add
+                    fp_add,
+                    fp_sub,
+                    fp_mul,
+                    fp_div
                 )
             ))
         }

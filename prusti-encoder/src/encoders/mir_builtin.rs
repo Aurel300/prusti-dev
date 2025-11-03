@@ -110,37 +110,6 @@ fn int_name(ty: ty::Ty<'_>) -> &'static str {
     }
 }
 
-pub(crate) fn get_fp_interpretation_for_binop(op: mir::BinOp) -> &'static str {
-    match op {
-        mir::BinOp::Add => todo!(),
-        mir::BinOp::AddUnchecked => todo!(),
-        mir::BinOp::AddWithOverflow => todo!(),
-        mir::BinOp::Sub => todo!(),
-        mir::BinOp::SubUnchecked => todo!(),
-        mir::BinOp::SubWithOverflow => todo!(),
-        mir::BinOp::Mul => todo!(),
-        mir::BinOp::MulUnchecked => todo!(),
-        mir::BinOp::MulWithOverflow => todo!(),
-        mir::BinOp::Div => todo!(),
-        mir::BinOp::Rem => todo!(),
-        mir::BinOp::BitXor => todo!(),
-        mir::BinOp::BitAnd => todo!(),
-        mir::BinOp::BitOr => todo!(),
-        mir::BinOp::Shl => todo!(),
-        mir::BinOp::ShlUnchecked => todo!(),
-        mir::BinOp::Shr => todo!(),
-        mir::BinOp::ShrUnchecked => todo!(),
-        mir::BinOp::Eq => "fp.eq",
-        mir::BinOp::Lt => todo!(),
-        mir::BinOp::Le => todo!(),
-        mir::BinOp::Ne => todo!(),
-        mir::BinOp::Ge => todo!(),
-        mir::BinOp::Gt => todo!(),
-        mir::BinOp::Cmp => todo!(),
-        mir::BinOp::Offset => todo!(),
-    }
-}
-
 impl MirBuiltinEnc {
     fn handle_len<'vir>(
         vcx: &'vir vir::VirCtxt<'vir>,
@@ -434,13 +403,22 @@ impl MirBuiltinEnc {
                 },
                 AddUnchecked => todo!(),
                 AddWithOverflow => todo!(),
-                Sub => todo!(),
+                Sub => {
+                    let res = (float_type.fp_sub)(vcx.mk_local_ex(lhs_decl), vcx.mk_local_ex(rhs_decl));
+                    Ok(vcx.mk_function(function, (lhs_decl, rhs_decl), &[], &[], None, Some(res)))
+                },
                 SubUnchecked => todo!(),
                 SubWithOverflow => todo!(),
-                Mul => todo!(),
+                Mul => {
+                    let res = (float_type.fp_mul)(vcx.mk_local_ex(lhs_decl), vcx.mk_local_ex(rhs_decl));
+                    Ok(vcx.mk_function(function, (lhs_decl, rhs_decl), &[], &[], None, Some(res)))
+                },
                 MulUnchecked => todo!(),
                 MulWithOverflow => todo!(),
-                Div => todo!(),
+                Div => {
+                    let res = (float_type.fp_div)(vcx.mk_local_ex(lhs_decl), vcx.mk_local_ex(rhs_decl));
+                    Ok(vcx.mk_function(function, (lhs_decl, rhs_decl), &[], &[], None, Some(res)))
+                },
                 Rem => todo!(),
                 BitXor => todo!(),
                 BitAnd => todo!(),

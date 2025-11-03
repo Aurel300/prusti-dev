@@ -12,17 +12,14 @@ fn foo2(f: f32) -> f32 {
     f + 0.5
 }
 
-// Doesn't work because of x - y * n where n = x/y
-// SMT uses n = x / y -> round to nearest 
-// Rust truncates
-// #[requires(f == 4.5)]
-// #[ensures(result == 1.5)]
-// fn foo3(f: f32) -> f32 {
-//     f % 3.0
-// }
+#[requires(f == 4.5)]
+#[ensures(result == 1.5)]
+fn foo3(f: f32) -> f32 {
+    f % 3.0
+}
 
 #[requires(f == 4.25)]
 #[ensures(result == 1.25)]
-fn foo3(f: f32) -> f32 {
+fn foo4(f: f32) -> f32 {
     f % 3.0
 }

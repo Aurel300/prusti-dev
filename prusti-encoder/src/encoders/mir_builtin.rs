@@ -420,7 +420,15 @@ impl MirBuiltinEnc {
                     Ok(vcx.mk_function(function, (lhs_decl, rhs_decl), &[], &[], None, Some(res)))
                 },
                 Rem => {
-                    let res = (float_type.fp_rem)(vcx.mk_local_ex(lhs_decl), vcx.mk_local_ex(rhs_decl));
+                    // SMT uses n = x / y -> round to nearest 
+                    // Rust truncates
+                    // Therefore we cannot use SMT rem
+                    let float_lhs = vcx.mk_local_ex(lhs_decl);
+                    let float_rhs = vcx.mk_local_ex(rhs_decl);
+                    let div_res = (float_type.fp_div) (float_lhs, float_rhs);
+                    let div_trunc = (float_type.fp_trunc) (div_res);
+                    let mul_res = (float_type.fp_mul) (div_trunc, float_rhs);
+                    let res = (float_type.fp_sub) (float_lhs, mul_res);
                     Ok(vcx.mk_function(function, (lhs_decl, rhs_decl), &[], &[], None, Some(res)))
                 },
                 BitXor => todo!(),

@@ -465,19 +465,30 @@ impl<'vir, 'v> ToViper<'vir, 'v> for vir::FuncApp<'vir> {
     type Output = viper::Expr<'v>;
     // `pos` coming from the parent `Expr` is used
     fn to_viper(&self, ctx: &ToViperContext<'vir, 'v>, pos: Position) -> Self::Output {
-        if let Some((domain, _)) = ctx.domain_functions.get(self.target) {
-            ctx.ast.domain_func_app2(
-                self.target,
-                &self
-                    .args
-                    .iter()
-                    .map(|v| v.to_viper_no_pos(ctx))
-                    .collect::<Vec<_>>(),
-                &[],
-                self.result_ty.to_viper_no_pos(ctx),
-                domain.name,
-                pos,
-            )
+        if let Some((domain, func_data)) = ctx.domain_functions.get(self.target) {
+            if func_data.interpretation.is_empty() {
+                ctx.ast.domain_func_app2(
+                    self.target,
+                    &self
+                        .args
+                        .iter()
+                        .map(|v| v.to_viper_no_pos(ctx))
+                        .collect::<Vec<_>>(),
+                    &[],
+                    self.result_ty.to_viper_no_pos(ctx),
+                    domain.name,
+                    pos,
+                )
+            } else {
+                ctx.ast.backend_func_app_2(
+                    self.target,
+                    &self
+                            .args
+                            .iter()
+                            .map(|v| v.to_viper_no_pos(ctx))
+                            .collect::<Vec<_>>(),
+                        self.result_ty.to_viper_no_pos(ctx), pos, func_data.interpretation)
+            }
         } else if let Some((adt, _)) = ctx.adt_constructors.get(self.target) {
             ctx.ast.adt_constructor_app(
                 self.target,
@@ -959,8 +970,13 @@ impl<'vir, 'v, T: CompType> ToViper<'vir, 'v> for vir::Type<'vir, T> {
                     .map(|v| ctx.ast.type_var(v.name))
                     .collect::<Vec<_>>();
                 if domain {
-                    ctx.ast
-                        .domain_type(name, &partial_typ_vars_map, &type_parameters)
+                    let interpretation = ctx.domains.get(name).unwrap().interpretation;
+                    if interpretation.is_empty() {
+                        ctx.ast
+                            .domain_type(name, &partial_typ_vars_map, &type_parameters)
+                    } else {
+                        ctx.ast.domain_backend_type(name, interpretation)
+                    }
                 } else {
                     ctx.ast
                         .adt_type(name, &partial_typ_vars_map, &type_parameters)

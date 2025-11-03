@@ -200,7 +200,7 @@ impl<'a> AstFactory<'a> {
                 self.jni.new_seq(&map_to_jobjects!(functions)),
                 self.jni.new_seq(&map_to_jobjects!(axioms)),
                 self.jni.new_seq(&map_to_jobjects!(type_vars)),
-                self.jni.new_option(Some(self.jni.new_seq(&[self.jni.new_tuple2(&(self.jni.new_string("SMTLIB"), self.jni.new_string(interpretation)))])))
+                self.jni.new_option(Some(self.jni.new_map(&[(self.jni.new_string("SMTLIB"), self.jni.new_string(interpretation))])))
             )
         }
     }

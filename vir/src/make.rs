@@ -245,6 +245,15 @@ impl<'tcx> VirCtxt<'tcx> {
         values: &'vir [&'vir ExprGenData<'vir, Curr, Next, T>],
         elem_ty: Type<'vir, T>,
     ) -> ExprGenSet<'vir, Curr, Next> {
+        for value in values {
+            if value.ty() != elem_ty {
+                typecheck_error!(
+                    "Type mismatch in set literal. Expected element type: {:?}, actual: {:?}",
+                    elem_ty,
+                    value.ty(),
+                );
+            }
+        }
         self.alloc(ExprGenData::new(self.alloc(ExprKindGenData::SetLiteral(
             self.alloc(SetLiteralGenData {
                 values: values.as_dyn(),
@@ -429,6 +438,7 @@ impl<'tcx> VirCtxt<'tcx> {
         self.alloc(ExprGenData::new(self.alloc(ExprKindGenData::Wand(wand))))
     }
 
+    /// Use `mk_set_in_expr` for set in
     pub fn mk_bin_op_expr<'vir, Curr, Next, T: CompType>(
         &'vir self,
         kind: BinOpKind,
@@ -436,7 +446,15 @@ impl<'tcx> VirCtxt<'tcx> {
         rhs: ExprGen<'vir, Curr, Next, T>,
     ) -> ExprGenPrim<'vir, Curr, Next> {
         assert!(kind != BinOpKind::CmpEq, "Use mk_eq_expr instead");
-        self.mk_bin_op_expr_inner(kind, lhs, rhs)
+        if lhs.ty() != rhs.ty() {
+            typecheck_error!(
+                "Type mismatch in binary operation {:?}. LHS type: {:?}, RHS type: {:?}",
+                kind,
+                lhs.ty(),
+                rhs.ty(),
+            );
+        }
+        self.mk_bin_op_expr_inner(kind, lhs.as_dyn(), rhs.as_dyn())
     }
 
     pub fn mk_eq_expr<'vir, Curr, Next, T: CompType>(
@@ -444,24 +462,44 @@ impl<'tcx> VirCtxt<'tcx> {
         lhs: ExprGen<'vir, Curr, Next, T>,
         rhs: ExprGen<'vir, Curr, Next, T>,
     ) -> ExprGenBool<'vir, Curr, Next> {
-        self.mk_bin_op_expr_inner(BinOpKind::CmpEq, lhs, rhs)
+        if lhs.ty() != rhs.ty() {
+            typecheck_error!(
+                "Type mismatch in equality expression. LHS type: {:?}, RHS type: {:?}",
+                lhs.ty(),
+                rhs.ty(),
+            );
+        }
+        self.mk_bin_op_expr_inner(BinOpKind::CmpEq, lhs.as_dyn(), rhs.as_dyn())
+            .downcast_ty()
+    }
+
+    pub fn mk_set_in_expr<'vir, Curr, Next, T: CompType>(
+        &'vir self,
+        elem: ExprGen<'vir, Curr, Next, T>,
+        set: ExprGenSet<'vir, Curr, Next>,
+    ) -> ExprGenBool<'vir, Curr, Next> {
+        if !matches!(set.ty().kind(), TypeKind::Set(set_elem_ty) if elem.ty().as_dyn() == *set_elem_ty)
+        {
+            typecheck_error!(
+                "Type mismatch in 'set in' expression. Have set type: {:?}, actual element type: {:?}",
+                set.ty(),
+                elem.ty(),
+            );
+        }
+        self.mk_bin_op_expr_inner(BinOpKind::SetIn, elem.as_dyn(), set.as_dyn())
             .downcast_ty()
     }
 
     /// To be used only when `kind` is generated e.g. with a `from` call.
     /// Otherwise always use either `mk_eq_expr` or `mk_bin_op_expr`.
-    pub fn mk_bin_op_expr_inner<'vir, Curr, Next, T: CompType>(
+    pub fn mk_bin_op_expr_inner<'vir, Curr, Next>(
         &'vir self,
         kind: BinOpKind,
-        lhs: ExprGen<'vir, Curr, Next, T>,
-        rhs: ExprGen<'vir, Curr, Next, T>,
+        lhs: ExprGenDyn<'vir, Curr, Next>,
+        rhs: ExprGenDyn<'vir, Curr, Next>,
     ) -> ExprGenPrim<'vir, Curr, Next> {
         self.alloc(ExprGenData::new(self.alloc(ExprKindGenData::BinOp(
-            self.alloc(BinOpGenData {
-                kind,
-                lhs: lhs.as_dyn(),
-                rhs: rhs.as_dyn(),
-            }),
+            self.alloc(BinOpGenData { kind, lhs, rhs }),
         ))))
     }
 

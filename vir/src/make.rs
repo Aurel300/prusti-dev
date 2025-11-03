@@ -112,7 +112,9 @@ cfg_if! {
                     check_expr_bindings(m, *expr);
                     m.remove(name);
                 },
-                ExprKindGenData::FuncApp(FuncAppGenData { args, .. }) | ExprKindGenData::AdtConstructor(FuncAppGenData { args, .. }) => {
+                ExprKindGenData::FuncApp(FuncAppGenData { args, .. })
+                | ExprKindGenData::AdtConstructor(FuncAppGenData { args, .. })
+                | ExprKindGenData::SetLiteral(SetLiteralGenData { values: args, .. }) => {
                     for arg in args.iter() {
                         check_expr_bindings(m, *arg);
                     }
@@ -170,8 +172,8 @@ cfg_if! {
                 ExprKindGenData::Wand(WandGenData { lhs, rhs }) => {
                     check_expr_bindings(m, lhs.as_dyn());
                     check_expr_bindings(m, rhs.as_dyn());
-                }
-                other => todo!("{other:?}")
+                },
+                other@(ExprKindGenData::Result(_) | ExprKindGenData::Todo(_)) =>  todo!("{other:?}"),
             }
         }
     }
@@ -230,6 +232,23 @@ impl<'tcx> VirCtxt<'tcx> {
                 name,
                 func,
                 ty: ty.as_dyn(),
+            }),
+        ))))
+    }
+
+    pub fn mk_ty_set<'vir, T: CompType>(&'vir self, elem_ty: Type<'vir, T>) -> TypeSet<'vir> {
+        self.alloc(TypeData::new(TypeKind::Set(elem_ty.as_dyn())))
+    }
+
+    pub fn mk_set_literal_expr<'vir, Curr, Next, T: CompType>(
+        &'vir self,
+        values: &'vir [&'vir ExprGenData<'vir, Curr, Next, T>],
+        elem_ty: Type<'vir, T>,
+    ) -> ExprGenSet<'vir, Curr, Next> {
+        self.alloc(ExprGenData::new(self.alloc(ExprKindGenData::SetLiteral(
+            self.alloc(SetLiteralGenData {
+                values: values.as_dyn(),
+                ty: self.mk_ty_set(elem_ty).as_dyn(),
             }),
         ))))
     }

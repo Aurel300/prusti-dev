@@ -733,10 +733,10 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                         ty.snap_to_discr_snap(self.encode_place(curr_ver, place).downcast_ty())
                     }
                     None => {
-                        let e_rvalue_ty = self.ty_use(rvalue_ty).expect_primitive().expect_native();
+                        let e_rvalue_ty = self.ty_use(rvalue_ty).expect_primitive();
                         // mir::Rvalue::Discriminant documents "Returns zero for types without discriminant"
                         let zero = self.vcx.mk_uint::<0>();
-                        e_rvalue_ty.prim_to_snap.call()(zero.upcast_ty()).lift()
+                        e_rvalue_ty.get_prim_to_snap().call()(zero.upcast_ty()).lift()
                     }
                 };
                 discr.upcast_ty()

@@ -10,15 +10,6 @@ pub enum BitVecSize {
     BitVec128
 }
 
-#[derive(Eq, PartialEq, Debug, Clone, Copy)]
-pub struct TyBitVec<'vir> {
-    pub from_int: FunctionIdn<'vir, vir::Prim, vir::CSnap>,
-}
-
-impl<'vir> OutputRefAny for TyBitVec<'vir> {
-    
-}
-
 #[derive(Debug, Clone, Copy)]
 pub struct TyBitVecLocal<'vir> {
     pub domain: vir::DomainIdn<'vir, vir::CSnap>,
@@ -43,8 +34,6 @@ impl TaskEncoder for BitVecEnc{
     //     = ()
     // where
     //     Self: 'vir;
-
-    type OutputRef<'vir> = TyBitVec<'vir>;
 
     /*type EnqueueingError = task_encoder::NeverError;
 
@@ -104,7 +93,7 @@ impl TaskEncoder for BitVecEnc{
                 BitVecSize::BitVec128 => Some("(_ BitVec 128)"),
             });
 
-            deps.emit_output_ref(*task_key, TyBitVec { from_int } )?;
+            deps.emit_output_ref(*task_key, () )?;
             Ok((domain_data, TyBitVecLocal { domain: domain_ident, from_int } ))
         })
         

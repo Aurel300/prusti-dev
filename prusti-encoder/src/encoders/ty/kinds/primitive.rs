@@ -1,5 +1,5 @@
 use crate::encoders::{ty::{
-    bitvec::{BitVecEnc, BitVecSize, TyBitVec}, generics::GArgs, impure::{PredicateBuilder, TyImpureEnc, TyImpurePrimitive}, pure::{DomainBuilder, TyPureEnc, TyPureEncError, TyPurePrimData, TyPurePrimDataFloat, TyPurePrimDataNative, TyPurePrimitive}, RustPrimitive, RustTyDecomposition
+    bitvec::{BitVecEnc, BitVecSize}, generics::GArgs, impure::{PredicateBuilder, TyImpureEnc, TyImpurePrimitive}, pure::{DomainBuilder, TyPureEnc, TyPureEncError, TyPurePrimData, TyPurePrimDataFloat, TyPurePrimDataNative, TyPurePrimitive}, RustPrimitive,
 }, TyUsePureEnc};
 use prusti_rustc_interface::middle::ty;
 use task_encoder::{EncodeFullError, TaskEncoderDependencies};

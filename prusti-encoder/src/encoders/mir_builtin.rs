@@ -159,9 +159,9 @@ impl MirBuiltinEnc {
         let snap_arg = vcx.mk_local_ex(snap_arg_decl);
         match prim_res_ty {
             crate::encoders::ty::pure::TyPurePrimData::Native(ty_pure_prim_data_native) => {
-                let prim_arg = (prim_res_ty.expect_native().snap_to_prim)(snap_arg);
+                let prim_arg = (ty_pure_prim_data_native.snap_to_prim)(snap_arg);
                 let mut val =
-                    (prim_res_ty.expect_native().prim_to_snap)(vcx.mk_unary_op_expr(vir::UnOpKind::from(op), prim_arg));
+                    (ty_pure_prim_data_native.prim_to_snap)(vcx.mk_unary_op_expr(vir::UnOpKind::from(op), prim_arg));
                 // Can overflow when doing `- iN::MIN -> iN::MIN`. There is no
                 // `CheckedUnOp`, instead the compiler puts an `TerminatorKind::Assert`
                 // before in debug mode. We should still produce the correct result in
@@ -416,20 +416,20 @@ impl MirBuiltinEnc {
                     let res = (float_type.fp_add)(vcx.mk_local_ex(lhs_decl), vcx.mk_local_ex(rhs_decl));
                     Ok(vcx.mk_function(function, (lhs_decl, rhs_decl), &[], &[], None, Some(res)))
                 },
-                AddUnchecked => todo!(),
-                AddWithOverflow => todo!(),
+                AddUnchecked => unreachable!(),
+                AddWithOverflow => unreachable!(),
                 Sub => {
                     let res = (float_type.fp_sub)(vcx.mk_local_ex(lhs_decl), vcx.mk_local_ex(rhs_decl));
                     Ok(vcx.mk_function(function, (lhs_decl, rhs_decl), &[], &[], None, Some(res)))
                 },
-                SubUnchecked => todo!(),
-                SubWithOverflow => todo!(),
+                SubUnchecked => unreachable!(),
+                SubWithOverflow => unreachable!(),
                 Mul => {
                     let res = (float_type.fp_mul)(vcx.mk_local_ex(lhs_decl), vcx.mk_local_ex(rhs_decl));
                     Ok(vcx.mk_function(function, (lhs_decl, rhs_decl), &[], &[], None, Some(res)))
                 },
-                MulUnchecked => todo!(),
-                MulWithOverflow => todo!(),
+                MulUnchecked => unreachable!(),
+                MulWithOverflow => unreachable!(),
                 Div => {
                     let res = (float_type.fp_div)(vcx.mk_local_ex(lhs_decl), vcx.mk_local_ex(rhs_decl));
                     Ok(vcx.mk_function(function, (lhs_decl, rhs_decl), &[], &[], None, Some(res)))

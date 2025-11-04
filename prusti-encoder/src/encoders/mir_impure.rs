@@ -1029,7 +1029,7 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                                 None => {
                                     // mir::Rvalue::Discriminant documents "Returns zero for types without discriminant"
                                     let zero = self.vcx.mk_uint::<0>();
-                                    (e_rvalue_ty.expect_primitive().expect_native().prim_to_snap)(zero.upcast_ty())
+                                    (e_rvalue_ty.expect_primitive().get_prim_to_snap())(zero.upcast_ty())
                                 }
                             }
                             .upcast_ty(),

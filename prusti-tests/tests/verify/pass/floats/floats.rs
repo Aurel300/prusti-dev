@@ -54,3 +54,10 @@ fn foo7(x: f32, y: f32) -> u8 {
 fn foo8(x: f32, y: f32) -> bool {
     x == 2.5 && y == 2.5
 }
+
+
+#[requires(x == 3.3)]
+#[ensures(result == -3.3)]
+fn foo9(x: f32) -> f32 {
+    -x
+}

@@ -157,23 +157,38 @@ impl MirBuiltinEnc {
         let snap_arg_decl = vcx.mk_local_decl("arg", e_ty_snap);
         let prim_res_ty = e_ty.expect_primitive();
         let snap_arg = vcx.mk_local_ex(snap_arg_decl);
-        let prim_arg = (prim_res_ty.expect_native().snap_to_prim)(snap_arg);
-        let mut val =
-            (prim_res_ty.expect_native().prim_to_snap)(vcx.mk_unary_op_expr(vir::UnOpKind::from(op), prim_arg));
-        // Can overflow when doing `- iN::MIN -> iN::MIN`. There is no
-        // `CheckedUnOp`, instead the compiler puts an `TerminatorKind::Assert`
-        // before in debug mode. We should still produce the correct result in
-        // release mode, which the code under this branch does.
-        if op == mir::UnOp::Neg && ty.is_signed() {
-            let bound = vcx.get_min_int(ty.kind());
-            // `snap_to_prim(arg) == -iN::MIN`
-            let cond = vcx.mk_eq_expr(prim_arg.downcast_ty(), bound);
-            // `snap_to_prim(arg) == -iN::MIN ? arg :
-            // prim_to_snap(-snap_to_prim(arg))`
-            val = vcx.mk_ternary_expr(cond, snap_arg, val)
-        }
+        match prim_res_ty {
+            crate::encoders::ty::pure::TyPurePrimData::Native(ty_pure_prim_data_native) => {
+                let prim_arg = (prim_res_ty.expect_native().snap_to_prim)(snap_arg);
+                let mut val =
+                    (prim_res_ty.expect_native().prim_to_snap)(vcx.mk_unary_op_expr(vir::UnOpKind::from(op), prim_arg));
+                // Can overflow when doing `- iN::MIN -> iN::MIN`. There is no
+                // `CheckedUnOp`, instead the compiler puts an `TerminatorKind::Assert`
+                // before in debug mode. We should still produce the correct result in
+                // release mode, which the code under this branch does.
+                if op == mir::UnOp::Neg && ty.is_signed() {
+                    let bound = vcx.get_min_int(ty.kind());
+                    // `snap_to_prim(arg) == -iN::MIN`
+                    let cond = vcx.mk_eq_expr(prim_arg.downcast_ty(), bound);
+                    // `snap_to_prim(arg) == -iN::MIN ? arg :
+                    // prim_to_snap(-snap_to_prim(arg))`
+                    val = vcx.mk_ternary_expr(cond, snap_arg, val)
+                }
 
-        Ok(vcx.mk_function(function, (snap_arg_decl,), &[], &[], None, Some(val)))
+                Ok(vcx.mk_function(function, (snap_arg_decl,), &[], &[], None, Some(val)))
+            },
+            crate::encoders::ty::pure::TyPurePrimData::Float(ty_pure_prim_data_float) => {
+                match op {
+                    mir::UnOp::Not => unreachable!(),
+                    mir::UnOp::Neg => {
+                        let res = (ty_pure_prim_data_float.fp_neg)(snap_arg);
+                        Ok(vcx.mk_function(function, (snap_arg_decl,), &[], &[], None, Some(res)))
+                    },
+                    mir::UnOp::PtrMetadata => unreachable!(),
+                }
+            },
+        }
+        
     }
 
     fn handle_bin_op<'vir>(

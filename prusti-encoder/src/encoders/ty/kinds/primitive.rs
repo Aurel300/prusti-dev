@@ -108,6 +108,7 @@ pub(crate) fn ty_pure<'vir>(
             let fp_leq = builder.function("leq", (builder.self_type(), builder.self_type()), vir::TYPE_BOOL, Some("fp.leq"));
             let fp_geq = builder.function("geq", (builder.self_type(), builder.self_type()), vir::TYPE_BOOL, Some("fp.geq"));
             let fp_gt = builder.function("gt", (builder.self_type(), builder.self_type()), vir::TYPE_BOOL, Some("fp.gt"));
+            let fp_neg = builder.function("neg", builder.self_type(), builder.self_type(), Some("fp.neg"));
 
             let bit_vec = deps.require_dep::<BitVecEnc>(match ty_kind {
                     ty::TyKind::Float(ty::FloatTy::F16) => BitVecSize::BitVec16,
@@ -144,7 +145,8 @@ pub(crate) fn ty_pure<'vir>(
                     fp_lt,
                     fp_leq,
                     fp_gt,
-                    fp_geq
+                    fp_geq,
+                    fp_neg
                 )
             ))
         }

@@ -68,6 +68,7 @@ pub struct TyPurePrimDataFloat<'vir> {
     pub fp_mul: FunctionIdn<'vir, (vir::CSnap, vir::CSnap), vir::CSnap>,
     pub fp_div: FunctionIdn<'vir, (vir::CSnap, vir::CSnap), vir::CSnap>,
     pub fp_trunc: FunctionIdn<'vir, vir::CSnap, vir::CSnap>,
+    pub fp_is_nan: FunctionIdn<'vir, vir::CSnap, vir::Bool>
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -92,7 +93,8 @@ impl<'vir> TyPurePrimDataFloat<'vir> {
         fp_sub: FunctionIdn<'vir, (vir::CSnap, vir::CSnap), vir::CSnap>,
         fp_mul: FunctionIdn<'vir, (vir::CSnap, vir::CSnap), vir::CSnap>,
         fp_div: FunctionIdn<'vir, (vir::CSnap, vir::CSnap), vir::CSnap>,
-        fp_trunc: FunctionIdn<'vir, vir::CSnap, vir::CSnap>) -> Self {
+        fp_trunc: FunctionIdn<'vir, vir::CSnap, vir::CSnap>,
+        fp_is_nan: FunctionIdn<'vir, vir::CSnap, vir::Bool>) -> Self {
         Self {
             from_bv,
             fp_eq,
@@ -101,7 +103,8 @@ impl<'vir> TyPurePrimDataFloat<'vir> {
             fp_sub,
             fp_mul,
             fp_div,
-            fp_trunc
+            fp_trunc,
+            fp_is_nan
         }
     }
 }
@@ -110,6 +113,13 @@ impl<'vir> TyPurePrimData<'vir> {
     pub fn expect_native(&'vir self) -> &TyPurePrimDataNative<'vir> {
         match self {
             TyPurePrimData::Native(native) => native,
+            _ => unreachable!()
+        }
+    }
+
+    pub fn expect_float(&'vir self) -> &TyPurePrimDataFloat<'vir> {
+        match self {
+            TyPurePrimData::Float(fl) => fl,
             _ => unreachable!()
         }
     }

@@ -4,6 +4,8 @@
 #![feature(negative_impls)]
 #![feature(try_trait_v2)]
 #![feature(cfg_version)]
+#![feature(f128)]
+#![feature(f16)]
 
 // Even alloc can be disabled for consistency with std, and in preparation for future specs for other, possibly no_std, crates.
 #[cfg(feature = "alloc")]
@@ -400,6 +402,23 @@ pub fn snap<T>(_x: &T) -> T {
 /// constructed recursively: references are followed, unsafe pointers and cells
 /// are not. Importantly, addresses are not taken into consideration.
 pub fn snapshot_equality<T>(_l: T, _r: T) -> bool {
+    true
+}
+
+/// Checks if a float is NaN
+pub fn f16_is_nan(fl: f16) -> bool {
+    true
+}
+
+pub fn f32_is_nan(fl: f32) -> bool {
+    true
+}
+
+pub fn f64_is_nan(fl: f64) -> bool {
+    true
+}
+
+pub fn f128_is_nan(fl: f128) -> bool {
     true
 }
 

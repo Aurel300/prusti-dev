@@ -102,6 +102,8 @@ pub(crate) fn ty_pure<'vir>(
 
             let fp_trunc = builder.function("trunc", builder.self_type(), builder.self_type(), Some("fp.roundToIntegral RTZ"));
 
+            let fp_is_nan = builder.function("is_nan", builder.self_type(), vir::TYPE_BOOL, Some("fp.isNaN"));
+
             let bit_vec = deps.require_dep::<BitVecEnc>(match ty_kind {
                     ty::TyKind::Float(ty::FloatTy::F16) => BitVecSize::BitVec16,
                     ty::TyKind::Float(ty::FloatTy::F32) => BitVecSize::BitVec32,
@@ -132,7 +134,8 @@ pub(crate) fn ty_pure<'vir>(
                     fp_sub,
                     fp_mul,
                     fp_div,
-                    fp_trunc
+                    fp_trunc,
+                    fp_is_nan
                 )
             ))
         }

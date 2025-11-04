@@ -862,6 +862,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
             SnapshotEquality,
             ModeStart(Mode),
             ModeEnd(Mode),
+            IsNaN(ty::FloatTy)
         }
 
         let crate_name = self.vcx.tcx().crate_name(def_id.krate);
@@ -897,6 +898,10 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
             )),
             "before_expiry_start" => PrustiBuiltin::ModeStart(Mode::BeforeExpiry),
             "before_expiry_end" => PrustiBuiltin::ModeEnd(Mode::BeforeExpiry),
+            "f16_is_nan" => PrustiBuiltin::IsNaN(ty::FloatTy::F16),
+            "f32_is_nan" => PrustiBuiltin::IsNaN(ty::FloatTy::F32),
+            "f64_is_nan" => PrustiBuiltin::IsNaN(ty::FloatTy::F64),
+            "f128_is_nan" => PrustiBuiltin::IsNaN(ty::FloatTy::F128),
             other => panic!("illegal prusti::builtin ({other})"),
         };
 
@@ -1062,6 +1067,19 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                 }
                 self.vcx.mk_bool::<true>().lift() //TODO what value do we return?
             }
+            PrustiBuiltin::IsNaN(fl) => {
+                let is_nan_fun = match fl {
+                    ty::FloatTy::F16 => self.ty_use(self.vcx.tcx().types.f16).expect_primitive().expect_float().fp_is_nan,
+                    ty::FloatTy::F32 => self.ty_use(self.vcx.tcx().types.f32).expect_primitive().expect_float().fp_is_nan,
+                    ty::FloatTy::F64 => self.ty_use(self.vcx.tcx().types.f64).expect_primitive().expect_float().fp_is_nan,
+                    ty::FloatTy::F128 => self.ty_use(self.vcx.tcx().types.f128).expect_primitive().expect_float().fp_is_nan,
+                };
+                let fl = self.encode_operand(curr_ver, &args[0].node);
+                let fl_val = unsafe {
+                    std::mem::transmute::<ExprRet<'_>, vir::ExprGen<'_, (), !, vir::CSnap>>(fl)
+                };
+                is_nan_fun.call()(fl_val).lift()
+            },
         };
         bool.prim_to_snap.call()(prim.upcast_ty()).upcast_ty()
     }

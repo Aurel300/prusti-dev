@@ -23,3 +23,15 @@ fn foo3(f: f32) -> f32 {
 fn foo4(f: f32) -> f32 {
     f % 3.0
 }
+
+#[requires(!f32_is_nan(f))]
+#[ensures(result == f)]
+fn foo5(f: f32) -> f32 {
+    f
+}
+
+#[requires(!f.is_nan())]
+#[ensures(result == f)]
+fn foo6(f: f64) -> f64 {
+    f
+}

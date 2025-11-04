@@ -104,6 +104,11 @@ pub(crate) fn ty_pure<'vir>(
 
             let fp_is_nan = builder.function("is_nan", builder.self_type(), vir::TYPE_BOOL, Some("fp.isNaN"));
 
+            let fp_lt = builder.function("lt", (builder.self_type(), builder.self_type()), vir::TYPE_BOOL, Some("fp.lt"));
+            let fp_leq = builder.function("leq", (builder.self_type(), builder.self_type()), vir::TYPE_BOOL, Some("fp.leq"));
+            let fp_geq = builder.function("geq", (builder.self_type(), builder.self_type()), vir::TYPE_BOOL, Some("fp.geq"));
+            let fp_gt = builder.function("gt", (builder.self_type(), builder.self_type()), vir::TYPE_BOOL, Some("fp.gt"));
+
             let bit_vec = deps.require_dep::<BitVecEnc>(match ty_kind {
                     ty::TyKind::Float(ty::FloatTy::F16) => BitVecSize::BitVec16,
                     ty::TyKind::Float(ty::FloatTy::F32) => BitVecSize::BitVec32,
@@ -135,7 +140,11 @@ pub(crate) fn ty_pure<'vir>(
                     fp_mul,
                     fp_div,
                     fp_trunc,
-                    fp_is_nan
+                    fp_is_nan,
+                    fp_lt,
+                    fp_leq,
+                    fp_gt,
+                    fp_geq
                 )
             ))
         }

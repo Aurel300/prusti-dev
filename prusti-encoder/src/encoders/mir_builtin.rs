@@ -431,23 +431,39 @@ impl MirBuiltinEnc {
                     let res = (float_type.fp_sub) (float_lhs, mul_res);
                     Ok(vcx.mk_function(function, (lhs_decl, rhs_decl), &[], &[], None, Some(res)))
                 },
-                BitXor => todo!(),
-                BitAnd => todo!(),
-                BitOr => todo!(),
-                Shl => todo!(),
-                ShlUnchecked => todo!(),
-                Shr => todo!(),
-                ShrUnchecked => todo!(),
+                BitXor => unreachable!(),
+                BitAnd => unreachable!(),
+                BitOr => unreachable!(),
+                Shl => unreachable!(),
+                ShlUnchecked => unreachable!(),
+                Shr => unreachable!(),
+                ShrUnchecked => unreachable!(),
                 Eq => {
                     let prim_res= (float_type.fp_eq)(vcx.mk_local_ex(lhs_decl), vcx.mk_local_ex(rhs_decl));
                     let val = (prim_res_ty.get_prim_to_snap())(prim_res.upcast_ty());
                     Ok(vcx.mk_function(function, (lhs_decl, rhs_decl), &[], &[], None, Some(val)))
                 },
-                Lt => todo!(),
-                Le => todo!(),
+                Lt => {
+                    let prim_res = (float_type.fp_lt)(vcx.mk_local_ex(lhs_decl), vcx.mk_local_ex(rhs_decl));
+                    let val = (prim_res_ty.get_prim_to_snap())(prim_res.upcast_ty());
+                    Ok(vcx.mk_function(function, (lhs_decl, rhs_decl), &[], &[], None, Some(val)))
+                },
+                Le => {
+                    let prim_res = (float_type.fp_leq)(vcx.mk_local_ex(lhs_decl), vcx.mk_local_ex(rhs_decl));
+                    let val = (prim_res_ty.get_prim_to_snap())(prim_res.upcast_ty());
+                    Ok(vcx.mk_function(function, (lhs_decl, rhs_decl), &[], &[], None, Some(val)))
+                },
                 Ne => todo!(),
-                Ge => todo!(),
-                Gt => todo!(),
+                Ge => {
+                    let prim_res = (float_type.fp_geq)(vcx.mk_local_ex(lhs_decl), vcx.mk_local_ex(rhs_decl));
+                    let val = (prim_res_ty.get_prim_to_snap())(prim_res.upcast_ty());
+                    Ok(vcx.mk_function(function, (lhs_decl, rhs_decl), &[], &[], None, Some(val)))
+                },
+                Gt => {
+                    let prim_res = (float_type.fp_gt)(vcx.mk_local_ex(lhs_decl), vcx.mk_local_ex(rhs_decl));
+                    let val = (prim_res_ty.get_prim_to_snap())(prim_res.upcast_ty());
+                    Ok(vcx.mk_function(function, (lhs_decl, rhs_decl), &[], &[], None, Some(val)))
+                },
                 Cmp => todo!(),
                 Offset => todo!(),
             }

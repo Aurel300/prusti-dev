@@ -68,7 +68,11 @@ pub struct TyPurePrimDataFloat<'vir> {
     pub fp_mul: FunctionIdn<'vir, (vir::CSnap, vir::CSnap), vir::CSnap>,
     pub fp_div: FunctionIdn<'vir, (vir::CSnap, vir::CSnap), vir::CSnap>,
     pub fp_trunc: FunctionIdn<'vir, vir::CSnap, vir::CSnap>,
-    pub fp_is_nan: FunctionIdn<'vir, vir::CSnap, vir::Bool>
+    pub fp_is_nan: FunctionIdn<'vir, vir::CSnap, vir::Bool>,
+    pub fp_lt: FunctionIdn<'vir, (vir::CSnap, vir::CSnap), vir::Bool>,
+    pub fp_leq: FunctionIdn<'vir, (vir::CSnap, vir::CSnap), vir::Bool>,
+    pub fp_gt: FunctionIdn<'vir, (vir::CSnap, vir::CSnap), vir::Bool>,
+    pub fp_geq: FunctionIdn<'vir, (vir::CSnap, vir::CSnap), vir::Bool>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -94,7 +98,11 @@ impl<'vir> TyPurePrimDataFloat<'vir> {
         fp_mul: FunctionIdn<'vir, (vir::CSnap, vir::CSnap), vir::CSnap>,
         fp_div: FunctionIdn<'vir, (vir::CSnap, vir::CSnap), vir::CSnap>,
         fp_trunc: FunctionIdn<'vir, vir::CSnap, vir::CSnap>,
-        fp_is_nan: FunctionIdn<'vir, vir::CSnap, vir::Bool>) -> Self {
+        fp_is_nan: FunctionIdn<'vir, vir::CSnap, vir::Bool>,
+        fp_lt: FunctionIdn<'vir, (vir::CSnap, vir::CSnap), vir::Bool>,
+        fp_leq: FunctionIdn<'vir, (vir::CSnap, vir::CSnap), vir::Bool>,
+        fp_gt: FunctionIdn<'vir, (vir::CSnap, vir::CSnap), vir::Bool>,
+        fp_geq: FunctionIdn<'vir, (vir::CSnap, vir::CSnap), vir::Bool>,) -> Self {
         Self {
             from_bv,
             fp_eq,
@@ -104,7 +112,11 @@ impl<'vir> TyPurePrimDataFloat<'vir> {
             fp_mul,
             fp_div,
             fp_trunc,
-            fp_is_nan
+            fp_is_nan,
+            fp_lt,
+            fp_leq,
+            fp_gt,
+            fp_geq
         }
     }
 }

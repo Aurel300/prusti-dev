@@ -35,3 +35,14 @@ fn foo5(f: f32) -> f32 {
 fn foo6(f: f64) -> f64 {
     f
 }
+
+#[requires(!x.is_nan())]
+#[requires(!y.is_nan())]
+#[ensures(result == if x > y { 4 } else { 2 })]
+fn foo7(x: f32, y: f32) -> u8 {
+    if y < x {
+        4
+    } else {
+        2
+    }
+}

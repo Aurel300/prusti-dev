@@ -87,8 +87,7 @@ impl TaskEncoder for MirBuiltinEnc {
                 Self::handle_checked_bin_op(vcx, deps, *task_key, res_ty, op, l_ty, r_ty)
             }
         })?;
-         Ok((MirBuiltinEncOutput { function }, ()))
-        
+        Ok((MirBuiltinEncOutput { function }, ()))
     }
 
     fn emit_outputs<'vir>(program: &mut task_encoder::Program<'vir>) {
@@ -160,8 +159,9 @@ impl MirBuiltinEnc {
         match prim_res_ty {
             crate::encoders::ty::pure::TyPurePrimData::Native(ty_pure_prim_data_native) => {
                 let prim_arg = (ty_pure_prim_data_native.snap_to_prim)(snap_arg);
-                let mut val =
-                    (ty_pure_prim_data_native.prim_to_snap)(vcx.mk_unary_op_expr(vir::UnOpKind::from(op), prim_arg));
+                let mut val = (ty_pure_prim_data_native.prim_to_snap)(
+                    vcx.mk_unary_op_expr(vir::UnOpKind::from(op), prim_arg),
+                );
                 // Can overflow when doing `- iN::MIN -> iN::MIN`. There is no
                 // `CheckedUnOp`, instead the compiler puts an `TerminatorKind::Assert`
                 // before in debug mode. We should still produce the correct result in
@@ -176,19 +176,16 @@ impl MirBuiltinEnc {
                 }
 
                 Ok(vcx.mk_function(function, (snap_arg_decl,), &[], &[], None, Some(val)))
-            },
-            crate::encoders::ty::pure::TyPurePrimData::Float(ty_pure_prim_data_float) => {
-                match op {
-                    mir::UnOp::Not => unreachable!(),
-                    mir::UnOp::Neg => {
-                        let res = (ty_pure_prim_data_float.fp_neg)(snap_arg);
-                        Ok(vcx.mk_function(function, (snap_arg_decl,), &[], &[], None, Some(res)))
-                    },
-                    mir::UnOp::PtrMetadata => unreachable!(),
+            }
+            crate::encoders::ty::pure::TyPurePrimData::Float(ty_pure_prim_data_float) => match op {
+                mir::UnOp::Not => unreachable!(),
+                mir::UnOp::Neg => {
+                    let res = (ty_pure_prim_data_float.fp_neg)(snap_arg);
+                    Ok(vcx.mk_function(function, (snap_arg_decl,), &[], &[], None, Some(res)))
                 }
+                mir::UnOp::PtrMetadata => unreachable!(),
             },
         }
-        
     }
 
     fn handle_bin_op<'vir>(
@@ -295,22 +292,30 @@ impl MirBuiltinEnc {
                                 .downcast_ty::<vir::Bool>();
                             (
                                 vec![lower_bound, upper_bound],
-                                Self::get_wrapped_val(vcx, viper_val.downcast_ty(), res_ty).upcast_ty(),
+                                Self::get_wrapped_val(vcx, viper_val.downcast_ty(), res_ty)
+                                    .upcast_ty(),
                             )
                         }
                         // Could divide by zero or overflow if divisor is `-1`
                         Div | Rem => {
                             // `0 != arg2 `
                             let pre = vcx
-                                .mk_bin_op_expr(vir::BinOpKind::CmpNe, vcx.mk_int::<0>(), rhs.downcast_ty())
+                                .mk_bin_op_expr(
+                                    vir::BinOpKind::CmpNe,
+                                    vcx.mk_int::<0>(),
+                                    rhs.downcast_ty(),
+                                )
                                 .downcast_ty::<vir::Bool>();
                             let mut pres = vec![pre];
                             let mut val = viper_val;
                             if res_ty.is_signed() {
                                 let min = vcx.get_min_int(res_ty.kind());
                                 // `arg1 != -iN::MIN`
-                                let arg1_cond =
-                                    vcx.mk_bin_op_expr(vir::BinOpKind::CmpNe, lhs.downcast_ty(), min);
+                                let arg1_cond = vcx.mk_bin_op_expr(
+                                    vir::BinOpKind::CmpNe,
+                                    lhs.downcast_ty(),
+                                    min,
+                                );
                                 // `-1 != arg2 `
                                 let arg2_cond = vcx.mk_bin_op_expr(
                                     vir::BinOpKind::CmpNe,
@@ -400,96 +405,202 @@ impl MirBuiltinEnc {
                         Cmp => unreachable!(),
                     }
                 };
-                let val: &'vir vir::ExprGenData<'vir, (), !, CSnap> = (prim_res_ty.expect_native().prim_to_snap)(val);
+                let val: &'vir vir::ExprGenData<'vir, (), !, CSnap> =
+                    (prim_res_ty.expect_native().prim_to_snap)(val);
                 Ok(vcx.mk_function(
                     function,
                     (lhs_decl, rhs_decl),
                     vcx.alloc_slice(&pres),
                     &[],
                     None,
-                    Some(val)
+                    Some(val),
                 ))
-        } 
-        crate::encoders::ty::pure::TyPurePrimData::Float(float_type) => {
-            match op {
-                Add => {
-                    let res = (float_type.fp_add)(vcx.mk_local_ex(lhs_decl), vcx.mk_local_ex(rhs_decl));
-                    Ok(vcx.mk_function(function, (lhs_decl, rhs_decl), &[], &[], None, Some(res)))
-                },
-                AddUnchecked => unreachable!(),
-                AddWithOverflow => unreachable!(),
-                Sub => {
-                    let res = (float_type.fp_sub)(vcx.mk_local_ex(lhs_decl), vcx.mk_local_ex(rhs_decl));
-                    Ok(vcx.mk_function(function, (lhs_decl, rhs_decl), &[], &[], None, Some(res)))
-                },
-                SubUnchecked => unreachable!(),
-                SubWithOverflow => unreachable!(),
-                Mul => {
-                    let res = (float_type.fp_mul)(vcx.mk_local_ex(lhs_decl), vcx.mk_local_ex(rhs_decl));
-                    Ok(vcx.mk_function(function, (lhs_decl, rhs_decl), &[], &[], None, Some(res)))
-                },
-                MulUnchecked => unreachable!(),
-                MulWithOverflow => unreachable!(),
-                Div => {
-                    let res = (float_type.fp_div)(vcx.mk_local_ex(lhs_decl), vcx.mk_local_ex(rhs_decl));
-                    Ok(vcx.mk_function(function, (lhs_decl, rhs_decl), &[], &[], None, Some(res)))
-                },
-                Rem => {
-                    // SMT uses n = x / y -> round to nearest 
-                    // Rust truncates
-                    // Therefore we cannot use SMT rem
-                    let float_lhs = vcx.mk_local_ex(lhs_decl);
-                    let float_rhs = vcx.mk_local_ex(rhs_decl);
-                    let div_res = (float_type.fp_div) (float_lhs, float_rhs);
-                    let div_trunc = (float_type.fp_trunc) (div_res);
-                    let mul_res = (float_type.fp_mul) (div_trunc, float_rhs);
-                    let res = (float_type.fp_sub) (float_lhs, mul_res);
-                    Ok(vcx.mk_function(function, (lhs_decl, rhs_decl), &[], &[], None, Some(res)))
-                },
-                BitXor => unreachable!(),
-                BitAnd => unreachable!(),
-                BitOr => unreachable!(),
-                Shl => unreachable!(),
-                ShlUnchecked => unreachable!(),
-                Shr => unreachable!(),
-                ShrUnchecked => unreachable!(),
-                Eq => {
-                    let prim_res= (float_type.fp_eq)(vcx.mk_local_ex(lhs_decl), vcx.mk_local_ex(rhs_decl));
-                    let val = (prim_res_ty.get_prim_to_snap())(prim_res.upcast_ty());
-                    Ok(vcx.mk_function(function, (lhs_decl, rhs_decl), &[], &[], None, Some(val)))
-                },
-                Lt => {
-                    let prim_res = (float_type.fp_lt)(vcx.mk_local_ex(lhs_decl), vcx.mk_local_ex(rhs_decl));
-                    let val = (prim_res_ty.get_prim_to_snap())(prim_res.upcast_ty());
-                    Ok(vcx.mk_function(function, (lhs_decl, rhs_decl), &[], &[], None, Some(val)))
-                },
-                Le => {
-                    let prim_res = (float_type.fp_leq)(vcx.mk_local_ex(lhs_decl), vcx.mk_local_ex(rhs_decl));
-                    let val = (prim_res_ty.get_prim_to_snap())(prim_res.upcast_ty());
-                    Ok(vcx.mk_function(function, (lhs_decl, rhs_decl), &[], &[], None, Some(val)))
-                },
-                Ne => {
-                    let prim_res= (float_type.fp_eq)(vcx.mk_local_ex(lhs_decl), vcx.mk_local_ex(rhs_decl));
-                    let neq = vcx
-                        .mk_unary_op_expr(vir::UnOpKind::Not, prim_res.upcast_ty());
-                    let val = (prim_res_ty.get_prim_to_snap())(neq);
-                    Ok(vcx.mk_function(function, (lhs_decl, rhs_decl), &[], &[], None, Some(val)))
-                },
-                Ge => {
-                    let prim_res = (float_type.fp_geq)(vcx.mk_local_ex(lhs_decl), vcx.mk_local_ex(rhs_decl));
-                    let val = (prim_res_ty.get_prim_to_snap())(prim_res.upcast_ty());
-                    Ok(vcx.mk_function(function, (lhs_decl, rhs_decl), &[], &[], None, Some(val)))
-                },
-                Gt => {
-                    let prim_res = (float_type.fp_gt)(vcx.mk_local_ex(lhs_decl), vcx.mk_local_ex(rhs_decl));
-                    let val = (prim_res_ty.get_prim_to_snap())(prim_res.upcast_ty());
-                    Ok(vcx.mk_function(function, (lhs_decl, rhs_decl), &[], &[], None, Some(val)))
-                },
-                Cmp => todo!(), // maybe don't implement here but as a stdlib specification
-                Offset => unreachable!(),
             }
-            
-        }
+            crate::encoders::ty::pure::TyPurePrimData::Float(float_type) => {
+                match op {
+                    Add => {
+                        let res = (float_type.fp_add)(
+                            vcx.mk_local_ex(lhs_decl),
+                            vcx.mk_local_ex(rhs_decl),
+                        );
+                        Ok(vcx.mk_function(
+                            function,
+                            (lhs_decl, rhs_decl),
+                            &[],
+                            &[],
+                            None,
+                            Some(res),
+                        ))
+                    }
+                    AddUnchecked => unreachable!(),
+                    AddWithOverflow => unreachable!(),
+                    Sub => {
+                        let res = (float_type.fp_sub)(
+                            vcx.mk_local_ex(lhs_decl),
+                            vcx.mk_local_ex(rhs_decl),
+                        );
+                        Ok(vcx.mk_function(
+                            function,
+                            (lhs_decl, rhs_decl),
+                            &[],
+                            &[],
+                            None,
+                            Some(res),
+                        ))
+                    }
+                    SubUnchecked => unreachable!(),
+                    SubWithOverflow => unreachable!(),
+                    Mul => {
+                        let res = (float_type.fp_mul)(
+                            vcx.mk_local_ex(lhs_decl),
+                            vcx.mk_local_ex(rhs_decl),
+                        );
+                        Ok(vcx.mk_function(
+                            function,
+                            (lhs_decl, rhs_decl),
+                            &[],
+                            &[],
+                            None,
+                            Some(res),
+                        ))
+                    }
+                    MulUnchecked => unreachable!(),
+                    MulWithOverflow => unreachable!(),
+                    Div => {
+                        let res = (float_type.fp_div)(
+                            vcx.mk_local_ex(lhs_decl),
+                            vcx.mk_local_ex(rhs_decl),
+                        );
+                        Ok(vcx.mk_function(
+                            function,
+                            (lhs_decl, rhs_decl),
+                            &[],
+                            &[],
+                            None,
+                            Some(res),
+                        ))
+                    }
+                    Rem => {
+                        // SMT uses n = x / y -> round to nearest
+                        // Rust truncates
+                        // Therefore we cannot use SMT rem
+                        let float_lhs = vcx.mk_local_ex(lhs_decl);
+                        let float_rhs = vcx.mk_local_ex(rhs_decl);
+                        let div_res = (float_type.fp_div)(float_lhs, float_rhs);
+                        let div_trunc = (float_type.fp_trunc)(div_res);
+                        let mul_res = (float_type.fp_mul)(div_trunc, float_rhs);
+                        let res = (float_type.fp_sub)(float_lhs, mul_res);
+                        Ok(vcx.mk_function(
+                            function,
+                            (lhs_decl, rhs_decl),
+                            &[],
+                            &[],
+                            None,
+                            Some(res),
+                        ))
+                    }
+                    BitXor => unreachable!(),
+                    BitAnd => unreachable!(),
+                    BitOr => unreachable!(),
+                    Shl => unreachable!(),
+                    ShlUnchecked => unreachable!(),
+                    Shr => unreachable!(),
+                    ShrUnchecked => unreachable!(),
+                    Eq => {
+                        let prim_res = (float_type.fp_eq)(
+                            vcx.mk_local_ex(lhs_decl),
+                            vcx.mk_local_ex(rhs_decl),
+                        );
+                        let val = (prim_res_ty.get_prim_to_snap())(prim_res.upcast_ty());
+                        Ok(vcx.mk_function(
+                            function,
+                            (lhs_decl, rhs_decl),
+                            &[],
+                            &[],
+                            None,
+                            Some(val),
+                        ))
+                    }
+                    Lt => {
+                        let prim_res = (float_type.fp_lt)(
+                            vcx.mk_local_ex(lhs_decl),
+                            vcx.mk_local_ex(rhs_decl),
+                        );
+                        let val = (prim_res_ty.get_prim_to_snap())(prim_res.upcast_ty());
+                        Ok(vcx.mk_function(
+                            function,
+                            (lhs_decl, rhs_decl),
+                            &[],
+                            &[],
+                            None,
+                            Some(val),
+                        ))
+                    }
+                    Le => {
+                        let prim_res = (float_type.fp_leq)(
+                            vcx.mk_local_ex(lhs_decl),
+                            vcx.mk_local_ex(rhs_decl),
+                        );
+                        let val = (prim_res_ty.get_prim_to_snap())(prim_res.upcast_ty());
+                        Ok(vcx.mk_function(
+                            function,
+                            (lhs_decl, rhs_decl),
+                            &[],
+                            &[],
+                            None,
+                            Some(val),
+                        ))
+                    }
+                    Ne => {
+                        let prim_res = (float_type.fp_eq)(
+                            vcx.mk_local_ex(lhs_decl),
+                            vcx.mk_local_ex(rhs_decl),
+                        );
+                        let neq = vcx.mk_unary_op_expr(vir::UnOpKind::Not, prim_res.upcast_ty());
+                        let val = (prim_res_ty.get_prim_to_snap())(neq);
+                        Ok(vcx.mk_function(
+                            function,
+                            (lhs_decl, rhs_decl),
+                            &[],
+                            &[],
+                            None,
+                            Some(val),
+                        ))
+                    }
+                    Ge => {
+                        let prim_res = (float_type.fp_geq)(
+                            vcx.mk_local_ex(lhs_decl),
+                            vcx.mk_local_ex(rhs_decl),
+                        );
+                        let val = (prim_res_ty.get_prim_to_snap())(prim_res.upcast_ty());
+                        Ok(vcx.mk_function(
+                            function,
+                            (lhs_decl, rhs_decl),
+                            &[],
+                            &[],
+                            None,
+                            Some(val),
+                        ))
+                    }
+                    Gt => {
+                        let prim_res = (float_type.fp_gt)(
+                            vcx.mk_local_ex(lhs_decl),
+                            vcx.mk_local_ex(rhs_decl),
+                        );
+                        let val = (prim_res_ty.get_prim_to_snap())(prim_res.upcast_ty());
+                        Ok(vcx.mk_function(
+                            function,
+                            (lhs_decl, rhs_decl),
+                            &[],
+                            &[],
+                            None,
+                            Some(val),
+                        ))
+                    }
+                    Cmp => todo!(), // maybe don't implement here but as a stdlib specification
+                    Offset => unreachable!(),
+                }
+            }
         }
     }
 

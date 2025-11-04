@@ -200,7 +200,10 @@ impl<'a> AstFactory<'a> {
                 self.jni.new_seq(&map_to_jobjects!(functions)),
                 self.jni.new_seq(&map_to_jobjects!(axioms)),
                 self.jni.new_seq(&map_to_jobjects!(type_vars)),
-                self.jni.new_option(Some(self.jni.new_map(&[(self.jni.new_string("SMTLIB"), self.jni.new_string(interpretation))])))
+                self.jni.new_option(Some(self.jni.new_map(&[(
+                    self.jni.new_string("SMTLIB"),
+                    self.jni.new_string(interpretation)
+                )])))
             )
         }
     }
@@ -212,14 +215,18 @@ impl<'a> AstFactory<'a> {
         typ: Type,
         unique: bool,
         domain_name: &str,
-        interpretation: &str
+        interpretation: &str,
     ) -> DomainFunc<'a> {
         let obj = self.jni.unwrap_result(ast::DomainFunc::with(self.env).new(
             self.jni.new_string(name),
             self.jni.new_seq(&map_to_jobjects!(formal_args)),
             typ.to_jobject(),
             unique,
-            self.jni.new_option(if interpretation.is_empty(){ None } else { Some(self.jni.new_string(interpretation)) }),
+            self.jni.new_option(if interpretation.is_empty() {
+                None
+            } else {
+                Some(self.jni.new_string(interpretation))
+            }),
             self.no_position().to_jobject(),
             self.no_info(),
             self.jni.new_string(domain_name),

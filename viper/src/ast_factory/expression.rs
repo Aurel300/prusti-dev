@@ -1025,7 +1025,7 @@ impl<'a> AstFactory<'a> {
         args: &[Expr],
         return_type: Type,
         pos: Position,
-        interpretation: &str
+        interpretation: &str,
     ) -> Expr<'a> {
         let backend_func_app_wrapper = ast::BackendFuncApp::with(self.env);
         let obj = self.jni.unwrap_result(backend_func_app_wrapper.new(
@@ -1035,7 +1035,8 @@ impl<'a> AstFactory<'a> {
             self.no_info(),
             return_type.to_jobject(),
             self.jni.new_string(interpretation),
-            self.no_trafos()));
+            self.no_trafos(),
+        ));
         Expr::new(obj)
     }
 

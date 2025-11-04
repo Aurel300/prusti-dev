@@ -59,7 +59,7 @@ impl TaskEncoder for TypeOfEnc {
                 &[],
                 &[],
                 vcx.alloc_slice(&typeof_fns),
-                None
+                None,
             );
             program.add_domain(domain);
         })

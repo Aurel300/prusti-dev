@@ -1029,7 +1029,9 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                                 None => {
                                     // mir::Rvalue::Discriminant documents "Returns zero for types without discriminant"
                                     let zero = self.vcx.mk_uint::<0>();
-                                    (e_rvalue_ty.expect_primitive().get_prim_to_snap())(zero.upcast_ty())
+                                    (e_rvalue_ty.expect_primitive().get_prim_to_snap())(
+                                        zero.upcast_ty(),
+                                    )
                                 }
                             }
                             .upcast_ty(),
@@ -1221,8 +1223,9 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                 self.current_fpcs = Some(current_fpcs);
                 otherwise_stmts.push(self.set_from_to_flag(location.block, targets.otherwise()));
 
-                let discr_ex =
-                    (discr_ty.expect_native().snap_to_prim)(self.encode_operand_snap(discr).downcast_ty());
+                let discr_ex = (discr_ty.expect_native().snap_to_prim)(
+                    self.encode_operand_snap(discr).downcast_ty(),
+                );
                 self.vcx.mk_goto_if_stmt(
                     discr_ex.as_dyn(), // self.vcx.mk_local_ex(discr_name),
                     goto_targets,

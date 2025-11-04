@@ -592,7 +592,7 @@ impl<'tcx> VirCtxt<'tcx> {
         &'vir self,
         ident: FunctionIdn<'vir, A, impl CompType>,
         unique: bool,
-        interpretation: Option<&'static str>
+        interpretation: Option<&'static str>,
     ) -> DomainFunction<'vir> {
         let params = A::params(ident.arity());
         self.alloc(DomainFunctionData {
@@ -602,8 +602,8 @@ impl<'tcx> VirCtxt<'tcx> {
             ret: ident.result().as_dyn(),
             interpretation: match interpretation {
                 None => "",
-                Some(s) => s
-            }
+                Some(s) => s,
+            },
         })
     }
 
@@ -614,7 +614,7 @@ impl<'tcx> VirCtxt<'tcx> {
         pres: &'vir [ExprGenBool<'vir, Curr, Next>],
         posts: &'vir [ExprGenBool<'vir, Curr, Next>],
         decreases: Option<DecreasesGen<'vir, Curr, Next>>,
-        expr: Option<ExprGen<'vir, Curr, Next, T>>
+        expr: Option<ExprGen<'vir, Curr, Next, T>>,
     ) -> FunctionGen<'vir, Curr, Next> {
         let name = ident.name().to_str();
         let ret = ident.result();
@@ -646,7 +646,7 @@ impl<'tcx> VirCtxt<'tcx> {
             pres,
             posts,
             decreases: decreases.unwrap_or(&DecreasesGenData::None),
-            expr: expr.map(|e| e.as_dyn())
+            expr: expr.map(|e| e.as_dyn()),
         })
     }
 
@@ -702,14 +702,17 @@ impl<'tcx> VirCtxt<'tcx> {
         typarams: &'vir [DomainParam<'vir>],
         axioms: &'vir [DomainAxiomGen<'vir, Curr, Next>],
         functions: &'vir [DomainFunction<'vir>],
-        interpretation: Option<&'static str>
+        interpretation: Option<&'static str>,
     ) -> DomainGen<'vir, Curr, Next> {
         self.alloc(DomainGenData {
             name: name.to_str(),
             typarams,
             axioms,
             functions,
-            interpretation: match interpretation {None => "", Some(s) => s},
+            interpretation: match interpretation {
+                None => "",
+                Some(s) => s,
+            },
         })
     }
 

@@ -36,7 +36,7 @@ fn build_program<'a>(ast: &'a AstFactory) -> Program<'a> {
         ),
         false,
         "Wrapper",
-        ""
+        "",
     );
 
     let unwrap_domain_function = ast.domain_func(
@@ -52,7 +52,7 @@ fn build_program<'a>(ast: &'a AstFactory) -> Program<'a> {
         ast.type_var("T"),
         false,
         "Wrapper",
-        ""
+        "",
     );
 
     let wrapper_domain = ast.domain(
@@ -80,7 +80,7 @@ fn build_program<'a>(ast: &'a AstFactory) -> Program<'a> {
             "Wrapper",
         )],
         &[ast.type_var("T")],
-        ""
+        "",
     );
 
     let value_field = ast.field("value", ast.int_type());
@@ -101,7 +101,7 @@ fn build_program<'a>(ast: &'a AstFactory) -> Program<'a> {
                 ),
                 ast.int_lit(0),
             ),
-        )
+        ),
     );
 
     let even_num_box_predicate = ast.predicate(
@@ -127,7 +127,7 @@ fn build_program<'a>(ast: &'a AstFactory) -> Program<'a> {
                     ast.no_position(),
                 ),
             ),
-        )
+        ),
     );
 
     let method = ast.method(

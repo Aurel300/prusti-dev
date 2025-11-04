@@ -73,27 +73,34 @@ pub struct TyPurePrimDataFloat<'vir> {
     pub fp_leq: FunctionIdn<'vir, (vir::CSnap, vir::CSnap), vir::Bool>,
     pub fp_gt: FunctionIdn<'vir, (vir::CSnap, vir::CSnap), vir::Bool>,
     pub fp_geq: FunctionIdn<'vir, (vir::CSnap, vir::CSnap), vir::Bool>,
-    pub fp_neg: FunctionIdn<'vir, vir::CSnap, vir::CSnap>
+    pub fp_neg: FunctionIdn<'vir, vir::CSnap, vir::CSnap>,
 }
 
 #[derive(Debug, Clone, Copy)]
 pub enum TyPurePrimData<'vir> {
     Native(TyPurePrimDataNative<'vir>),
-    Float(TyPurePrimDataFloat<'vir>)
+    Float(TyPurePrimDataFloat<'vir>),
 }
 
 impl<'vir> TyPurePrimDataNative<'vir> {
-    pub fn new(prim_type: vir::TypePrim<'vir>, snap_to_prim: FunctionIdn<'vir, vir::CSnap, vir::Prim>, prim_to_snap: FunctionIdn<'vir, vir::Prim, vir::CSnap>) -> Self {
+    pub fn new(
+        prim_type: vir::TypePrim<'vir>,
+        snap_to_prim: FunctionIdn<'vir, vir::CSnap, vir::Prim>,
+        prim_to_snap: FunctionIdn<'vir, vir::Prim, vir::CSnap>,
+    ) -> Self {
         Self {
             prim_type,
             snap_to_prim,
-            prim_to_snap
+            prim_to_snap,
         }
     }
 }
 
 impl<'vir> TyPurePrimDataFloat<'vir> {
-    pub fn new(from_bv: FunctionIdn<'vir, vir::CSnap, vir::CSnap>, fp_eq: FunctionIdn<'vir, (vir::CSnap, vir::CSnap), vir::Bool>, prim_to_snap: FunctionIdn<'vir, vir::Prim, vir::CSnap>,
+    pub fn new(
+        from_bv: FunctionIdn<'vir, vir::CSnap, vir::CSnap>,
+        fp_eq: FunctionIdn<'vir, (vir::CSnap, vir::CSnap), vir::Bool>,
+        prim_to_snap: FunctionIdn<'vir, vir::Prim, vir::CSnap>,
         fp_add: FunctionIdn<'vir, (vir::CSnap, vir::CSnap), vir::CSnap>,
         fp_sub: FunctionIdn<'vir, (vir::CSnap, vir::CSnap), vir::CSnap>,
         fp_mul: FunctionIdn<'vir, (vir::CSnap, vir::CSnap), vir::CSnap>,
@@ -104,7 +111,8 @@ impl<'vir> TyPurePrimDataFloat<'vir> {
         fp_leq: FunctionIdn<'vir, (vir::CSnap, vir::CSnap), vir::Bool>,
         fp_gt: FunctionIdn<'vir, (vir::CSnap, vir::CSnap), vir::Bool>,
         fp_geq: FunctionIdn<'vir, (vir::CSnap, vir::CSnap), vir::Bool>,
-        fp_neg: FunctionIdn<'vir, vir::CSnap, vir::CSnap>) -> Self {
+        fp_neg: FunctionIdn<'vir, vir::CSnap, vir::CSnap>,
+    ) -> Self {
         Self {
             from_bv,
             fp_eq,
@@ -119,7 +127,7 @@ impl<'vir> TyPurePrimDataFloat<'vir> {
             fp_leq,
             fp_gt,
             fp_geq,
-            fp_neg
+            fp_neg,
         }
     }
 }
@@ -128,14 +136,14 @@ impl<'vir> TyPurePrimData<'vir> {
     pub fn expect_native(&'vir self) -> &TyPurePrimDataNative<'vir> {
         match self {
             TyPurePrimData::Native(native) => native,
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     }
 
     pub fn expect_float(&'vir self) -> &TyPurePrimDataFloat<'vir> {
         match self {
             TyPurePrimData::Float(fl) => fl,
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     }
 }
@@ -261,7 +269,9 @@ impl TaskEncoder for TyPureEnc {
                 }
                 TySpecifics::Primitive(prim) => {
                     let builder = builder.set_domain_builder();
-                    TySpecifics::Primitive(super::kinds::primitive::ty_pure(vcx, prim, deps, builder)?)
+                    TySpecifics::Primitive(super::kinds::primitive::ty_pure(
+                        vcx, prim, deps, builder,
+                    )?)
                 }
                 TySpecifics::ImmRef(immref) => {
                     let builder = builder.set_adt_builder();
@@ -369,7 +379,7 @@ pub(crate) struct AdtBuilderData<'vir> {
 pub(crate) struct DomainBuilderData<'vir> {
     axioms: Vec<vir::DomainAxiom<'vir>>,
     functions: Vec<vir::DomainFunction<'vir>>,
-    interpretation: Option<&'static str>
+    interpretation: Option<&'static str>,
 }
 
 #[derive(Clone, Copy)]
@@ -454,7 +464,7 @@ impl<'vir> TyPureBuilder<'vir> {
                 false_,
                 false_,
                 None,
-                None
+                None,
             )
         });
         let kind = self.build_kind();
@@ -601,7 +611,7 @@ impl<'vir> DomainBuilder<'vir> {
         name: &str,
         args: A::Tys<'vir>,
         ret: Type<'vir, T>,
-        interpretation: Option<&'static str>
+        interpretation: Option<&'static str>,
     ) -> FunctionIdn<'vir, A, T> {
         let name = vir::vir_format!(self.vcx, "{}_{name}", self.name);
         let ident = FunctionIdn::new(vir::ViperIdent::new(name), args, ret);
@@ -624,51 +634,53 @@ impl<'vir> DomainBuilder<'vir> {
 impl<'vir> TyPurePrimData<'vir> {
     pub fn get_prim_to_snap(&self) -> vir::FunctionIdn<'vir, vir::Prim, vir::CSnap> {
         match self {
-            TyPurePrimData::Native(ty_pure_prim_data_native) => ty_pure_prim_data_native.prim_to_snap,
+            TyPurePrimData::Native(ty_pure_prim_data_native) => {
+                ty_pure_prim_data_native.prim_to_snap
+            }
             TyPurePrimData::Float(ty_pure_prim_data_float) => ty_pure_prim_data_float.prim_to_snap,
         }
     }
 
     pub fn expr_from_bits(&self, ty: ty::Ty<'vir>, value: u128) -> vir::ExprPrim<'vir> {
         match self {
-            TyPurePrimData::Native(prim) => {
-                match prim.prim_type.kind() {
-                    vir::TypeKind::Bool => {
-                        vir::with_vcx(|vcx| vcx.mk_const_expr(vir::ConstData::Bool(value != 0)))
-                    }
-                    vir::TypeKind::Int => {
-                        let (bit_width, signed) = match ty.kind() {
-                            TyKind::Int(IntTy::Isize) => ((std::mem::size_of::<isize>() * 8) as u64, true),
-                            TyKind::Int(ty) => (ty.bit_width().unwrap(), true),
-                            TyKind::Uint(UintTy::Usize) => {
-                                ((std::mem::size_of::<usize>() * 8) as u64, true)
-                            }
-                            TyKind::Uint(ty) => (ty.bit_width().unwrap(), false),
-                            TyKind::Char => (32, false),
-                            kind => unreachable!("{kind:?}"),
-                        };
-                        let size = abi::Size::from_bits(bit_width);
-                        let negative_value = if signed {
-                            let value = size.sign_extend(value);
-                            Some(value).filter(|value| value.is_negative())
-                        } else {
-                            None
-                        };
-                        match negative_value {
-                            Some(value) => vir::with_vcx(|vcx| {
-                                let value = vcx.mk_const_expr(vir::ConstData::Int(value.unsigned_abs()));
-                                vcx.mk_unary_op_expr(vir::UnOpKind::Neg, value)
-                            }),
-                            None => vir::with_vcx(|vcx| vcx.mk_const_expr(vir::ConstData::Int(value))),
-                        }
-                    }
-                    ref k => unreachable!("{k:?}"),
+            TyPurePrimData::Native(prim) => match prim.prim_type.kind() {
+                vir::TypeKind::Bool => {
+                    vir::with_vcx(|vcx| vcx.mk_const_expr(vir::ConstData::Bool(value != 0)))
                 }
+                vir::TypeKind::Int => {
+                    let (bit_width, signed) = match ty.kind() {
+                        TyKind::Int(IntTy::Isize) => {
+                            ((std::mem::size_of::<isize>() * 8) as u64, true)
+                        }
+                        TyKind::Int(ty) => (ty.bit_width().unwrap(), true),
+                        TyKind::Uint(UintTy::Usize) => {
+                            ((std::mem::size_of::<usize>() * 8) as u64, true)
+                        }
+                        TyKind::Uint(ty) => (ty.bit_width().unwrap(), false),
+                        TyKind::Char => (32, false),
+                        kind => unreachable!("{kind:?}"),
+                    };
+                    let size = abi::Size::from_bits(bit_width);
+                    let negative_value = if signed {
+                        let value = size.sign_extend(value);
+                        Some(value).filter(|value| value.is_negative())
+                    } else {
+                        None
+                    };
+                    match negative_value {
+                        Some(value) => vir::with_vcx(|vcx| {
+                            let value =
+                                vcx.mk_const_expr(vir::ConstData::Int(value.unsigned_abs()));
+                            vcx.mk_unary_op_expr(vir::UnOpKind::Neg, value)
+                        }),
+                        None => vir::with_vcx(|vcx| vcx.mk_const_expr(vir::ConstData::Int(value))),
+                    }
+                }
+                ref k => unreachable!("{k:?}"),
             },
             TyPurePrimData::Float(_) => {
                 vir::with_vcx(|vcx| vcx.mk_const_expr(vir::ConstData::Int(value)))
-            },
+            }
         }
-        
     }
 }

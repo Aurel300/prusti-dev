@@ -1,6 +1,16 @@
-use crate::encoders::{ty::{
-    bitvec::{BitVecEnc, BitVecSize}, generics::GArgs, impure::{PredicateBuilder, TyImpureEnc, TyImpurePrimitive}, pure::{DomainBuilder, TyPureEnc, TyPureEncError, TyPurePrimData, TyPurePrimDataFloat, TyPurePrimDataNative, TyPurePrimitive}, RustPrimitive,
-}, TyUsePureEnc};
+use crate::encoders::{
+    TyUsePureEnc,
+    ty::{
+        RustPrimitive,
+        bitvec::{BitVecEnc, BitVecSize},
+        generics::GArgs,
+        impure::{PredicateBuilder, TyImpureEnc, TyImpurePrimitive},
+        pure::{
+            DomainBuilder, TyPureEnc, TyPureEncError, TyPurePrimData, TyPurePrimDataFloat,
+            TyPurePrimDataNative, TyPurePrimitive,
+        },
+    },
+};
 use prusti_rustc_interface::middle::ty;
 use task_encoder::{EncodeFullError, TaskEncoderDependencies};
 use vir::{CSnap, CastType, Dyn, HasType, VirCtxt};
@@ -19,10 +29,8 @@ pub(crate) fn ty_pure<'vir>(
         ty::TyKind::Float(ty::FloatTy::F32) => Some("(_ FloatingPoint 8 24)"),
         ty::TyKind::Float(ty::FloatTy::F64) => Some("(_ FloatingPoint 11 53)"),
         ty::TyKind::Float(ty::FloatTy::F128) => Some("(_ FloatingPoint 15 113)"),
-        _ => None
+        _ => None,
     };
-
-    
 
     let prim_type: vir::TypePrim<'vir> = match ty_kind {
         ty::TyKind::Bool => vir::TYPE_BOOL.upcast_ty(),
@@ -79,76 +87,139 @@ pub(crate) fn ty_pure<'vir>(
                 }
             };
 
-            Ok(TyPurePrimData::Native(
-                TyPurePrimDataNative::new(
-                    prim_type,
-                    value_ident,
-                    cons_ident,
-                )
-            ))
-        },
+            Ok(TyPurePrimData::Native(TyPurePrimDataNative::new(
+                prim_type,
+                value_ident,
+                cons_ident,
+            )))
+        }
         Some(i) => {
             builder.set_interpretation(i);
 
-            let fp_eq = builder.function("eq", (builder.self_type(), builder.self_type()), vir::TYPE_BOOL, Some("fp.eq"));
+            let fp_eq = builder.function(
+                "eq",
+                (builder.self_type(), builder.self_type()),
+                vir::TYPE_BOOL,
+                Some("fp.eq"),
+            );
 
-            let fp_add = builder.function("add", (builder.self_type(), builder.self_type()), builder.self_type(), Some("fp.add RNE"));
+            let fp_add = builder.function(
+                "add",
+                (builder.self_type(), builder.self_type()),
+                builder.self_type(),
+                Some("fp.add RNE"),
+            );
 
-            let fp_sub = builder.function("sub", (builder.self_type(), builder.self_type()), builder.self_type(), Some("fp.sub RNE"));
+            let fp_sub = builder.function(
+                "sub",
+                (builder.self_type(), builder.self_type()),
+                builder.self_type(),
+                Some("fp.sub RNE"),
+            );
 
-            let fp_mul = builder.function("mul", (builder.self_type(), builder.self_type()), builder.self_type(), Some("fp.mul RNE"));
+            let fp_mul = builder.function(
+                "mul",
+                (builder.self_type(), builder.self_type()),
+                builder.self_type(),
+                Some("fp.mul RNE"),
+            );
 
-            let fp_div = builder.function("div", (builder.self_type(), builder.self_type()), builder.self_type(), Some("fp.div RNE"));
+            let fp_div = builder.function(
+                "div",
+                (builder.self_type(), builder.self_type()),
+                builder.self_type(),
+                Some("fp.div RNE"),
+            );
 
-            let fp_trunc = builder.function("trunc", builder.self_type(), builder.self_type(), Some("fp.roundToIntegral RTZ"));
+            let fp_trunc = builder.function(
+                "trunc",
+                builder.self_type(),
+                builder.self_type(),
+                Some("fp.roundToIntegral RTZ"),
+            );
 
-            let fp_is_nan = builder.function("is_nan", builder.self_type(), vir::TYPE_BOOL, Some("fp.isNaN"));
+            let fp_is_nan = builder.function(
+                "is_nan",
+                builder.self_type(),
+                vir::TYPE_BOOL,
+                Some("fp.isNaN"),
+            );
 
-            let fp_lt = builder.function("lt", (builder.self_type(), builder.self_type()), vir::TYPE_BOOL, Some("fp.lt"));
-            let fp_leq = builder.function("leq", (builder.self_type(), builder.self_type()), vir::TYPE_BOOL, Some("fp.leq"));
-            let fp_geq = builder.function("geq", (builder.self_type(), builder.self_type()), vir::TYPE_BOOL, Some("fp.geq"));
-            let fp_gt = builder.function("gt", (builder.self_type(), builder.self_type()), vir::TYPE_BOOL, Some("fp.gt"));
-            let fp_neg = builder.function("neg", builder.self_type(), builder.self_type(), Some("fp.neg"));
+            let fp_lt = builder.function(
+                "lt",
+                (builder.self_type(), builder.self_type()),
+                vir::TYPE_BOOL,
+                Some("fp.lt"),
+            );
+            let fp_leq = builder.function(
+                "leq",
+                (builder.self_type(), builder.self_type()),
+                vir::TYPE_BOOL,
+                Some("fp.leq"),
+            );
+            let fp_geq = builder.function(
+                "geq",
+                (builder.self_type(), builder.self_type()),
+                vir::TYPE_BOOL,
+                Some("fp.geq"),
+            );
+            let fp_gt = builder.function(
+                "gt",
+                (builder.self_type(), builder.self_type()),
+                vir::TYPE_BOOL,
+                Some("fp.gt"),
+            );
+            let fp_neg = builder.function(
+                "neg",
+                builder.self_type(),
+                builder.self_type(),
+                Some("fp.neg"),
+            );
 
             let bit_vec = deps.require_dep::<BitVecEnc>(match ty_kind {
-                    ty::TyKind::Float(ty::FloatTy::F16) => BitVecSize::BitVec16,
-                    ty::TyKind::Float(ty::FloatTy::F32) => BitVecSize::BitVec32,
-                    ty::TyKind::Float(ty::FloatTy::F64) => BitVecSize::BitVec64,
-                    ty::TyKind::Float(ty::FloatTy::F128) => BitVecSize::BitVec128,
-                    _ => unreachable!()})?;
-            
-            let from_bv = builder.function("from_bv", (bit_vec.domain)(), builder.self_type(), match ty_kind {
-                ty::TyKind::Float(ty::FloatTy::F16) => Some("(_ to_fp 5 11)"),
-                ty::TyKind::Float(ty::FloatTy::F32) => Some("(_ to_fp 8 24)"),
-                ty::TyKind::Float(ty::FloatTy::F64) => Some("(_ to_fp 11 53)"),
-                ty::TyKind::Float(ty::FloatTy::F128) => Some("(_ to_fp 15 113)"),
-                _ => unreachable!()
-            });
+                ty::TyKind::Float(ty::FloatTy::F16) => BitVecSize::BitVec16,
+                ty::TyKind::Float(ty::FloatTy::F32) => BitVecSize::BitVec32,
+                ty::TyKind::Float(ty::FloatTy::F64) => BitVecSize::BitVec64,
+                ty::TyKind::Float(ty::FloatTy::F128) => BitVecSize::BitVec128,
+                _ => unreachable!(),
+            })?;
 
-            let prim_to_snap = builder.function("prim_to_snap", prim_type, builder.self_type(), None);
+            let from_bv = builder.function(
+                "from_bv",
+                (bit_vec.domain)(),
+                builder.self_type(),
+                match ty_kind {
+                    ty::TyKind::Float(ty::FloatTy::F16) => Some("(_ to_fp 5 11)"),
+                    ty::TyKind::Float(ty::FloatTy::F32) => Some("(_ to_fp 8 24)"),
+                    ty::TyKind::Float(ty::FloatTy::F64) => Some("(_ to_fp 11 53)"),
+                    ty::TyKind::Float(ty::FloatTy::F128) => Some("(_ to_fp 15 113)"),
+                    _ => unreachable!(),
+                },
+            );
+
+            let prim_to_snap =
+                builder.function("prim_to_snap", prim_type, builder.self_type(), None);
 
             builder.axiom("prim_to_snap", vir::expr! {
                 forall i: [prim_type] :: {[prim_to_snap](i)} ([prim_to_snap(i)]) == ([from_bv]([bit_vec.from_int](i)))
             });
 
-            Ok(TyPurePrimData::Float(
-                TyPurePrimDataFloat::new(
-                    from_bv,
-                    fp_eq,
-                    prim_to_snap,
-                    fp_add,
-                    fp_sub,
-                    fp_mul,
-                    fp_div,
-                    fp_trunc,
-                    fp_is_nan,
-                    fp_lt,
-                    fp_leq,
-                    fp_gt,
-                    fp_geq,
-                    fp_neg
-                )
-            ))
+            Ok(TyPurePrimData::Float(TyPurePrimDataFloat::new(
+                from_bv,
+                fp_eq,
+                prim_to_snap,
+                fp_add,
+                fp_sub,
+                fp_mul,
+                fp_div,
+                fp_trunc,
+                fp_is_nan,
+                fp_lt,
+                fp_leq,
+                fp_gt,
+                fp_geq,
+                fp_neg,
+            )))
         }
     }
 }

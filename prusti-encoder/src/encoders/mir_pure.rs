@@ -862,7 +862,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
             SnapshotEquality,
             ModeStart(Mode),
             ModeEnd(Mode),
-            IsNaN(ty::FloatTy)
+            IsNaN(ty::FloatTy),
         }
 
         let crate_name = self.vcx.tcx().crate_name(def_id.krate);
@@ -1069,17 +1069,37 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
             }
             PrustiBuiltin::IsNaN(fl) => {
                 let is_nan_fun = match fl {
-                    ty::FloatTy::F16 => self.ty_use(self.vcx.tcx().types.f16).expect_primitive().expect_float().fp_is_nan,
-                    ty::FloatTy::F32 => self.ty_use(self.vcx.tcx().types.f32).expect_primitive().expect_float().fp_is_nan,
-                    ty::FloatTy::F64 => self.ty_use(self.vcx.tcx().types.f64).expect_primitive().expect_float().fp_is_nan,
-                    ty::FloatTy::F128 => self.ty_use(self.vcx.tcx().types.f128).expect_primitive().expect_float().fp_is_nan,
+                    ty::FloatTy::F16 => {
+                        self.ty_use(self.vcx.tcx().types.f16)
+                            .expect_primitive()
+                            .expect_float()
+                            .fp_is_nan
+                    }
+                    ty::FloatTy::F32 => {
+                        self.ty_use(self.vcx.tcx().types.f32)
+                            .expect_primitive()
+                            .expect_float()
+                            .fp_is_nan
+                    }
+                    ty::FloatTy::F64 => {
+                        self.ty_use(self.vcx.tcx().types.f64)
+                            .expect_primitive()
+                            .expect_float()
+                            .fp_is_nan
+                    }
+                    ty::FloatTy::F128 => {
+                        self.ty_use(self.vcx.tcx().types.f128)
+                            .expect_primitive()
+                            .expect_float()
+                            .fp_is_nan
+                    }
                 };
                 let fl = self.encode_operand(curr_ver, &args[0].node);
                 let fl_val = unsafe {
                     std::mem::transmute::<ExprRet<'_>, vir::ExprGen<'_, (), !, vir::CSnap>>(fl)
                 };
                 is_nan_fun.call()(fl_val).lift()
-            },
+            }
         };
         bool.prim_to_snap.call()(prim.upcast_ty()).upcast_ty()
     }

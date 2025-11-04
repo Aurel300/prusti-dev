@@ -23,7 +23,7 @@ fn success_with_complex_program() {
         wrapper_type,
         false,
         "Wrapper",
-        ""
+        "",
     );
 
     let unwrap_domain_function = ast.domain_func(
@@ -32,7 +32,7 @@ fn success_with_complex_program() {
         ast.type_var("T"),
         false,
         "Wrapper",
-        ""
+        "",
     );
 
     let wrapper_domain = ast.domain(
@@ -77,7 +77,7 @@ fn success_with_complex_program() {
             "Wrapper",
         )],
         &[ast.type_var("T")],
-        ""
+        "",
     );
 
     let value_field = ast.field("value", ast.int_type());
@@ -98,7 +98,7 @@ fn success_with_complex_program() {
                 ),
                 ast.int_lit(0),
             ),
-        )
+        ),
     );
 
     let even_num_box_predicate = ast.predicate(

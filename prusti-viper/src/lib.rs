@@ -351,7 +351,7 @@ impl<'vir, 'v> ToViper<'vir, 'v> for vir::DomainFunction<'vir> {
             self.ret.to_viper_no_pos(ctx),
             self.unique,
             domain.name,
-            self.interpretation
+            self.interpretation,
         )
     }
 }
@@ -483,11 +483,14 @@ impl<'vir, 'v> ToViper<'vir, 'v> for vir::FuncApp<'vir> {
                 ctx.ast.backend_func_app_2(
                     self.target,
                     &self
-                            .args
-                            .iter()
-                            .map(|v| v.to_viper_no_pos(ctx))
-                            .collect::<Vec<_>>(),
-                        self.result_ty.to_viper_no_pos(ctx), pos, func_data.interpretation)
+                        .args
+                        .iter()
+                        .map(|v| v.to_viper_no_pos(ctx))
+                        .collect::<Vec<_>>(),
+                    self.result_ty.to_viper_no_pos(ctx),
+                    pos,
+                    func_data.interpretation,
+                )
             }
         } else if let Some((adt, _)) = ctx.adt_constructors.get(self.target) {
             ctx.ast.adt_constructor_app(
@@ -551,7 +554,7 @@ impl<'vir, 'v> ToViper<'vir, 'v> for vir::Function<'vir> {
                 .chain(decreases)
                 .collect::<Vec<_>>(),
             ctx.ast.no_position(), // TODO: position (each function should have its own)
-            self.expr.map(|v| v.to_viper_no_pos(ctx))
+            self.expr.map(|v| v.to_viper_no_pos(ctx)),
         )
     }
 }

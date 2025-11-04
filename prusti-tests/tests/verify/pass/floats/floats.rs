@@ -46,3 +46,11 @@ fn foo7(x: f32, y: f32) -> u8 {
         2
     }
 }
+
+#[requires(!x.is_nan())]
+#[requires(!y.is_nan())]
+#[requires(x != y)]
+#[ensures(!result)]
+fn foo8(x: f32, y: f32) -> bool {
+    x == 2.5 && y == 2.5
+}

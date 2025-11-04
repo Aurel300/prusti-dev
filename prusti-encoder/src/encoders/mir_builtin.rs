@@ -453,7 +453,13 @@ impl MirBuiltinEnc {
                     let val = (prim_res_ty.get_prim_to_snap())(prim_res.upcast_ty());
                     Ok(vcx.mk_function(function, (lhs_decl, rhs_decl), &[], &[], None, Some(val)))
                 },
-                Ne => todo!(),
+                Ne => {
+                    let prim_res= (float_type.fp_eq)(vcx.mk_local_ex(lhs_decl), vcx.mk_local_ex(rhs_decl));
+                    let neq = vcx
+                        .mk_unary_op_expr(vir::UnOpKind::Not, prim_res.upcast_ty());
+                    let val = (prim_res_ty.get_prim_to_snap())(neq);
+                    Ok(vcx.mk_function(function, (lhs_decl, rhs_decl), &[], &[], None, Some(val)))
+                },
                 Ge => {
                     let prim_res = (float_type.fp_geq)(vcx.mk_local_ex(lhs_decl), vcx.mk_local_ex(rhs_decl));
                     let val = (prim_res_ty.get_prim_to_snap())(prim_res.upcast_ty());
@@ -464,8 +470,8 @@ impl MirBuiltinEnc {
                     let val = (prim_res_ty.get_prim_to_snap())(prim_res.upcast_ty());
                     Ok(vcx.mk_function(function, (lhs_decl, rhs_decl), &[], &[], None, Some(val)))
                 },
-                Cmp => todo!(),
-                Offset => todo!(),
+                Cmp => todo!(), // maybe don't implement here but as a stdlib specification
+                Offset => unreachable!(),
             }
             
         }

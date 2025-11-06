@@ -313,7 +313,7 @@ impl<'vir, 'v> ToViper<'vir, 'v> for vir::Domain<'vir> {
                 .iter()
                 .map(|v| v.to_viper_no_pos(ctx))
                 .collect::<Vec<_>>(),
-            self.interpretation,
+            self.interpretation.and_then(|i| Some(i.interpretation)),
         )
     }
 }
@@ -351,7 +351,9 @@ impl<'vir, 'v> ToViper<'vir, 'v> for vir::DomainFunction<'vir> {
             self.ret.to_viper_no_pos(ctx),
             self.unique,
             domain.name,
-            self.interpretation,
+            self.interpretation
+                .as_ref()
+                .and_then(|i| Some(i.interpretation)),
         )
     }
 }
@@ -466,8 +468,8 @@ impl<'vir, 'v> ToViper<'vir, 'v> for vir::FuncApp<'vir> {
     // `pos` coming from the parent `Expr` is used
     fn to_viper(&self, ctx: &ToViperContext<'vir, 'v>, pos: Position) -> Self::Output {
         if let Some((domain, func_data)) = ctx.domain_functions.get(self.target) {
-            if func_data.interpretation.is_empty() {
-                ctx.ast.domain_func_app2(
+            match &func_data.interpretation {
+                None => ctx.ast.domain_func_app2(
                     self.target,
                     &self
                         .args
@@ -478,9 +480,8 @@ impl<'vir, 'v> ToViper<'vir, 'v> for vir::FuncApp<'vir> {
                     self.result_ty.to_viper_no_pos(ctx),
                     domain.name,
                     pos,
-                )
-            } else {
-                ctx.ast.backend_func_app_2(
+                ),
+                Some(i) => ctx.ast.backend_func_app_2(
                     self.target,
                     &self
                         .args
@@ -489,8 +490,8 @@ impl<'vir, 'v> ToViper<'vir, 'v> for vir::FuncApp<'vir> {
                         .collect::<Vec<_>>(),
                     self.result_ty.to_viper_no_pos(ctx),
                     pos,
-                    func_data.interpretation,
-                )
+                    i.interpretation,
+                ),
             }
         } else if let Some((adt, _)) = ctx.adt_constructors.get(self.target) {
             ctx.ast.adt_constructor_app(
@@ -974,11 +975,11 @@ impl<'vir, 'v, T: CompType> ToViper<'vir, 'v> for vir::Type<'vir, T> {
                     .collect::<Vec<_>>();
                 if domain {
                     let interpretation = ctx.domains.get(name).unwrap().interpretation;
-                    if interpretation.is_empty() {
-                        ctx.ast
-                            .domain_type(name, &partial_typ_vars_map, &type_parameters)
-                    } else {
-                        ctx.ast.domain_backend_type(name, interpretation)
+                    match interpretation {
+                        None => ctx
+                            .ast
+                            .domain_type(name, &partial_typ_vars_map, &type_parameters),
+                        Some(i) => ctx.ast.domain_backend_type(name, i.interpretation),
                     }
                 } else {
                     ctx.ast

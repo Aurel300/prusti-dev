@@ -21,24 +21,6 @@ impl TaskEncoder for BitVecEnc {
 
     type TaskDescription<'vir> = BitVecSize;
 
-    // type OutputRef<'vir>
-    //   = TyBitVec<'vir>
-    // where
-    //     Self: 'vir;
-
-    /// Fully encoded output for this task. When encoding items which can be
-    /// dependencies (such as methods), this output should only be emitted in
-    /// one Viper program.
-    // type OutputFullLocal<'vir>
-    //     = ()
-    // where
-    //     Self: 'vir;
-
-    /*type EnqueueingError = task_encoder::NeverError;
-
-    type EncodingError = task_encoder::NeverError;
-    */
-
     type OutputFullLocal<'vir> = &'vir DomainGenData<'vir, (), !>;
 
     type OutputFullDependency<'vir> = TyBitVecLocal<'vir>;

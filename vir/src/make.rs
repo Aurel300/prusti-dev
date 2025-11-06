@@ -600,10 +600,8 @@ impl<'tcx> VirCtxt<'tcx> {
             name: ident.name(),
             args: self.alloc_slice(params.as_slice()),
             ret: ident.result().as_dyn(),
-            interpretation: match interpretation {
-                None => "",
-                Some(s) => s,
-            },
+            interpretation: interpretation
+                .and_then(|i| Some(InterpretationData { interpretation: i })),
         })
     }
 
@@ -709,10 +707,8 @@ impl<'tcx> VirCtxt<'tcx> {
             typarams,
             axioms,
             functions,
-            interpretation: match interpretation {
-                None => "",
-                Some(s) => s,
-            },
+            interpretation: interpretation
+                .and_then(|i| Some(self.alloc(InterpretationData { interpretation: i }))),
         })
     }
 

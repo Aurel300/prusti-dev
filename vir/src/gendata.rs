@@ -372,7 +372,8 @@ pub struct DomainGenData<'vir, Curr, Next> {
     pub axioms: &'vir [DomainAxiomGen<'vir, Curr, Next>],
     #[vir(reify_pass)]
     pub functions: &'vir [DomainFunction<'vir>],
-    pub interpretation: &'static str,
+    #[vir(reify_pass)]
+    pub interpretation: Option<Interpretation<'vir>>,
 }
 
 #[derive(VirHash, VirReify, VirSerde)]

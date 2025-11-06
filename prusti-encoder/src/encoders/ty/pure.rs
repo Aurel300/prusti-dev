@@ -611,6 +611,19 @@ impl<'vir> DomainBuilder<'vir> {
         name: &str,
         args: A::Tys<'vir>,
         ret: Type<'vir, T>,
+    ) -> FunctionIdn<'vir, A, T> {
+        let name = vir::vir_format!(self.vcx, "{}_{name}", self.name);
+        let ident = FunctionIdn::new(vir::ViperIdent::new(name), args, ret);
+        let function = self.vcx.mk_domain_function(ident, false, None);
+        self.data().functions.push(function);
+        ident
+    }
+
+    pub(crate) fn backend_func<A: Arity, T: CompType>(
+        &mut self,
+        name: &str,
+        args: A::Tys<'vir>,
+        ret: Type<'vir, T>,
         interpretation: Option<&'static str>,
     ) -> FunctionIdn<'vir, A, T> {
         let name = vir::vir_format!(self.vcx, "{}_{name}", self.name);

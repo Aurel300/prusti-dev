@@ -57,8 +57,8 @@ pub(crate) fn ty_pure<'vir>(
 
     match interpretation {
         None => {
-            let value_ident = builder.function("value", builder.self_type(), prim_type, None);
-            let cons_ident = builder.function("cons", prim_type, builder.self_type(), None);
+            let value_ident = builder.function("value", builder.self_type(), prim_type);
+            let cons_ident = builder.function("cons", prim_type, builder.self_type());
 
             builder.axiom("cons", vir::expr! {
                 forall s: [builder.self_type()] :: {[value_ident](s)} ([cons_ident]([value_ident](s))) == (s)
@@ -96,80 +96,80 @@ pub(crate) fn ty_pure<'vir>(
         Some(i) => {
             builder.set_interpretation(i);
 
-            let fp_eq = builder.function(
+            let fp_eq = builder.backend_func(
                 "eq",
                 (builder.self_type(), builder.self_type()),
                 vir::TYPE_BOOL,
                 Some("fp.eq"),
             );
 
-            let fp_add = builder.function(
+            let fp_add = builder.backend_func(
                 "add",
                 (builder.self_type(), builder.self_type()),
                 builder.self_type(),
                 Some("fp.add RNE"),
             );
 
-            let fp_sub = builder.function(
+            let fp_sub = builder.backend_func(
                 "sub",
                 (builder.self_type(), builder.self_type()),
                 builder.self_type(),
                 Some("fp.sub RNE"),
             );
 
-            let fp_mul = builder.function(
+            let fp_mul = builder.backend_func(
                 "mul",
                 (builder.self_type(), builder.self_type()),
                 builder.self_type(),
                 Some("fp.mul RNE"),
             );
 
-            let fp_div = builder.function(
+            let fp_div = builder.backend_func(
                 "div",
                 (builder.self_type(), builder.self_type()),
                 builder.self_type(),
                 Some("fp.div RNE"),
             );
 
-            let fp_trunc = builder.function(
+            let fp_trunc = builder.backend_func(
                 "trunc",
                 builder.self_type(),
                 builder.self_type(),
                 Some("fp.roundToIntegral RTZ"),
             );
 
-            let fp_is_nan = builder.function(
+            let fp_is_nan = builder.backend_func(
                 "is_nan",
                 builder.self_type(),
                 vir::TYPE_BOOL,
                 Some("fp.isNaN"),
             );
 
-            let fp_lt = builder.function(
+            let fp_lt = builder.backend_func(
                 "lt",
                 (builder.self_type(), builder.self_type()),
                 vir::TYPE_BOOL,
                 Some("fp.lt"),
             );
-            let fp_leq = builder.function(
+            let fp_leq = builder.backend_func(
                 "leq",
                 (builder.self_type(), builder.self_type()),
                 vir::TYPE_BOOL,
                 Some("fp.leq"),
             );
-            let fp_geq = builder.function(
+            let fp_geq = builder.backend_func(
                 "geq",
                 (builder.self_type(), builder.self_type()),
                 vir::TYPE_BOOL,
                 Some("fp.geq"),
             );
-            let fp_gt = builder.function(
+            let fp_gt = builder.backend_func(
                 "gt",
                 (builder.self_type(), builder.self_type()),
                 vir::TYPE_BOOL,
                 Some("fp.gt"),
             );
-            let fp_neg = builder.function(
+            let fp_neg = builder.backend_func(
                 "neg",
                 builder.self_type(),
                 builder.self_type(),
@@ -184,7 +184,7 @@ pub(crate) fn ty_pure<'vir>(
                 _ => unreachable!(),
             })?;
 
-            let from_bv = builder.function(
+            let from_bv = builder.backend_func(
                 "from_bv",
                 (bit_vec.domain)(),
                 builder.self_type(),
@@ -197,8 +197,7 @@ pub(crate) fn ty_pure<'vir>(
                 },
             );
 
-            let prim_to_snap =
-                builder.function("prim_to_snap", prim_type, builder.self_type(), None);
+            let prim_to_snap = builder.function("prim_to_snap", prim_type, builder.self_type());
 
             builder.axiom("prim_to_snap", vir::expr! {
                 forall i: [prim_type] :: {[prim_to_snap](i)} ([prim_to_snap(i)]) == ([from_bv]([bit_vec.from_int](i)))

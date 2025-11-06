@@ -211,6 +211,12 @@ impl<'vir, T: CompType, R: CompType> AdtDestructorData<'vir, T, R> {
 }
 
 #[derive(PartialEq, Eq, Clone, Serialize, Deserialize, Hash)]
+pub struct InterpretationData<'vir> {
+    #[serde(with = "crate::serde::serde_str")]
+    pub interpretation: &'vir str,
+}
+
+#[derive(PartialEq, Eq, Clone, Serialize, Deserialize, Hash)]
 #[serde(bound(deserialize = "'de: 'vir"))]
 pub struct DomainFunctionData<'vir> {
     pub unique: bool,
@@ -219,8 +225,7 @@ pub struct DomainFunctionData<'vir> {
     pub args: &'vir [TypeDyn<'vir>],
     #[serde(with = "crate::serde::serde_ref")]
     pub ret: TypeDyn<'vir>,
-    #[serde(with = "crate::serde::serde_str")]
-    pub interpretation: &'vir str,
+    pub interpretation: Option<InterpretationData<'vir>>,
 }
 
 #[derive(PartialEq, Eq, Clone, Copy, Serialize, Deserialize, Hash)]

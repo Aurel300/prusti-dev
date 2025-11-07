@@ -109,7 +109,10 @@ impl prusti_rustc_interface::driver::Callbacks for PrustiCompilerCalls {
         // seem possible to load the crate directly in the TyCtxt in the
         // `after_expansion` or `after_analysis` callback as the `cstore` object
         // appears to be frozen at that point.
-        if compiler.sess.opts.externs.get("prusti_contracts").is_some() {
+
+        let prusti_contracts_symbol = Symbol::intern("prusti_contracts");
+
+        if compiler.sess.opts.externs.get("prusti_contracts").is_some() && !krate.items.iter().any(|item| matches!(item.kind, ItemKind::ExternCrate(_, ident) if ident.name == prusti_contracts_symbol)) {
             krate.items.push(Box::new(Item {
                 attrs: AttrVec::new(),
                 id: DUMMY_NODE_ID,
@@ -121,7 +124,7 @@ impl prusti_rustc_interface::driver::Callbacks for PrustiCompilerCalls {
                 },
                 kind: ItemKind::ExternCrate(
                     None,
-                    Ident::new(Symbol::intern("prusti_contracts"), DUMMY_SP),
+                    Ident::new(prusti_contracts_symbol, DUMMY_SP),
                 ),
                 tokens: None,
             }));

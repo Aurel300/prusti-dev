@@ -863,6 +863,8 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
             ModeStart(Mode),
             ModeEnd(Mode),
             IsNaN(ty::FloatTy),
+            IsInfinite(ty::FloatTy),
+            FlEq(ty::FloatTy)
         }
 
         let crate_name = self.vcx.tcx().crate_name(def_id.krate);
@@ -902,6 +904,14 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
             "f32_is_nan" => PrustiBuiltin::IsNaN(ty::FloatTy::F32),
             "f64_is_nan" => PrustiBuiltin::IsNaN(ty::FloatTy::F64),
             "f128_is_nan" => PrustiBuiltin::IsNaN(ty::FloatTy::F128),
+            "f16_is_infinite" => PrustiBuiltin::IsInfinite(ty::FloatTy::F16),
+            "f32_is_infinite" => PrustiBuiltin::IsInfinite(ty::FloatTy::F32),
+            "f64_is_infinite" => PrustiBuiltin::IsInfinite(ty::FloatTy::F64),
+            "f128_is_infinite" => PrustiBuiltin::IsInfinite(ty::FloatTy::F128),
+            "f16_fl_eq" => PrustiBuiltin::FlEq(ty::FloatTy::F16),
+            "f32_fl_eq" => PrustiBuiltin::FlEq(ty::FloatTy::F32),
+            "f64_fl_eq" => PrustiBuiltin::FlEq(ty::FloatTy::F64),
+            "f128_fl_eq" => PrustiBuiltin::FlEq(ty::FloatTy::F128),
             other => panic!("illegal prusti::builtin ({other})"),
         };
 
@@ -1099,6 +1109,71 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                     std::mem::transmute::<ExprRet<'_>, vir::ExprGen<'_, (), !, vir::CSnap>>(fl)
                 };
                 is_nan_fun.call()(fl_val).lift()
+            },
+            PrustiBuiltin::IsInfinite(fl) => {
+                let is_infinite_fun = match fl {
+                    ty::FloatTy::F16 => {
+                        self.ty_use(self.vcx.tcx().types.f16)
+                            .expect_primitive()
+                            .expect_float()
+                            .fp_is_infinite
+                    }
+                    ty::FloatTy::F32 => {
+                        self.ty_use(self.vcx.tcx().types.f32)
+                            .expect_primitive()
+                            .expect_float()
+                            .fp_is_infinite
+                    }
+                    ty::FloatTy::F64 => {
+                        self.ty_use(self.vcx.tcx().types.f64)
+                            .expect_primitive()
+                            .expect_float()
+                            .fp_is_infinite
+                    }
+                    ty::FloatTy::F128 => {
+                        self.ty_use(self.vcx.tcx().types.f128)
+                            .expect_primitive()
+                            .expect_float()
+                            .fp_is_infinite
+                    }
+                };
+                let fl = self.encode_operand(curr_ver, &args[0].node);
+                let fl_val = unsafe {
+                    std::mem::transmute::<ExprRet<'_>, vir::ExprGen<'_, (), !, vir::CSnap>>(fl)
+                };
+                is_infinite_fun.call()(fl_val).lift()
+            },
+            PrustiBuiltin::FlEq(fl) => {
+                let fl_ty = match fl {
+                    ty::FloatTy::F16 => {
+                        self.ty_use(self.vcx.tcx().types.f16)
+                    }
+                    ty::FloatTy::F32 => {
+                        self.ty_use(self.vcx.tcx().types.f32)
+                    }
+                    ty::FloatTy::F64 => {
+                        self.ty_use(self.vcx.tcx().types.f64)
+                    }
+                    ty::FloatTy::F128 => {
+                        self.ty_use(self.vcx.tcx().types.f128)
+                    }
+                };
+                let abs_fun = fl_ty.expect_primitive().expect_float().fp_abs;
+                let sub_fun = fl_ty.expect_primitive().expect_float().fp_sub;
+                let leq_fun = fl_ty.expect_primitive().expect_float().fp_leq;
+                let fl1 = self.encode_operand(curr_ver, &args[0].node);
+                let fl1_val = unsafe {
+                    std::mem::transmute::<ExprRet<'_>, vir::ExprGen<'_, (), !, vir::CSnap>>(fl1)
+                };
+                let fl2 = self.encode_operand(curr_ver, &args[0].node);
+                let fl2_val = unsafe {
+                    std::mem::transmute::<ExprRet<'_>, vir::ExprGen<'_, (), !, vir::CSnap>>(fl2)
+                };
+                let prec = self.encode_operand(curr_ver, &args[0].node);
+                let prec_val = unsafe {
+                    std::mem::transmute::<ExprRet<'_>, vir::ExprGen<'_, (), !, vir::CSnap>>(prec)
+                };
+                (leq_fun)((abs_fun)((sub_fun)(fl1_val, fl2_val)), prec_val).lift()
             }
         };
         bool.prim_to_snap.call()(prim.upcast_ty()).upcast_ty()

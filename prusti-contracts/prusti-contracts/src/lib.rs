@@ -422,4 +422,38 @@ pub fn f128_is_nan(fl: f128) -> bool {
     true
 }
 
+/// Checks if a float is infinite
+pub fn f16_is_infinite(fl: f16) -> bool {
+    true
+}
+
+pub fn f32_is_infinite(fl: f32) -> bool {
+    true
+}
+
+pub fn f64_is_infinite(fl: f64) -> bool {
+    true
+}
+
+pub fn f128_is_infinite(fl: f128) -> bool {
+    true
+}
+
+/// Check if two floats lie within an interval
+pub fn f16_fl_eq(fl1: f16, fl2: f16, prec: f16) -> bool {
+    true
+}
+
+pub fn f32_fl_eq(fl1: f32, fl2: f32, prec: f32) -> bool {
+    true
+}
+
+pub fn f64_fl_eq(fl1: f64, fl2: f64, prec: f64) -> bool {
+    true
+}
+
+pub fn f128_fl_eq(fl1: f128, fl2: f128, prec: f128) -> bool {
+    true
+}
+
 pub use private::*;

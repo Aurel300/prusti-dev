@@ -145,6 +145,13 @@ pub(crate) fn ty_pure<'vir>(
                 Some("fp.isNaN"),
             );
 
+            let fp_is_infinite = builder.backend_func(
+                "is_infinite",
+                builder.self_type(),
+                vir::TYPE_BOOL,
+                Some("fp.isInfinite"),
+            );
+
             let fp_lt = builder.backend_func(
                 "lt",
                 (builder.self_type(), builder.self_type()),
@@ -174,6 +181,13 @@ pub(crate) fn ty_pure<'vir>(
                 builder.self_type(),
                 builder.self_type(),
                 Some("fp.neg"),
+            );
+
+            let fp_abs = builder.backend_func(
+                "abs",
+                builder.self_type(),
+                builder.self_type(),
+                Some("fp.abs"),
             );
 
             let bit_vec = deps.require_dep::<BitVecEnc>(match ty_kind {
@@ -213,11 +227,13 @@ pub(crate) fn ty_pure<'vir>(
                 fp_div,
                 fp_trunc,
                 fp_is_nan,
+                fp_is_infinite,
                 fp_lt,
                 fp_leq,
                 fp_gt,
                 fp_geq,
                 fp_neg,
+                fp_abs
             )))
         }
     }

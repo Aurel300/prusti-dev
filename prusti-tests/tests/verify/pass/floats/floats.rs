@@ -60,3 +60,18 @@ fn foo8(x: f32, y: f32) -> bool {
 fn foo9(x: f32) -> f32 {
     -x
 }
+
+#[requires(!x.is_nan())]
+#[requires(!x.is_infinite())]
+#[ensures(!result.is_infinite())]
+fn foo10(x: f32) -> f32 {
+    x
+}
+
+#[requires(!x.is_nan())]
+#[requires(x < 10000.0)]
+#[requires(x > 0.0)]
+#[ensures(f32_fl_eq(result, 2.0 * x, 0.000000000000001))]
+fn times_two(x: f32) -> f32 {
+    x + x
+}

@@ -8,18 +8,20 @@ use prusti_interface::{
     PrustiError,
 };
 use prusti_rustc_interface::{
+    ast::{AttrVec, Crate, Item, ItemKind, Visibility, VisibilityKind, DUMMY_NODE_ID},
     borrowck::consumers,
     data_structures::steal::Steal,
     driver::Compilation,
     hir::{def::DefKind, def_id::LocalDefId},
     index::IndexVec,
     interface::{interface::Compiler, Config},
+    metadata::creader::CStore,
     middle::{
         mir, query::queries::mir_borrowck::ProvidedValue as MirBorrowck, ty::TyCtxt,
         util::Providers,
     },
     session::Session,
-    span::DUMMY_SP,
+    span::{Ident, Span, Symbol, DUMMY_SP},
 };
 use prusti_utils::config;
 
@@ -89,6 +91,42 @@ impl prusti_rustc_interface::driver::Callbacks for PrustiCompilerCalls {
             providers.mir_borrowck = mir_borrowck;
             providers.mir_promoted = mir_promoted;
         });
+    }
+
+    fn after_crate_root_parsing(&mut self, compiler: &Compiler, krate: &mut Crate) -> Compilation {
+        // `prusti-rustc` will pass a `--extern` option indicating where to find
+        // the `prusti-contracts` crate. This crate must be loaded in order to
+        // include the default extern specs (for e.g build-in `assert!`
+        // statements). However, if the user does not explicitly import the
+        // crate in the code or use an `extern crate` statement, then the
+        // compiler will not load the crate.
+        //
+        // To work around this, we add a dummy `extern crate` statement to the
+        // crate if one does not already exist.
+        //
+        // Ideally we could load the prusti-contracts crate directly in the
+        // TyCtxt rather than modifying the crate AST.  However, it does not
+        // seem possible to load the crate directly in the TyCtxt in the
+        // `after_expansion` or `after_analysis` callback as the `cstore` object
+        // appears to be frozen at that point.
+        if compiler.sess.opts.externs.get("prusti_contracts").is_some() {
+            krate.items.push(Box::new(Item {
+                attrs: AttrVec::new(),
+                id: DUMMY_NODE_ID,
+                span: DUMMY_SP,
+                vis: Visibility {
+                    kind: VisibilityKind::Public,
+                    span: DUMMY_SP,
+                    tokens: None,
+                },
+                kind: ItemKind::ExternCrate(
+                    None,
+                    Ident::new(Symbol::intern("prusti_contracts"), DUMMY_SP),
+                ),
+                tokens: None,
+            }));
+        }
+        Compilation::Continue
     }
 
     #[tracing::instrument(level = "debug", skip_all)]

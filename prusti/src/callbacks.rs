@@ -113,7 +113,9 @@ impl prusti_rustc_interface::driver::Callbacks for PrustiCompilerCalls {
             let prusti_contracts_symbol = Symbol::intern("prusti_contracts");
 
             if !krate.items.iter().any(|item| match item.kind {
-                ItemKind::ExternCrate(Some(original_ident), _) => original_ident == prusti_contracts_symbol,
+                ItemKind::ExternCrate(Some(original_ident), _) => {
+                    original_ident == prusti_contracts_symbol
+                }
                 ItemKind::ExternCrate(None, ident) => ident.name == prusti_contracts_symbol,
                 _ => false,
             }) {

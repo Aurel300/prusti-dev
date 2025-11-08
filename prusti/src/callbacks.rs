@@ -110,24 +110,34 @@ impl prusti_rustc_interface::driver::Callbacks for PrustiCompilerCalls {
         // `after_expansion` or `after_analysis` callback as the `cstore` object
         // appears to be frozen at that point.
 
-        let prusti_contracts_symbol = Symbol::intern("prusti_contracts");
+        if compiler.sess.opts.externs.get("prusti_contracts").is_some() {
+            let prusti_contracts_symbol = Symbol::intern("prusti_contracts");
 
-        if compiler.sess.opts.externs.get("prusti_contracts").is_some() && !krate.items.iter().any(|item| matches!(item.kind, ItemKind::ExternCrate(_, ident) if ident.name == prusti_contracts_symbol)) {
-            krate.items.push(Box::new(Item {
-                attrs: AttrVec::new(),
-                id: DUMMY_NODE_ID,
-                span: DUMMY_SP,
-                vis: Visibility {
-                    kind: VisibilityKind::Public,
+            let is_prusti_contracts_extern_crate = |item: &Item| {
+                if let ItemKind::ExternCrate(_, ident) = item.kind {
+                    ident.name == prusti_contracts_symbol
+                } else {
+                    false
+                }
+            };
+
+            if !krate.items.iter().any(is_prusti_contracts_extern_crate) {
+                krate.items.push(Box::new(Item {
+                    attrs: AttrVec::new(),
+                    id: DUMMY_NODE_ID,
                     span: DUMMY_SP,
+                    vis: Visibility {
+                        kind: VisibilityKind::Public,
+                        span: DUMMY_SP,
+                        tokens: None,
+                    },
+                    kind: ItemKind::ExternCrate(
+                        None,
+                        Ident::new(prusti_contracts_symbol, DUMMY_SP),
+                    ),
                     tokens: None,
-                },
-                kind: ItemKind::ExternCrate(
-                    None,
-                    Ident::new(prusti_contracts_symbol, DUMMY_SP),
-                ),
-                tokens: None,
-            }));
+                }));
+            }
         }
         Compilation::Continue
     }

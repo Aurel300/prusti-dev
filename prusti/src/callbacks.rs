@@ -15,13 +15,12 @@ use prusti_rustc_interface::{
     hir::{def::DefKind, def_id::LocalDefId},
     index::IndexVec,
     interface::{interface::Compiler, Config},
-    metadata::creader::CStore,
     middle::{
         mir, query::queries::mir_borrowck::ProvidedValue as MirBorrowck, ty::TyCtxt,
         util::Providers,
     },
     session::Session,
-    span::{Ident, Span, Symbol, DUMMY_SP},
+    span::{Ident, Symbol, DUMMY_SP},
 };
 use prusti_utils::config;
 
@@ -113,15 +112,10 @@ impl prusti_rustc_interface::driver::Callbacks for PrustiCompilerCalls {
         if compiler.sess.opts.externs.get("prusti_contracts").is_some() {
             let prusti_contracts_symbol = Symbol::intern("prusti_contracts");
 
-            let is_prusti_contracts_extern_crate = |item: &Item| {
-                if let ItemKind::ExternCrate(_, ident) = item.kind {
-                    ident.name == prusti_contracts_symbol
-                } else {
-                    false
-                }
-            };
-
-            if !krate.items.iter().any(is_prusti_contracts_extern_crate) {
+            if !krate.items.iter().any(|item| match item.kind {
+                ItemKind::ExternCrate(_, ident) => ident.name == prusti_contracts_symbol,
+                _ => false,
+            }) {
                 krate.items.push(Box::new(Item {
                     attrs: AttrVec::new(),
                     id: DUMMY_NODE_ID,

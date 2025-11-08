@@ -766,6 +766,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                     const_: constant.const_,
                     encoding_depth: self.encoding_depth,
                     def_id: self.def_id,
+                    span: constant.span,
                 })
                 .unwrap()
                 .upcast_ty()

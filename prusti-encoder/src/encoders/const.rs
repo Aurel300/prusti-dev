@@ -6,7 +6,7 @@ use prusti_rustc_interface::{
         },
         ty,
     },
-    span::def_id::DefId,
+    span::{Span, def_id::DefId},
 };
 use task_encoder::{EncodeFullError, EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 use vir::CastType;
@@ -32,6 +32,7 @@ pub enum ConstEncTask<'vir> {
         const_: mir::Const<'vir>,
         encoding_depth: usize, // current encoding depth
         def_id: DefId,         // DefId of the current function
+        span: Span,
     },
 }
 
@@ -145,25 +146,41 @@ impl TaskEncoder for ConstEnc {
                 const_,
                 encoding_depth,
                 def_id,
-            } => match const_ {
-                mir::Const::Val(val, ty) => Self::encode_const_val(deps, val, ty, def_id.into())?,
-                mir::Const::Unevaluated(uneval, _) => vir::with_vcx(|vcx| {
-                    let task = MirPureEncTask {
-                        encoding_depth: encoding_depth + 1,
-                        parent_def_id: uneval.def,
-                        param_env: vcx.tcx().param_env(uneval.def),
-                        substs: ty::List::identity_for_item(vcx.tcx(), uneval.def),
-                        kind: PureKind::Constant(uneval.promoted.unwrap()),
-                        caller_def_id: Some(def_id),
-                    };
-                    let expr = deps.require_dep::<MirPureEnc>(task)?.expr;
-                    use vir::Reify;
-                    Ok(expr.reify(vcx, (uneval.def, &[])).downcast_ty())
-                })?,
-                mir::Const::Ty(ty, const_) => {
-                    Self::encode_ty_const(deps, const_, ty, def_id.into())?
+                span
+            } => {
+                let evaluated = vir::with_vcx(|vcx| {
+                    const_.eval(
+                        vcx.tcx(),
+                        vcx.tcx().typing_env_normalized_for_post_analysis(def_id),
+                        span,
+                    )
+                });
+                match evaluated {
+                    Ok(val) => Self::encode_const_val(deps, val, const_.ty(), def_id.into())?,
+                    Err(err) => panic!("error evaluating const {const_:?}: {err:?}")
                 }
-            },
+                // match const_ {
+                // mir::Const::Val(val, ty) => Self::encode_const_val(deps, val, ty, def_id.into())?,
+                // mir::Const::Unevaluated(uneval, _) => vir::with_vcx(|vcx| {
+                //     let task = MirPureEncTask {
+                //         encoding_depth: encoding_depth + 1,
+                //         parent_def_id: uneval.def,
+                //         param_env: vcx.tcx().param_env(uneval.def),
+                //         substs: ty::List::identity_for_item(vcx.tcx(), uneval.def),
+                //         kind: PureKind::Constant(uneval.promoted.unwrap_or_else(|| {
+                //             uneval.try_
+                //             panic!("unevaluated const {uneval:?} has no promoted constant")
+                //         })),
+                //         caller_def_id: Some(def_id),
+                //     };
+                //     let expr = deps.require_dep::<MirPureEnc>(task)?.expr;
+                //     use vir::Reify;
+                //     Ok(expr.reify(vcx, (uneval.def, &[])).downcast_ty())
+                // })?,
+                // mir::Const::Ty(ty, const_) => {
+                //     Self::encode_ty_const(deps, const_, ty, def_id.into())?
+                // }
+            }
         };
         Ok(((), res))
     }

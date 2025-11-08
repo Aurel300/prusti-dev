@@ -619,6 +619,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 const_: constant.const_,
                 encoding_depth: 0,
                 def_id: self.def_id,
+                span: constant.span,
             })
             .unwrap()
     }

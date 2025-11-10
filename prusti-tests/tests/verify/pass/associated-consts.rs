@@ -7,5 +7,5 @@ impl Bar {
 }
 
 fn main() {
-    assert!(Bar::CONST == i32::MAX);
+    prusti_assert!(Bar::CONST == i32::MAX);
 }

@@ -486,7 +486,7 @@ impl<'vir, 'v> ToViper<'vir, 'v> for vir::FuncApp<'vir> {
     type Output = viper::Expr<'v>;
     // `pos` coming from the parent `Expr` is used
     fn to_viper(&self, ctx: &ToViperContext<'vir, 'v>, pos: Position) -> Self::Output {
-        if let Some((domain, _)) = ctx.domain_functions.get(self.target) {
+        if let Some((domain, func_data)) = ctx.domain_functions.get(self.target) {
             assert_eq!(domain.typarams.len(), self.typ_var_map.len());
             let type_map = domain.typarams.iter().zip(self.typ_var_map);
             let type_map = type_map

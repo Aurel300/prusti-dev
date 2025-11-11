@@ -10,8 +10,6 @@ mod trait_support;
 pub mod request;
 
 use crate::encoders::ty::bitvec::BitVecEnc;
-use prusti_interface::{PrustiError, environment::EnvBody};
-use prusti_rustc_interface::middle::ty;
 use prusti_interface::{
     PrustiError,
     environment::{EnvBody, EnvDiagnostic},

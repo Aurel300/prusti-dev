@@ -49,7 +49,7 @@ impl TaskEncoder for BitVecEnc {
                 BitVecSize::BitVec128 => "s_BitVec_128",
             };
 
-            let domain_ident = DomainIdnCSnap::new(vir::ViperIdent::new(domain_name));
+            let domain_ident = DomainIdnCSnap::new(vir::ViperIdent::new(domain_name), 0);
 
             let self_type = domain_ident();
 

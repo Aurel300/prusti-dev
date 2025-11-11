@@ -12,7 +12,7 @@ use task_encoder::{EncodeFullError, TaskEncoderDependencies};
 use vir::{CastType, HasType, VirCtxt};
 
 pub(crate) fn ty_pure<'vir>(
-    _vcx: &VirCtxt<'vir>,
+    vcx: &'vir VirCtxt<'vir>,
     data: &RustPrimitive<'vir>,
     deps: &mut TaskEncoderDependencies<'vir, TyPureEnc>,
     builder: &mut DomainBuilder<'vir>,
@@ -31,8 +31,8 @@ pub(crate) fn ty_pure<'vir>(
 
     let kind = match ty_kind {
         ty::TyKind::Float(float) => {
-            let float_domain = ty_pure_float(deps, builder, *float, cons_ident)?;
-            TyPurePrimDataKind::Float(float_domain)
+            let data = ty_pure_float(deps, builder, *float, cons_ident)?;
+            TyPurePrimDataKind::Float(vcx.alloc(data))
         }
         _ => {
             let value_ident = builder.function("value", builder.self_type(), prim_type);

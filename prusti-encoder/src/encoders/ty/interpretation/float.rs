@@ -7,8 +7,10 @@ use crate::encoders::ty::{
     pure::{DomainBuilder, TyPureEnc},
 };
 
+pub type FloatDomain<'vir> = &'vir FloatDomainData<'vir>;
+
 #[derive(Debug, Clone, Copy)]
-pub struct FloatDomain<'vir> {
+pub struct FloatDomainData<'vir> {
     #[allow(unused)]
     pub from_bv: FunctionIdn<'vir, vir::CSnap, vir::CSnap>,
     pub fp_eq: FunctionIdn<'vir, (vir::CSnap, vir::CSnap), vir::Bool>,
@@ -32,7 +34,7 @@ pub(crate) fn ty_pure_float<'vir>(
     builder: &mut DomainBuilder<'vir>,
     float: ty::FloatTy,
     prim_to_snap: FunctionIdn<'vir, vir::Prim, vir::CSnap>,
-) -> Result<FloatDomain<'vir>, EncodeFullError<'vir, TyPureEnc>> {
+) -> Result<FloatDomainData<'vir>, EncodeFullError<'vir, TyPureEnc>> {
     let i = match float {
         ty::FloatTy::F16 => "(_ FloatingPoint 5 11)",
         ty::FloatTy::F32 => "(_ FloatingPoint 8 24)",
@@ -154,7 +156,7 @@ pub(crate) fn ty_pure_float<'vir>(
         forall i: [prim_to_snap.arity()] :: {[prim_to_snap](i)} ([prim_to_snap(i)]) == ([from_bv]([bit_vec.from_int](i)))
     });
 
-    Ok(FloatDomain {
+    Ok(FloatDomainData {
         from_bv,
         fp_eq,
         fp_add,

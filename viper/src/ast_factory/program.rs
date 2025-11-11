@@ -188,11 +188,9 @@ impl<'a> AstFactory<'a> {
             self.jni.new_seq(&map_to_jobjects!(functions)),
             self.jni.new_seq(&map_to_jobjects!(axioms)),
             self.jni.new_seq(&map_to_jobjects!(type_vars)),
-            self.jni.new_option(interpretation.and_then(|i| {
-                Some(
-                    self.jni
-                        .new_map(&[(self.jni.new_string("SMTLIB"), self.jni.new_string(i))]),
-                )
+            self.jni.new_option(interpretation.map(|i| {
+                self.jni
+                    .new_map(&[(self.jni.new_string("SMTLIB"), self.jni.new_string(i))])
             }))
         )
     }
@@ -213,7 +211,7 @@ impl<'a> AstFactory<'a> {
                 typ.to_jobject(),
                 unique,
                 self.jni
-                    .new_option(interpretation.and_then(|i| Some(self.jni.new_string(i)))),
+                    .new_option(interpretation.map(|i| self.jni.new_string(i))),
                 self.no_position().to_jobject(),
                 self.no_info(),
                 self.jni.new_string(domain_name),

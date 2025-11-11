@@ -677,8 +677,7 @@ impl<'tcx> VirCtxt<'tcx> {
             name: ident.name(),
             args: self.alloc_slice(params.as_slice()),
             ret: ident.result().as_dyn(),
-            interpretation: interpretation
-                .and_then(|i| Some(InterpretationData { interpretation: i })),
+            interpretation: interpretation.map(|i| InterpretationData { interpretation: i }),
         })
     }
 
@@ -786,7 +785,7 @@ impl<'tcx> VirCtxt<'tcx> {
             axioms,
             functions,
             interpretation: interpretation
-                .and_then(|i| Some(self.alloc(InterpretationData { interpretation: i }))),
+                .map(|i| self.alloc(InterpretationData { interpretation: i })),
         })
     }
 

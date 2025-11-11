@@ -170,9 +170,7 @@ pub enum TyPureEncLocalKind<'vir> {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub enum TyPureEncError {
-    Unimplemented,
-}
+pub enum TyPureEncError {}
 
 impl TaskEncoder for TyPureEnc {
     task_encoder::encoder_cache!(TyPureEnc);

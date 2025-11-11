@@ -126,7 +126,6 @@ impl TaskEncoder for MirSpecEnc {
                     vcx.tcx().types.bool,
                 ))?
                 .expect_primitive()
-                .expect_native()
                 .snap_to_prim;
 
             let substs = find_trait_method_substs(vcx.tcx(), def_id, substs)

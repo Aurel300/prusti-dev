@@ -22,6 +22,8 @@ pub trait TyDatas<'vir>: Debug + Clone + Copy {
 
     type EnumData: Debug + Clone + 'vir = ();
     type VariantData: Debug + Clone + 'vir = ();
+
+    type FloatData: Debug + Clone + 'vir = ();
 }
 
 pub type Ty<'vir, D> = &'vir TyData<'vir, D>;
@@ -40,6 +42,7 @@ pub enum TySpecifics<'vir, D: TyDatas<'vir>> {
     MutRef(D::MutRefData),
     StructLike(StructData<'vir, D>),
     EnumLike(EnumData<'vir, D>),
+    Float(D::FloatData),
 }
 
 pub struct StructData<'vir, D: TyDatas<'vir>> {
@@ -111,6 +114,10 @@ impl<'vir, D: TyDatas<'vir>> TySpecifics<'vir, D> {
         Self::EnumLike(EnumData::new(data, inhabited, variants))
     }
 
+    pub fn mk_float(data: D::FloatData) -> Self {
+        Self::Float(data)
+    }
+
     pub fn is_param(&self) -> bool {
         matches!(self, Self::Param(_))
     }
@@ -162,6 +169,28 @@ impl<'vir, D: TyDatas<'vir>> TyData<'vir, D> {
         match &self.specifics {
             TySpecifics::MutRef(data) => data,
             _ => panic!("expected mutref (was {self:?})"),
+        }
+    }
+
+    #[track_caller]
+    pub fn expect_float(&self) -> &D::FloatData
+    where
+        Self: Debug,
+    {
+        match &self.specifics {
+            TySpecifics::Float(data) => data,
+            _ => panic!("expected float (was {self:?})"),
+        }
+    }
+
+    #[track_caller]
+    pub fn is_float(&self) -> bool
+    where
+        Self: Debug,
+    {
+        match &self.specifics {
+            TySpecifics::Float(_) => true,
+            _ => false,
         }
     }
 
@@ -286,6 +315,7 @@ impl<'vir, D1: TyDatas<'vir>, D2: TyDatas<'vir>> TyDatas<'vir> for (D1, D2) {
     type StructData = (&'vir D1::StructData, &'vir D2::StructData);
     type VariantData = (&'vir D1::VariantData, &'vir D2::VariantData);
     type EnumData = (&'vir D1::EnumData, &'vir D2::EnumData);
+    type FloatData = (&'vir D1::FloatData, &'vir D2::FloatData);
 }
 
 // Deref implementations
@@ -315,7 +345,7 @@ where
     D::TyData: PartialEq, D::ParamData: PartialEq, D::OpaqueData: PartialEq,
     D::PrimitiveData: PartialEq, D::ImmRefData: PartialEq, D::MutRefData: PartialEq,
     D::StructData: PartialEq, D::FieldData: PartialEq, D::EnumData: PartialEq,
-    D::VariantData: PartialEq,
+    D::VariantData: PartialEq, D::FloatData: PartialEq
 {
     fn eq(&self, other: &Self) -> bool {
         self.data == other.data $(&& self.$field == other.$field)?
@@ -326,14 +356,14 @@ impl<'vir, D: TyDatas<'vir>> Eq for $container<'vir, D>
 where
     D::TyData: Eq, D::ParamData: Eq, D::OpaqueData: Eq, D::PrimitiveData: Eq,
     D::ImmRefData: Eq, D::MutRefData: Eq, D::StructData: Eq,
-    D::FieldData: Eq, D::EnumData: Eq, D::VariantData: Eq,
+    D::FieldData: Eq, D::EnumData: Eq, D::VariantData: Eq, D::FloatData: PartialEq
 {}
 
 impl<'vir, D: TyDatas<'vir>> Hash for $container<'vir, D>
 where
     D::TyData: Hash, D::ParamData: Hash, D::OpaqueData: Hash, D::PrimitiveData: Hash,
     D::ImmRefData: Hash, D::MutRefData: Hash, D::StructData: Hash,
-    D::FieldData: Hash, D::EnumData: Hash, D::VariantData: Hash,
+    D::FieldData: Hash, D::EnumData: Hash, D::VariantData: Hash, D::FloatData: Hash
 {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.data.hash(state);
@@ -383,6 +413,7 @@ impl<'vir, D: TyDatas<'vir>> Debug for TySpecifics<'vir, D> {
             Self::MutRef(arg0) => f.debug_tuple("MutRef").field(arg0).finish(),
             Self::StructLike(arg0) => f.debug_tuple("StructLike").field(arg0).finish(),
             Self::EnumLike(arg0) => f.debug_tuple("EnumLike").field(arg0).finish(),
+            Self::Float(arg0) => f.debug_tuple("Float").field(arg0).finish(),
         }
     }
 }
@@ -397,6 +428,7 @@ impl<'vir, D: TyDatas<'vir>> Clone for TySpecifics<'vir, D> {
             Self::MutRef(arg0) => Self::MutRef(arg0.clone()),
             Self::StructLike(arg0) => Self::StructLike(arg0.clone()),
             Self::EnumLike(arg0) => Self::EnumLike(arg0.clone()),
+            Self::Float(arg0) => Self::Float(arg0.clone()),
         }
     }
 }
@@ -413,6 +445,7 @@ where
     D::FieldData: PartialEq,
     D::EnumData: PartialEq,
     D::VariantData: PartialEq,
+    D::FloatData: PartialEq,
 {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
@@ -423,6 +456,7 @@ where
             (Self::MutRef(l0), Self::MutRef(r0)) => l0 == r0,
             (Self::StructLike(l0), Self::StructLike(r0)) => l0 == r0,
             (Self::EnumLike(l0), Self::EnumLike(r0)) => l0 == r0,
+            (Self::Float(l0), Self::Float(r0)) => l0 == r0,
             _ => false,
         }
     }
@@ -440,6 +474,7 @@ where
     D::FieldData: Eq,
     D::EnumData: Eq,
     D::VariantData: Eq,
+    D::FloatData: Eq,
 {
 }
 
@@ -455,6 +490,7 @@ where
     D::FieldData: Hash,
     D::EnumData: Hash,
     D::VariantData: Hash,
+    D::FloatData: Hash,
 {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         core::mem::discriminant(self).hash(state);
@@ -475,6 +511,7 @@ impl<'vir, D: TyDatas<'vir>> TySpecifics<'vir, D> {
             (MutRef(d1), MutRef(d2)) => MutRef((d1, d2)),
             (StructLike(d1), StructLike(d2)) => StructLike(d1.zip(d2)),
             (EnumLike(d1), EnumLike(d2)) => EnumLike(d1.zip(d2)),
+            (Float(d1), Float(d2)) => Float((d1, d2)),
             _ => panic!("Mismatched TySpecifics variants"),
         }
     }

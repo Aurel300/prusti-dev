@@ -23,6 +23,7 @@ impl<'vir> TyDatas<'vir> for ImpureTyDatas {
     type StructData = ();
     type VariantData = TyImpureVariantData<'vir>;
     type EnumData = TyImpureEnumData<'vir>;
+    type FloatData = ();
 }
 
 pub type TyImpure<'vir> = Ty<'vir, ImpureTyDatas>;
@@ -31,6 +32,7 @@ pub type TyImpureOpaque<'vir> = <ImpureTyDatas as TyDatas<'vir>>::OpaqueData;
 pub type TyImpurePrimitive<'vir> = <ImpureTyDatas as TyDatas<'vir>>::PrimitiveData;
 pub type TyImpureImmRef<'vir> = <ImpureTyDatas as TyDatas<'vir>>::ImmRefData;
 pub type TyImpureMutRef<'vir> = <ImpureTyDatas as TyDatas<'vir>>::MutRefData;
+pub type TyImpureFloat<'vir> = <ImpureTyDatas as TyDatas<'vir>>::FloatData;
 
 #[derive(Debug, Clone, Copy)]
 pub struct TyImpureImmRefData {}
@@ -177,6 +179,9 @@ impl TaskEncoder for TyImpureEnc {
                 TySpecifics::EnumLike(enumlike) => TySpecifics::EnumLike(
                     super::kinds::enumlike::ty_impure(&ty, enumlike, deps, &mut builder)?,
                 ),
+                TySpecifics::Float(fl) => {
+                    TySpecifics::Float(super::kinds::float::ty_impure(fl, deps, &mut builder)?)
+                }
             };
             let data = TyImpureRef {
                 inhabited: ty.inhabited,

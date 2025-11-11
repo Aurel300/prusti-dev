@@ -154,37 +154,36 @@ impl MirBuiltinEnc {
         deps.emit_output_ref(key, MirBuiltinEncOutputRef::UnOp(function))?;
 
         let snap_arg_decl = vcx.mk_local_decl("arg", e_ty_snap);
-        let prim_res_ty = e_ty.expect_primitive();
         let snap_arg = vcx.mk_local_ex(snap_arg_decl);
-        match prim_res_ty {
-            crate::encoders::ty::pure::TyPurePrimData::Native(ty_pure_prim_data_native) => {
-                let prim_arg = (ty_pure_prim_data_native.snap_to_prim)(snap_arg);
-                let mut val = (ty_pure_prim_data_native.prim_to_snap)(
-                    vcx.mk_unary_op_expr(vir::UnOpKind::from(op), prim_arg),
-                );
-                // Can overflow when doing `- iN::MIN -> iN::MIN`. There is no
-                // `CheckedUnOp`, instead the compiler puts an `TerminatorKind::Assert`
-                // before in debug mode. We should still produce the correct result in
-                // release mode, which the code under this branch does.
-                if op == mir::UnOp::Neg && ty.is_signed() {
-                    let bound = vcx.get_min_int(ty.kind());
-                    // `snap_to_prim(arg) == -iN::MIN`
-                    let cond = vcx.mk_eq_expr(prim_arg.downcast_ty(), bound);
-                    // `snap_to_prim(arg) == -iN::MIN ? arg :
-                    // prim_to_snap(-snap_to_prim(arg))`
-                    val = vcx.mk_ternary_expr(cond, snap_arg, val)
-                }
-
-                Ok(vcx.mk_function(function, (snap_arg_decl,), &[], &[], None, Some(val)))
+        if !e_ty.is_float() {
+            let prim_res_ty = e_ty.expect_primitive();
+            let prim_arg = (prim_res_ty.snap_to_prim)(snap_arg);
+            let mut val =
+                (prim_res_ty.prim_to_snap)(vcx.mk_unary_op_expr(vir::UnOpKind::from(op), prim_arg));
+            // Can overflow when doing `- iN::MIN -> iN::MIN`. There is no
+            // `CheckedUnOp`, instead the compiler puts an `TerminatorKind::Assert`
+            // before in debug mode. We should still produce the correct result in
+            // release mode, which the code under this branch does.
+            if op == mir::UnOp::Neg && ty.is_signed() {
+                let bound = vcx.get_min_int(ty.kind());
+                // `snap_to_prim(arg) == -iN::MIN`
+                let cond = vcx.mk_eq_expr(prim_arg.downcast_ty(), bound);
+                // `snap_to_prim(arg) == -iN::MIN ? arg :
+                // prim_to_snap(-snap_to_prim(arg))`
+                val = vcx.mk_ternary_expr(cond, snap_arg, val)
             }
-            crate::encoders::ty::pure::TyPurePrimData::Float(ty_pure_prim_data_float) => match op {
+
+            Ok(vcx.mk_function(function, (snap_arg_decl,), &[], &[], None, Some(val)))
+        } else {
+            let fl_res_ty = e_ty.expect_float();
+            match op {
                 mir::UnOp::Not => unreachable!(),
                 mir::UnOp::Neg => {
-                    let res = (ty_pure_prim_data_float.fp_neg)(snap_arg);
+                    let res = (fl_res_ty.fp_neg)(snap_arg);
                     Ok(vcx.mk_function(function, (snap_arg_decl,), &[], &[], None, Some(res)))
                 }
                 mir::UnOp::PtrMetadata => unreachable!(),
-            },
+            }
         }
     }
 
@@ -204,402 +203,310 @@ impl MirBuiltinEnc {
         let e_r_ty = deps.require_dep::<TyUsePureEnc>(r_ty_task)?;
         let res_ty_task = RustTyDecomposition::from_prim_ty(res_ty);
         let e_res_ty = deps.require_dep::<TyUsePureEnc>(res_ty_task)?;
-        let prim_l_ty = e_l_ty.expect_primitive();
-        let prim_r_ty = e_r_ty.expect_primitive();
-        let prim_res_ty = e_res_ty.expect_primitive();
-        let e_l_ty_snap = e_l_ty.snapshot.downcast_ty();
-        let e_r_ty_snap = e_r_ty.snapshot.downcast_ty();
-        let e_res_ty_snap = e_res_ty.snapshot.downcast_ty();
-
-        let name = vir::vir_format_identifier!(
-            vcx,
-            "mir_binop_{op:?}_{}_{}",
-            int_name(l_ty),
-            int_name(r_ty)
-        );
-        let function = FunctionIdn::new(name, (e_l_ty_snap, e_r_ty_snap), e_res_ty_snap);
-        deps.emit_output_ref(key, MirBuiltinEncOutputRef::BinOp(function))?;
-        let lhs_decl = vcx.mk_local_decl("arg1", e_l_ty_snap);
-        let rhs_decl = vcx.mk_local_decl("arg2", e_r_ty_snap);
-        match prim_l_ty {
-            crate::encoders::ty::pure::TyPurePrimData::Native(_) => {
-                let lhs = (prim_l_ty.expect_native().snap_to_prim)(vcx.mk_local_ex(lhs_decl));
-                let mut rhs = (prim_r_ty.expect_native().snap_to_prim)(vcx.mk_local_ex(rhs_decl));
-                if matches!(op, Shl | Shr) {
-                    // RHS must be smaller than the bit width of the LHS, this is
-                    // implicit in the `Shl` and `Shr` operators.
-                    rhs = vcx.mk_bin_op_expr(
-                        vir::BinOpKind::Mod,
-                        rhs.downcast_ty(),
-                        vcx.get_bit_width_int(l_ty.kind()),
-                    );
-                }
-
-                let (pres, val) = if matches!(op, Cmp) {
-                    // Cmp does not have a direct analogue to VIR binary operations,
-                    // so we treat it specially.
-                    // a > b ? 1 : (b > a ? -1 : 0)
-                    let a_gt_b = vcx
-                        .mk_bin_op_expr(vir::BinOpKind::CmpGt, lhs, rhs)
-                        .downcast_ty();
-                    let b_gt_a = vcx
-                        .mk_bin_op_expr(vir::BinOpKind::CmpGt, rhs, lhs)
-                        .downcast_ty();
-                    let val = vcx
-                        .mk_ternary_expr(
-                            a_gt_b,
-                            vcx.mk_int::<1>(),
-                            vcx.mk_ternary_expr(b_gt_a, vcx.mk_int::<-1>(), vcx.mk_int::<0>()),
-                        )
-                        .upcast_ty();
-                    (vec![], val)
-                } else {
-                    let op_kind = vir::BinOpKind::from(op);
-                    let viper_val = vcx.mk_bin_op_expr_inner(op_kind, lhs, rhs);
-                    match op {
-                        // Overflow well defined as wrapping (implicit) and for the shifts
-                        // the RHS will be masked to the bit width.
-                        Add | Sub | Mul | Shl | Shr => (
-                            Vec::new(),
-                            Self::get_wrapped_val(vcx, viper_val.downcast_ty(), res_ty).upcast_ty(),
-                        ),
-                        // Undefined behavior to overflow (need precondition)
-                        AddUnchecked | SubUnchecked | MulUnchecked => {
-                            let min = vcx.get_min_int(res_ty.kind());
-                            // `(arg1 op arg2) >= -iN::MIN`
-                            let lower_bound = vcx
-                                .mk_bin_op_expr(vir::BinOpKind::CmpGe, viper_val.downcast_ty(), min)
-                                .downcast_ty::<vir::Bool>();
-                            let max = vcx.get_max_int(res_ty.kind());
-                            // `(arg1 op arg2) <= iN::MAX`
-                            let upper_bound = vcx
-                                .mk_bin_op_expr(vir::BinOpKind::CmpLe, viper_val.downcast_ty(), max)
-                                .downcast_ty::<vir::Bool>();
-                            (vec![lower_bound, upper_bound], viper_val)
-                        }
-                        // Overflow is well defined as wrapping (implicit), but shifting by
-                        // more than the bit width (or less than 0) is undefined behavior.
-                        ShlUnchecked | ShrUnchecked => {
-                            let min = vcx.mk_int::<0>();
-                            // `arg2 >= 0`
-                            let lower_bound = vcx
-                                .mk_bin_op_expr(vir::BinOpKind::CmpGe, rhs.downcast_ty(), min)
-                                .downcast_ty::<vir::Bool>();
-                            let max = vcx.get_bit_width_int(l_ty.kind());
-                            // `arg2 < bit_width(arg1)`
-                            let upper_bound = vcx
-                                .mk_bin_op_expr(vir::BinOpKind::CmpLt, rhs.downcast_ty(), max)
-                                .downcast_ty::<vir::Bool>();
-                            (
-                                vec![lower_bound, upper_bound],
-                                Self::get_wrapped_val(vcx, viper_val.downcast_ty(), res_ty)
-                                    .upcast_ty(),
-                            )
-                        }
-                        // Could divide by zero or overflow if divisor is `-1`
-                        Div | Rem => {
-                            // `0 != arg2 `
-                            let pre = vcx
-                                .mk_bin_op_expr(
-                                    vir::BinOpKind::CmpNe,
-                                    vcx.mk_int::<0>(),
-                                    rhs.downcast_ty(),
-                                )
-                                .downcast_ty::<vir::Bool>();
-                            let mut pres = vec![pre];
-                            let mut val = viper_val;
-                            if res_ty.is_signed() {
-                                let min = vcx.get_min_int(res_ty.kind());
-                                // `arg1 != -iN::MIN`
-                                let arg1_cond = vcx.mk_bin_op_expr(
-                                    vir::BinOpKind::CmpNe,
-                                    lhs.downcast_ty(),
-                                    min,
-                                );
-                                // `-1 != arg2 `
-                                let arg2_cond = vcx.mk_bin_op_expr(
-                                    vir::BinOpKind::CmpNe,
-                                    vcx.mk_int::<-1>(),
-                                    rhs.downcast_ty(),
-                                );
-                                // `-1 != arg2 || arg1 != -iN::MIN`
-                                let pre = vcx
-                                    .mk_bin_op_expr(vir::BinOpKind::Or, arg1_cond, arg2_cond)
-                                    .downcast_ty::<vir::Bool>();
-                                pres.push(pre);
-                                // The Rust and Viper (SMT) semantics for `\` and `%` do not
-                                // match up when `arg1 < 0`, encode this difference.
-                                if matches!(op, Div) {
-                                    // `arg1 >= 0 ? arg1 \ arg2 : arg2 >= 0 ? (arg1 - 1) \ arg2 + 1 : (arg1 - 1) \ arg2 - 1`
-                                    let lhs_sub = vcx.mk_bin_op_expr(
-                                        vir::BinOpKind::Sub,
-                                        lhs.downcast_ty(),
-                                        vcx.mk_int::<1>(),
-                                    );
-                                    let common_div = vcx
-                                        .mk_bin_op_expr_inner(op_kind, lhs_sub, rhs)
-                                        .downcast_ty();
-                                    let neg_pos = vcx.mk_bin_op_expr(
-                                        vir::BinOpKind::Add,
-                                        common_div,
-                                        vcx.mk_int::<1>(),
-                                    );
-                                    let neg_neg = vcx.mk_bin_op_expr(
-                                        vir::BinOpKind::Sub,
-                                        common_div,
-                                        vcx.mk_int::<1>(),
-                                    );
-                                    let rhs_pos = vcx
-                                        .mk_bin_op_expr(
-                                            vir::BinOpKind::CmpGe,
-                                            rhs.downcast_ty(),
-                                            vcx.mk_int::<0>(),
-                                        )
-                                        .downcast_ty();
-                                    let negative = vcx.mk_ternary_expr(rhs_pos, neg_pos, neg_neg);
-                                    let lhs_pos = vcx
-                                        .mk_bin_op_expr(
-                                            vir::BinOpKind::CmpGe,
-                                            lhs.downcast_ty(),
-                                            vcx.mk_int::<0>(),
-                                        )
-                                        .downcast_ty();
-                                    val = vcx.mk_ternary_expr(lhs_pos, val, negative);
-                                } else {
-                                    // `arg1 >= 0 ? arg1 % arg2 : (arg1 % arg2) - (arg2 >= 0 ? arg2 : -arg2)`
-                                    let rhs_pos = vcx
-                                        .mk_bin_op_expr(
-                                            vir::BinOpKind::CmpGe,
-                                            rhs.downcast_ty(),
-                                            vcx.mk_int::<0>(),
-                                        )
-                                        .downcast_ty();
-                                    let rhs_abs = vcx.mk_ternary_expr(
-                                        rhs_pos,
-                                        rhs,
-                                        vcx.mk_unary_op_expr(vir::UnOpKind::Neg, rhs),
-                                    );
-                                    let negative =
-                                        vcx.mk_bin_op_expr(vir::BinOpKind::Sub, viper_val, rhs_abs);
-                                    let lhs_pos = vcx
-                                        .mk_bin_op_expr(
-                                            vir::BinOpKind::CmpGe,
-                                            lhs.downcast_ty(),
-                                            vcx.mk_int::<0>(),
-                                        )
-                                        .downcast_ty();
-                                    val = vcx.mk_ternary_expr(lhs_pos, val, negative);
-                                }
-                            }
-                            (pres, val)
-                        }
-                        // Cannot overflow and no undefined behavior
-                        BitXor | BitAnd | BitOr | Eq | Lt | Le | Ne | Ge | Gt | Offset => {
-                            (Vec::new(), viper_val)
-                        }
-
-                        // these are handled in `handle_checked_bin_op`
-                        AddWithOverflow | SubWithOverflow | MulWithOverflow => unreachable!(),
-
-                        // this is handled separately, earlier
-                        Cmp => unreachable!(),
-                    }
-                };
-                let val: &'vir vir::ExprGenData<'vir, (), !, CSnap> =
-                    (prim_res_ty.expect_native().prim_to_snap)(val);
-                Ok(vcx.mk_function(
-                    function,
-                    (lhs_decl, rhs_decl),
-                    vcx.alloc_slice(&pres),
-                    &[],
-                    None,
-                    Some(val),
-                ))
+        if !e_l_ty.is_float() {
+            let prim_l_ty = e_l_ty.expect_primitive();
+            let prim_r_ty = e_r_ty.expect_primitive();
+            let prim_res_ty = e_res_ty.expect_primitive();
+            let e_l_ty_snap = e_l_ty.snapshot.downcast_ty();
+            let e_r_ty_snap = e_r_ty.snapshot.downcast_ty();
+            let e_res_ty_snap = e_res_ty.snapshot.downcast_ty();
+            let name = vir::vir_format_identifier!(
+                vcx,
+                "mir_binop_{op:?}_{}_{}",
+                int_name(l_ty),
+                int_name(r_ty)
+            );
+            let function = FunctionIdn::new(name, (e_l_ty_snap, e_r_ty_snap), e_res_ty_snap);
+            deps.emit_output_ref(key, MirBuiltinEncOutputRef::BinOp(function))?;
+            let lhs_decl = vcx.mk_local_decl("arg1", e_l_ty_snap);
+            let rhs_decl = vcx.mk_local_decl("arg2", e_r_ty_snap);
+            let lhs = (prim_l_ty.snap_to_prim)(vcx.mk_local_ex(lhs_decl));
+            let mut rhs = (prim_r_ty.snap_to_prim)(vcx.mk_local_ex(rhs_decl));
+            if matches!(op, Shl | Shr) {
+                // RHS must be smaller than the bit width of the LHS, this is
+                // implicit in the `Shl` and `Shr` operators.
+                rhs = vcx.mk_bin_op_expr(
+                    vir::BinOpKind::Mod,
+                    rhs.downcast_ty(),
+                    vcx.get_bit_width_int(l_ty.kind()),
+                );
             }
-            crate::encoders::ty::pure::TyPurePrimData::Float(float_type) => {
+
+            let (pres, val) = if matches!(op, Cmp) {
+                // Cmp does not have a direct analogue to VIR binary operations,
+                // so we treat it specially.
+                // a > b ? 1 : (b > a ? -1 : 0)
+                let a_gt_b = vcx
+                    .mk_bin_op_expr(vir::BinOpKind::CmpGt, lhs, rhs)
+                    .downcast_ty();
+                let b_gt_a = vcx
+                    .mk_bin_op_expr(vir::BinOpKind::CmpGt, rhs, lhs)
+                    .downcast_ty();
+                let val = vcx
+                    .mk_ternary_expr(
+                        a_gt_b,
+                        vcx.mk_int::<1>(),
+                        vcx.mk_ternary_expr(b_gt_a, vcx.mk_int::<-1>(), vcx.mk_int::<0>()),
+                    )
+                    .upcast_ty();
+                (vec![], val)
+            } else {
+                let op_kind = vir::BinOpKind::from(op);
+                let viper_val = vcx.mk_bin_op_expr_inner(op_kind, lhs, rhs);
                 match op {
-                    Add => {
-                        let res = (float_type.fp_add)(
-                            vcx.mk_local_ex(lhs_decl),
-                            vcx.mk_local_ex(rhs_decl),
-                        );
-                        Ok(vcx.mk_function(
-                            function,
-                            (lhs_decl, rhs_decl),
-                            &[],
-                            &[],
-                            None,
-                            Some(res),
-                        ))
+                    // Overflow well defined as wrapping (implicit) and for the shifts
+                    // the RHS will be masked to the bit width.
+                    Add | Sub | Mul | Shl | Shr => (
+                        Vec::new(),
+                        Self::get_wrapped_val(vcx, viper_val.downcast_ty(), res_ty).upcast_ty(),
+                    ),
+                    // Undefined behavior to overflow (need precondition)
+                    AddUnchecked | SubUnchecked | MulUnchecked => {
+                        let min = vcx.get_min_int(res_ty.kind());
+                        // `(arg1 op arg2) >= -iN::MIN`
+                        let lower_bound = vcx
+                            .mk_bin_op_expr(vir::BinOpKind::CmpGe, viper_val.downcast_ty(), min)
+                            .downcast_ty::<vir::Bool>();
+                        let max = vcx.get_max_int(res_ty.kind());
+                        // `(arg1 op arg2) <= iN::MAX`
+                        let upper_bound = vcx
+                            .mk_bin_op_expr(vir::BinOpKind::CmpLe, viper_val.downcast_ty(), max)
+                            .downcast_ty::<vir::Bool>();
+                        (vec![lower_bound, upper_bound], viper_val)
                     }
-                    AddUnchecked => unreachable!(),
-                    AddWithOverflow => unreachable!(),
-                    Sub => {
-                        let res = (float_type.fp_sub)(
-                            vcx.mk_local_ex(lhs_decl),
-                            vcx.mk_local_ex(rhs_decl),
-                        );
-                        Ok(vcx.mk_function(
-                            function,
-                            (lhs_decl, rhs_decl),
-                            &[],
-                            &[],
-                            None,
-                            Some(res),
-                        ))
+                    // Overflow is well defined as wrapping (implicit), but shifting by
+                    // more than the bit width (or less than 0) is undefined behavior.
+                    ShlUnchecked | ShrUnchecked => {
+                        let min = vcx.mk_int::<0>();
+                        // `arg2 >= 0`
+                        let lower_bound = vcx
+                            .mk_bin_op_expr(vir::BinOpKind::CmpGe, rhs.downcast_ty(), min)
+                            .downcast_ty::<vir::Bool>();
+                        let max = vcx.get_bit_width_int(l_ty.kind());
+                        // `arg2 < bit_width(arg1)`
+                        let upper_bound = vcx
+                            .mk_bin_op_expr(vir::BinOpKind::CmpLt, rhs.downcast_ty(), max)
+                            .downcast_ty::<vir::Bool>();
+                        (
+                            vec![lower_bound, upper_bound],
+                            Self::get_wrapped_val(vcx, viper_val.downcast_ty(), res_ty).upcast_ty(),
+                        )
                     }
-                    SubUnchecked => unreachable!(),
-                    SubWithOverflow => unreachable!(),
-                    Mul => {
-                        let res = (float_type.fp_mul)(
-                            vcx.mk_local_ex(lhs_decl),
-                            vcx.mk_local_ex(rhs_decl),
-                        );
-                        Ok(vcx.mk_function(
-                            function,
-                            (lhs_decl, rhs_decl),
-                            &[],
-                            &[],
-                            None,
-                            Some(res),
-                        ))
+                    // Could divide by zero or overflow if divisor is `-1`
+                    Div | Rem => {
+                        // `0 != arg2 `
+                        let pre = vcx
+                            .mk_bin_op_expr(
+                                vir::BinOpKind::CmpNe,
+                                vcx.mk_int::<0>(),
+                                rhs.downcast_ty(),
+                            )
+                            .downcast_ty::<vir::Bool>();
+                        let mut pres = vec![pre];
+                        let mut val = viper_val;
+                        if res_ty.is_signed() {
+                            let min = vcx.get_min_int(res_ty.kind());
+                            // `arg1 != -iN::MIN`
+                            let arg1_cond =
+                                vcx.mk_bin_op_expr(vir::BinOpKind::CmpNe, lhs.downcast_ty(), min);
+                            // `-1 != arg2 `
+                            let arg2_cond = vcx.mk_bin_op_expr(
+                                vir::BinOpKind::CmpNe,
+                                vcx.mk_int::<-1>(),
+                                rhs.downcast_ty(),
+                            );
+                            // `-1 != arg2 || arg1 != -iN::MIN`
+                            let pre = vcx
+                                .mk_bin_op_expr(vir::BinOpKind::Or, arg1_cond, arg2_cond)
+                                .downcast_ty::<vir::Bool>();
+                            pres.push(pre);
+                            // The Rust and Viper (SMT) semantics for `\` and `%` do not
+                            // match up when `arg1 < 0`, encode this difference.
+                            if matches!(op, Div) {
+                                // `arg1 >= 0 ? arg1 \ arg2 : arg2 >= 0 ? (arg1 - 1) \ arg2 + 1 : (arg1 - 1) \ arg2 - 1`
+                                let lhs_sub = vcx.mk_bin_op_expr(
+                                    vir::BinOpKind::Sub,
+                                    lhs.downcast_ty(),
+                                    vcx.mk_int::<1>(),
+                                );
+                                let common_div = vcx
+                                    .mk_bin_op_expr_inner(op_kind, lhs_sub, rhs)
+                                    .downcast_ty();
+                                let neg_pos = vcx.mk_bin_op_expr(
+                                    vir::BinOpKind::Add,
+                                    common_div,
+                                    vcx.mk_int::<1>(),
+                                );
+                                let neg_neg = vcx.mk_bin_op_expr(
+                                    vir::BinOpKind::Sub,
+                                    common_div,
+                                    vcx.mk_int::<1>(),
+                                );
+                                let rhs_pos = vcx
+                                    .mk_bin_op_expr(
+                                        vir::BinOpKind::CmpGe,
+                                        rhs.downcast_ty(),
+                                        vcx.mk_int::<0>(),
+                                    )
+                                    .downcast_ty();
+                                let negative = vcx.mk_ternary_expr(rhs_pos, neg_pos, neg_neg);
+                                let lhs_pos = vcx
+                                    .mk_bin_op_expr(
+                                        vir::BinOpKind::CmpGe,
+                                        lhs.downcast_ty(),
+                                        vcx.mk_int::<0>(),
+                                    )
+                                    .downcast_ty();
+                                val = vcx.mk_ternary_expr(lhs_pos, val, negative);
+                            } else {
+                                // `arg1 >= 0 ? arg1 % arg2 : (arg1 % arg2) - (arg2 >= 0 ? arg2 : -arg2)`
+                                let rhs_pos = vcx
+                                    .mk_bin_op_expr(
+                                        vir::BinOpKind::CmpGe,
+                                        rhs.downcast_ty(),
+                                        vcx.mk_int::<0>(),
+                                    )
+                                    .downcast_ty();
+                                let rhs_abs = vcx.mk_ternary_expr(
+                                    rhs_pos,
+                                    rhs,
+                                    vcx.mk_unary_op_expr(vir::UnOpKind::Neg, rhs),
+                                );
+                                let negative =
+                                    vcx.mk_bin_op_expr(vir::BinOpKind::Sub, viper_val, rhs_abs);
+                                let lhs_pos = vcx
+                                    .mk_bin_op_expr(
+                                        vir::BinOpKind::CmpGe,
+                                        lhs.downcast_ty(),
+                                        vcx.mk_int::<0>(),
+                                    )
+                                    .downcast_ty();
+                                val = vcx.mk_ternary_expr(lhs_pos, val, negative);
+                            }
+                        }
+                        (pres, val)
                     }
-                    MulUnchecked => unreachable!(),
-                    MulWithOverflow => unreachable!(),
-                    Div => {
-                        let res = (float_type.fp_div)(
-                            vcx.mk_local_ex(lhs_decl),
-                            vcx.mk_local_ex(rhs_decl),
-                        );
-                        Ok(vcx.mk_function(
-                            function,
-                            (lhs_decl, rhs_decl),
-                            &[],
-                            &[],
-                            None,
-                            Some(res),
-                        ))
+                    // Cannot overflow and no undefined behavior
+                    BitXor | BitAnd | BitOr | Eq | Lt | Le | Ne | Ge | Gt | Offset => {
+                        (Vec::new(), viper_val)
                     }
-                    Rem => {
-                        // SMT uses n = x / y -> round to nearest
-                        // Rust truncates
-                        // Therefore we cannot use SMT rem
-                        let float_lhs = vcx.mk_local_ex(lhs_decl);
-                        let float_rhs = vcx.mk_local_ex(rhs_decl);
-                        let div_res = (float_type.fp_div)(float_lhs, float_rhs);
-                        let div_trunc = (float_type.fp_trunc)(div_res);
-                        let mul_res = (float_type.fp_mul)(div_trunc, float_rhs);
-                        let res = (float_type.fp_sub)(float_lhs, mul_res);
-                        Ok(vcx.mk_function(
-                            function,
-                            (lhs_decl, rhs_decl),
-                            &[],
-                            &[],
-                            None,
-                            Some(res),
-                        ))
-                    }
-                    BitXor => unreachable!(),
-                    BitAnd => unreachable!(),
-                    BitOr => unreachable!(),
-                    Shl => unreachable!(),
-                    ShlUnchecked => unreachable!(),
-                    Shr => unreachable!(),
-                    ShrUnchecked => unreachable!(),
-                    Eq => {
-                        let prim_res = (float_type.fp_eq)(
-                            vcx.mk_local_ex(lhs_decl),
-                            vcx.mk_local_ex(rhs_decl),
-                        );
-                        let val = (prim_res_ty.get_prim_to_snap())(prim_res.upcast_ty());
-                        Ok(vcx.mk_function(
-                            function,
-                            (lhs_decl, rhs_decl),
-                            &[],
-                            &[],
-                            None,
-                            Some(val),
-                        ))
-                    }
-                    Lt => {
-                        let prim_res = (float_type.fp_lt)(
-                            vcx.mk_local_ex(lhs_decl),
-                            vcx.mk_local_ex(rhs_decl),
-                        );
-                        let val = (prim_res_ty.get_prim_to_snap())(prim_res.upcast_ty());
-                        Ok(vcx.mk_function(
-                            function,
-                            (lhs_decl, rhs_decl),
-                            &[],
-                            &[],
-                            None,
-                            Some(val),
-                        ))
-                    }
-                    Le => {
-                        let prim_res = (float_type.fp_leq)(
-                            vcx.mk_local_ex(lhs_decl),
-                            vcx.mk_local_ex(rhs_decl),
-                        );
-                        let val = (prim_res_ty.get_prim_to_snap())(prim_res.upcast_ty());
-                        Ok(vcx.mk_function(
-                            function,
-                            (lhs_decl, rhs_decl),
-                            &[],
-                            &[],
-                            None,
-                            Some(val),
-                        ))
-                    }
-                    Ne => {
-                        let prim_res = (float_type.fp_eq)(
-                            vcx.mk_local_ex(lhs_decl),
-                            vcx.mk_local_ex(rhs_decl),
-                        );
-                        let neq = vcx.mk_unary_op_expr(vir::UnOpKind::Not, prim_res.upcast_ty());
-                        let val = (prim_res_ty.get_prim_to_snap())(neq);
-                        Ok(vcx.mk_function(
-                            function,
-                            (lhs_decl, rhs_decl),
-                            &[],
-                            &[],
-                            None,
-                            Some(val),
-                        ))
-                    }
-                    Ge => {
-                        let prim_res = (float_type.fp_geq)(
-                            vcx.mk_local_ex(lhs_decl),
-                            vcx.mk_local_ex(rhs_decl),
-                        );
-                        let val = (prim_res_ty.get_prim_to_snap())(prim_res.upcast_ty());
-                        Ok(vcx.mk_function(
-                            function,
-                            (lhs_decl, rhs_decl),
-                            &[],
-                            &[],
-                            None,
-                            Some(val),
-                        ))
-                    }
-                    Gt => {
-                        let prim_res = (float_type.fp_gt)(
-                            vcx.mk_local_ex(lhs_decl),
-                            vcx.mk_local_ex(rhs_decl),
-                        );
-                        let val = (prim_res_ty.get_prim_to_snap())(prim_res.upcast_ty());
-                        Ok(vcx.mk_function(
-                            function,
-                            (lhs_decl, rhs_decl),
-                            &[],
-                            &[],
-                            None,
-                            Some(val),
-                        ))
-                    }
-                    Cmp => todo!(), // maybe don't implement here but as a stdlib specification
-                    Offset => unreachable!(),
+
+                    // these are handled in `handle_checked_bin_op`
+                    AddWithOverflow | SubWithOverflow | MulWithOverflow => unreachable!(),
+
+                    // this is handled separately, earlier
+                    Cmp => unreachable!(),
                 }
+            };
+            let val: &'vir vir::ExprGenData<'vir, (), !, CSnap> = (prim_res_ty.prim_to_snap)(val);
+            Ok(vcx.mk_function(
+                function,
+                (lhs_decl, rhs_decl),
+                vcx.alloc_slice(&pres),
+                &[],
+                None,
+                Some(val),
+            ))
+        } else {
+            let fl_l_ty = e_l_ty.expect_float();
+            let e_l_ty_snap = e_l_ty.snapshot.downcast_ty();
+            let e_r_ty_snap = e_r_ty.snapshot.downcast_ty();
+            let e_res_ty_snap = e_res_ty.snapshot.downcast_ty();
+            let name = vir::vir_format_identifier!(
+                vcx,
+                "mir_binop_{op:?}_{}_{}",
+                int_name(l_ty),
+                int_name(r_ty)
+            );
+            let function = FunctionIdn::new(name, (e_l_ty_snap, e_r_ty_snap), e_res_ty_snap);
+            deps.emit_output_ref(key, MirBuiltinEncOutputRef::BinOp(function))?;
+            let lhs_decl = vcx.mk_local_decl("arg1", e_l_ty_snap);
+            let rhs_decl = vcx.mk_local_decl("arg2", e_r_ty_snap);
+            match op {
+                Add => {
+                    let res =
+                        (fl_l_ty.fp_add)(vcx.mk_local_ex(lhs_decl), vcx.mk_local_ex(rhs_decl));
+                    Ok(vcx.mk_function(function, (lhs_decl, rhs_decl), &[], &[], None, Some(res)))
+                }
+                AddUnchecked => unreachable!(),
+                AddWithOverflow => unreachable!(),
+                Sub => {
+                    let res =
+                        (fl_l_ty.fp_sub)(vcx.mk_local_ex(lhs_decl), vcx.mk_local_ex(rhs_decl));
+                    Ok(vcx.mk_function(function, (lhs_decl, rhs_decl), &[], &[], None, Some(res)))
+                }
+                SubUnchecked => unreachable!(),
+                SubWithOverflow => unreachable!(),
+                Mul => {
+                    let res =
+                        (fl_l_ty.fp_mul)(vcx.mk_local_ex(lhs_decl), vcx.mk_local_ex(rhs_decl));
+                    Ok(vcx.mk_function(function, (lhs_decl, rhs_decl), &[], &[], None, Some(res)))
+                }
+                MulUnchecked => unreachable!(),
+                MulWithOverflow => unreachable!(),
+                Div => {
+                    let res =
+                        (fl_l_ty.fp_div)(vcx.mk_local_ex(lhs_decl), vcx.mk_local_ex(rhs_decl));
+                    Ok(vcx.mk_function(function, (lhs_decl, rhs_decl), &[], &[], None, Some(res)))
+                }
+                Rem => {
+                    // SMT uses n = x / y -> round to nearest
+                    // Rust truncates
+                    // Therefore we cannot use SMT rem
+                    let float_lhs = vcx.mk_local_ex(lhs_decl);
+                    let float_rhs = vcx.mk_local_ex(rhs_decl);
+                    let div_res = (fl_l_ty.fp_div)(float_lhs, float_rhs);
+                    let div_trunc = (fl_l_ty.fp_trunc)(div_res);
+                    let mul_res = (fl_l_ty.fp_mul)(div_trunc, float_rhs);
+                    let res = (fl_l_ty.fp_sub)(float_lhs, mul_res);
+                    Ok(vcx.mk_function(function, (lhs_decl, rhs_decl), &[], &[], None, Some(res)))
+                }
+                BitXor => unreachable!(),
+                BitAnd => unreachable!(),
+                BitOr => unreachable!(),
+                Shl => unreachable!(),
+                ShlUnchecked => unreachable!(),
+                Shr => unreachable!(),
+                ShrUnchecked => unreachable!(),
+                Eq => {
+                    let prim_res =
+                        (fl_l_ty.fp_eq)(vcx.mk_local_ex(lhs_decl), vcx.mk_local_ex(rhs_decl));
+                    let val = (e_res_ty.expect_primitive().prim_to_snap)(prim_res.upcast_ty());
+                    Ok(vcx.mk_function(function, (lhs_decl, rhs_decl), &[], &[], None, Some(val)))
+                }
+                Lt => {
+                    let prim_res =
+                        (fl_l_ty.fp_lt)(vcx.mk_local_ex(lhs_decl), vcx.mk_local_ex(rhs_decl));
+                    let val = (e_res_ty.expect_primitive().prim_to_snap)(prim_res.upcast_ty());
+                    Ok(vcx.mk_function(function, (lhs_decl, rhs_decl), &[], &[], None, Some(val)))
+                }
+                Le => {
+                    let prim_res =
+                        (fl_l_ty.fp_leq)(vcx.mk_local_ex(lhs_decl), vcx.mk_local_ex(rhs_decl));
+                    let val = (e_res_ty.expect_primitive().prim_to_snap)(prim_res.upcast_ty());
+                    Ok(vcx.mk_function(function, (lhs_decl, rhs_decl), &[], &[], None, Some(val)))
+                }
+                Ne => {
+                    let prim_res =
+                        (fl_l_ty.fp_eq)(vcx.mk_local_ex(lhs_decl), vcx.mk_local_ex(rhs_decl));
+                    let neq = vcx.mk_unary_op_expr(vir::UnOpKind::Not, prim_res.upcast_ty());
+                    let val = (e_res_ty.expect_primitive().prim_to_snap)(neq);
+                    Ok(vcx.mk_function(function, (lhs_decl, rhs_decl), &[], &[], None, Some(val)))
+                }
+                Ge => {
+                    let prim_res =
+                        (fl_l_ty.fp_geq)(vcx.mk_local_ex(lhs_decl), vcx.mk_local_ex(rhs_decl));
+                    let val = (e_res_ty.expect_primitive().prim_to_snap)(prim_res.upcast_ty());
+                    Ok(vcx.mk_function(function, (lhs_decl, rhs_decl), &[], &[], None, Some(val)))
+                }
+                Gt => {
+                    let prim_res =
+                        (fl_l_ty.fp_gt)(vcx.mk_local_ex(lhs_decl), vcx.mk_local_ex(rhs_decl));
+                    let val = (e_res_ty.expect_primitive().prim_to_snap)(prim_res.upcast_ty());
+                    Ok(vcx.mk_function(function, (lhs_decl, rhs_decl), &[], &[], None, Some(val)))
+                }
+                Cmp => todo!(), // maybe don't implement here but as a stdlib specification
+                Offset => unreachable!(),
             }
         }
     }
@@ -653,14 +560,13 @@ impl MirBuiltinEnc {
 
         let rvalue_pure_ty_task = RustTyDecomposition::from_prim_ty(rvalue_pure_ty);
         let e_rvalue_pure_ty = deps.require_dep::<TyUsePureEnc>(rvalue_pure_ty_task)?;
-        let e_rvalue_pure_ty = e_rvalue_pure_ty.expect_primitive().expect_native();
+        let e_rvalue_pure_ty = e_rvalue_pure_ty.expect_primitive();
         assert_eq!(vir::TYPE_INT.upcast_ty(), e_rvalue_pure_ty.prim_type);
         let prim_type = e_rvalue_pure_ty.prim_type.downcast_ty::<vir::Int>();
         let bool_ty_task = RustTyDecomposition::from_prim_ty(bool_ty);
         let e_bool = deps.require_dep::<TyUsePureEnc>(bool_ty_task)?;
         let bool_cons = e_bool
             .expect_primitive()
-            .expect_native()
             .prim_to_snap
             .cast_args::<vir::Bool>(vir::TYPE_BOOL);
 
@@ -668,8 +574,8 @@ impl MirBuiltinEnc {
         let val_exp = vcx
             .mk_bin_op_expr(
                 vir::BinOpKind::from(op),
-                (e_l_ty.expect_primitive().expect_native().snap_to_prim)(vcx.mk_local_ex(lhs_decl)),
-                (e_r_ty.expect_primitive().expect_native().snap_to_prim)(vcx.mk_local_ex(rhs_decl)),
+                (e_l_ty.expect_primitive().snap_to_prim)(vcx.mk_local_ex(lhs_decl)),
+                (e_r_ty.expect_primitive().snap_to_prim)(vcx.mk_local_ex(rhs_decl)),
             )
             .downcast_ty();
         let val_decl = vcx.mk_local_decl("val", prim_type);

@@ -30,6 +30,7 @@ impl<'vir> TyDatas<'vir> for UseImpureTyDatas {
     type StructData = TyUseImpureStructData<'vir>;
     type VariantData = ();
     type EnumData = TyUseImpureEnumData<'vir>;
+    type FloatData = ();
 }
 
 pub type TyUseImpure<'vir> = Ty<'vir, UseImpureTyDatas>;
@@ -158,6 +159,7 @@ impl<'a, 'vir> TyUseImpureWalker<'a, 'vir> {
             TySpecifics::EnumLike(data) => {
                 TySpecifics::EnumLike(self.encode_enumlike(data, ty.0.params))
             }
+            TySpecifics::Float(..) => TySpecifics::mk_float(()),
         };
         let data = TyUseImpureData {
             args: self.args_t,
@@ -293,7 +295,9 @@ impl<'vir> TyData<'vir, UseImpureTyDatas> {
                 .collect();
         };
         match &self.specifics {
-            TySpecifics::Param(_) | TySpecifics::Primitive(_) => unreachable!(),
+            TySpecifics::Param(_) | TySpecifics::Primitive(_) | TySpecifics::Float(_) => {
+                unreachable!()
+            }
             TySpecifics::Opaque(_) => panic!("cannot fold opaque type"),
             TySpecifics::ImmRef(..) => Vec::new(),
             TySpecifics::MutRef(data) => data.fold(self_ref).into_iter().collect(),
@@ -320,7 +324,9 @@ impl<'vir> TyData<'vir, UseImpureTyDatas> {
                 .collect();
         };
         match &self.specifics {
-            TySpecifics::Param(_) | TySpecifics::Primitive(_) => unreachable!(),
+            TySpecifics::Param(_) | TySpecifics::Primitive(_) | TySpecifics::Float(_) => {
+                unreachable!()
+            }
             TySpecifics::Opaque(_) => panic!("cannot unfold opaque type"),
             TySpecifics::ImmRef(..) => Vec::new(),
             TySpecifics::MutRef(data) => data.unfold(self_ref).into_iter().collect(),

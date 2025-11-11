@@ -7,3 +7,4 @@ pub mod param;
 pub mod primitive;
 pub mod structlike;
 pub mod enumlike;
+pub mod float;

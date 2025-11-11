@@ -492,7 +492,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                     |expr, ((cond_val, _target), branch_update)| {
                         self.vcx.mk_ternary_expr(
                             self.vcx.mk_eq_expr(
-                                (discr_ty_out.expect_native().snap_to_prim.call())(discr_expr),
+                                (discr_ty_out.snap_to_prim.call())(discr_expr),
                                 discr_ty_out.expr_from_bits(discr_ty, cond_val).lift(),
                             ),
                             self.reify_branch(
@@ -736,7 +736,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                         let e_rvalue_ty = self.ty_use(rvalue_ty).expect_primitive();
                         // mir::Rvalue::Discriminant documents "Returns zero for types without discriminant"
                         let zero = self.vcx.mk_uint::<0>();
-                        e_rvalue_ty.get_prim_to_snap().call()(zero.upcast_ty()).lift()
+                        e_rvalue_ty.prim_to_snap.call()(zero.upcast_ty()).lift()
                     }
                 };
                 discr.upcast_ty()
@@ -864,7 +864,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
             ModeEnd(Mode),
             IsNaN(ty::FloatTy),
             IsInfinite(ty::FloatTy),
-            FlEq(ty::FloatTy)
+            FlEq(ty::FloatTy),
         }
 
         let crate_name = self.vcx.tcx().crate_name(def_id.krate);
@@ -916,7 +916,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
         };
 
         let bool = self.ty_use(self.vcx.tcx().types.bool);
-        let bool = bool.expect_primitive().expect_native();
+        let bool = bool.expect_primitive();
 
         let prim = match builtin {
             PrustiBuiltin::SnapshotEquality => {
@@ -1081,25 +1081,21 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                 let is_nan_fun = match fl {
                     ty::FloatTy::F16 => {
                         self.ty_use(self.vcx.tcx().types.f16)
-                            .expect_primitive()
                             .expect_float()
                             .fp_is_nan
                     }
                     ty::FloatTy::F32 => {
                         self.ty_use(self.vcx.tcx().types.f32)
-                            .expect_primitive()
                             .expect_float()
                             .fp_is_nan
                     }
                     ty::FloatTy::F64 => {
                         self.ty_use(self.vcx.tcx().types.f64)
-                            .expect_primitive()
                             .expect_float()
                             .fp_is_nan
                     }
                     ty::FloatTy::F128 => {
                         self.ty_use(self.vcx.tcx().types.f128)
-                            .expect_primitive()
                             .expect_float()
                             .fp_is_nan
                     }
@@ -1109,30 +1105,26 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                     std::mem::transmute::<ExprRet<'_>, vir::ExprGen<'_, (), !, vir::CSnap>>(fl)
                 };
                 is_nan_fun.call()(fl_val).lift()
-            },
+            }
             PrustiBuiltin::IsInfinite(fl) => {
                 let is_infinite_fun = match fl {
                     ty::FloatTy::F16 => {
                         self.ty_use(self.vcx.tcx().types.f16)
-                            .expect_primitive()
                             .expect_float()
                             .fp_is_infinite
                     }
                     ty::FloatTy::F32 => {
                         self.ty_use(self.vcx.tcx().types.f32)
-                            .expect_primitive()
                             .expect_float()
                             .fp_is_infinite
                     }
                     ty::FloatTy::F64 => {
                         self.ty_use(self.vcx.tcx().types.f64)
-                            .expect_primitive()
                             .expect_float()
                             .fp_is_infinite
                     }
                     ty::FloatTy::F128 => {
                         self.ty_use(self.vcx.tcx().types.f128)
-                            .expect_primitive()
                             .expect_float()
                             .fp_is_infinite
                     }
@@ -1142,25 +1134,17 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                     std::mem::transmute::<ExprRet<'_>, vir::ExprGen<'_, (), !, vir::CSnap>>(fl)
                 };
                 is_infinite_fun.call()(fl_val).lift()
-            },
+            }
             PrustiBuiltin::FlEq(fl) => {
                 let fl_ty = match fl {
-                    ty::FloatTy::F16 => {
-                        self.ty_use(self.vcx.tcx().types.f16)
-                    }
-                    ty::FloatTy::F32 => {
-                        self.ty_use(self.vcx.tcx().types.f32)
-                    }
-                    ty::FloatTy::F64 => {
-                        self.ty_use(self.vcx.tcx().types.f64)
-                    }
-                    ty::FloatTy::F128 => {
-                        self.ty_use(self.vcx.tcx().types.f128)
-                    }
+                    ty::FloatTy::F16 => self.ty_use(self.vcx.tcx().types.f16),
+                    ty::FloatTy::F32 => self.ty_use(self.vcx.tcx().types.f32),
+                    ty::FloatTy::F64 => self.ty_use(self.vcx.tcx().types.f64),
+                    ty::FloatTy::F128 => self.ty_use(self.vcx.tcx().types.f128),
                 };
-                let abs_fun = fl_ty.expect_primitive().expect_float().fp_abs;
-                let sub_fun = fl_ty.expect_primitive().expect_float().fp_sub;
-                let leq_fun = fl_ty.expect_primitive().expect_float().fp_leq;
+                let abs_fun = fl_ty.expect_float().fp_abs;
+                let sub_fun = fl_ty.expect_float().fp_sub;
+                let leq_fun = fl_ty.expect_float().fp_leq;
                 let fl1 = self.encode_operand(curr_ver, &args[0].node);
                 let fl1_val = unsafe {
                     std::mem::transmute::<ExprRet<'_>, vir::ExprGen<'_, (), !, vir::CSnap>>(fl1)

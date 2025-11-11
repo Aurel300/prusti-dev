@@ -190,6 +190,7 @@ impl<'tcx> TyDatas<'tcx> for RustTyDatas {
     type FieldData = RustFieldData<'tcx>;
     type EnumData = RustEnumData<'tcx>;
     type VariantData = RustVariantData;
+    type FloatData = &'tcx ty::FloatTy;
 }
 
 /// An internal representation of a `ty::Ty`. Contains all that we care about
@@ -201,6 +202,7 @@ pub type RustParam<'tcx> = <RustTyDatas as TyDatas<'tcx>>::ParamData;
 pub type RustPrimitive<'tcx> = <RustTyDatas as TyDatas<'tcx>>::PrimitiveData;
 pub type RustImmRef<'tcx> = <RustTyDatas as TyDatas<'tcx>>::ImmRefData;
 pub type RustMutRef<'tcx> = <RustTyDatas as TyDatas<'tcx>>::MutRefData;
+pub type RustFloat<'tcx> = <RustTyDatas as TyDatas<'tcx>>::FloatData;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct RustTyData<'tcx> {
@@ -486,7 +488,10 @@ impl<'tcx> TySpecifics<'tcx, RustTyDatas> {
 
     fn from_prim_ty(ty: ty::Ty<'tcx>) -> Self {
         assert!(ty.is_primitive());
-        TySpecifics::mk_primitive(ty)
+        match ty.kind() {
+            ty::TyKind::Float(float_ty) => TySpecifics::mk_float(float_ty),
+            _ => TySpecifics::mk_primitive(ty),
+        }
     }
 
     fn from_adt(adt: ty::AdtDef<'tcx>) -> Self {

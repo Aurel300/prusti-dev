@@ -75,10 +75,16 @@ impl ConstEnc {
             let kind = deps.require_dep::<TyUsePureEnc>(ty_task)?;
             Ok(match val {
                 ConstValue::Scalar(Scalar::Int(int)) => {
-                    let prim = kind.expect_primitive();
                     let val = int.to_bits(int.size());
-                    let val = prim.expr_from_bits(ty, val);
-                    (prim.get_prim_to_snap())(val)
+                    if kind.is_float() {
+                        let fl = kind.expect_float();
+                        let val = fl.expr_from_bits(val);
+                        (fl.prim_to_snap)(val)
+                    } else {
+                        let prim = kind.expect_primitive();
+                        let val = prim.expr_from_bits(ty, val);
+                        (prim.prim_to_snap)(val)
+                    }
                 }
                 ConstValue::Scalar(Scalar::Ptr(ptr, _)) => {
                     match vcx.tcx().global_alloc(ptr.provenance.alloc_id()) {

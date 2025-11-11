@@ -1019,7 +1019,7 @@ impl<'a> AstFactory<'a> {
         Expr::new(obj)
     }
 
-    pub fn backend_func_app_2(
+    pub fn backend_func_app_from_name(
         &self,
         function_name: &str,
         args: &[Expr],

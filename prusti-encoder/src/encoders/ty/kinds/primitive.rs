@@ -233,7 +233,7 @@ pub(crate) fn ty_pure<'vir>(
                 fp_gt,
                 fp_geq,
                 fp_neg,
-                fp_abs
+                fp_abs,
             )))
         }
     }

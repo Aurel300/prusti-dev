@@ -481,7 +481,7 @@ impl<'vir, 'v> ToViper<'vir, 'v> for vir::FuncApp<'vir> {
                     domain.name,
                     pos,
                 ),
-                Some(i) => ctx.ast.backend_func_app_2(
+                Some(i) => ctx.ast.backend_func_app_from_name(
                     self.target,
                     &self
                         .args

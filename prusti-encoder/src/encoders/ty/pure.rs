@@ -75,7 +75,7 @@ pub struct TyPurePrimDataFloat<'vir> {
     pub fp_gt: FunctionIdn<'vir, (vir::CSnap, vir::CSnap), vir::Bool>,
     pub fp_geq: FunctionIdn<'vir, (vir::CSnap, vir::CSnap), vir::Bool>,
     pub fp_neg: FunctionIdn<'vir, vir::CSnap, vir::CSnap>,
-    pub fp_abs: FunctionIdn<'vir, vir::CSnap, vir::CSnap>
+    pub fp_abs: FunctionIdn<'vir, vir::CSnap, vir::CSnap>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -115,7 +115,7 @@ impl<'vir> TyPurePrimDataFloat<'vir> {
         fp_gt: FunctionIdn<'vir, (vir::CSnap, vir::CSnap), vir::Bool>,
         fp_geq: FunctionIdn<'vir, (vir::CSnap, vir::CSnap), vir::Bool>,
         fp_neg: FunctionIdn<'vir, vir::CSnap, vir::CSnap>,
-        fp_abs: FunctionIdn<'vir, vir::CSnap, vir::CSnap>
+        fp_abs: FunctionIdn<'vir, vir::CSnap, vir::CSnap>,
     ) -> Self {
         Self {
             from_bv,
@@ -127,13 +127,13 @@ impl<'vir> TyPurePrimDataFloat<'vir> {
             fp_div,
             fp_trunc,
             fp_is_nan,
-            fp_is_infinite, 
+            fp_is_infinite,
             fp_lt,
             fp_leq,
             fp_gt,
             fp_geq,
             fp_neg,
-            fp_abs
+            fp_abs,
         }
     }
 }

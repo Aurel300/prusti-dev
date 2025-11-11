@@ -1,4 +1,4 @@
-use std::ops::Deref;
+use std::{any::Any, ops::Deref};
 
 use itertools::Itertools;
 use pcg::borrow_pcg::region_projection::{HasRegions, PcgRegion, RegionIdx};
@@ -69,6 +69,11 @@ impl<'tcx> RustTyDecomposition<'tcx> {
         context: impl Into<GParams<'tcx>>,
     ) -> Self {
         let (ty, args) = TyData::<'tcx, RustTyDatas>::from_ty(ty, tcx, context.into());
+        Self { ty, args }
+    }
+
+    pub fn from_real() -> Self {
+        let (ty, args) = TyData::<'tcx, RustTyDatas>::from_real();
         Self { ty, args }
     }
 
@@ -199,6 +204,12 @@ impl<'tcx> TyDatas<'tcx> for RustTyDatas {
     type FieldData = RustFieldData<'tcx>;
     type EnumData = RustEnumData<'tcx>;
     type VariantData = RustVariantData;
+    type BuiltinData = RustBuiltinData;
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum RustBuiltinData {
+    BuiltinReal,
 }
 
 /// An internal representation of a `ty::Ty`. Contains all that we care about
@@ -280,6 +291,20 @@ impl<'tcx> TyData<'tcx, RustTyDatas> {
         let specifics = TySpecifics::from_ty(ty);
         let inhabited = !ty.is_privately_uninhabited(tcx, ty::TypingEnv::fully_monomorphized());
         (Self::new(data, inhabited, specifics).alloc(), args)
+    }
+
+    pub fn from_real() -> (RustTy<'tcx>, GArgs<'tcx>) {
+        let name = "Real";
+        let params: GParams = GParams::empty();
+        let data = RustTyData {
+            name: symbol::Symbol::intern(&name),
+            params,
+        };
+        let specifics = TySpecifics::Builtin(RustBuiltinData::BuiltinReal);
+        (
+            Self::new(data, false, specifics).alloc(),
+            GArgs::new(params, &[]),
+        )
     }
 
     fn from_prim_ty(ty: ty::Ty<'tcx>) -> (RustTy<'tcx>, GArgs<'tcx>) {
@@ -517,8 +542,12 @@ impl<'tcx> TySpecifics<'tcx, RustTyDatas> {
 
         match adt.adt_kind() {
             ty::AdtKind::Struct => {
-                let data = Self::from_struct(adt.non_enum_variant());
-                Self::StructLike(data)
+                if adt.non_enum_variant().name.to_string() == "Real" {
+                    Self::Builtin(RustBuiltinData::BuiltinReal)
+                } else {
+                    let data = Self::from_struct(adt.non_enum_variant());
+                    Self::StructLike(data)
+                }
             }
             ty::AdtKind::Enum => {
                 let data = Self::from_enum(adt);

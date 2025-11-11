@@ -200,6 +200,7 @@ impl TaskEncoder for TyImpureEnc {
                 TySpecifics::EnumLike(enumlike) => TySpecifics::EnumLike(
                     super::kinds::enumlike::ty_impure(&ty, enumlike, deps, &mut builder)?,
                 ),
+                TySpecifics::Builtin(_) => unreachable!(),
             };
             let data = TyImpureRef {
                 inhabited: ty.inhabited,

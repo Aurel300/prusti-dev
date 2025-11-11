@@ -11,10 +11,13 @@ use prusti_rustc_interface::{
 use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 use vir::{
     AdtDestructor, Arity, BackendInterpretationPair, CastType, CompType, DomainAxiomData,
-    DomainIdnSnap, FunctionIdn, Type,
+    DomainIdnSnap, FunctionIdn, Type, ViperIdent,
 };
 
-use crate::encoders::Pure;
+use crate::encoders::{
+    Pure,
+    ty::{RustBuiltinData, interpretation::real},
+};
 
 use super::{
     RustTy, ViperTyDatas,
@@ -36,6 +39,7 @@ impl<'vir> TyDatas<'vir> for PureTyDatas {
     type StructData = TyPureStructData<'vir>;
     type VariantData = TyPureVariantData<'vir>;
     type EnumData = TyPureEnumData<'vir>;
+    type BuiltinData = TyPureBuiltinData<'vir>;
 }
 
 pub type TyPure<'vir> = Ty<'vir, PureTyDatas>;
@@ -44,6 +48,20 @@ pub type TyPureOpaque<'vir> = <PureTyDatas as TyDatas<'vir>>::OpaqueData;
 pub type TyPurePrimitive<'vir> = <PureTyDatas as TyDatas<'vir>>::PrimitiveData;
 pub type TyPureImmRef<'vir> = <PureTyDatas as TyDatas<'vir>>::ImmRefData;
 pub type TyPureMutRef<'vir> = <PureTyDatas as TyDatas<'vir>>::MutRefData;
+
+#[derive(Debug, Clone, Copy)]
+pub enum TyPureBuiltinData<'vir> {
+    TyPureBuiltinReal(real::TyRealLocal<'vir>),
+}
+
+impl<'vir> TyPureBuiltinData<'vir> {
+    pub fn expect_real(&'vir self) -> &'vir real::TyRealLocal<'vir> {
+        match &self {
+            TyPureBuiltinData::TyPureBuiltinReal(ty_real_local) => ty_real_local,
+            _ => unreachable!(),
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy)]
 pub struct TyPureOpaqueData<'vir> {
@@ -247,6 +265,10 @@ impl TaskEncoder for TyPureEnc {
                         task_key, enumlike, deps, builder,
                     )?)
                 }
+                TySpecifics::Builtin(RustBuiltinData::BuiltinReal) => {
+                    let builder = builder.set_domain_builder();
+                    TySpecifics::Builtin(real::ty_pure(vcx, builder)?)
+                }
             };
             let output = TyData::new(output_ref, task_key.inhabited, specifics).alloc();
             Ok((builder.build(), output))
@@ -443,6 +465,7 @@ impl<'vir> TyPureBuilder<'vir> {
             BuilderData::Adt(data) => {
                 let adt = self.vcx.mk_adt(
                     self.domain_ident.name(),
+                    // if self.domain_ident.name().to_str() == "s_Real" { ViperIdent::new("s_Real_123") } else { self.domain_ident.name() },
                     &[],
                     self.vcx.alloc_slice(data.constructors.as_slice()),
                 );

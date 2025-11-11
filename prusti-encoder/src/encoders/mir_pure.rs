@@ -4,8 +4,9 @@ use crate::encoders::{
     mir_fn::{CallTaskDescription, RustSignature},
     mir_shared::PureRvalueEnc,
     ty::{
-        RustTyDecomposition,
+        RustBuiltinData, RustTyDecomposition,
         generics::GParams,
+        interpretation::real::TyRealLocal,
         use_pure::{TyUsePure, TyUsePureEnc},
     },
 };
@@ -351,6 +352,15 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
     fn ty_use(&mut self, ty: ty::Ty<'vir>) -> TyUsePure<'vir> {
         let ty_task = RustTyDecomposition::from_ty(ty, self.vcx.tcx(), self.context);
         self.deps.require_dep::<TyUsePureEnc>(ty_task).unwrap()
+    }
+
+    fn ty_use_real(&mut self) -> &'vir TyRealLocal<'vir> {
+        let ty_task = RustTyDecomposition::from_real();
+        self.deps
+            .require_dep::<TyUsePureEnc>(ty_task)
+            .unwrap()
+            .expect_builtin()
+            .expect_real()
     }
 
     fn get_ty_for_local(&mut self, local: mir::Local) -> vir::TypeSnap<'vir> {
@@ -1027,11 +1037,23 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
             IsNaN(ty::FloatTy),
             IsInfinite(ty::FloatTy),
             FlAbs(ty::FloatTy),
+            FlToReal(ty::FloatTy),
+            RealMul,
         }
 
         let crate_name = self.vcx.tcx().crate_name(def_id.krate);
         let item_name = self.vcx.tcx().item_name(def_id);
-        if crate_name.as_str() != "prusti_contracts" {
+
+        if crate_name.as_str() != "prusti_contracts"
+            && (arg_tys.is_empty()
+                || match arg_tys.type_at(0).kind() {
+                    TyKind::Adt(adt_def, _) => {
+                        self.vcx.tcx().crate_name(adt_def.did().krate).as_str()
+                            != "prusti_contracts"
+                    }
+                    _ => true,
+                })
+        {
             panic!("call to unknown non-pure function in pure code ({crate_name}::{item_name})");
         }
 
@@ -1075,6 +1097,11 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
             "f32_abs" => PrustiBuiltin::FlAbs(ty::FloatTy::F32),
             "f64_abs" => PrustiBuiltin::FlAbs(ty::FloatTy::F64),
             "f128_abs" => PrustiBuiltin::FlAbs(ty::FloatTy::F128),
+            "from_f16" => PrustiBuiltin::FlToReal(ty::FloatTy::F16),
+            "from_f32" => PrustiBuiltin::FlToReal(ty::FloatTy::F32),
+            "from_f64" => PrustiBuiltin::FlToReal(ty::FloatTy::F64),
+            "from_f128" => PrustiBuiltin::FlToReal(ty::FloatTy::F128),
+            "mul" => PrustiBuiltin::RealMul,
             other => panic!("illegal prusti::builtin ({other})"),
         };
 
@@ -1321,6 +1348,22 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                     .encode_operand_snap(&args[0].node, curr_ver)?
                     .downcast_ty();
                 fl_ty.fp_abs.call()(fl1)
+            }
+            PrustiBuiltin::FlToReal(float_ty) => {
+                let fl_ty = match float_ty {
+                    ty::FloatTy::F16 => self.ty_use(self.vcx.tcx().types.f16),
+                    ty::FloatTy::F32 => self.ty_use(self.vcx.tcx().types.f32),
+                    ty::FloatTy::F64 => self.ty_use(self.vcx.tcx().types.f64),
+                    ty::FloatTy::F128 => self.ty_use(self.vcx.tcx().types.f128),
+                }
+                .expect_float();
+                let fl = self.encode_operand(curr_ver, &args[0].node).downcast_ty();
+                fl_ty.fp_to_real.call()(fl)
+            }
+            PrustiBuiltin::RealMul => {
+                let real1 = self.encode_operand(curr_ver, &args[0].node).downcast_ty();
+                let real2 = self.encode_operand(curr_ver, &args[1].node).downcast_ty();
+                self.ty_use_real().real_mul.call()(real1, real2)
             }
         }
         .upcast_ty())

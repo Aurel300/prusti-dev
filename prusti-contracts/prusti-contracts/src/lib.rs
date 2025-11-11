@@ -350,6 +350,43 @@ mod private {
             panic!()
         }
     }
+
+    /// a mathematical real type
+    /// it should not be constructed from running rust code, hence the private unit inside
+    #[derive(Copy, Clone)]
+    pub struct Real();
+
+    impl Real {
+        pub fn from_f16(_: f16) -> Self {
+            panic!()
+        }
+
+        pub fn from_f32(_: f32) -> Self {
+            panic!()
+        }
+
+        pub fn from_f64(_: f64) -> Self {
+            panic!()
+        }
+
+        pub fn from_f128(_: f128) -> Self {
+            panic!()
+        }
+    }
+
+    impl PartialEq for Real {
+        fn eq(&self, other: &Real) -> bool {
+            panic!()
+        }
+    }
+
+    impl Mul for Real {
+        type Output = Real;
+
+        fn mul(self, _: Self) -> Self {
+            panic!()
+        }
+    }
 }
 
 /// This function is used to mark the beginning of evaluation of expressions

@@ -4,9 +4,10 @@ use vir::CastType;
 use crate::encoders::{
     Pure,
     ty::{
-        LazyRustTy, RustTyDatas,
+        LazyRustTy, RustBuiltinData, RustTyDatas,
         generics::{GArgs, GArgsCastEnc, GArgsTyEnc, GParams},
         impure::{TyImpure, TyImpureEnc},
+        pure::TyPureBuiltinData,
     },
 };
 
@@ -33,6 +34,7 @@ impl<'vir> TyDatas<'vir> for UsePureTyDatas {
     type StructData = TyUsePureStructData<'vir>;
     type VariantData = <PureTyDatas as TyDatas<'vir>>::VariantData;
     type EnumData = <PureTyDatas as TyDatas<'vir>>::EnumData;
+    type BuiltinData = <PureTyDatas as TyDatas<'vir>>::BuiltinData;
 }
 
 pub type TyUsePure<'vir> = Ty<'vir, UsePureTyDatas>;
@@ -187,6 +189,7 @@ impl<'a, 'vir> TyUsePureWalker<'a, 'vir> {
             TySpecifics::EnumLike(data) => {
                 TySpecifics::EnumLike(self.encode_enumlike(data, ty.0.params))
             }
+            TySpecifics::Builtin(data) => TySpecifics::mk_builtin(*data.1),
         }
     }
 

@@ -3,7 +3,13 @@ use prusti_utils::config;
 use task_encoder::{EncodeFullError, EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 use vir::{CallableIdn, CastType, FunctionIdn};
 
-use crate::encoders::ty::{generics::GParams, interpretation::float::FloatDomain, pure::{TyPurePrimData, TyPurePrimDataKind}, use_pure::TyUsePureEnc, RustTyDecomposition};
+use crate::encoders::ty::{
+    RustTyDecomposition,
+    generics::GParams,
+    interpretation::float::FloatDomain,
+    pure::{TyPurePrimData, TyPurePrimDataKind},
+    use_pure::TyUsePureEnc,
+};
 
 pub struct MirBuiltinEnc;
 
@@ -222,15 +228,7 @@ impl MirBuiltinEnc {
             TyPurePrimDataKind::Native(prim_l_ty) => {
                 let lhs = (prim_l_ty.snap_to_prim)(lhs);
                 let rhs = (prim_r_ty.expect_native().snap_to_prim)(rhs);
-                let (pres, val) = Self::handle_bin_op_native(
-                    vcx,
-                    lhs,
-                    rhs,
-                    res_ty,
-                    op,
-                    l_ty,
-                    r_ty,
-                );
+                let (pres, val) = Self::handle_bin_op_native(vcx, lhs, rhs, res_ty, op, l_ty, r_ty);
                 let val = (prim_res_ty.prim_to_snap)(val);
                 Ok(vcx.mk_function(
                     function,
@@ -244,14 +242,7 @@ impl MirBuiltinEnc {
             TyPurePrimDataKind::Float(float) => {
                 assert!(matches!(prim_r_ty.kind, TyPurePrimDataKind::Float(_)));
                 let body = Self::handle_bin_op_float(vcx, lhs, rhs, op, float, *prim_res_ty);
-                Ok(vcx.mk_function(
-                    function,
-                    (lhs_decl, rhs_decl),
-                    &[],
-                    &[],
-                    None,
-                    Some(body),
-                ))
+                Ok(vcx.mk_function(function, (lhs_decl, rhs_decl), &[], &[], None, Some(body)))
             }
         }
     }
@@ -335,30 +326,22 @@ impl MirBuiltinEnc {
                         .downcast_ty::<vir::Bool>();
                     (
                         vec![lower_bound, upper_bound],
-                        Self::get_wrapped_val(vcx, viper_val.downcast_ty(), res_ty)
-                            .upcast_ty(),
+                        Self::get_wrapped_val(vcx, viper_val.downcast_ty(), res_ty).upcast_ty(),
                     )
                 }
                 // Could divide by zero or overflow if divisor is `-1`
                 Div | Rem => {
                     // `0 != arg2 `
                     let pre = vcx
-                        .mk_bin_op_expr(
-                            vir::BinOpKind::CmpNe,
-                            vcx.mk_int::<0>(),
-                            rhs.downcast_ty(),
-                        )
+                        .mk_bin_op_expr(vir::BinOpKind::CmpNe, vcx.mk_int::<0>(), rhs.downcast_ty())
                         .downcast_ty::<vir::Bool>();
                     let mut pres = vec![pre];
                     let mut val = viper_val;
                     if res_ty.is_signed() {
                         let min = vcx.get_min_int(res_ty.kind());
                         // `arg1 != -iN::MIN`
-                        let arg1_cond = vcx.mk_bin_op_expr(
-                            vir::BinOpKind::CmpNe,
-                            lhs.downcast_ty(),
-                            min,
-                        );
+                        let arg1_cond =
+                            vcx.mk_bin_op_expr(vir::BinOpKind::CmpNe, lhs.downcast_ty(), min);
                         // `-1 != arg2 `
                         let arg2_cond = vcx.mk_bin_op_expr(
                             vir::BinOpKind::CmpNe,
@@ -380,11 +363,7 @@ impl MirBuiltinEnc {
                                 vcx.mk_int::<1>(),
                             );
                             let common_div = vcx
-                                .mk_bin_op_expr_inner(
-                                    op_kind,
-                                    lhs_sub.as_dyn(),
-                                    rhs.as_dyn(),
-                                )
+                                .mk_bin_op_expr_inner(op_kind, lhs_sub.as_dyn(), rhs.as_dyn())
                                 .downcast_ty();
                             let neg_pos = vcx.mk_bin_op_expr(
                                 vir::BinOpKind::Add,

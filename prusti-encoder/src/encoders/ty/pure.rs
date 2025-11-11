@@ -18,8 +18,8 @@ use crate::encoders::Pure;
 use super::{
     RustTy, ViperTyDatas,
     data::*,
-    interpretation::float::FloatDomain,
     generics::{GenericParams, GenericParamsEnc},
+    interpretation::float::FloatDomain,
 };
 
 pub(super) type PureTyDatas = ViperTyDatas<Pure>;
@@ -596,9 +596,7 @@ impl<'vir> TyPurePrimData<'vir> {
             }
             vir::TypeKind::Int => {
                 let (bit_width, signed) = match ty.kind() {
-                    TyKind::Int(IntTy::Isize) => {
-                        ((std::mem::size_of::<isize>() * 8) as u64, true)
-                    }
+                    TyKind::Int(IntTy::Isize) => ((std::mem::size_of::<isize>() * 8) as u64, true),
                     TyKind::Int(ty) => (ty.bit_width().unwrap(), true),
                     TyKind::Uint(UintTy::Usize) => {
                         ((std::mem::size_of::<usize>() * 8) as u64, true)
@@ -618,8 +616,7 @@ impl<'vir> TyPurePrimData<'vir> {
                 };
                 match negative_value {
                     Some(value) => vir::with_vcx(|vcx| {
-                        let value =
-                            vcx.mk_const_expr(vir::ConstData::Int(value.unsigned_abs()));
+                        let value = vcx.mk_const_expr(vir::ConstData::Int(value.unsigned_abs()));
                         vcx.mk_unary_op_expr(vir::UnOpKind::Neg, value)
                     }),
                     None => vir::with_vcx(|vcx| vcx.mk_const_expr(vir::ConstData::Int(value))),

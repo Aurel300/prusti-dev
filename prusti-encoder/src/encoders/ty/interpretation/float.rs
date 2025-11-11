@@ -2,7 +2,10 @@ use prusti_rustc_interface::middle::ty;
 use task_encoder::{EncodeFullError, TaskEncoderDependencies};
 use vir::{CallableIdn, FunctionIdn};
 
-use crate::encoders::ty::{interpretation::bitvec::{BitVecEnc, BitVecSize}, pure::{DomainBuilder, TyPureEnc}};
+use crate::encoders::ty::{
+    interpretation::bitvec::{BitVecEnc, BitVecSize},
+    pure::{DomainBuilder, TyPureEnc},
+};
 
 #[derive(Debug, Clone, Copy)]
 pub struct FloatDomain<'vir> {
@@ -145,12 +148,7 @@ pub(crate) fn ty_pure_float<'vir>(
         ty::FloatTy::F64 => "(_ to_fp 11 53)",
         ty::FloatTy::F128 => "(_ to_fp 15 113)",
     };
-    let from_bv = builder.backend_func(
-        "from_bv",
-        (bit_vec.domain)(),
-        builder.self_type(),
-        Some(i),
-    );
+    let from_bv = builder.backend_func("from_bv", (bit_vec.domain)(), builder.self_type(), Some(i));
 
     builder.axiom("prim_to_snap", vir::expr! {
         forall i: [prim_to_snap.arity()] :: {[prim_to_snap](i)} ([prim_to_snap(i)]) == ([from_bv]([bit_vec.from_int](i)))

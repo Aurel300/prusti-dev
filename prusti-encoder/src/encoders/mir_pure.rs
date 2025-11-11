@@ -1017,20 +1017,13 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                     .reify(self.vcx, (cl_def_id, self.vcx.alloc_slice(&reify_args)))
                     .lift();
 
-                let body = bool.expect_native().snap_to_prim.call()(body.downcast_ty()).downcast_ty();
+                let body =
+                    bool.expect_native().snap_to_prim.call()(body.downcast_ty()).downcast_ty();
                 // TODO: triggers
                 if builtin == PrustiBuiltin::Forall {
-                    self.vcx.mk_forall_expr(
-                        qvars,
-                        &[],
-                        body,
-                    )
+                    self.vcx.mk_forall_expr(qvars, &[], body)
                 } else {
-                    self.vcx.mk_exists_expr(
-                        qvars,
-                        &[],
-                        body,
-                    )
+                    self.vcx.mk_exists_expr(qvars, &[], body)
                 }
             }
             PrustiBuiltin::ModeStart(mode) => {
@@ -1137,7 +1130,8 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                     ty::FloatTy::F32 => self.ty_use(self.vcx.tcx().types.f32),
                     ty::FloatTy::F64 => self.ty_use(self.vcx.tcx().types.f64),
                     ty::FloatTy::F128 => self.ty_use(self.vcx.tcx().types.f128),
-                }.expect_float();
+                }
+                .expect_float();
                 let fl1 = self.encode_operand(curr_ver, &args[0].node);
                 let fl2 = self.encode_operand(curr_ver, &args[1].node);
                 let prec = self.encode_operand(curr_ver, &args[2].node);

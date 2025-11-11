@@ -1,9 +1,11 @@
-use crate::encoders::{
-    ty::{
-        impure::{PredicateBuilder, TyImpureEnc, TyImpurePrimitive}, interpretation::float::ty_pure_float, pure::{
-            DomainBuilder, TyPureEnc, TyPurePrimData, TyPurePrimDataKind, TyPurePrimDataNative, TyPurePrimitive
-        }, RustPrimitive
-    }
+use crate::encoders::ty::{
+    RustPrimitive,
+    impure::{PredicateBuilder, TyImpureEnc, TyImpurePrimitive},
+    interpretation::float::ty_pure_float,
+    pure::{
+        DomainBuilder, TyPureEnc, TyPurePrimData, TyPurePrimDataKind, TyPurePrimDataNative,
+        TyPurePrimitive,
+    },
 };
 use prusti_rustc_interface::middle::ty;
 use task_encoder::{EncodeFullError, TaskEncoderDependencies};
@@ -61,7 +63,9 @@ pub(crate) fn ty_pure<'vir>(
                     });
                 }
             };
-            TyPurePrimDataKind::Native(TyPurePrimDataNative { snap_to_prim: value_ident })
+            TyPurePrimDataKind::Native(TyPurePrimDataNative {
+                snap_to_prim: value_ident,
+            })
         }
     };
     Ok(TyPurePrimData {

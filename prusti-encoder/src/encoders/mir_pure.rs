@@ -1105,10 +1105,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                     }
                 };
                 let fl = self.encode_operand(curr_ver, &args[0].node);
-                let fl_val = unsafe {
-                    std::mem::transmute::<ExprRet<'_>, vir::ExprGen<'_, (), !, vir::CSnap>>(fl)
-                };
-                is_nan_fun.call()(fl_val).lift()
+                is_nan_fun.call()(fl.downcast_ty())
             }
             PrustiBuiltin::IsInfinite(fl) => {
                 let is_infinite_fun = match fl {
@@ -1138,10 +1135,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                     }
                 };
                 let fl = self.encode_operand(curr_ver, &args[0].node);
-                let fl_val = unsafe {
-                    std::mem::transmute::<ExprRet<'_>, vir::ExprGen<'_, (), !, vir::CSnap>>(fl)
-                };
-                is_infinite_fun.call()(fl_val).lift()
+                is_infinite_fun.call()(fl.downcast_ty())
             }
             PrustiBuiltin::FlEq(fl) => {
                 let fl_ty = match fl {
@@ -1154,18 +1148,11 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                 let sub_fun = fl_ty.expect_primitive().expect_float().fp_sub;
                 let leq_fun = fl_ty.expect_primitive().expect_float().fp_leq;
                 let fl1 = self.encode_operand(curr_ver, &args[0].node);
-                let fl1_val = unsafe {
-                    std::mem::transmute::<ExprRet<'_>, vir::ExprGen<'_, (), !, vir::CSnap>>(fl1)
-                };
-                let fl2 = self.encode_operand(curr_ver, &args[0].node);
-                let fl2_val = unsafe {
-                    std::mem::transmute::<ExprRet<'_>, vir::ExprGen<'_, (), !, vir::CSnap>>(fl2)
-                };
-                let prec = self.encode_operand(curr_ver, &args[0].node);
-                let prec_val = unsafe {
-                    std::mem::transmute::<ExprRet<'_>, vir::ExprGen<'_, (), !, vir::CSnap>>(prec)
-                };
-                (leq_fun)((abs_fun)((sub_fun)(fl1_val, fl2_val)), prec_val).lift()
+                let fl2 = self.encode_operand(curr_ver, &args[1].node);
+                let prec = self.encode_operand(curr_ver, &args[2].node);
+                let sub_res = sub_fun.call()(fl1.downcast_ty(), fl2.downcast_ty());
+                let abs_res = abs_fun.call()(sub_res);
+                leq_fun.call()(abs_res, prec.downcast_ty())
             }
         };
         bool.prim_to_snap.call()(prim.upcast_ty()).upcast_ty()

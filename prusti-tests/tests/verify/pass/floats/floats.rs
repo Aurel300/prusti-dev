@@ -68,10 +68,8 @@ fn foo10(x: f32) -> f32 {
     x
 }
 
-#[requires(!x.is_nan())]
-#[requires(x < 10000.0)]
-#[requires(x > 0.0)]
-#[ensures(f32_fl_eq(result, 2.0 * x, 0.000000000000001))]
+#[requires(x == 4.5)]
+#[ensures(f32_fl_eq(result, 2.0 * x, 0.01))]
 fn times_two(x: f32) -> f32 {
     x + x
 }

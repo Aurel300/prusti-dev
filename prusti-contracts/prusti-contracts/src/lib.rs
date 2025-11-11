@@ -6,6 +6,7 @@
 #![feature(cfg_version)]
 #![feature(f128)]
 #![feature(f16)]
+#![feature(panic_internals)]
 
 // Even alloc can be disabled for consistency with std, and in preparation for future specs for other, possibly no_std, crates.
 #[cfg(feature = "alloc")]

@@ -95,12 +95,15 @@ impl_exp_type!(Bool[TYPE_BOOL = Bool] => Prim | Dyn, "The Viper `Bool` type");
 impl_exp_type!(Int[TYPE_INT = Int] => Prim | Dyn, "The Viper `Int` type");
 impl_exp_type!(Perm[TYPE_PERM = Perm] => Prim | Dyn, "The Viper `Perm` type (reals)");
 impl_exp_type!(Ref[TYPE_REF = Ref] => Prim | Dyn, "The Viper `Ref` type");
+impl_exp_type!(Set => Prim | Dyn, TypeKind::Set(_), "The Viper `Set` type");
 
 impl_exp_type!(Err[TYPE_ERR = Err] => Prim | Dyn, "Type for encoding errors");
 
 impl_exp_type!(CSnap => Snap | Dyn, TypeKind::Domain(name, ..) if name.starts_with("s_") && name != "s_Param", "A concrete Prusti snapshot type");
 impl_exp_type!(PSnap[TYPE_PSNAP = Domain("s_Param", &[])] => Snap | Dyn, "The generic snapshot domain (`s_Param`)");
 impl_exp_type!(TyVal[TYPE_TYVAL = Domain("Type", &[])] => Dyn, "The type domain (`ExpType`) which gives values to types");
+
+impl_exp_type!(Pair => Dyn, TypeKind::Domain(name, args) if name == format!("Pair{}", args.len()), "A custom generic tuple type");
 
 impl_exp_type!(Prim => Dyn, TypeKind::Bool | TypeKind::Int | TypeKind::Perm | TypeKind::Ref, "Represents any primitive Viper type");
 impl_exp_type!(Snap => Dyn, TypeKind::Domain(name, ..) if name.starts_with("s_"), "A Prusti snapshot type, either concrete or generic");

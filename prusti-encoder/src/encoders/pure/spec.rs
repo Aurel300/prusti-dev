@@ -125,7 +125,6 @@ impl TaskEncoder for MirSpecEnc {
                 .require_dep::<TyUsePureEnc>(RustTyDecomposition::from_prim_ty(
                     vcx.tcx().types.bool,
                 ))?
-                .expect_primitive()
                 .expect_native()
                 .snap_to_prim;
 

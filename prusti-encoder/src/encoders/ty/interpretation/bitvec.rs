@@ -1,5 +1,5 @@
-use task_encoder::{OutputRefAny, TaskEncoder};
-use vir::{CastType, DomainGenData, DomainIdnCSnap, DomainIdnSnap, FunctionIdn, ViperIdent};
+use task_encoder::TaskEncoder;
+use vir::{CastType, DomainGenData, DomainIdnCSnap, FunctionIdn, ViperIdent};
 
 #[derive(Eq, PartialEq, Hash, Debug, Clone, Copy)]
 pub enum BitVecSize {
@@ -10,12 +10,13 @@ pub enum BitVecSize {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct TyBitVecLocal<'vir> {
+pub struct BitVecDomain<'vir> {
     pub domain: vir::DomainIdn<'vir, vir::CSnap>,
     pub from_int: FunctionIdn<'vir, vir::Prim, vir::CSnap>,
 }
 
 pub struct BitVecEnc;
+
 impl TaskEncoder for BitVecEnc {
     task_encoder::encoder_cache!(BitVecEnc);
 
@@ -23,7 +24,7 @@ impl TaskEncoder for BitVecEnc {
 
     type OutputFullLocal<'vir> = &'vir DomainGenData<'vir, (), !>;
 
-    type OutputFullDependency<'vir> = TyBitVecLocal<'vir>;
+    type OutputFullDependency<'vir> = BitVecDomain<'vir>;
 
     type EncodingError = ();
 
@@ -90,7 +91,7 @@ impl TaskEncoder for BitVecEnc {
             deps.emit_output_ref(*task_key, ())?;
             Ok((
                 domain_data,
-                TyBitVecLocal {
+                BitVecDomain {
                     domain: domain_ident,
                     from_int,
                 },

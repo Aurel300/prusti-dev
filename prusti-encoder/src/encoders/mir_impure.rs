@@ -1030,9 +1030,7 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                                 None => {
                                     // mir::Rvalue::Discriminant documents "Returns zero for types without discriminant"
                                     let zero = self.vcx.mk_uint::<0>();
-                                    (e_rvalue_ty.expect_primitive().get_prim_to_snap())(
-                                        zero.upcast_ty(),
-                                    )
+                                    (e_rvalue_ty.expect_primitive().prim_to_snap)(zero.upcast_ty())
                                 }
                             }
                             .upcast_ty(),
@@ -1462,7 +1460,7 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
 
                 let e_bool = self.ty_use_pure(self.vcx.tcx().types.bool);
                 let enc = self.encode_operand_snap(cond).downcast_ty();
-                let enc = (e_bool.expect_primitive().expect_native().snap_to_prim)(enc);
+                let enc = (e_bool.expect_native().snap_to_prim)(enc);
                 let expected = self.vcx.mk_const_expr(vir::ConstData::Bool(*expected));
                 let assert = self.vcx.mk_eq_expr(enc, expected);
                 let error_msg = match **msg {

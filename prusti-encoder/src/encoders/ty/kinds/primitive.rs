@@ -1,22 +1,16 @@
 use crate::encoders::{
-    TyUsePureEnc,
     ty::{
-        RustPrimitive,
-        bitvec::{BitVecEnc, BitVecSize},
-        generics::GArgs,
-        impure::{PredicateBuilder, TyImpureEnc, TyImpurePrimitive},
-        pure::{
-            DomainBuilder, TyPureEnc, TyPureEncError, TyPurePrimData, TyPurePrimDataFloat,
-            TyPurePrimDataNative, TyPurePrimitive,
-        },
-    },
+        impure::{PredicateBuilder, TyImpureEnc, TyImpurePrimitive}, interpretation::float::ty_pure_float, pure::{
+            DomainBuilder, TyPureEnc, TyPurePrimData, TyPurePrimDataKind, TyPurePrimDataNative, TyPurePrimitive
+        }, RustPrimitive
+    }
 };
 use prusti_rustc_interface::middle::ty;
 use task_encoder::{EncodeFullError, TaskEncoderDependencies};
-use vir::{CSnap, CastType, Dyn, HasType, VirCtxt};
+use vir::{CastType, HasType, VirCtxt};
 
 pub(crate) fn ty_pure<'vir>(
-    vcx: &VirCtxt<'vir>,
+    _vcx: &VirCtxt<'vir>,
     data: &RustPrimitive<'vir>,
     deps: &mut TaskEncoderDependencies<'vir, TyPureEnc>,
     builder: &mut DomainBuilder<'vir>,
@@ -24,41 +18,22 @@ pub(crate) fn ty_pure<'vir>(
     let ty = data;
     let ty_kind = ty.kind();
 
-    let interpretation = match ty_kind {
-        ty::TyKind::Float(ty::FloatTy::F16) => Some("(_ FloatingPoint 5 11)"),
-        ty::TyKind::Float(ty::FloatTy::F32) => Some("(_ FloatingPoint 8 24)"),
-        ty::TyKind::Float(ty::FloatTy::F64) => Some("(_ FloatingPoint 11 53)"),
-        ty::TyKind::Float(ty::FloatTy::F128) => Some("(_ FloatingPoint 15 113)"),
-        _ => None,
-    };
-
     let prim_type: vir::TypePrim<'vir> = match ty_kind {
         ty::TyKind::Bool => vir::TYPE_BOOL.upcast_ty(),
         ty::TyKind::Char | ty::TyKind::Int(_) | ty::TyKind::Uint(_) => vir::TYPE_INT.upcast_ty(),
         ty::TyKind::Float(_) => vir::TYPE_INT.upcast_ty(),
-        // TODO: implement float support (like so in Viper):
-        /*
-            domain myBV interpretation (SMTLIB: "(_ BitVec 32)", Boogie: "bv32") {
-                function toBV32(i: Int): myBV interpretation "(_ int2bv 32)"
-            }
-
-            domain myFloat interpretation (Boogie: "float24e8", SMTLIB: "(_ FloatingPoint 8 24)") {
-                function tofp(bv: myBV): myFloat interpretation "(_ to_fp 8 24)"
-                function fp_eq(myFloat, myFloat): Bool interpretation "fp.eq"
-
-                function fp_min(f1: myFloat, f2: myFloat): myFloat interpretation "fp.min"
-                function fp_max(f1: myFloat, f2: myFloat): myFloat interpretation "fp.max"
-                function add(d1: myFloat, f2: myFloat): myFloat interpretation "fp.add RNE"
-                function gt(myFloat, myFloat): Bool interpretation "fp.gt"
-            }
-        */
         _ => unreachable!(),
     };
 
-    match interpretation {
-        None => {
+    let cons_ident = builder.function("cons", prim_type, builder.self_type());
+
+    let kind = match ty_kind {
+        ty::TyKind::Float(float) => {
+            let float_domain = ty_pure_float(deps, builder, *float, cons_ident)?;
+            TyPurePrimDataKind::Float(float_domain)
+        }
+        _ => {
             let value_ident = builder.function("value", builder.self_type(), prim_type);
-            let cons_ident = builder.function("cons", prim_type, builder.self_type());
 
             builder.axiom("cons", vir::expr! {
                 forall s: [builder.self_type()] :: {[value_ident](s)} ([cons_ident]([value_ident](s))) == (s)
@@ -86,157 +61,14 @@ pub(crate) fn ty_pure<'vir>(
                     });
                 }
             };
-
-            Ok(TyPurePrimData::Native(TyPurePrimDataNative::new(
-                prim_type,
-                value_ident,
-                cons_ident,
-            )))
+            TyPurePrimDataKind::Native(TyPurePrimDataNative { snap_to_prim: value_ident })
         }
-        Some(i) => {
-            builder.set_interpretation(i);
-
-            let fp_eq = builder.backend_func(
-                "eq",
-                (builder.self_type(), builder.self_type()),
-                vir::TYPE_BOOL,
-                Some("fp.eq"),
-            );
-
-            let fp_add = builder.backend_func(
-                "add",
-                (builder.self_type(), builder.self_type()),
-                builder.self_type(),
-                Some("fp.add RNE"),
-            );
-
-            let fp_sub = builder.backend_func(
-                "sub",
-                (builder.self_type(), builder.self_type()),
-                builder.self_type(),
-                Some("fp.sub RNE"),
-            );
-
-            let fp_mul = builder.backend_func(
-                "mul",
-                (builder.self_type(), builder.self_type()),
-                builder.self_type(),
-                Some("fp.mul RNE"),
-            );
-
-            let fp_div = builder.backend_func(
-                "div",
-                (builder.self_type(), builder.self_type()),
-                builder.self_type(),
-                Some("fp.div RNE"),
-            );
-
-            let fp_trunc = builder.backend_func(
-                "trunc",
-                builder.self_type(),
-                builder.self_type(),
-                Some("fp.roundToIntegral RTZ"),
-            );
-
-            let fp_is_nan = builder.backend_func(
-                "is_nan",
-                builder.self_type(),
-                vir::TYPE_BOOL,
-                Some("fp.isNaN"),
-            );
-
-            let fp_is_infinite = builder.backend_func(
-                "is_infinite",
-                builder.self_type(),
-                vir::TYPE_BOOL,
-                Some("fp.isInfinite"),
-            );
-
-            let fp_lt = builder.backend_func(
-                "lt",
-                (builder.self_type(), builder.self_type()),
-                vir::TYPE_BOOL,
-                Some("fp.lt"),
-            );
-            let fp_leq = builder.backend_func(
-                "leq",
-                (builder.self_type(), builder.self_type()),
-                vir::TYPE_BOOL,
-                Some("fp.leq"),
-            );
-            let fp_geq = builder.backend_func(
-                "geq",
-                (builder.self_type(), builder.self_type()),
-                vir::TYPE_BOOL,
-                Some("fp.geq"),
-            );
-            let fp_gt = builder.backend_func(
-                "gt",
-                (builder.self_type(), builder.self_type()),
-                vir::TYPE_BOOL,
-                Some("fp.gt"),
-            );
-            let fp_neg = builder.backend_func(
-                "neg",
-                builder.self_type(),
-                builder.self_type(),
-                Some("fp.neg"),
-            );
-
-            let fp_abs = builder.backend_func(
-                "abs",
-                builder.self_type(),
-                builder.self_type(),
-                Some("fp.abs"),
-            );
-
-            let bit_vec = deps.require_dep::<BitVecEnc>(match ty_kind {
-                ty::TyKind::Float(ty::FloatTy::F16) => BitVecSize::BitVec16,
-                ty::TyKind::Float(ty::FloatTy::F32) => BitVecSize::BitVec32,
-                ty::TyKind::Float(ty::FloatTy::F64) => BitVecSize::BitVec64,
-                ty::TyKind::Float(ty::FloatTy::F128) => BitVecSize::BitVec128,
-                _ => unreachable!(),
-            })?;
-
-            let from_bv = builder.backend_func(
-                "from_bv",
-                (bit_vec.domain)(),
-                builder.self_type(),
-                match ty_kind {
-                    ty::TyKind::Float(ty::FloatTy::F16) => Some("(_ to_fp 5 11)"),
-                    ty::TyKind::Float(ty::FloatTy::F32) => Some("(_ to_fp 8 24)"),
-                    ty::TyKind::Float(ty::FloatTy::F64) => Some("(_ to_fp 11 53)"),
-                    ty::TyKind::Float(ty::FloatTy::F128) => Some("(_ to_fp 15 113)"),
-                    _ => unreachable!(),
-                },
-            );
-
-            let prim_to_snap = builder.function("prim_to_snap", prim_type, builder.self_type());
-
-            builder.axiom("prim_to_snap", vir::expr! {
-                forall i: [prim_type] :: {[prim_to_snap](i)} ([prim_to_snap(i)]) == ([from_bv]([bit_vec.from_int](i)))
-            });
-
-            Ok(TyPurePrimData::Float(TyPurePrimDataFloat::new(
-                from_bv,
-                fp_eq,
-                prim_to_snap,
-                fp_add,
-                fp_sub,
-                fp_mul,
-                fp_div,
-                fp_trunc,
-                fp_is_nan,
-                fp_is_infinite,
-                fp_lt,
-                fp_leq,
-                fp_gt,
-                fp_geq,
-                fp_neg,
-                fp_abs,
-            )))
-        }
-    }
+    };
+    Ok(TyPurePrimData {
+        prim_type,
+        prim_to_snap: cons_ident,
+        kind,
+    })
 }
 
 pub(crate) fn ty_impure<'vir>(

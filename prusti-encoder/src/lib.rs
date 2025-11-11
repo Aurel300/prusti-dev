@@ -9,7 +9,6 @@ mod encoders;
 mod trait_support;
 pub mod request;
 
-use crate::encoders::ty::bitvec::BitVecEnc;
 use prusti_interface::{
     PrustiError,
     environment::{EnvBody, EnvDiagnostic},
@@ -23,6 +22,7 @@ use crate::encoders::{
     custom::PairUseEnc,
     ty::{
         generics::GArgsCastEnc,
+        interpretation::bitvec::BitVecEnc,
         lifted::{TyConstructorEnc, TypeOfEnc},
     },
 };

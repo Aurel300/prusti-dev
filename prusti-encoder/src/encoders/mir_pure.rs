@@ -864,7 +864,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
             ModeEnd(Mode),
             IsNaN(ty::FloatTy),
             IsInfinite(ty::FloatTy),
-            FlEq(ty::FloatTy),
+            FlAbs(ty::FloatTy),
         }
 
         let crate_name = self.vcx.tcx().crate_name(def_id.krate);
@@ -908,22 +908,24 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
             "f32_is_infinite" => PrustiBuiltin::IsInfinite(ty::FloatTy::F32),
             "f64_is_infinite" => PrustiBuiltin::IsInfinite(ty::FloatTy::F64),
             "f128_is_infinite" => PrustiBuiltin::IsInfinite(ty::FloatTy::F128),
-            "f16_fl_eq" => PrustiBuiltin::FlEq(ty::FloatTy::F16),
-            "f32_fl_eq" => PrustiBuiltin::FlEq(ty::FloatTy::F32),
-            "f64_fl_eq" => PrustiBuiltin::FlEq(ty::FloatTy::F64),
-            "f128_fl_eq" => PrustiBuiltin::FlEq(ty::FloatTy::F128),
+            "f16_abs" => PrustiBuiltin::FlAbs(ty::FloatTy::F16),
+            "f32_abs" => PrustiBuiltin::FlAbs(ty::FloatTy::F32),
+            "f64_abs" => PrustiBuiltin::FlAbs(ty::FloatTy::F64),
+            "f128_abs" => PrustiBuiltin::FlAbs(ty::FloatTy::F128),
             other => panic!("illegal prusti::builtin ({other})"),
         };
 
         let bool = self.ty_use(self.vcx.tcx().types.bool);
         let bool = bool.expect_primitive();
+        let mk_bool =
+            |prim: vir::ExprGenBool<'vir, _, _>| bool.prim_to_snap.call()(prim.upcast_ty());
 
-        let prim = match builtin {
+        match builtin {
             PrustiBuiltin::SnapshotEquality => {
                 assert_eq!(args.len(), 2);
                 let lhs = self.encode_operand(curr_ver, &args[0].node);
                 let rhs = self.encode_operand(curr_ver, &args[1].node);
-                self.vcx.mk_eq_expr(lhs, rhs)
+                mk_bool(self.vcx.mk_eq_expr(lhs, rhs))
             }
             PrustiBuiltin::Forall | PrustiBuiltin::Exists => {
                 assert_eq!(arg_tys.len(), 3);
@@ -1020,11 +1022,12 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                 let body =
                     bool.expect_native().snap_to_prim.call()(body.downcast_ty()).downcast_ty();
                 // TODO: triggers
-                if builtin == PrustiBuiltin::Forall {
+                let res = if builtin == PrustiBuiltin::Forall {
                     self.vcx.mk_forall_expr(qvars, &[], body)
                 } else {
                     self.vcx.mk_exists_expr(qvars, &[], body)
-                }
+                };
+                mk_bool(res)
             }
             PrustiBuiltin::ModeStart(mode) => {
                 match mode {
@@ -1047,7 +1050,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                         self.before_expiry_mode = true;
                     }
                 }
-                self.vcx.mk_bool::<true>().lift() //TODO what value do we return?
+                mk_bool(self.vcx.mk_bool::<true>().lift()) //TODO what value do we return?
             }
             PrustiBuiltin::ModeEnd(mode) => {
                 match mode {
@@ -1070,7 +1073,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                         self.before_expiry_mode = false;
                     }
                 }
-                self.vcx.mk_bool::<true>().lift() //TODO what value do we return?
+                mk_bool(self.vcx.mk_bool::<true>().lift()) //TODO what value do we return?
             }
             PrustiBuiltin::IsNaN(fl) => {
                 let is_nan_fun = match fl {
@@ -1096,7 +1099,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                     }
                 };
                 let fl = self.encode_operand(curr_ver, &args[0].node);
-                is_nan_fun.call()(fl.downcast_ty())
+                mk_bool(is_nan_fun.call()(fl.downcast_ty()))
             }
             PrustiBuiltin::IsInfinite(fl) => {
                 let is_infinite_fun = match fl {
@@ -1122,9 +1125,9 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                     }
                 };
                 let fl = self.encode_operand(curr_ver, &args[0].node);
-                is_infinite_fun.call()(fl.downcast_ty())
+                mk_bool(is_infinite_fun.call()(fl.downcast_ty()))
             }
-            PrustiBuiltin::FlEq(fl) => {
+            PrustiBuiltin::FlAbs(fl) => {
                 let fl_ty = match fl {
                     ty::FloatTy::F16 => self.ty_use(self.vcx.tcx().types.f16),
                     ty::FloatTy::F32 => self.ty_use(self.vcx.tcx().types.f32),
@@ -1132,15 +1135,11 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                     ty::FloatTy::F128 => self.ty_use(self.vcx.tcx().types.f128),
                 }
                 .expect_float();
-                let fl1 = self.encode_operand(curr_ver, &args[0].node);
-                let fl2 = self.encode_operand(curr_ver, &args[1].node);
-                let prec = self.encode_operand(curr_ver, &args[2].node);
-                let sub_res = fl_ty.fp_sub.call()(fl1.downcast_ty(), fl2.downcast_ty());
-                let abs_res = fl_ty.fp_abs.call()(sub_res);
-                fl_ty.fp_leq.call()(abs_res, prec.downcast_ty())
+                let fl1 = self.encode_operand(curr_ver, &args[0].node).downcast_ty();
+                fl_ty.fp_abs.call()(fl1)
             }
-        };
-        bool.prim_to_snap.call()(prim.upcast_ty()).upcast_ty()
+        }
+        .upcast_ty()
     }
 }
 

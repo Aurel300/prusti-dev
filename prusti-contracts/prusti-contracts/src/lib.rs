@@ -440,21 +440,21 @@ pub fn f128_is_infinite(fl: f128) -> bool {
     true
 }
 
-/// Check if two floats lie within an interval
-pub fn f16_fl_eq(fl1: f16, fl2: f16, prec: f16) -> bool {
-    true
+/// Returns the absolute value of a float
+pub fn f16_abs(fl: f16) -> f16 {
+    fl
 }
 
-pub fn f32_fl_eq(fl1: f32, fl2: f32, prec: f32) -> bool {
-    true
+pub fn f32_abs(fl: f32) -> f32 {
+    fl
 }
 
-pub fn f64_fl_eq(fl1: f64, fl2: f64, prec: f64) -> bool {
-    true
+pub fn f64_abs(fl: f64) -> f64 {
+    fl
 }
 
-pub fn f128_fl_eq(fl1: f128, fl2: f128, prec: f128) -> bool {
-    true
+pub fn f128_abs(fl: f128) -> f128 {
+    fl
 }
 
 pub use private::*;

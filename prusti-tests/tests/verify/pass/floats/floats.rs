@@ -69,7 +69,7 @@ fn foo10(x: f32) -> f32 {
 }
 
 #[requires(x == 4.5)]
-#[ensures(f32_fl_eq(result, 2.0 * x, 0.01))]
+#[ensures((result - (2.0 * x)).abs() <= 0.01)]
 fn times_two(x: f32) -> f32 {
     x + x
 }

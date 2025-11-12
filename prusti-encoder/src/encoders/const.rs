@@ -1,8 +1,9 @@
 use prusti_rustc_interface::{
     middle::{
         mir::{
-            self, ConstValue,
+            self,
             interpret::{GlobalAlloc, Scalar},
+            ConstValue,
         },
         ty,
     },
@@ -12,13 +13,13 @@ use task_encoder::{EncodeFullError, EncodeFullResult, TaskEncoder, TaskEncoderDe
 use vir::CastType;
 
 use crate::encoders::{
-    MirPureEnc, MirPureEncTask,
     mir_pure::PureKind,
     ty::{
-        RustTyDecomposition,
         generics::{GParams, GenericParamsEnc},
         use_pure::TyUsePureEnc,
+        RustTyDecomposition,
     },
+    MirPureEnc, MirPureEncTask,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -150,14 +151,11 @@ impl TaskEncoder for ConstEnc {
                 mir::Const::Unevaluated(uneval, ty) => vir::with_vcx(|vcx| {
                     let resolved = {
                         let typing_env = ty::TypingEnv::post_analysis(vcx.tcx(), def_id);
-                        vcx.tcx().const_eval_resolve(
-                            typing_env,
-                            uneval,
-                            vcx.tcx().def_span(def_id)
-                        )
+                        vcx.tcx()
+                            .const_eval_resolve(typing_env, uneval, vcx.tcx().def_span(def_id))
                     };
                     if let Ok(val) = resolved {
-                        return Self::encode_const_val(deps, val, ty, def_id.into())
+                        Self::encode_const_val(deps, val, ty, def_id.into())
                     } else if let Some(promoted) = uneval.promoted {
                         let task = MirPureEncTask {
                             encoding_depth: encoding_depth + 1,

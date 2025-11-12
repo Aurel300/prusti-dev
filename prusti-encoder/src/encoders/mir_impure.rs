@@ -37,6 +37,7 @@ use crate::encoders::{
     self, FunctionCallEnc, MirBuiltinEnc, TyUseImpureEnc, WandEnc, WandEncTask,
     r#const::ConstEncTask,
     mir_fn::{CallTaskDescription, RustSignature},
+    mir_shared::PureRvalueEnc,
     ty::{
         RustTyDecomposition,
         use_impure::TyUseImpure,
@@ -141,6 +142,10 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
     fn ty_use_pure(&mut self, ty: ty::Ty<'vir>) -> TyUsePure<'vir> {
         let ty_task = RustTyDecomposition::from_ty(ty, self.vcx.tcx(), self.def_id);
         self.deps.require_dep::<TyUsePureEnc>(ty_task).unwrap()
+    }
+
+    fn pure_rvalue_encoder<'slf>(&'slf mut self) -> PureRvalueEnc<'vir, 'slf, E, DefId> {
+        PureRvalueEnc::new(self.vcx, self.def_id, self.deps, self.body)
     }
 
     /*
@@ -899,7 +904,11 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                     //mir::Rvalue::Repeat(Operand<'vir>, Const<'vir>) => {}
                     //mir::Rvalue::ThreadLocalRef(DefId) => {}
                     //mir::Rvalue::AddressOf(Mutability, Place<'vir>) => {}
-                    //mir::Rvalue::Cast(CastKind, Operand<'vir>, Ty<'vir>) => {}
+                    mir::Rvalue::Cast(cast_kind, operand, ty) => {
+                        let encoded_operand = self.encode_operand_snap(operand);
+                        let mut rvalue_encoder = self.pure_rvalue_encoder();
+                        Some(rvalue_encoder.encode_cast(*cast_kind, operand, *ty, encoded_operand))
+                    }
                     mir::Rvalue::Len(place) => {
                         let place_ty = place.ty(self.local_decls, self.vcx.tcx());
                         let place_expr = self.encode_place_snap(Place::from(*place)).1;

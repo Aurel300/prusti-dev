@@ -1,14 +1,14 @@
 use crate::encoders::{
-    ConstEnc, FunctionCallEnc, MirBuiltinEnc, TyUseImpureEnc, ViperTupleEnc,
-    r#const::ConstEncTask,
-    mir_fn::{CallTaskDescription, RustSignature},
-    ty::{
+    ConstEnc, FunctionCallEnc, MirBuiltinEnc, TyUseImpureEnc, ViperTupleEnc, r#const::ConstEncTask, mir_fn::{CallTaskDescription, RustSignature}, mir_shared::PureRvalueEnc, ty::{
         RustTyDecomposition,
         generics::GParams,
         use_pure::{TyUsePure, TyUsePureEnc},
-    },
+    }
 };
-use prusti_interface::specs::{specifications::SpecQuery, typed::ExternSpecKind};
+use prusti_interface::{
+    PrustiError,
+    specs::{specifications::SpecQuery, typed::ExternSpecKind},
+};
 use prusti_rustc_interface::{
     abi,
     data_structures::graph,
@@ -17,7 +17,7 @@ use prusti_rustc_interface::{
         mir,
         ty::{self, Binder, FnSig, TyKind},
     },
-    span::{def_id::DefId, source_map::Spanned},
+    span::{Span, def_id::DefId, source_map::Spanned},
 };
 use std::{collections::HashMap, fmt};
 use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
@@ -617,7 +617,8 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
             | mir::StatementKind::PlaceMention(..) => {} // nop
             mir::StatementKind::Assign(box (dest, rvalue)) => {
                 //assert!(dest.projection.is_empty());
-                let expr = self.encode_rvalue(curr_ver, rvalue);
+                let span = stmt.source_info.span;
+                let expr = self.encode_rvalue(curr_ver, rvalue, span);
                 self.bump_version(&mut update, dest.local, expr, location);
             }
             k => todo!("statement kind {k:?}"),
@@ -625,15 +626,19 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
         update
     }
 
+    fn rvalue_encoder<'slf>(&'slf mut self) -> PureRvalueEnc<'vir, 'slf, MirPureEnc, GParams<'vir>> {
+        PureRvalueEnc::new(self.vcx, self.context, self.deps, self.body)
+    }
+
     fn encode_rvalue(
         &mut self,
         curr_ver: &HashMap<mir::Local, Version<'vir>>,
         rvalue: &mir::Rvalue<'vir>,
+        span: Span,
     ) -> ExprRet<'vir> {
         let rvalue_ty = rvalue.ty(self.body, self.vcx.tcx());
         match rvalue {
             mir::Rvalue::Use(op) => self.encode_operand(curr_ver, op),
-            // Repeat
             mir::Rvalue::Ref(_, kind, place) => {
                 let rvalue_snapshot_encoding = self.ty_use(rvalue_ty);
                 let (snap, place_ref) = self.encode_place_with_ref(curr_ver, place);
@@ -660,10 +665,6 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                         .upcast_ty()
                 }
             }
-            // ThreadLocalRef
-            // AddressOf
-            // Len
-            // Cast
             mir::Rvalue::BinaryOp(op, box (l, r)) => {
                 let l_ty = l.ty(self.body, self.vcx.tcx());
                 let r_ty = r.ty(self.body, self.vcx.tcx());
@@ -685,7 +686,6 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                 )
                 .upcast_ty()
             }
-            // NullaryOp
             mir::Rvalue::UnaryOp(unop, operand) => {
                 let operand_ty = operand.ty(self.body, self.vcx.tcx());
                 let unop_function = self
@@ -741,13 +741,20 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                 };
                 discr.upcast_ty()
             }
-            // ShallowInitBox
-            // CopyForDeref
-            _k => {
-                // TODO: attach kind of rvalue to the unreachable expression
-                //   in case it is reached
-                self.ty_use(rvalue_ty).unreachable_to_snap()
+            mir::Rvalue::Cast(kind, operand, ty) => {
+                let vir_operand = self.encode_operand(curr_ver, operand);
+                let mut rvalue_encoder = self.rvalue_encoder();
+                rvalue_encoder.encode_cast(*kind, operand, *ty, vir_operand)
             }
+            mir::Rvalue::Repeat(operand, _) => todo!(),
+            mir::Rvalue::ThreadLocalRef(def_id) => todo!(),
+            mir::Rvalue::RawPtr(raw_ptr_kind, place) => todo!(),
+            mir::Rvalue::Len(place) => todo!(),
+            mir::Rvalue::NullaryOp(null_op, ty) => todo!(),
+            mir::Rvalue::ShallowInitBox(operand, ty) => todo!(),
+            mir::Rvalue::CopyForDeref(place) => todo!(),
+            mir::Rvalue::WrapUnsafeBinder(operand, ty) => todo!(),
+            // Repeat
         }
     }
 

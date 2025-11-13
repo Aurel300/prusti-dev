@@ -1,9 +1,8 @@
 use task_encoder::{TaskEncoder, TaskEncoderDependencies};
-use vir::CastType;
+use vir::{CSnap, CastType, CompType, MappableExpr, Snap};
 
 use crate::encoders::{
-    TyUsePureEnc,
-    ty::{RustTyDecomposition, generics::GParams, use_pure::TyUsePure},
+    MirBuiltinEnc, TyUsePureEnc, ty::{RustTyDecomposition, generics::GParams, use_pure::TyUsePure}
 };
 use prusti_rustc_interface::middle::{mir, ty};
 
@@ -34,6 +33,24 @@ impl<'vir: 'enc, 'enc, Enc: TaskEncoder, Ctxt: Copy + Into<GParams<'vir>>>
     fn ty_use(&mut self, ty: ty::Ty<'vir>) -> TyUsePure<'vir> {
         let ty_task = RustTyDecomposition::from_ty(ty, self.vcx.tcx(), self.context);
         self.deps.require_dep::<TyUsePureEnc>(ty_task).unwrap()
+    }
+
+    pub(super) fn encode_len<Expr: MappableExpr<'vir, CSnap>>(
+        &mut self,
+        place: &mir::Place<'vir>,
+        encoded_place: Expr,
+    ) -> Expr {
+        let place_ty = place.ty(self.body, self.vcx.tcx());
+        let len_function = self
+            .deps
+            .require_ref::<MirBuiltinEnc>(crate::encoders::MirBuiltinEncTask::Len(
+                place_ty.ty,
+            ))
+            .unwrap()
+            .len()
+            .unwrap();
+        encoded_place.map(self.vcx, move |expr| len_function(expr))
+        // len_function(encoded_place.downcast_ty()).upcast_ty()
     }
 
     pub(super) fn encode_cast<Curr, Next>(

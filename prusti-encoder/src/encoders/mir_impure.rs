@@ -910,17 +910,9 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                         Some(rvalue_encoder.encode_cast(*cast_kind, operand, *ty, encoded_operand))
                     }
                     mir::Rvalue::Len(place) => {
-                        let place_ty = place.ty(self.local_decls, self.vcx.tcx());
-                        let place_expr = self.encode_place_snap(Place::from(*place)).1;
-                        let len_function = self
-                            .deps
-                            .require_ref::<MirBuiltinEnc>(crate::encoders::MirBuiltinEncTask::Len(
-                                place_ty.ty,
-                            ))
-                            .unwrap()
-                            .len()
-                            .unwrap();
-                        Some(len_function(place_expr.downcast_ty()).upcast_ty())
+                        let encoded_place = self.encode_place_snap(Place::from(*place)).1;
+                        let mut rvalue_encoder = self.pure_rvalue_encoder();
+                        Some(rvalue_encoder.encode_len(place, encoded_place.downcast_ty()).upcast_ty())
                     }
 
                     mir::Rvalue::BinaryOp(op, box (l, r)) => {

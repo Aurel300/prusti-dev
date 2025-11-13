@@ -749,11 +749,16 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
             mir::Rvalue::Repeat(operand, _) => todo!(),
             mir::Rvalue::ThreadLocalRef(def_id) => todo!(),
             mir::Rvalue::RawPtr(raw_ptr_kind, place) => todo!(),
-            mir::Rvalue::Len(place) => todo!(),
+            mir::Rvalue::Len(place) => {
+                let encoded_place = self.encode_place(curr_ver, place);
+                let mut rvalue_encoder = self.rvalue_encoder();
+                rvalue_encoder.encode_len(place, encoded_place.downcast_ty()).upcast_ty()
+            }
             mir::Rvalue::NullaryOp(null_op, ty) => todo!(),
             mir::Rvalue::ShallowInitBox(operand, ty) => todo!(),
             mir::Rvalue::CopyForDeref(place) => todo!(),
             mir::Rvalue::WrapUnsafeBinder(operand, ty) => todo!(),
+
             // Repeat
         }
     }

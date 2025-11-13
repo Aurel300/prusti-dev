@@ -912,94 +912,33 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                     mir::Rvalue::Len(place) => {
                         let encoded_place = self.encode_place_snap(Place::from(*place)).1;
                         let mut rvalue_encoder = self.pure_rvalue_encoder();
-                        Some(rvalue_encoder.encode_len(place, encoded_place.downcast_ty()).upcast_ty())
+                        Some(rvalue_encoder.encode_len(place, encoded_place))
                     }
 
                     mir::Rvalue::BinaryOp(op, box (l, r)) => {
-                        let l_ty = l.ty(self.local_decls, self.vcx.tcx());
-                        let r_ty = r.ty(self.local_decls, self.vcx.tcx());
-                        use crate::encoders::MirBuiltinEncTask::{BinOp, CheckedBinOp};
-                        let task = if op.is_overflowing() {
-                            CheckedBinOp(rvalue_ty, *op, l_ty, r_ty)
-                        } else {
-                            BinOp(rvalue_ty, *op, l_ty, r_ty)
-                        };
-                        let binop_function = self
-                            .deps
-                            .require_ref::<MirBuiltinEnc>(task)
-                            .unwrap()
-                            .bin_op()
-                            .unwrap();
-                        Some(
-                            binop_function(
-                                self.encode_operand_snap(l).downcast_ty(),
-                                self.encode_operand_snap(r).downcast_ty(),
-                            )
-                            .upcast_ty(),
-                        )
+                        let encoded_l = self.encode_operand_snap(l);
+                        let encoded_r = self.encode_operand_snap(r);
+                        let mut rvalue_encoder = self.pure_rvalue_encoder();
+                        Some(rvalue_encoder.encode_binop(rvalue_ty, *op, l, r, encoded_l, encoded_r))
                     }
 
                     //mir::Rvalue::NullaryOp(NullOp, Ty<'vir>) => {}
                     mir::Rvalue::UnaryOp(unop, operand) => {
-                        let operand_ty = operand.ty(self.local_decls, self.vcx.tcx());
-                        let unop_function = self
-                            .deps
-                            .require_ref::<MirBuiltinEnc>(crate::encoders::MirBuiltinEncTask::UnOp(
-                                rvalue_ty, *unop, operand_ty,
-                            ))
-                            .unwrap()
-                            .un_op()
-                            .unwrap();
-                        Some(
-                            unop_function(self.encode_operand_snap(operand).downcast_ty())
-                                .upcast_ty(),
-                        )
-                        /*
-                        assert!(source.projection.is_empty());
-                        let source_version = self.ssa_analysis.version.get(&(location, source.local)).unwrap();
-                        let source_name = vir::vir_format_identifier!(self.vcx, "_{}s_{}", source.local.index(), source_version);
-
-                        let unop_function = self.deps.require_ref::<crate::encoders::MirBuiltinEnc>(
-                            crate::encoders::MirBuiltinEncTask::UnOp(
-                                *unop,
-                                source.ty(self.local_decls, self.vcx.tcx()).ty,
-                            ),
-                        ).unwrap().name;
-                        Some(self.vcx.mk_func_app(
-                            unop_function,
-                            &[self.vcx.mk_local_ex(source_name)],
-                        ))*/
+                        let encoded_operand = self.encode_operand_snap(operand);
+                        let mut rvalue_encoder = self.pure_rvalue_encoder();
+                        Some(rvalue_encoder.encode_un_op(rvalue_ty, *unop, operand, encoded_operand))
                     }
 
                     mir::Rvalue::Aggregate(
                         box kind @ (mir::AggregateKind::Adt(..) | mir::AggregateKind::Tuple),
                         fields,
                     ) => {
-                        let e_rvalue_ty = self.ty_use_pure(rvalue_ty);
-                        let sl = match kind {
-                            mir::AggregateKind::Adt(_, vidx, _, _, _) => {
-                                e_rvalue_ty.get_variant_any(*vidx)
-                            }
-                            _ => e_rvalue_ty.expect_structlike(),
-                        };
-                        // let field_tys = fields.iter()
-                        //     .map(|field| {
-                        //         let ty = field.ty(self.local_decls, self.vcx.tcx());
-                        //         self.deps.require_dep::<RustTyCastersEnc<CastTypePure>>(ty).unwrap()
-                        //     })
-                        //     .collect::<Vec<_>>();
-                        // let ty_caster = self.deps.require_dep::<AggregateSnapArgsCastEnc>(
-                        //     AggregateSnapArgsCastEncTask {
-                        //         tys: field_tys,
-                        //         aggregate_type: kind.into()
-                        //     }
-                        // ).unwrap();
                         let field_snaps = fields
                             .iter()
                             .map(|field| self.encode_operand_snap(field))
                             .collect::<Vec<_>>();
-                        // let casted_args = ty_caster.apply_casts(self.vcx, field_snaps.into_iter());
-                        Some(sl.field_snaps_to_snap(field_snaps).upcast_ty())
+                        let mut rvalue_encoder = self.pure_rvalue_encoder();
+                        Some(rvalue_encoder.encode_aggregate(rvalue_ty, kind.clone(), field_snaps))
                     }
                     mir::Rvalue::Discriminant(place) => {
                         let e_rvalue_ty = self.ty_use_pure(rvalue_ty);

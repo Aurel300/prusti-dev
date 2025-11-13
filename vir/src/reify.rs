@@ -8,39 +8,6 @@ pub trait Reify<'vir, Curr> {
     fn reify<'tcx>(&self, vcx: &'vir VirCtxt<'tcx>, lctx: Curr) -> Self::Next;
 }
 
-pub trait MappableExpr<'vir, C: CompType> {
-    fn map<'tcx>(
-        self,
-        vcx: &'vir VirCtxt<'tcx>,
-        f: impl Fn(Expr<'vir, C>) -> Expr<'vir, C> + 'vir
-    ) -> Self;
-}
-
-impl<'vir, Curr: Copy, C: CompType> MappableExpr<'vir, C> for ExprGen<'vir, Curr, ExprKind<'vir>, C> {
-    fn map<'tcx>(
-        self,
-        vcx: &'vir VirCtxt<'tcx>,
-        f: impl Fn(Expr<'vir, C>) -> Expr<'vir, C> + 'vir,
-    ) -> Self {
-        vcx.mk_lazy_expr(
-            "map",
-            self.ty(),
-            Box::new(move |vcx, lctx| f(self.reify(vcx, lctx)).kind),
-        )
-    }
-}
-
-impl<'vir, C: CompType> MappableExpr<'vir, C> for Expr<'vir, C> {
-    fn map<'tcx>(
-        self,
-        vcx: &'vir VirCtxt<'tcx>,
-        f: impl Fn(Expr<'vir, C>) -> Expr<'vir, C> + 'vir
-    ) -> Self {
-        f(self)
-    }
-}
-
-
 impl<'vir, Curr: Copy, NextA, NextB, T: CompType> Reify<'vir, Curr>
     for ExprGen<'vir, Curr, ExprKindGen<'vir, NextA, NextB>, T>
 {

@@ -1,8 +1,8 @@
 use task_encoder::{TaskEncoder, TaskEncoderDependencies};
-use vir::{CSnap, CastType, CompType, MappableExpr, Snap};
+use vir::{CSnap, CastType, CompType, Snap};
 
 use crate::encoders::{
-    MirBuiltinEnc, TyUsePureEnc, ty::{RustTyDecomposition, generics::GParams, use_pure::TyUsePure}
+    MirBuiltinEnc, MirBuiltinEncTask, TyUsePureEnc, ty::{RustTyDecomposition, generics::GParams, use_pure::TyUsePure}
 };
 use prusti_rustc_interface::middle::{mir, ty};
 
@@ -35,22 +35,78 @@ impl<'vir: 'enc, 'enc, Enc: TaskEncoder, Ctxt: Copy + Into<GParams<'vir>>>
         self.deps.require_dep::<TyUsePureEnc>(ty_task).unwrap()
     }
 
-    pub(super) fn encode_len<Expr: MappableExpr<'vir, CSnap>>(
+    pub(super) fn encode_len<Curr, Next>(
         &mut self,
         place: &mir::Place<'vir>,
-        encoded_place: Expr,
-    ) -> Expr {
+        encoded_place: vir::ExprGenSnap<'vir, Curr, Next>,
+    ) -> vir::ExprGenSnap<'vir, Curr, Next> {
         let place_ty = place.ty(self.body, self.vcx.tcx());
         let len_function = self
             .deps
-            .require_ref::<MirBuiltinEnc>(crate::encoders::MirBuiltinEncTask::Len(
-                place_ty.ty,
-            ))
+            .require_ref::<MirBuiltinEnc>(crate::encoders::MirBuiltinEncTask::Len(place_ty.ty))
             .unwrap()
             .len()
             .unwrap();
-        encoded_place.map(self.vcx, move |expr| len_function(expr))
-        // len_function(encoded_place.downcast_ty()).upcast_ty()
+        len_function.call()(encoded_place.downcast_ty()).upcast_ty()
+    }
+
+    pub(super) fn encode_un_op<Curr, Next>(
+        &mut self,
+        rvalue_ty: ty::Ty<'vir>,
+        op: mir::UnOp,
+        operand: &mir::Operand<'vir>,
+        encoded_operand: vir::ExprGenSnap<'vir, Curr, Next>,
+    ) -> vir::ExprGenSnap<'vir, Curr, Next> {
+        let operand_ty = operand.ty(self.body, self.vcx.tcx());
+        let un_op_function = self
+            .deps
+            .require_ref::<MirBuiltinEnc>(MirBuiltinEncTask::UnOp(
+                rvalue_ty, op, operand_ty,
+            ))
+            .unwrap()
+            .un_op()
+            .unwrap();
+        un_op_function.call()(encoded_operand.downcast_ty()).upcast_ty()
+    }
+
+    pub(super) fn encode_aggregate<Curr, Next>(
+        &mut self,
+        rvalue_ty: ty::Ty<'vir>,
+        kind: mir::AggregateKind,
+        encoded_fields: Vec<vir::ExprGenSnap<'vir, Curr, Next>>,
+    ) -> vir::ExprGenSnap<'vir, Curr, Next> {
+        let e_rvalue_ty = self.ty_use(rvalue_ty);
+        let sl = match kind {
+            mir::AggregateKind::Adt(_, vidx, _, _, _) => e_rvalue_ty.get_variant_any(vidx),
+            _ => e_rvalue_ty.expect_structlike(),
+        };
+        sl.field_snaps_to_snap(encoded_fields).upcast_ty()
+    }
+
+    pub(super) fn encode_binop<Curr, Next>(
+        &mut self,
+        rvalue_ty: ty::Ty<'vir>,
+        op: mir::BinOp,
+        l: &mir::Operand<'vir>,
+        r: &mir::Operand<'vir>,
+        encoded_l: vir::ExprGenSnap<'vir, Curr, Next>,
+        encoded_r: vir::ExprGenSnap<'vir, Curr, Next>,
+    ) -> vir::ExprGenSnap<'vir, Curr, Next> {
+        let l_ty = l.ty(self.body, self.vcx.tcx());
+        let r_ty = r.ty(self.body, self.vcx.tcx());
+        use crate::encoders::MirBuiltinEncTask::{BinOp, CheckedBinOp};
+        let task = if op.is_overflowing() {
+            CheckedBinOp(rvalue_ty, op, l_ty, r_ty)
+        } else {
+            BinOp(rvalue_ty, op, l_ty, r_ty)
+        };
+        let binop_function = self
+            .deps
+            .require_ref::<MirBuiltinEnc>(task)
+            .unwrap()
+            .bin_op()
+            .unwrap();
+        binop_function.call()(encoded_l.downcast_ty(), encoded_r.downcast_ty()).upcast_ty()
     }
 
     pub(super) fn encode_cast<Curr, Next>(

@@ -311,6 +311,15 @@ impl<'vir, 'v> ToViper<'vir, 'v> for vir::Adt<'vir> {
 impl<'vir, 'v> ToViper<'vir, 'v> for vir::Domain<'vir> {
     type Output = viper::Domain<'v>;
     fn to_viper(&self, ctx: &ToViperContext<'vir, 'v>, _pos: Position) -> Self::Output {
+        let interp: Option<&[(&str, &str)]> = match self.interpretation {
+            None => None,
+            Some(i) => Some(
+                &(i.interpretation
+                    .iter()
+                    .map(|x| x.to_tuple())
+                    .collect::<Vec<_>>()),
+            ),
+        };
         ctx.ast.domain(
             self.name,
             &self
@@ -328,7 +337,7 @@ impl<'vir, 'v> ToViper<'vir, 'v> for vir::Domain<'vir> {
                 .iter()
                 .map(|v| v.to_viper_no_pos(ctx))
                 .collect::<Vec<_>>(),
-            self.interpretation.map(|i| i.interpretation),
+            interp,
         )
     }
 }
@@ -1032,7 +1041,11 @@ impl<'vir, 'v, T: CompType> ToViper<'vir, 'v> for vir::Type<'vir, T> {
                         None => ctx
                             .ast
                             .domain_type(name, &partial_typ_vars_map, &type_parameters),
-                        Some(i) => ctx.ast.domain_backend_type(name, i.interpretation),
+                        Some(i) => {
+                            let vec: Vec<_> =
+                                i.interpretation.iter().map(|x| x.to_tuple()).collect();
+                            ctx.ast.domain_backend_type(name, &vec)
+                        }
                     }
                 } else {
                     ctx.ast

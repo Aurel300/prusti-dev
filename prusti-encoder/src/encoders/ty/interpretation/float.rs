@@ -1,6 +1,6 @@
 use prusti_rustc_interface::middle::ty;
 use task_encoder::{EncodeFullError, TaskEncoderDependencies};
-use vir::{CallableIdn, FunctionIdn};
+use vir::{BackendInterpretationPair, CallableIdn, FunctionIdn, VirCtxt};
 
 use crate::encoders::ty::{
     interpretation::bitvec::{BitVecEnc, BitVecSize},
@@ -30,16 +30,53 @@ pub struct FloatDomainData<'vir> {
 }
 
 pub(crate) fn ty_pure_float<'vir>(
+    vcx: &'vir VirCtxt<'vir>,
     deps: &mut TaskEncoderDependencies<'vir, TyPureEnc>,
     builder: &mut DomainBuilder<'vir>,
     float: ty::FloatTy,
     prim_to_snap: FunctionIdn<'vir, vir::Prim, vir::CSnap>,
 ) -> Result<FloatDomainData<'vir>, EncodeFullError<'vir, TyPureEnc>> {
     let i = match float {
-        ty::FloatTy::F16 => "(_ FloatingPoint 5 11)",
-        ty::FloatTy::F32 => "(_ FloatingPoint 8 24)",
-        ty::FloatTy::F64 => "(_ FloatingPoint 11 53)",
-        ty::FloatTy::F128 => "(_ FloatingPoint 15 113)",
+        ty::FloatTy::F16 => vcx.alloc_slice(&[
+            vcx.alloc(BackendInterpretationPair {
+                key: "SMTLIB",
+                value: "(_ FloatingPoint 5 11)",
+            }),
+            vcx.alloc(BackendInterpretationPair {
+                key: ("Boogie"),
+                value: ("float11e5"),
+            }),
+        ]),
+        ty::FloatTy::F32 => vcx.alloc_slice(&[
+            vcx.alloc(BackendInterpretationPair {
+                key: "SMTLIB",
+                value: "(_ FloatingPoint 8 24)",
+            }),
+            vcx.alloc(BackendInterpretationPair {
+                key: ("Boogie"),
+                value: ("float24e8"),
+            }),
+        ]),
+        ty::FloatTy::F64 => vcx.alloc_slice(&[
+            vcx.alloc(BackendInterpretationPair {
+                key: "SMTLIB",
+                value: "(_ FloatingPoint 11 53)",
+            }),
+            vcx.alloc(BackendInterpretationPair {
+                key: ("Boogie"),
+                value: ("float53e11"),
+            }),
+        ]),
+        ty::FloatTy::F128 => vcx.alloc_slice(&[
+            vcx.alloc(BackendInterpretationPair {
+                key: "SMTLIB",
+                value: "(_ FloatingPoint 15 113)",
+            }),
+            vcx.alloc(BackendInterpretationPair {
+                key: ("Boogie"),
+                value: ("float113e15"),
+            }),
+        ]),
     };
     builder.set_interpretation(i);
 

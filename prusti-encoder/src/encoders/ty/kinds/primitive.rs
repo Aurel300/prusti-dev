@@ -31,7 +31,7 @@ pub(crate) fn ty_pure<'vir>(
 
     let kind = match ty_kind {
         ty::TyKind::Float(float) => {
-            let data = ty_pure_float(deps, builder, *float, cons_ident)?;
+            let data = ty_pure_float(vcx, deps, builder, *float, cons_ident)?;
             TyPurePrimDataKind::Float(vcx.alloc(data))
         }
         _ => {

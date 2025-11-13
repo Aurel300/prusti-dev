@@ -387,7 +387,7 @@ pub struct DomainGenData<'vir, Curr, Next> {
     #[vir(reify_pass)]
     pub functions: &'vir [DomainFunction<'vir>],
     #[vir(reify_pass)]
-    pub interpretation: Option<Interpretation<'vir>>,
+    pub interpretation: Option<BackendInterpretation<'vir>>,
 }
 
 #[derive(VirHash, VirReify, VirSerde)]

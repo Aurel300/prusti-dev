@@ -1,5 +1,7 @@
 use task_encoder::TaskEncoder;
-use vir::{CastType, DomainGenData, DomainIdnCSnap, FunctionIdn, ViperIdent};
+use vir::{
+    BackendInterpretationPair, CastType, DomainGenData, DomainIdnCSnap, FunctionIdn, ViperIdent,
+};
 
 #[derive(Eq, PartialEq, Hash, Debug, Clone, Copy)]
 pub enum BitVecSize {
@@ -81,10 +83,46 @@ impl TaskEncoder for BitVecEnc {
                 &[],
                 vcx.alloc_slice(functions),
                 match *task_key {
-                    BitVecSize::BitVec16 => Some("(_ BitVec 16)"),
-                    BitVecSize::BitVec32 => Some("(_ BitVec 32)"),
-                    BitVecSize::BitVec64 => Some("(_ BitVec 64)"),
-                    BitVecSize::BitVec128 => Some("(_ BitVec 128)"),
+                    BitVecSize::BitVec16 => Some(vcx.alloc_slice(&[
+                        vcx.alloc(BackendInterpretationPair {
+                            key: "SMTLIB",
+                            value: "(_ BitVec 16)",
+                        }),
+                        vcx.alloc(BackendInterpretationPair {
+                            key: ("Boogie"),
+                            value: ("bv16"),
+                        }),
+                    ])),
+                    BitVecSize::BitVec32 => Some(vcx.alloc_slice(&[
+                        vcx.alloc(BackendInterpretationPair {
+                            key: "SMTLIB",
+                            value: "(_ BitVec 32)",
+                        }),
+                        vcx.alloc(BackendInterpretationPair {
+                            key: ("Boogie"),
+                            value: ("bv32"),
+                        }),
+                    ])),
+                    BitVecSize::BitVec64 => Some(vcx.alloc_slice(&[
+                        vcx.alloc(BackendInterpretationPair {
+                            key: "SMTLIB",
+                            value: "(_ BitVec 64)",
+                        }),
+                        vcx.alloc(BackendInterpretationPair {
+                            key: ("Boogie"),
+                            value: ("bv64"),
+                        }),
+                    ])),
+                    BitVecSize::BitVec128 => Some(vcx.alloc_slice(&[
+                        vcx.alloc(BackendInterpretationPair {
+                            key: "SMTLIB",
+                            value: "(_ BitVec 128)",
+                        }),
+                        vcx.alloc(BackendInterpretationPair {
+                            key: ("Boogie"),
+                            value: ("bv128"),
+                        }),
+                    ])),
                 },
             );
 

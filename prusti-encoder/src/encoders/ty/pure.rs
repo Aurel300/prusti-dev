@@ -10,7 +10,8 @@ use prusti_rustc_interface::{
 };
 use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 use vir::{
-    AdtDestructor, Arity, CastType, CompType, DomainAxiomData, DomainIdnSnap, FunctionIdn, Type,
+    AdtDestructor, Arity, BackendInterpretationPair, CastType, CompType, DomainAxiomData,
+    DomainIdnSnap, FunctionIdn, Type,
 };
 
 use crate::encoders::Pure;
@@ -321,7 +322,7 @@ pub(crate) struct AdtBuilderData<'vir> {
 pub(crate) struct DomainBuilderData<'vir> {
     axioms: Vec<vir::DomainAxiom<'vir>>,
     functions: Vec<vir::DomainFunction<'vir>>,
-    interpretation: Option<&'static str>,
+    interpretation: Option<&'vir [&'vir BackendInterpretationPair<'vir>]>,
 }
 
 #[derive(Clone, Copy)]
@@ -581,7 +582,10 @@ impl<'vir> DomainBuilder<'vir> {
         self.data().axioms.push(axiom);
     }
 
-    pub(crate) fn set_interpretation(&mut self, interp: &'static str) {
+    pub(crate) fn set_interpretation(
+        &mut self,
+        interp: &'vir [&'vir BackendInterpretationPair<'vir>],
+    ) {
         self.data().interpretation = Some(interp);
     }
 }

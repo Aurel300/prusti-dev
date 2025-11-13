@@ -178,7 +178,7 @@ impl<'a> AstFactory<'a> {
         functions: &[DomainFunc],
         axioms: &[NamedDomainAxiom],
         type_vars: &[Type],
-        interpretation: Option<&str>,
+        interpretations: Option<&[(&str, &str)]>,
     ) -> Domain<'a> {
         build_ast_node!(
             self,
@@ -188,9 +188,12 @@ impl<'a> AstFactory<'a> {
             self.jni.new_seq(&map_to_jobjects!(functions)),
             self.jni.new_seq(&map_to_jobjects!(axioms)),
             self.jni.new_seq(&map_to_jobjects!(type_vars)),
-            self.jni.new_option(interpretation.map(|i| {
-                self.jni
-                    .new_map(&[(self.jni.new_string("SMTLIB"), self.jni.new_string(i))])
+            self.jni.new_option(interpretations.map(|i| {
+                self.jni.new_map(
+                    &i.iter()
+                        .map(|x| (self.jni.new_string(x.0), self.jni.new_string(x.1)))
+                        .collect::<Vec<_>>(),
+                )
             }))
         )
     }

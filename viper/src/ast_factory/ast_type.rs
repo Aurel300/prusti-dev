@@ -68,14 +68,19 @@ impl<'a> AstFactory<'a> {
         Type::new(obj)
     }
 
-    pub fn domain_backend_type(&self, domain_name: &str, interpretation: &str) -> Type<'a> {
-        let obj = self.jni.unwrap_result(ast::BackendType::with(self.env).new(
-            self.jni.new_string(domain_name),
-            self.jni.new_map(&[(
-                self.jni.new_string("SMTLIB"),
-                self.jni.new_string(interpretation),
-            )]),
-        ));
+    pub fn domain_backend_type(
+        &self,
+        domain_name: &str,
+        interpretations: &[(&str, &str)],
+    ) -> Type<'a> {
+        let vec: Vec<_> = interpretations
+            .iter()
+            .map(|x| (self.jni.new_string(x.0), self.jni.new_string(x.1)))
+            .collect();
+        let obj = self.jni.unwrap_result(
+            ast::BackendType::with(self.env)
+                .new(self.jni.new_string(domain_name), self.jni.new_map(&vec)),
+        );
         Type::new(obj)
     }
 

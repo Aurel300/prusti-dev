@@ -776,7 +776,7 @@ impl<'tcx> VirCtxt<'tcx> {
         typarams: &'vir [DomainParam<'vir>],
         axioms: &'vir [DomainAxiomGen<'vir, Curr, Next>],
         functions: &'vir [DomainFunction<'vir>],
-        interpretation: Option<&'static str>,
+        interpretation: Option<&'vir [&'vir BackendInterpretationPair]>,
     ) -> DomainGen<'vir, Curr, Next> {
         assert_eq!(typarams.len(), 0, "Domain type parameters are not yet supported (because `FunctionIdn` doesn't have a mechanism to add a type_map for calls)");
         self.alloc(DomainGenData {
@@ -785,7 +785,7 @@ impl<'tcx> VirCtxt<'tcx> {
             axioms,
             functions,
             interpretation: interpretation
-                .map(|i| self.alloc(InterpretationData { interpretation: i })),
+                .map(|i| self.alloc(BackendInterpretationData { interpretation: i })),
         })
     }
 

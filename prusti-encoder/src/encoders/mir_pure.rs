@@ -1,6 +1,5 @@
 use crate::encoders::{
-    ConstEnc, FunctionCallEnc, TyUseImpureEnc, ViperTupleEnc,
-    r#const::ConstEncTask,
+    FunctionCallEnc, TyUseImpureEnc, ViperTupleEnc,
     mir_fn::{CallTaskDescription, RustSignature},
     mir_shared::PureRvalueEnc,
     ty::{
@@ -9,6 +8,7 @@ use crate::encoders::{
         use_pure::{TyUsePure, TyUsePureEnc},
     },
 };
+use pcg::utils::Place;
 use prusti_interface::{
     PrustiError,
     specs::{specifications::SpecQuery, typed::ExternSpecKind},
@@ -241,6 +241,51 @@ struct Enc<'vir: 'enc, 'enc> {
 
 type EncResult<'vir, T> = Result<T, EncodeFullError<'vir, MirPureEnc>>;
 
+impl<'vir: 'enc, 'enc> PureRvalueEnc<'vir> for Enc<'vir, 'enc> {
+    type Encoder = MirPureEnc;
+    type EncodePlaceCtxt = HashMap<mir::Local, Version<'vir>>;
+    type ExprCurr = ExprInput<'vir>;
+    type ExprNext = vir::ExprKind<'vir>;
+    fn def_id(&self) -> DefId {
+        self.def_id
+    }
+    fn deps(&mut self) -> &mut TaskEncoderDependencies<'vir, Self::Encoder> {
+        self.deps
+    }
+    fn vcx(&self) -> &'vir vir::VirCtxt<'vir> {
+        self.vcx
+    }
+    fn body(&self) -> &mir::Body<'vir> {
+        self.body
+    }
+    fn ty_use_pure(&mut self, ty: ty::Ty<'vir>) -> TyUsePure<'vir> {
+        self.ty_use(ty)
+    }
+
+    fn encode_place_snap<'slf>(
+        &mut self,
+        place: Place<'vir>,
+        curr_ver: &Self::EncodePlaceCtxt,
+    ) -> ExprRet<'vir> {
+        self.encode_place_with_ref(curr_ver, place).0
+    }
+
+    fn encode_operand_snap(
+        &mut self,
+        operand: &mir::Operand<'vir>,
+        curr_ver: &HashMap<mir::Local, Version<'vir>>,
+    ) -> EncResult<'vir, ExprRet<'vir>> {
+        Ok(match operand {
+            mir::Operand::Copy(place) | mir::Operand::Move(place) => {
+                self.encode_place_snap((*place).into(), curr_ver)
+            }
+            mir::Operand::Constant(box constant) => {
+                self.encode_constant_snap(constant)?.upcast_ty().lift()
+            }
+        })
+    }
+}
+
 impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
     fn new(
         vcx: &'vir vir::VirCtxt<'vir>,
@@ -411,6 +456,14 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
         Ok(self.reify_binds(res, ex))
     }
 
+    fn encode_operand(
+        &mut self,
+        curr_version: &HashMap<mir::Local, Version<'vir>>,
+        operand: &mir::Operand<'vir>,
+    ) -> EncResult<'vir, ExprRet<'vir>> {
+        self.encode_operand_snap(operand, curr_version)
+    }
+
     fn encode_cfg(
         &mut self,
         curr_ver: &HashMap<mir::Local, Version<'vir>>,
@@ -455,7 +508,9 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
 
             mir::TerminatorKind::SwitchInt { discr, targets } => {
                 // encode the discriminant operand
-                let discr_expr = self.encode_operand(&new_curr_ver, discr)?.downcast_ty();
+                let discr_expr = self
+                    .encode_operand_snap(discr, &new_curr_ver)?
+                    .downcast_ty();
                 let discr_ty = discr.ty(self.body, self.vcx.tcx());
                 let discr_ty_out = self.ty_use(discr_ty).expect_primitive();
 
@@ -630,12 +685,6 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
         Ok(update)
     }
 
-    fn rvalue_encoder<'slf>(
-        &'slf mut self,
-    ) -> PureRvalueEnc<'vir, 'slf, MirPureEnc, GParams<'vir>> {
-        PureRvalueEnc::new(self.vcx, self.context, self.deps, self.body)
-    }
-
     fn encode_rvalue(
         &mut self,
         curr_ver: &HashMap<mir::Local, Version<'vir>>,
@@ -647,7 +696,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
             mir::Rvalue::Use(op) => self.encode_operand(curr_ver, op),
             mir::Rvalue::Ref(_, kind, place) => {
                 let rvalue_snapshot_encoding = self.ty_use(rvalue_ty);
-                let (snap, place_ref) = self.encode_place_with_ref(curr_ver, place);
+                let (snap, place_ref) = self.encode_place_with_ref(curr_ver, (*place).into());
                 if kind.mutability().is_mut() {
                     let e_rvalue_ty = rvalue_snapshot_encoding.expect_mutref();
                     // We want to distinguish if `place` is a value that lives
@@ -672,29 +721,17 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                 }
             }
             mir::Rvalue::BinaryOp(op, box (l, r)) => {
-                let encoded_l = self.encode_operand(curr_ver, l)?;
-                let encoded_r = self.encode_operand(curr_ver, r)?;
-                let mut rvalue_encoder = self.rvalue_encoder();
-                Ok(rvalue_encoder.encode_binop(rvalue_ty, *op, l, r, encoded_l, encoded_r))
+                self.encode_binop_snap(rvalue_ty, *op, l, r, curr_ver)
             }
             mir::Rvalue::UnaryOp(unop, operand) => {
-                let encoded_operand = self.encode_operand(curr_ver, operand)?;
-                let mut rvalue_encoder = self.rvalue_encoder();
-                Ok(rvalue_encoder.encode_un_op(rvalue_ty, *unop, operand, encoded_operand))
+                self.encode_un_op_snap(rvalue_ty, *unop, operand, curr_ver)
             }
             mir::Rvalue::Aggregate(
                 box kind @ (mir::AggregateKind::Adt(..)
                 | mir::AggregateKind::Tuple
                 | mir::AggregateKind::Closure(..)),
                 fields,
-            ) => {
-                let encoded_fields = fields
-                    .iter()
-                    .map(|field| self.encode_operand(curr_ver, field))
-                    .collect::<Result<Vec<_>, _>>()?;
-                let mut rvalue_encoder = self.rvalue_encoder();
-                Ok(rvalue_encoder.encode_aggregate(rvalue_ty, kind.clone(), encoded_fields))
-            }
+            ) => self.encode_aggregate_snap(rvalue_ty, kind, fields, curr_ver),
             mir::Rvalue::Discriminant(place) => {
                 let place_ty = place.ty(self.body, self.vcx.tcx());
                 let ty = self.ty_use(place_ty.ty);
@@ -702,9 +739,10 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                     .get_enumlike()
                     .filter(|_| place_ty.variant_index.is_none())
                 {
-                    Some(ty) => {
-                        ty.snap_to_discr_snap(self.encode_place(curr_ver, place).downcast_ty())
-                    }
+                    Some(ty) => ty.snap_to_discr_snap(
+                        self.encode_place_snap((*place).into(), curr_ver)
+                            .downcast_ty(),
+                    ),
                     None => {
                         let e_rvalue_ty = self.ty_use(rvalue_ty).expect_primitive();
                         // mir::Rvalue::Discriminant documents "Returns zero for types without discriminant"
@@ -715,15 +753,9 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                 Ok(discr.upcast_ty())
             }
             mir::Rvalue::Cast(kind, operand, ty) => {
-                let vir_operand = self.encode_operand(curr_ver, operand)?;
-                let mut rvalue_encoder = self.rvalue_encoder();
-                Ok(rvalue_encoder.encode_cast(*kind, operand, *ty, vir_operand))
+                self.encode_cast_snap(*kind, operand, *ty, curr_ver)
             }
-            mir::Rvalue::Len(place) => {
-                let encoded_place = self.encode_place(curr_ver, place);
-                let mut rvalue_encoder = self.rvalue_encoder();
-                Ok(rvalue_encoder.encode_len(place, encoded_place))
-            }
+            mir::Rvalue::Len(place) => Ok(self.encode_len_snap((*place).into(), curr_ver)),
             _ => self.vcx.with_span(span, |vcx| {
                 let error_msg = format!("unsupported rvalue {rvalue:?} might be reached");
                 vcx.handle_error("application.precondition:assertion.false", move |_| {
@@ -734,40 +766,10 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
         }
     }
 
-    fn encode_operand(
-        &mut self,
-        curr_ver: &HashMap<mir::Local, Version<'vir>>,
-        operand: &mir::Operand<'vir>,
-    ) -> EncResult<'vir, ExprRet<'vir>> {
-        Ok(match operand {
-            mir::Operand::Copy(place) | mir::Operand::Move(place) => {
-                self.encode_place(curr_ver, place)
-            }
-            mir::Operand::Constant(box constant) => self
-                .deps
-                .require_dep::<ConstEnc>(ConstEncTask::Mir {
-                    const_: constant.const_,
-                    encoding_depth: self.encoding_depth,
-                    def_id: self.def_id,
-                    span: constant.span,
-                })?
-                .upcast_ty()
-                .lift(),
-        })
-    }
-
-    fn encode_place(
-        &mut self,
-        curr_ver: &HashMap<mir::Local, Version<'vir>>,
-        place: &mir::Place<'vir>,
-    ) -> ExprRet<'vir> {
-        self.encode_place_with_ref(curr_ver, place).0
-    }
-
     fn encode_place_with_ref(
         &mut self,
         curr_ver: &HashMap<mir::Local, Version<'vir>>,
-        place: &mir::Place<'vir>,
+        place: Place<'vir>,
     ) -> (ExprRet<'vir>, Option<ExprRetRef<'vir>>) {
         // TODO: remove (debug)
         assert!(curr_ver.contains_key(&place.local));
@@ -796,8 +798,8 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
         // TODO: factor this out (duplication with impure encoder)?
         for elem in place.projection {
             (expr, place_ref) =
-                self.encode_place_element(place_ty, elem, expr.downcast_ty(), place_ref);
-            place_ty = place_ty.projection_ty(self.vcx.tcx(), elem);
+                self.encode_place_element(place_ty, (*elem).into(), expr.downcast_ty(), place_ref);
+            place_ty = place_ty.projection_ty(self.vcx.tcx(), (*elem).into());
         }
         // Can we ever have the use of a projected place?
         assert!(place_ty.variant_index.is_none());

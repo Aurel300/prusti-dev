@@ -196,74 +196,22 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         match rvalue {
             mir::Rvalue::Use(op) => self.encode_operand_snap(op, &()).map_err(Into::into),
             mir::Rvalue::Cast(cast_kind, operand, ty) => {
-                if !matches!(cast_kind, mir::CastKind::IntToInt) {
-                    return self
-                        .encode_cast_snap(*cast_kind, operand, *ty, &())
-                        .map_err(Into::into);
-                }
+                let encoded_cast = self.encode_cast_snap(*cast_kind, operand, *ty, &())?;
 
-                let from_ty = operand.ty(self.body, self.vcx.tcx());
-                let from_ty_kind = from_ty.kind();
-                let to_ty_kind = ty.kind();
+                self.vcx.with_span(span, |_| {
+                    self.vcx
+                        .handle_error("exhale.failed:assertion.false", move |_| {
+                            Some(vec![PrustiError::verification(
+                                "cast may fail: value might not fit into the target type",
+                                span.into(),
+                            )])
+                        });
+                    for precondition in encoded_cast.preconditions {
+                        self.stmt(self.vcx.mk_exhale_stmt(precondition));
+                    }
+                });
 
-                let from_vir_ty = self.ty_use_pure(from_ty).expect_primitive().expect_native();
-
-                let (to_bits, to_signed) = vir::VirCtxt::get_int_data(to_ty_kind);
-                let (from_bits, from_signed) = vir::VirCtxt::get_int_data(from_ty_kind);
-
-                let needs_min_check = match (from_signed, to_signed) {
-                    (true, true) => from_bits > to_bits, // both signed, check required if target has fewer bits
-                    (false, false) => false,             // both unsigned, no min check necessary
-                    (false, true) => false, // unsigned to signed, no min check necessary
-                    (true, false) => false, // signed to unsigned, `from` must be >= 0
-                };
-
-                let needs_max_check = match (from_signed, to_signed) {
-                    (false, true) => from_bits >= to_bits, // unsigned to signed, must check unless target is bigger
-                    _ => from_bits > to_bits, // otherwise check if target has fewer bits
-                };
-
-                if needs_min_check || needs_max_check {
-                    let encoded_operand = self.encode_operand_snap(operand, &())?;
-                    let from_prim = from_vir_ty.snap_to_prim.call()(encoded_operand.downcast_ty());
-                    self.vcx.with_span(span, |_| {
-                        self.vcx
-                            .handle_error("exhale.failed:assertion.false", move |_| {
-                                Some(vec![PrustiError::verification(
-                                    "cast may fail: value might not fit into the target type",
-                                    span.into(),
-                                )])
-                            });
-                        if needs_min_check {
-                            let to_min = self.vcx.get_min_int(to_ty_kind);
-                            let min_check = self
-                                .vcx
-                                .mk_bin_op_expr(
-                                    vir::BinOpKind::CmpGe,
-                                    from_prim.as_dyn(),
-                                    to_min.as_dyn(),
-                                )
-                                .downcast_ty::<vir::Bool>();
-                            self.stmt(self.vcx.mk_exhale_stmt(min_check));
-                        }
-
-                        if needs_max_check {
-                            let to_max = self.vcx.get_max_int(to_ty_kind);
-                            let max_check = self
-                                .vcx
-                                .mk_bin_op_expr(
-                                    vir::BinOpKind::CmpLe,
-                                    from_prim.as_dyn(),
-                                    to_max.as_dyn(),
-                                )
-                                .downcast_ty::<vir::Bool>();
-                            self.stmt(self.vcx.mk_exhale_stmt(max_check));
-                        }
-                    });
-                }
-
-                self.encode_cast_snap(*cast_kind, operand, *ty, &())
-                    .map_err(Into::into)
+                Ok(encoded_cast.expr)
             }
             mir::Rvalue::Len(place) => Ok(self.encode_len_snap((*place).into(), &())),
 

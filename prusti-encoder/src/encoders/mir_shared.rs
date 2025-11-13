@@ -22,6 +22,11 @@ pub(crate) type ExprResult<'vir, Enc: PureRvalueEnc<'vir>> = Result<
     EncodeFullError<'vir, Enc::Encoder>,
 >;
 
+pub(crate) struct EncodedCast<'vir, Enc: PureRvalueEnc<'vir> + ?Sized> {
+    pub preconditions: Vec<vir::ExprGenBool<'vir, Enc::ExprCurr, Enc::ExprNext>>,
+    pub expr: vir::ExprGenSnap<'vir, Enc::ExprCurr, Enc::ExprNext>,
+}
+
 pub(crate) trait PureRvalueEnc<'vir> {
     type Encoder: TaskEncoder + 'vir;
     type EncodePlaceCtxt;
@@ -51,7 +56,7 @@ pub(crate) trait PureRvalueEnc<'vir> {
         operand: &mir::Operand<'vir>,
         ty: ty::Ty<'vir>,
         ctxt: &Self::EncodePlaceCtxt,
-    ) -> ExprResult<'vir, Self> {
+    ) -> EncResult<'vir, EncodedCast<'vir, Self>, Self> {
         if !matches!(kind, mir::CastKind::IntToInt) {
             todo!("cast kind {kind:?}");
         }
@@ -60,7 +65,51 @@ pub(crate) trait PureRvalueEnc<'vir> {
         let from_vir_ty = self.ty_use_pure(from_ty).expect_primitive().expect_native();
         let to_vir_ty = self.ty_use_pure(ty).expect_primitive();
         let from_prim = from_vir_ty.snap_to_prim.call()(encoded_operand.downcast_ty());
-        Ok(to_vir_ty.prim_to_snap.call()(from_prim).upcast_ty())
+        let (to_bits, to_signed) = vir::VirCtxt::get_int_data(ty.kind());
+        let (from_bits, from_signed) = vir::VirCtxt::get_int_data(from_ty.kind());
+
+        let needs_min_check = match (from_signed, to_signed) {
+            (true, true) => from_bits > to_bits, // both signed, check required if target has fewer bits
+            (false, false) => false,             // both unsigned, no min check necessary
+            (false, true) => false,              // unsigned to signed, no min check necessary
+            (true, false) => false,              // signed to unsigned, `from` must be >= 0
+        };
+
+        let needs_max_check = match (from_signed, to_signed) {
+            (false, true) => from_bits >= to_bits, // unsigned to signed, must check unless target is bigger
+            _ => from_bits > to_bits,              // otherwise check if target has fewer bits
+        };
+
+        let mut preconditions = Vec::new();
+        if needs_min_check {
+            let to_min = self.vcx().get_min_int(ty.kind());
+            let min_check = self
+                .vcx()
+                .mk_bin_op_expr(
+                    vir::BinOpKind::CmpGe,
+                    from_prim.as_dyn(),
+                    to_min.lazy().as_dyn(),
+                )
+                .downcast_ty::<vir::Bool>();
+            preconditions.push(min_check);
+        }
+
+        if needs_max_check {
+            let to_max = self.vcx().get_max_int(ty.kind());
+            let max_check = self
+                .vcx()
+                .mk_bin_op_expr(
+                    vir::BinOpKind::CmpLe,
+                    from_prim.as_dyn(),
+                    to_max.lazy().as_dyn(),
+                )
+                .downcast_ty::<vir::Bool>();
+            preconditions.push(max_check);
+        }
+        Ok(EncodedCast {
+            preconditions,
+            expr: to_vir_ty.prim_to_snap.call()(from_prim).upcast_ty(),
+        })
     }
 
     fn encode_binop_snap(

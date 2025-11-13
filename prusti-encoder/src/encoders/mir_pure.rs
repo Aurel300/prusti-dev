@@ -753,7 +753,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                 Ok(discr.upcast_ty())
             }
             mir::Rvalue::Cast(kind, operand, ty) => {
-                self.encode_cast_snap(*kind, operand, *ty, curr_ver)
+                Ok(self.encode_cast_snap(*kind, operand, *ty, curr_ver)?.expr)
             }
             mir::Rvalue::Len(place) => Ok(self.encode_len_snap((*place).into(), curr_ver)),
             _ => self.vcx.with_span(span, |vcx| {

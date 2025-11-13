@@ -86,7 +86,7 @@ impl ConstEnc {
                             // If the `unwrap` ever panics we need a different way to get the inner type
                             // let inner_ty = ty.builtin_deref(true).map(|t| t.ty).unwrap_or(ty);
                             let _inner_ty = ty.builtin_deref(true).unwrap();
-                            todo!()
+                            return Err(EncodeFullError::EncodingError(ConstEncError::Unsupported, None));
                         }
                         GlobalAlloc::TypeId { .. } => todo!(),
                     }
@@ -116,12 +116,17 @@ impl ConstEnc {
     }
 }
 
+#[derive(Clone, Debug)]
+pub enum ConstEncError {
+    Unsupported
+}
+
 impl TaskEncoder for ConstEnc {
     task_encoder::encoder_cache!(ConstEnc);
 
     type TaskDescription<'vir> = ConstEncTask<'vir>;
     type OutputFullDependency<'vir> = vir::ExprCSnap<'vir>;
-    type EncodingError = ();
+    type EncodingError = ConstEncError;
 
     fn task_to_key<'vir>(task: &Self::TaskDescription<'vir>) -> Self::TaskKey<'vir> {
         *task

@@ -6,7 +6,7 @@ use pcg::{
     coupling::PcgCoupledEdgeKind,
     pcg::PcgNode,
 };
-use task_encoder::TaskEncoder;
+use task_encoder::{EncodeFullError, TaskEncoder};
 
 use crate::encoders::ImpureEncVisitor;
 

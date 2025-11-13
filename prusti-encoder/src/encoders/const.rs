@@ -1,3 +1,4 @@
+use prusti_interface::PrustiError;
 use prusti_rustc_interface::{
     middle::{
         mir::{
@@ -55,7 +56,7 @@ impl ConstEnc {
             }
             ty::ConstKind::Value(val) => {
                 let val = vir::with_vcx(|vcx| vcx.tcx().valtree_to_const_val(val));
-                Self::encode_const_val(deps, val, ty, context)
+                Self::encode_const_val(deps, val, ty, context, None)
             }
             k => todo!("const kind {k:?}"),
         }
@@ -66,6 +67,7 @@ impl ConstEnc {
         val: ConstValue,
         ty: ty::Ty<'vir>,
         context: GParams<'vir>,
+        span: Option<Span>,
     ) -> Result<vir::ExprCSnap<'vir>, EncodeFullError<'vir, Self>> {
         vir::with_vcx(|vcx| {
             let ty_task = RustTyDecomposition::from_ty(ty, vcx.tcx(), context);
@@ -86,7 +88,18 @@ impl ConstEnc {
                             // If the `unwrap` ever panics we need a different way to get the inner type
                             // let inner_ty = ty.builtin_deref(true).map(|t| t.ty).unwrap_or(ty);
                             let _inner_ty = ty.builtin_deref(true).unwrap();
-                            return Err(EncodeFullError::EncodingError(ConstEncError::Unsupported, None));
+                            vcx.with_span(span.unwrap(), |vcx| {
+                                vcx.handle_error(
+                                    "application.precondition:assertion.false",
+                                    move |_| {
+                                        Some(vec![PrustiError::verification(
+                                            format!("unsupported const {val:?} might be reached"),
+                                            span.unwrap().into(),
+                                        )])
+                                    },
+                                );
+                                kind.unreachable_to_snap().downcast_ty()
+                            })
                         }
                         GlobalAlloc::TypeId { .. } => todo!(),
                     }
@@ -116,17 +129,12 @@ impl ConstEnc {
     }
 }
 
-#[derive(Clone, Debug)]
-pub enum ConstEncError {
-    Unsupported
-}
-
 impl TaskEncoder for ConstEnc {
     task_encoder::encoder_cache!(ConstEnc);
 
     type TaskDescription<'vir> = ConstEncTask<'vir>;
     type OutputFullDependency<'vir> = vir::ExprCSnap<'vir>;
-    type EncodingError = ConstEncError;
+    type EncodingError = ();
 
     fn task_to_key<'vir>(task: &Self::TaskDescription<'vir>) -> Self::TaskKey<'vir> {
         *task
@@ -157,7 +165,9 @@ impl TaskEncoder for ConstEnc {
                     )
                 });
                 match evaluated {
-                    Ok(val) => Self::encode_const_val(deps, val, const_.ty(), def_id.into())?,
+                    Ok(val) => {
+                        Self::encode_const_val(deps, val, const_.ty(), def_id.into(), Some(span))?
+                    }
                     Err(err) => panic!("error evaluating const {const_:?}: {err:?}"),
                 }
             }

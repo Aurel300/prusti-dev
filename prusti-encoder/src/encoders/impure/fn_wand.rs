@@ -58,8 +58,7 @@ impl<'vir, E: TaskEncoder> ImpureEncVisitor<'vir, '_, E> {
                 );
                 let actions = ug.actions(self.pcg_ctxt()).unwrap();
                 let unblock = self.block(|visitor| {
-                    visitor.pcs_unblock_actions(final_borrow_state, &actions, Some(label));
-                    Ok(())
+                    visitor.pcs_unblock_actions(final_borrow_state, &actions, Some(label))
                 })?;
                 package_script.extend(unblock);
             }

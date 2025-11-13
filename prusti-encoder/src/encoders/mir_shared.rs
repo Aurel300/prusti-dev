@@ -1,8 +1,9 @@
 use task_encoder::{TaskEncoder, TaskEncoderDependencies};
-use vir::{CSnap, CastType, CompType, Snap};
+use vir::CastType;
 
 use crate::encoders::{
-    MirBuiltinEnc, MirBuiltinEncTask, TyUsePureEnc, ty::{RustTyDecomposition, generics::GParams, use_pure::TyUsePure}
+    MirBuiltinEnc, MirBuiltinEncTask, TyUsePureEnc,
+    ty::{RustTyDecomposition, generics::GParams, use_pure::TyUsePure},
 };
 use prusti_rustc_interface::middle::{mir, ty};
 
@@ -60,9 +61,7 @@ impl<'vir: 'enc, 'enc, Enc: TaskEncoder, Ctxt: Copy + Into<GParams<'vir>>>
         let operand_ty = operand.ty(self.body, self.vcx.tcx());
         let un_op_function = self
             .deps
-            .require_ref::<MirBuiltinEnc>(MirBuiltinEncTask::UnOp(
-                rvalue_ty, op, operand_ty,
-            ))
+            .require_ref::<MirBuiltinEnc>(MirBuiltinEncTask::UnOp(rvalue_ty, op, operand_ty))
             .unwrap()
             .un_op()
             .unwrap();
@@ -111,7 +110,7 @@ impl<'vir: 'enc, 'enc, Enc: TaskEncoder, Ctxt: Copy + Into<GParams<'vir>>>
 
     pub(super) fn encode_cast<Curr, Next>(
         &mut self,
-        kind: mir::CastKind,
+        _kind: mir::CastKind,
         operand: &mir::Operand<'vir>,
         ty: ty::Ty<'vir>,
         encoded_operand: vir::ExprGenSnap<'vir, Curr, Next>,

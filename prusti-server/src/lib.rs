@@ -218,7 +218,9 @@ fn handle_result(
                         error
                             .offending_pos_id
                             .as_ref()
-                            .unwrap_or_else(|| panic!("offending pos id is missing for error {error:?}"))
+                            .unwrap_or_else(|| {
+                                panic!("offending pos id is missing for error {error:?}")
+                            })
                             .parse::<usize>()
                             .unwrap(),
                         error.reason_pos_id.and_then(|id| id.parse::<usize>().ok()),

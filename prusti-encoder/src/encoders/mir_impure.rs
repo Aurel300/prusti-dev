@@ -565,7 +565,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         borrows_state: &BorrowsState<'_, 'vir>,
         actions: &[BorrowPcgUnblockAction<'vir>],
         label: Option<&'vir str>,
-    ) {
+    ) -> EncodeResult<'vir, (), E> {
         let mut to_skip = Vec::new();
         for action in actions {
             self.pcs_handle_edge(
@@ -575,8 +575,9 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 label,
                 false,
                 &mut to_skip,
-            );
+            )?;
         }
+        Ok(())
     }
 
     fn pcg_actions(
@@ -724,7 +725,8 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
 
     fn pcs_succ<'a>(&mut self, pcg_state: &Pcg<'_, 'vir>, succ: &'a PcgSuccessor<'_, 'vir>) {
         let edge_to_loop = self.loop_head_of(succ.block()).is_some();
-        self.pcg_actions(pcg_state, succ.actions(), edge_to_loop);
+        self.pcg_actions(pcg_state, succ.actions(), edge_to_loop)
+            .unwrap();
     }
 
     fn encode_operand_snap(
@@ -1039,7 +1041,7 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
         let current_fpcs = self.current_fpcs.take().unwrap();
         let cfpcs = &current_fpcs.statements[location.statement_index];
         for phase in EvalStmtPhase::phases() {
-            self.pcg_actions(&cfpcs.states[phase], cfpcs.actions(phase), false);
+            self.pcg_actions(&cfpcs.states[phase], cfpcs.actions(phase), false).unwrap();
         }
         self.current_fpcs = Some(current_fpcs);
 
@@ -1080,7 +1082,7 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                     dest_ty_out.apply_method_assign(self.vcx, proj_enc, rval_enc);
                     self.stmt(method_assign_app);
                 }
-                Err(e) => {
+                Err(_) => {
                     self.vcx.with_span(span, |vcx| {
                         let error_msg = format!("unsupported rvalue {rvalue:?} might be reached");
                         vcx.handle_error("exhale.failed:assertion.false", move |_| {
@@ -1137,7 +1139,8 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
         let cfpcs = &current_fpcs.statements[location.statement_index];
         for phase in EvalStmtPhase::phases() {
             comment!(self, "PCG (T) {phase}");
-            self.pcg_actions(&cfpcs.states[phase], cfpcs.actions(phase), false);
+            self.pcg_actions(&cfpcs.states[phase], cfpcs.actions(phase), false)
+                .unwrap();
         }
         self.current_fpcs = Some(current_fpcs);
 
@@ -1304,8 +1307,9 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                     let snap_args = args
                         .iter()
                         .map(|arg| {
-                            self.vcx
-                                .with_span(arg.span, |_| self.encode_operand_snap(&arg.node).unwrap())
+                            self.vcx.with_span(arg.span, |_| {
+                                self.encode_operand_snap(&arg.node).unwrap()
+                            })
                         })
                         .collect::<Vec<_>>();
                     let pure_func_app = pure_func.call(snap_args);

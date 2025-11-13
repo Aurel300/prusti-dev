@@ -6,7 +6,7 @@ use pcg::{
     coupling::PcgCoupledEdgeKind,
     pcg::PcgNode,
 };
-use task_encoder::{EncodeFullError, TaskEncoder};
+use task_encoder::TaskEncoder;
 
 use crate::encoders::ImpureEncVisitor;
 
@@ -97,7 +97,9 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         let actions = ug.actions(self.pcg_ctxt()).unwrap();
 
         self.block(|visitor| {
-            visitor.pcs_unblock_actions(borrows_state, &actions, Some(label));
+            visitor
+                .pcs_unblock_actions(borrows_state, &actions, Some(label))
+                .unwrap()
         })
     }
 }

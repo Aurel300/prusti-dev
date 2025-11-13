@@ -429,7 +429,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
         for (statement_index, stmt) in self.body[curr].statements.iter().enumerate() {
             let location = mir::Location {
                 block: curr,
-                statement_index
+                statement_index,
             };
             let newer = self.encode_stmt(&new_curr_ver, stmt, location)?;
             newer.add_to_map(&mut new_curr_ver);
@@ -726,7 +726,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
             }
             _ => self.vcx.with_span(span, |vcx| {
                 let error_msg = format!("unsupported rvalue {rvalue:?} might be reached");
-                vcx.handle_error("exhale.failed:assertion.false", move |_| {
+                vcx.handle_error("application.precondition:assertion.false", move |_| {
                     Some(vec![PrustiError::verification(&error_msg, span.into())])
                 });
                 Ok(self.ty_use(rvalue_ty).unreachable_to_snap())

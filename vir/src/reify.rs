@@ -1,4 +1,4 @@
-use crate::{CastType, CompType, TransmuteFrom, VirCtxt, gendata::*, genrefs::*, refs::*};
+use crate::{gendata::*, genrefs::*, refs::*, CompType, VirCtxt};
 
 pub use vir_proc_macro::*;
 

@@ -4,7 +4,7 @@ use vir::CastType;
 use crate::encoders::{
     Pure,
     ty::{
-        LazyRustTy, RustBuiltinData, RustTyDatas,
+        LazyRustTy, RustTyDatas,
         generics::{GArgs, GArgsCastEnc, GArgsTyEnc, GParams},
         impure::{TyImpure, TyImpureEnc},
         pure::TyPureBuiltinData,

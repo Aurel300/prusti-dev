@@ -4,7 +4,7 @@ use crate::encoders::{
     mir_fn::{CallTaskDescription, RustSignature},
     mir_shared::PureRvalueEnc,
     ty::{
-        RustBuiltinData, RustTyDecomposition,
+        RustTyDecomposition,
         generics::GParams,
         interpretation::real::TyRealLocal,
         use_pure::{TyUsePure, TyUsePureEnc},

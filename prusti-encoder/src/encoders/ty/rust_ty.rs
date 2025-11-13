@@ -1,4 +1,4 @@
-use std::{any::Any, ops::Deref};
+use std::ops::Deref;
 
 use itertools::Itertools;
 use pcg::borrow_pcg::region_projection::{HasRegions, PcgRegion, RegionIdx};
@@ -297,7 +297,7 @@ impl<'tcx> TyData<'tcx, RustTyDatas> {
         let name = "Real";
         let params: GParams = GParams::empty();
         let data = RustTyData {
-            name: symbol::Symbol::intern(&name),
+            name: symbol::Symbol::intern(name),
             params,
         };
         let specifics = TySpecifics::Builtin(RustBuiltinData::BuiltinReal);

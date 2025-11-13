@@ -1,7 +1,6 @@
-use task_encoder::{EncodeFullError, OutputRefAny, TaskEncoder};
+use task_encoder::EncodeFullError;
 use vir::{
-    Arity, BackendInterpretationPair, CastType, CompType, DomainFunctionData, DomainGenData,
-    DomainIdnCSnap, DomainIdnSnap, FunctionIdn, Type, ViperIdent, VirCtxt,
+    BackendInterpretationPair, FunctionIdn, VirCtxt,
 };
 
 use crate::encoders::ty::pure::{DomainBuilder, TyPureBuiltinData, TyPureEnc};

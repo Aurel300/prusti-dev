@@ -30,11 +30,11 @@ use prusti_rustc_interface::{
     span::def_id::DefId,
 };
 use prusti_utils::config;
-use task_encoder::{TaskEncoder, TaskEncoderDependencies};
+use task_encoder::{EncodeFullError, TaskEncoder, TaskEncoderDependencies};
 use vir::{CastType, CompType};
 
 use crate::encoders::{
-    self, FunctionCallEnc, MirBuiltinEnc, TyUseImpureEnc, WandEnc, WandEncTask,
+    self, FunctionCallEnc, TyUseImpureEnc, WandEnc, WandEncTask,
     r#const::ConstEncTask,
     mir_fn::{CallTaskDescription, RustSignature},
     mir_shared::PureRvalueEnc,
@@ -610,7 +610,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
     fn encode_operand_snap_immediate(
         &mut self,
         operand: &mir::Operand<'vir>,
-    ) -> vir::ExprSnap<'vir> {
+    ) -> Result<vir::ExprSnap<'vir>, EncodeFullError<'vir, E>> {
         match operand {
             &mir::Operand::Move(source) => self.encode_place_snap(Place::from(source)).1,
             &mir::Operand::Copy(source) => self.encode_place_snap(Place::from(source)).1,
@@ -618,7 +618,10 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         }
     }
 
-    fn encode_constant(&mut self, constant: &mir::ConstOperand<'vir>) -> vir::ExprCSnap<'vir> {
+    fn encode_constant(
+        &mut self,
+        constant: &mir::ConstOperand<'vir>,
+    ) -> Result<vir::ExprCSnap<'vir>, EncodeFullError<'vir, E>> {
         self.deps
             .require_dep::<ConstEnc>(ConstEncTask::Mir {
                 const_: constant.const_,
@@ -626,7 +629,6 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 def_id: self.def_id,
                 span: constant.span,
             })
-            .unwrap()
     }
 
     pub(crate) fn encode_place(&mut self, place: Place<'vir>) -> EncodePlaceResult<'vir> {
@@ -900,10 +902,6 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                 // The snapshot of the value that we are assigning.
                 let rval_enc = match rvalue {
                     mir::Rvalue::Use(op) => Some(self.encode_operand_snap(op)),
-
-                    //mir::Rvalue::Repeat(Operand<'vir>, Const<'vir>) => {}
-                    //mir::Rvalue::ThreadLocalRef(DefId) => {}
-                    //mir::Rvalue::AddressOf(Mutability, Place<'vir>) => {}
                     mir::Rvalue::Cast(cast_kind, operand, ty) => {
                         let encoded_operand = self.encode_operand_snap(operand);
                         let mut rvalue_encoder = self.pure_rvalue_encoder();
@@ -998,10 +996,6 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                             _ => unreachable!(),
                         })
                     }
-
-                    //mir::Rvalue::Discriminant(Place<'vir>) => {}
-                    //mir::Rvalue::ShallowInitBox(Operand<'vir>, Ty<'vir>) => {}
-                    //mir::Rvalue::CopyForDeref(Place<'vir>) => {}
                     _ => None,
                 };
 

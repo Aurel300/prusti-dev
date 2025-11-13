@@ -1,14 +1,15 @@
 use crate::encoders::{
-    ConstEnc, FunctionCallEnc, MirBuiltinEnc, TyUseImpureEnc, ViperTupleEnc, r#const::ConstEncTask, mir_fn::{CallTaskDescription, RustSignature}, mir_shared::PureRvalueEnc, ty::{
+    ConstEnc, FunctionCallEnc, TyUseImpureEnc, ViperTupleEnc,
+    r#const::ConstEncTask,
+    mir_fn::{CallTaskDescription, RustSignature},
+    mir_shared::PureRvalueEnc,
+    ty::{
         RustTyDecomposition,
         generics::GParams,
         use_pure::{TyUsePure, TyUsePureEnc},
-    }
+    },
 };
-use prusti_interface::{
-    PrustiError,
-    specs::{specifications::SpecQuery, typed::ExternSpecKind},
-};
+use prusti_interface::{PrustiError, specs::{specifications::SpecQuery, typed::ExternSpecKind}};
 use prusti_rustc_interface::{
     abi,
     data_structures::graph,
@@ -626,7 +627,9 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
         update
     }
 
-    fn rvalue_encoder<'slf>(&'slf mut self) -> PureRvalueEnc<'vir, 'slf, MirPureEnc, GParams<'vir>> {
+    fn rvalue_encoder<'slf>(
+        &'slf mut self,
+    ) -> PureRvalueEnc<'vir, 'slf, MirPureEnc, GParams<'vir>> {
         PureRvalueEnc::new(self.vcx, self.context, self.deps, self.body)
     }
 
@@ -676,23 +679,19 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                 let mut rvalue_encoder = self.rvalue_encoder();
                 rvalue_encoder.encode_un_op(rvalue_ty, *unop, operand, encoded_operand)
             }
-            mir::Rvalue::Aggregate(box kind, fields) => match kind {
-                mir::AggregateKind::Adt(..)
+            mir::Rvalue::Aggregate(
+                box kind @ (mir::AggregateKind::Adt(..)
                 | mir::AggregateKind::Tuple
-                | mir::AggregateKind::Closure(..) => {
-                    let encoded_fields = fields
-                        .iter()
-                        .map(|field| self.encode_operand(curr_ver, field))
-                        .collect::<Vec<_>>();
-                    let mut rvalue_encoder = self.rvalue_encoder();
-                    rvalue_encoder.encode_aggregate(rvalue_ty, kind.clone(), encoded_fields)
-                }
-                _k => {
-                    // TODO: attach kind of aggregate to the unreachable
-                    //   expression in case it is reached
-                    self.ty_use(rvalue_ty).unreachable_to_snap()
-                }
-            },
+                | mir::AggregateKind::Closure(..)),
+                fields,
+            ) => {
+                let encoded_fields = fields
+                    .iter()
+                    .map(|field| self.encode_operand(curr_ver, field))
+                    .collect::<Vec<_>>();
+                let mut rvalue_encoder = self.rvalue_encoder();
+                rvalue_encoder.encode_aggregate(rvalue_ty, kind.clone(), encoded_fields)
+            }
             mir::Rvalue::Discriminant(place) => {
                 let place_ty = place.ty(self.body, self.vcx.tcx());
                 let ty = self.ty_use(place_ty.ty);
@@ -717,20 +716,18 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                 let mut rvalue_encoder = self.rvalue_encoder();
                 rvalue_encoder.encode_cast(*kind, operand, *ty, vir_operand)
             }
-            mir::Rvalue::Repeat(operand, _) => todo!(),
-            mir::Rvalue::ThreadLocalRef(def_id) => todo!(),
-            mir::Rvalue::RawPtr(raw_ptr_kind, place) => todo!(),
             mir::Rvalue::Len(place) => {
                 let encoded_place = self.encode_place(curr_ver, place);
                 let mut rvalue_encoder = self.rvalue_encoder();
                 rvalue_encoder.encode_len(place, encoded_place)
             }
-            mir::Rvalue::NullaryOp(null_op, ty) => todo!(),
-            mir::Rvalue::ShallowInitBox(operand, ty) => todo!(),
-            mir::Rvalue::CopyForDeref(place) => todo!(),
-            mir::Rvalue::WrapUnsafeBinder(operand, ty) => todo!(),
-
-            // Repeat
+            _ => self.vcx.with_span(span, |vcx| {
+                let error_msg = format!("unsupported rvalue {rvalue:?} might be reached");
+                vcx.handle_error("exhale.failed:assertion.false", move |_| {
+                    Some(vec![PrustiError::verification(&error_msg, span.into())])
+                });
+                self.ty_use(rvalue_ty).unreachable_to_snap()
+            }),
         }
     }
 

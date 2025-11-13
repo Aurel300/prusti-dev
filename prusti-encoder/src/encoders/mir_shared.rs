@@ -116,7 +116,7 @@ impl<'vir: 'enc, 'enc, Enc: TaskEncoder, Ctxt: Copy + Into<GParams<'vir>>>
         encoded_operand: vir::ExprGenSnap<'vir, Curr, Next>,
     ) -> vir::ExprGenSnap<'vir, Curr, Next> {
         let from_ty = operand.ty(self.body, self.vcx.tcx());
-        let from_vir_ty = self.ty_use(from_ty).expect_primitive();
+        let from_vir_ty = self.ty_use(from_ty).expect_primitive().expect_native();
         let to_vir_ty = self.ty_use(ty).expect_primitive();
         let from_prim = from_vir_ty.snap_to_prim.call()(encoded_operand.downcast_ty());
         to_vir_ty.prim_to_snap.call()(from_prim).upcast_ty()

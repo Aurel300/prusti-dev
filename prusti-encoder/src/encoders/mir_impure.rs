@@ -35,7 +35,6 @@ use vir::{CastType, CompType};
 
 use crate::encoders::{
     self, FunctionCallEnc, TyUseImpureEnc, WandEnc, WandEncTask,
-    r#const::ConstEncTask,
     mir_fn::{CallTaskDescription, RustSignature},
     mir_shared::{EncResult, PureRvalueEnc},
     ty::{
@@ -45,7 +44,7 @@ use crate::encoders::{
     },
 };
 
-use super::{ConstEnc, WandEncOutput};
+use super::WandEncOutput;
 
 pub struct ImpureEncVisitor<'vir, 'enc, E: TaskEncoder>
 where
@@ -740,7 +739,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             }
             mir::Operand::Constant(box constant) => {
                 let ty_out = self.ty_use_impure(ty);
-                let constant = self.encode_constant(constant)?;
+                let constant = self.encode_constant_snap(constant)?;
                 (constant.upcast_ty(), ty_out)
             }
         };
@@ -759,20 +758,8 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             &mir::Operand::Move(source) | &mir::Operand::Copy(source) => {
                 Ok(self.encode_place_with_snap(Place::from(source)).1)
             }
-            mir::Operand::Constant(box constant) => Ok(self.encode_constant(constant)?.upcast_ty()),
+            mir::Operand::Constant(box constant) => Ok(self.encode_constant_snap(constant)?.upcast_ty()),
         }
-    }
-
-    fn encode_constant(
-        &mut self,
-        constant: &mir::ConstOperand<'vir>,
-    ) -> Result<vir::ExprCSnap<'vir>, EncodeFullError<'vir, E>> {
-        self.deps.require_dep::<ConstEnc>(ConstEncTask::Mir {
-            const_: constant.const_,
-            encoding_depth: 0,
-            def_id: self.def_id,
-            span: constant.span,
-        })
     }
 
     pub(crate) fn encode_place(&mut self, place: Place<'vir>) -> EncodePlaceResult<'vir> {
@@ -970,7 +957,7 @@ impl<'vir, 'enc, E: TaskEncoder> PureRvalueEnc<'vir> for ImpureEncVisitor<'vir, 
                 Ok(tmp_exp)
             }
             &mir::Operand::Copy(place) => Ok(self.encode_place_with_snap(place.into()).1),
-            mir::Operand::Constant(box constant) => Ok(self.encode_constant(constant)?.upcast_ty()),
+            mir::Operand::Constant(box constant) => Ok(self.encode_constant_snap(constant)?.upcast_ty()),
         }
     }
 

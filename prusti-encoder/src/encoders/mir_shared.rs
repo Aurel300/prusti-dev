@@ -47,11 +47,14 @@ pub(crate) trait PureRvalueEnc<'vir> {
 
     fn encode_cast_snap<'slf>(
         &'slf mut self,
-        _kind: mir::CastKind,
+        kind: mir::CastKind,
         operand: &mir::Operand<'vir>,
         ty: ty::Ty<'vir>,
         ctxt: &Self::EncodePlaceCtxt,
     ) -> ExprResult<'vir, Self> {
+        if !matches!(kind, mir::CastKind::IntToInt) {
+            todo!("cast kind {kind:?}");
+        }
         let encoded_operand = self.encode_operand_snap(operand, ctxt)?;
         let from_ty = operand.ty(self.body(), self.vcx().tcx());
         let from_vir_ty = self.ty_use_pure(from_ty).expect_primitive().expect_native();

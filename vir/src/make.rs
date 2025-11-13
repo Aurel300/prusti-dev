@@ -1044,7 +1044,7 @@ impl<'tcx> VirCtxt<'tcx> {
             .unwrap_or_else(|| self.mk_bool::<false>())
     }
 
-    const fn get_int_data(rust_ty: &ty::TyKind) -> (u32, bool) {
+    pub const fn get_int_data(rust_ty: &ty::TyKind) -> (u32, bool) {
         match rust_ty {
             ty::Int(ty::IntTy::Isize) => ((std::mem::size_of::<isize>() * 8) as u32, true),
             ty::Int(ty::IntTy::I8) => (8, true),

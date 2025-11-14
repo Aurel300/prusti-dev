@@ -1058,7 +1058,9 @@ impl<'tcx> VirCtxt<'tcx> {
             ty::Uint(ty::UintTy::U32) => (32, false),
             ty::Uint(ty::UintTy::U64) => (64, false),
             ty::Uint(ty::UintTy::U128) => (128, false),
-            _ => unreachable!(),
+            // See https://doc.rust-lang.org/book/ch03-02-data-types.html#the-character-type
+            ty::Char => (32, false),
+            _ => unreachable!()
         }
     }
     pub const fn get_min_int<'vir>(&'vir self, rust_ty: &ty::TyKind) -> ExprInt<'vir> {

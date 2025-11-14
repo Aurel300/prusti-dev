@@ -156,6 +156,7 @@ mod private {
 #[cfg(feature = "prusti")]
 mod private {
     use core::{marker::PhantomData, ops::*};
+    use std::cmp::Ordering;
 
     /// A macro for defining a closure with a specification.
     pub use prusti_contracts_proc_macros::{closure, pure};
@@ -379,6 +380,14 @@ mod private {
         }
     }
 
+    impl Sub for Real {
+        type Output = Real;
+
+        fn sub(self, _: Self) -> Self {
+            panic!()
+        }
+    }
+
     impl PartialEq for Real {
         fn eq(&self, _: &Self) -> bool {
             panic!()
@@ -389,6 +398,28 @@ mod private {
         type Output = Real;
 
         fn mul(self, _: Self) -> Self {
+            panic!()
+        }
+    }
+
+    impl PartialOrd for Real {
+        fn partial_cmp(&self, oher: &Self) -> Option<Ordering> {
+            panic!()
+        }
+
+        fn lt(&self, oher: &Self) -> bool {
+            panic!()
+        }
+
+        fn le(&self, oher: &Self) -> bool {
+            panic!()
+        }
+
+        fn gt(&self, oher: &Self) -> bool {
+            panic!()
+        }
+
+        fn ge(&self, oher: &Self) -> bool {
             panic!()
         }
     }

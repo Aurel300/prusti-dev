@@ -12,11 +12,11 @@ use prusti_rustc_interface::{
 use task_encoder::{EncodeFullError, EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 use vir::CastType;
 
-use crate::encoders::ty::{
+use crate::encoders::{MirPureEnc, MirPureEncTask, PureKind, ty::{
     RustTyDecomposition,
     generics::{GParams, GenericParamsEnc},
     use_pure::TyUsePureEnc,
-};
+}};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ConstEncTask<'vir> {
@@ -153,22 +153,37 @@ impl TaskEncoder for ConstEnc {
             } => Self::encode_ty_const(deps, const_, ty, context)?,
             ConstEncTask::Mir {
                 const_,
-                encoding_depth: _,
+                encoding_depth,
                 def_id,
                 span,
-            } => {
-                let evaluated = vir::with_vcx(|vcx| {
-                    const_.eval(
-                        vcx.tcx(),
-                        vcx.tcx().typing_env_normalized_for_post_analysis(def_id),
-                        span,
-                    )
-                });
-                match evaluated {
-                    Ok(val) => {
-                        Self::encode_const_val(deps, val, const_.ty(), def_id.into(), Some(span))?
+            } => match const_ {
+                mir::Const::Val(val, ty) => Self::encode_const_val(deps, val, ty, def_id.into(), Some(span))?,
+                mir::Const::Unevaluated(uneval, ty) => vir::with_vcx(|vcx| {
+                    let resolved = {
+                        let typing_env = ty::TypingEnv::post_analysis(vcx.tcx(), def_id);
+                        vcx.tcx()
+                            .const_eval_resolve(typing_env, uneval, vcx.tcx().def_span(def_id))
+                    };
+                    if let Ok(val) = resolved {
+                        Self::encode_const_val(deps, val, ty, def_id.into(), Some(span))
+                    } else if let Some(promoted) = uneval.promoted {
+                        let task = MirPureEncTask {
+                            encoding_depth: encoding_depth + 1,
+                            parent_def_id: uneval.def,
+                            param_env: vcx.tcx().param_env(uneval.def),
+                            substs: ty::List::identity_for_item(vcx.tcx(), uneval.def),
+                            kind: PureKind::Constant(promoted),
+                            caller_def_id: Some(def_id),
+                        };
+                        let expr = deps.require_dep::<MirPureEnc>(task)?.expr;
+                        use vir::Reify;
+                        Ok(expr.reify(vcx, (uneval.def, &[])).downcast_ty())
+                    } else {
+                        todo!("const too generic")
                     }
-                    Err(err) => panic!("error evaluating const {const_:?}: {err:?}"),
+                })?,
+                mir::Const::Ty(ty, const_) => {
+                    Self::encode_ty_const(deps, const_, ty, def_id.into())?
                 }
             }
         };

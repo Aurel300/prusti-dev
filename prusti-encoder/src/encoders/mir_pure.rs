@@ -13,6 +13,7 @@ use crate::encoders::{
 use pcg::utils::Place;
 use prusti_interface::{
     PrustiError,
+    environment::EnvQuery,
     specs::{specifications::SpecQuery, typed::ExternSpecKind},
 };
 use prusti_rustc_interface::{
@@ -733,15 +734,12 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                     .unwrap_or_default();
 
                     let crate_name = self.vcx.tcx().crate_name(def_id.krate);
+                    let env_query = EnvQuery::new(self.vcx.tcx());
+                    let actual_impl = env_query.find_impl_of_trait_method_call(def_id, arg_tys);
                     if crate_name.as_str() == "prusti_contracts"
-                        || (!arg_tys.is_empty()
-                            && match arg_tys.type_at(0).kind() {
-                                TyKind::Adt(adt_def, _) => {
-                                    self.vcx.tcx().crate_name(adt_def.did().krate).as_str()
-                                        == "prusti_contracts"
-                                }
-                                _ => false,
-                            })
+                        || actual_impl.is_some_and(|x| {
+                            self.vcx.tcx().crate_name(x.krate).as_str() == "prusti_contracts"
+                        })
                     {
                         let sig = self.vcx.tcx().fn_sig(def_id);
                         let sig = sig.instantiate_identity();

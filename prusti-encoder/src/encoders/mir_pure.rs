@@ -731,7 +731,22 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                         |def_spec| def_spec.kind.is_pure().unwrap_or_default(),
                     )
                     .unwrap_or_default();
-                    if is_pure {
+
+                    let crate_name = self.vcx.tcx().crate_name(def_id.krate);
+                    if crate_name.as_str() == "prusti_contracts"
+                        || (!arg_tys.is_empty()
+                            && match arg_tys.type_at(0).kind() {
+                                TyKind::Adt(adt_def, _) => {
+                                    self.vcx.tcx().crate_name(adt_def.did().krate).as_str()
+                                        == "prusti_contracts"
+                                }
+                                _ => false,
+                            })
+                    {
+                        let sig = self.vcx.tcx().fn_sig(def_id);
+                        let sig = sig.instantiate_identity();
+                        self.encode_prusti_builtin(def_id, sig, arg_tys, args, &new_curr_ver)
+                    } else if is_pure {
                         let pure_func = self
                             .deps
                             .require_dep::<FunctionCallEnc>(CallTaskDescription::new(
@@ -746,9 +761,10 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                             .collect::<Result<Vec<_>, _>>()?;
                         pure_func.call(snap_args)
                     } else {
-                        let sig = self.vcx.tcx().fn_sig(def_id);
-                        let sig = sig.instantiate_identity();
-                        self.encode_prusti_builtin(def_id, sig, arg_tys, args, &new_curr_ver)?
+                        let item_name = self.vcx.tcx().item_name(def_id);
+                        panic!(
+                            "call to unknown non-pure function in pure code ({crate_name}::{item_name})"
+                        );
                     }
                 };
 
@@ -1039,23 +1055,10 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
             FlAbs(ty::FloatTy),
             FlToReal(ty::FloatTy),
             RealMul,
+            RealEq,
         }
 
-        let crate_name = self.vcx.tcx().crate_name(def_id.krate);
         let item_name = self.vcx.tcx().item_name(def_id);
-
-        if crate_name.as_str() != "prusti_contracts"
-            && (arg_tys.is_empty()
-                || match arg_tys.type_at(0).kind() {
-                    TyKind::Adt(adt_def, _) => {
-                        self.vcx.tcx().crate_name(adt_def.did().krate).as_str()
-                            != "prusti_contracts"
-                    }
-                    _ => true,
-                })
-        {
-            panic!("call to unknown non-pure function in pure code ({crate_name}::{item_name})");
-        }
 
         // TODO: this probably isn't necessary
         let builtin = match item_name.as_str() {
@@ -1102,6 +1105,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
             "from_f64" => PrustiBuiltin::FlToReal(ty::FloatTy::F64),
             "from_f128" => PrustiBuiltin::FlToReal(ty::FloatTy::F128),
             "mul" => PrustiBuiltin::RealMul,
+            "eq" => PrustiBuiltin::RealEq,
             other => panic!("illegal prusti::builtin ({other})"),
         };
 
@@ -1364,6 +1368,17 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                 let real1 = self.encode_operand(curr_ver, &args[0].node).downcast_ty();
                 let real2 = self.encode_operand(curr_ver, &args[1].node).downcast_ty();
                 self.ty_use_real().real_mul.call()(real1, real2)
+            }
+            PrustiBuiltin::RealEq => {
+                let a0_ty = args[0].node.ty(self.body, self.vcx.tcx());
+                let real1 = self.encode_operand(curr_ver, &args[0].node).downcast_ty();
+                let a0_ty_use = self.ty_use(a0_ty);
+                let real1_deref = a0_ty_use.expect_immref().value_access(real1).downcast_ty();
+                let a1_ty = args[1].node.ty(self.body, self.vcx.tcx());
+                let real2 = self.encode_operand(curr_ver, &args[1].node).downcast_ty();
+                let a1_ty_use = self.ty_use(a1_ty);
+                let real2_deref = a1_ty_use.expect_immref().value_access(real2).downcast_ty();
+                mk_bool(self.ty_use_real().real_eq.call()(real1_deref, real2_deref))
             }
         }
         .upcast_ty())

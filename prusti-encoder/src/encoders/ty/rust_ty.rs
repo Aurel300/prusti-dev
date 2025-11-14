@@ -302,7 +302,7 @@ impl<'tcx> TyData<'tcx, RustTyDatas> {
         };
         let specifics = TySpecifics::Builtin(RustBuiltinData::BuiltinReal);
         (
-            Self::new(data, false, specifics).alloc(),
+            Self::new(data, true, specifics).alloc(),
             GArgs::new(params, &[]),
         )
     }

@@ -144,6 +144,10 @@ mod private {
 
     #[non_exhaustive]
     #[derive(PartialEq, Eq, Copy, Clone)]
+    pub struct Real(());
+
+    #[non_exhaustive]
+    #[derive(PartialEq, Eq, Copy, Clone)]
     pub struct Ghost<T> {
         _phantom: PhantomData<T>,
     }
@@ -353,8 +357,9 @@ mod private {
 
     /// a mathematical real type
     /// it should not be constructed from running rust code, hence the private unit inside
-    #[derive(Copy, Clone)]
-    pub struct Real();
+    #[non_exhaustive]
+    #[derive(Eq, Copy, Clone)]
+    pub struct Real(());
 
     impl Real {
         pub fn from_f16(_: f16) -> Self {
@@ -375,7 +380,7 @@ mod private {
     }
 
     impl PartialEq for Real {
-        fn eq(&self, other: &Real) -> bool {
+        fn eq(&self, _: &Self) -> bool {
             panic!()
         }
     }

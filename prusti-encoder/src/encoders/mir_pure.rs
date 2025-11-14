@@ -714,7 +714,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                 self.encode_binop_snap(rvalue_ty, *op, l, r, curr_ver)
             }
             mir::Rvalue::UnaryOp(unop, operand) => {
-                self.encode_un_op_snap(rvalue_ty, *unop, operand, curr_ver)
+                self.encode_unary_op_snap(rvalue_ty, *unop, operand, curr_ver)
             }
             mir::Rvalue::Aggregate(
                 box kind @ (mir::AggregateKind::Adt(..)

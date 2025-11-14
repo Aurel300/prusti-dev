@@ -64,7 +64,7 @@ pub struct VerificationError {
     pub offending_pos_id: Option<String>,
     pub reason_pos_id: Option<String>,
     pub message: String,
-    counterexample: Option<SiliconCounterexample>,
+    pub counterexample: Option<SiliconCounterexample>,
 }
 
 impl VerificationError {

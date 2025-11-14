@@ -34,6 +34,9 @@ pub(crate) trait PureRvalueEnc<'vir> {
     fn body(&self) -> &mir::Body<'vir>;
     fn ty_use_pure(&mut self, ty: ty::Ty<'vir>) -> TyUsePure<'vir>;
 
+    /// Encodes the snapshot of an operand. In an impure context this may
+    /// produce side-effects. Namely, encoding a `Move` operand will generate a
+    /// statement that exhales a predicate.
     fn encode_operand_snap(
         &mut self,
         operand: &mir::Operand<'vir>,
@@ -148,7 +151,7 @@ pub(crate) trait PureRvalueEnc<'vir> {
         })
     }
 
-    fn encode_un_op_snap(
+    fn encode_unary_op_snap(
         &mut self,
         rvalue_ty: ty::Ty<'vir>,
         op: mir::UnOp,

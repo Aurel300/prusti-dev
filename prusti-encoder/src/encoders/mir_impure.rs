@@ -115,41 +115,6 @@ macro_rules! comment {
 
 type EncodeResult<'vir, T, E> = Result<T, EncodeFullError<'vir, E>>;
 
-pub(crate) trait MaybeResult {
-    type Result<U>;
-
-    fn ok<U>(value: U) -> Self::Result<U>;
-    fn err<U>(self) -> Option<Self::Result<U>>;
-}
-
-impl MaybeResult for () {
-    type Result<U> = U;
-
-    fn ok<U>(value: U) -> Self::Result<U> {
-        value
-    }
-
-    fn err<U>(self) -> Option<Self::Result<U>> {
-        None
-    }
-}
-
-impl<T, E> MaybeResult for Result<T, E> {
-    type Result<U> = Result<U, E>;
-
-    fn ok<U>(value: U) -> Self::Result<U> {
-        Ok(value)
-    }
-
-    fn err<U>(self) -> Option<Self::Result<U>> {
-        if let Err(e) = self {
-            Some(Err(e))
-        } else {
-            None
-        }
-    }
-}
-
 enum EncodeRvalueError<'vir, E: TaskEncoder> {
     UnsupportedRvalue,
     EncoderError(EncodeFullError<'vir, E>),
@@ -219,7 +184,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 .map_err(Into::into),
 
             mir::Rvalue::UnaryOp(unop, operand) => self
-                .encode_un_op_snap(rvalue_ty, *unop, operand, &())
+                .encode_unary_op_snap(rvalue_ty, *unop, operand, &())
                 .map_err(Into::into),
 
             mir::Rvalue::Aggregate(
@@ -344,18 +309,16 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         new_stmts
     }
 
-    pub(crate) fn block<R: MaybeResult>(
+    pub(crate) fn block<Err>(
         &mut self,
-        f: impl FnOnce(&mut Self) -> R,
-    ) -> R::Result<Vec<vir::Stmt<'vir>>> {
+        f: impl FnOnce(&mut Self) -> Result<(), Err>,
+    ) -> Result<Vec<vir::Stmt<'vir>>, Err> {
         let current_stmts = self.current_stmts.take();
         self.current_stmts = Some(Vec::new());
-        if let Some(err) = f(self).err() {
-            return err;
-        }
+        f(self)?;
         let new_stmts = self.current_stmts.take().unwrap();
         self.current_stmts = current_stmts;
-        R::ok(new_stmts)
+        Ok(new_stmts)
     }
 
     pub(crate) fn pcs_borrow_expansion(

@@ -1,9 +1,8 @@
 use prusti_rustc_interface::{
     middle::{
         mir::{
-            self,
+            self, ConstValue,
             interpret::{GlobalAlloc, Scalar},
-            ConstValue,
         },
         ty,
     },
@@ -13,13 +12,13 @@ use task_encoder::{EncodeFullError, EncodeFullResult, TaskEncoder, TaskEncoderDe
 use vir::CastType;
 
 use crate::encoders::{
+    MirPureEnc, MirPureEncTask,
     mir_pure::PureKind,
     ty::{
+        RustTyDecomposition,
         generics::{GParams, GenericParamsEnc},
         use_pure::TyUsePureEnc,
-        RustTyDecomposition,
     },
-    MirPureEnc, MirPureEncTask,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]

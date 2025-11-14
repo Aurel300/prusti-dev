@@ -239,8 +239,6 @@ struct Enc<'vir: 'enc, 'enc> {
     before_expiry_mode: bool,
 }
 
-type EncResult<'vir, T> = Result<T, EncodeFullError<'vir, MirPureEnc>>;
-
 impl<'vir: 'enc, 'enc> PureRvalueEnc<'vir> for Enc<'vir, 'enc> {
     type Encoder = MirPureEnc;
     type EncodePlaceCtxt = HashMap<mir::Local, Version<'vir>>;
@@ -274,7 +272,7 @@ impl<'vir: 'enc, 'enc> PureRvalueEnc<'vir> for Enc<'vir, 'enc> {
         &mut self,
         operand: &mir::Operand<'vir>,
         curr_ver: &HashMap<mir::Local, Version<'vir>>,
-    ) -> EncResult<'vir, ExprRet<'vir>> {
+    ) -> Result<ExprRet<'vir>, EncodeFullError<'vir, Self::Encoder>> {
         Ok(match operand {
             mir::Operand::Copy(place) | mir::Operand::Move(place) => {
                 self.encode_place_snap((*place).into(), curr_ver)
@@ -429,7 +427,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
             .unwrap_or_else(|| tuple_ref.mk_unreachable(self.vcx))
     }
 
-    fn encode_body(&mut self) -> EncResult<'vir, ExprRet<'vir>> {
+    fn encode_body(&mut self) -> Result<ExprRet<'vir>, EncodeFullError<'vir, MirPureEnc>> {
         let mut init = Update::new();
         let v0 = Version::default();
         // TODO: what about locals which never have StorageLive (i.e. always_live)?
@@ -456,20 +454,12 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
         Ok(self.reify_binds(res, ex))
     }
 
-    fn encode_operand(
-        &mut self,
-        curr_version: &HashMap<mir::Local, Version<'vir>>,
-        operand: &mir::Operand<'vir>,
-    ) -> EncResult<'vir, ExprRet<'vir>> {
-        self.encode_operand_snap(operand, curr_version)
-    }
-
     fn encode_cfg(
         &mut self,
         curr_ver: &HashMap<mir::Local, Version<'vir>>,
         curr: mir::BasicBlock,
         join_point: mir::BasicBlock,
-    ) -> EncResult<'vir, Option<Update<'vir>>> {
+    ) -> Result<Option<Update<'vir>>, EncodeFullError<'vir, MirPureEnc>> {
         if curr == join_point {
             // We are done with the current fragment of the CFG, the rest is
             // handled in a parent call.
@@ -633,7 +623,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                             .unwrap();
                         let snap_args = args
                             .iter()
-                            .map(|arg| self.encode_operand(&new_curr_ver, &arg.node))
+                            .map(|arg| self.encode_operand_snap(&arg.node, &new_curr_ver))
                             .collect::<Result<Vec<_>, _>>()?;
                         pure_func.call(snap_args)
                     } else {
@@ -663,7 +653,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
         curr_ver: &HashMap<mir::Local, Version<'vir>>,
         stmt: &mir::Statement<'vir>,
         location: mir::Location,
-    ) -> EncResult<'vir, Update<'vir>> {
+    ) -> Result<Update<'vir>, EncodeFullError<'vir, MirPureEnc>> {
         let mut update = Update::new();
         match &stmt.kind {
             &mir::StatementKind::StorageLive(local) => {
@@ -690,10 +680,10 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
         curr_ver: &HashMap<mir::Local, Version<'vir>>,
         rvalue: &mir::Rvalue<'vir>,
         span: Span,
-    ) -> EncResult<'vir, ExprRet<'vir>> {
+    ) -> Result<ExprRet<'vir>, EncodeFullError<'vir, MirPureEnc>> {
         let rvalue_ty = rvalue.ty(self.body, self.vcx.tcx());
         match rvalue {
-            mir::Rvalue::Use(op) => self.encode_operand(curr_ver, op),
+            mir::Rvalue::Use(op) => self.encode_operand_snap(op, curr_ver),
             mir::Rvalue::Ref(_, kind, place) => {
                 let rvalue_snapshot_encoding = self.ty_use(rvalue_ty);
                 let (snap, place_ref) = self.encode_place_with_ref(curr_ver, (*place).into());
@@ -839,7 +829,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
         arg_tys: ty::GenericArgsRef<'vir>,
         args: &[Spanned<mir::Operand<'vir>>],
         curr_ver: &HashMap<mir::Local, Version<'vir>>,
-    ) -> EncResult<'vir, ExprRet<'vir>> {
+    ) -> Result<ExprRet<'vir>, EncodeFullError<'vir, MirPureEnc>> {
         #[derive(Debug, PartialEq, Eq)]
         enum PrustiBuiltin {
             Forall,
@@ -908,8 +898,8 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
         Ok(match builtin {
             PrustiBuiltin::SnapshotEquality => {
                 assert_eq!(args.len(), 2);
-                let lhs = self.encode_operand(curr_ver, &args[0].node)?;
-                let rhs = self.encode_operand(curr_ver, &args[1].node)?;
+                let lhs = self.encode_operand_snap(&args[0].node, curr_ver)?;
+                let rhs = self.encode_operand_snap(&args[1].node, curr_ver)?;
                 mk_bool(self.vcx.mk_eq_expr(lhs, rhs))
             }
             PrustiBuiltin::Forall | PrustiBuiltin::Exists => {
@@ -917,7 +907,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
 
                 let encoded_args = args
                     .iter()
-                    .map(|oper| self.encode_operand(curr_ver, &oper.node))
+                    .map(|oper| self.encode_operand_snap(&oper.node, curr_ver))
                     .collect::<Result<Vec<_>, _>>()?;
                 // TODO: for now, let's expect this to give us these two:
                 //   - expression for the triggers
@@ -1083,7 +1073,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                             .fp_is_nan
                     }
                 };
-                let fl = self.encode_operand(curr_ver, &args[0].node)?;
+                let fl = self.encode_operand_snap(&args[0].node, curr_ver)?;
                 mk_bool(is_nan_fun.call()(fl.downcast_ty()))
             }
             PrustiBuiltin::IsInfinite(fl) => {
@@ -1109,7 +1099,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                             .fp_is_infinite
                     }
                 };
-                let fl = self.encode_operand(curr_ver, &args[0].node)?;
+                let fl = self.encode_operand_snap(&args[0].node, curr_ver)?;
                 mk_bool(is_infinite_fun.call()(fl.downcast_ty()))
             }
             PrustiBuiltin::FlAbs(fl) => {
@@ -1120,7 +1110,9 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                     ty::FloatTy::F128 => self.ty_use(self.vcx.tcx().types.f128),
                 }
                 .expect_float();
-                let fl1 = self.encode_operand(curr_ver, &args[0].node)?.downcast_ty();
+                let fl1 = self
+                    .encode_operand_snap(&args[0].node, curr_ver)?
+                    .downcast_ty();
                 fl_ty.fp_abs.call()(fl1)
             }
         }

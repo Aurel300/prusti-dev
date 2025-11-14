@@ -13,11 +13,7 @@ use prusti_rustc_interface::{
 };
 
 #[allow(type_alias_bounds)]
-pub(crate) type EncResult<'vir, T, Enc: PureRvalueEnc<'vir>> =
-    Result<T, EncodeFullError<'vir, Enc::Encoder>>;
-
-#[allow(type_alias_bounds)]
-pub(crate) type ExprResult<'vir, Enc: PureRvalueEnc<'vir>> = Result<
+type ExprResult<'vir, Enc: PureRvalueEnc<'vir>> = Result<
     vir::ExprGenSnap<'vir, Enc::ExprCurr, Enc::ExprNext>,
     EncodeFullError<'vir, Enc::Encoder>,
 >;
@@ -56,7 +52,7 @@ pub(crate) trait PureRvalueEnc<'vir> {
         operand: &mir::Operand<'vir>,
         ty: ty::Ty<'vir>,
         ctxt: &Self::EncodePlaceCtxt,
-    ) -> EncResult<'vir, EncodedCast<'vir, Self>, Self> {
+    ) -> Result<EncodedCast<'vir, Self>, EncodeFullError<'vir, Self::Encoder>> {
         if !matches!(kind, mir::CastKind::IntToInt) {
             todo!("cast kind {kind:?}");
         }

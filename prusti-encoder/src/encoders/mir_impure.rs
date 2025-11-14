@@ -36,7 +36,7 @@ use vir::{CastType, CompType};
 use crate::encoders::{
     self, FunctionCallEnc, TyUseImpureEnc, WandEnc, WandEncTask,
     mir_fn::{CallTaskDescription, RustSignature},
-    mir_shared::{EncResult, PureRvalueEnc},
+    mir_shared::PureRvalueEnc,
     ty::{
         RustTyDecomposition,
         use_impure::TyUseImpure,
@@ -758,7 +758,9 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             &mir::Operand::Move(source) | &mir::Operand::Copy(source) => {
                 Ok(self.encode_place_with_snap(Place::from(source)).1)
             }
-            mir::Operand::Constant(box constant) => Ok(self.encode_constant_snap(constant)?.upcast_ty()),
+            mir::Operand::Constant(box constant) => {
+                Ok(self.encode_constant_snap(constant)?.upcast_ty())
+            }
         }
     }
 
@@ -941,7 +943,7 @@ impl<'vir, 'enc, E: TaskEncoder> PureRvalueEnc<'vir> for ImpureEncVisitor<'vir, 
         &mut self,
         operand: &mir::Operand<'vir>,
         _ctxt: &Self::EncodePlaceCtxt,
-    ) -> EncResult<'vir, vir::ExprSnap<'vir>, Self> {
+    ) -> Result<vir::ExprSnap<'vir>, EncodeFullError<'vir, E>> {
         match operand {
             &mir::Operand::Move(source) => {
                 let (result, snap_val, _, ty_out) =
@@ -957,7 +959,9 @@ impl<'vir, 'enc, E: TaskEncoder> PureRvalueEnc<'vir> for ImpureEncVisitor<'vir, 
                 Ok(tmp_exp)
             }
             &mir::Operand::Copy(place) => Ok(self.encode_place_with_snap(place.into()).1),
-            mir::Operand::Constant(box constant) => Ok(self.encode_constant_snap(constant)?.upcast_ty()),
+            mir::Operand::Constant(box constant) => {
+                Ok(self.encode_constant_snap(constant)?.upcast_ty())
+            }
         }
     }
 

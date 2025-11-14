@@ -12,11 +12,14 @@ use prusti_rustc_interface::{
 use task_encoder::{EncodeFullError, EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 use vir::CastType;
 
-use crate::encoders::{MirPureEnc, MirPureEncTask, PureKind, ty::{
-    RustTyDecomposition,
-    generics::{GParams, GenericParamsEnc},
-    use_pure::TyUsePureEnc,
-}};
+use crate::encoders::{
+    MirPureEnc, MirPureEncTask, PureKind,
+    ty::{
+        RustTyDecomposition,
+        generics::{GParams, GenericParamsEnc},
+        use_pure::TyUsePureEnc,
+    },
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ConstEncTask<'vir> {
@@ -157,7 +160,9 @@ impl TaskEncoder for ConstEnc {
                 def_id,
                 span,
             } => match const_ {
-                mir::Const::Val(val, ty) => Self::encode_const_val(deps, val, ty, def_id.into(), Some(span))?,
+                mir::Const::Val(val, ty) => {
+                    Self::encode_const_val(deps, val, ty, def_id.into(), Some(span))?
+                }
                 mir::Const::Unevaluated(uneval, ty) => vir::with_vcx(|vcx| {
                     let resolved = {
                         let typing_env = ty::TypingEnv::post_analysis(vcx.tcx(), def_id);
@@ -185,7 +190,7 @@ impl TaskEncoder for ConstEnc {
                 mir::Const::Ty(ty, const_) => {
                     Self::encode_ty_const(deps, const_, ty, def_id.into())?
                 }
-            }
+            },
         };
         Ok(((), res))
     }

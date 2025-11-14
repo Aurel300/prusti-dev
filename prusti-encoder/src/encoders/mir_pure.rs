@@ -788,8 +788,8 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
         // TODO: factor this out (duplication with impure encoder)?
         for elem in place.projection {
             (expr, place_ref) =
-                self.encode_place_element(place_ty, (*elem).into(), expr.downcast_ty(), place_ref);
-            place_ty = place_ty.projection_ty(self.vcx.tcx(), (*elem).into());
+                self.encode_place_element(place_ty, *elem, expr.downcast_ty(), place_ref);
+            place_ty = place_ty.projection_ty(self.vcx.tcx(), *elem);
         }
         // Can we ever have the use of a projected place?
         assert!(place_ty.variant_index.is_none());

@@ -970,7 +970,7 @@ impl<'vir, 'enc, E: TaskEncoder> PureRvalueEnc<'vir> for ImpureEncVisitor<'vir, 
         place: Place<'vir>,
         _ctxt: &Self::EncodePlaceCtxt,
     ) -> vir::ExprGenSnap<'vir, Self::ExprCurr, Self::ExprNext> {
-        self.encode_place_with_snap(place.into()).1
+        self.encode_place_with_snap(place).1
     }
 }
 

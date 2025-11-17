@@ -191,10 +191,6 @@ pub(crate) fn ty_pure_float<'vir>(
     };
     let from_bv = builder.backend_func("from_bv", (bit_vec.domain)(), builder.self_type(), Some(i));
 
-    builder.axiom("prim_to_snap", vir::expr! {
-        forall i: [prim_to_snap.arity()] :: {[prim_to_snap](i)} ([prim_to_snap(i)]) == ([from_bv]([bit_vec.from_int](i)))
-    });
-
     let real = deps.require_dep::<TyPureEnc>(TyData::from_real().0)?;
     let fp_to_real = builder.backend_func(
         "to_real",
@@ -202,6 +198,10 @@ pub(crate) fn ty_pure_float<'vir>(
         (real.domain.cast_ty())(),
         Some("fp.to_real"),
     );
+
+    builder.axiom("prim_to_snap", vir::expr! {
+        forall i: [prim_to_snap.arity()] :: {[prim_to_snap](i)} (([prim_to_snap](i)) == ([from_bv]([bit_vec.from_int](i)))) && (([fp_to_real]([prim_to_snap](i))) == ([fp_to_real]([from_bv]([bit_vec.from_int](i)))))
+    });
 
     Ok(FloatDomainData {
         from_bv,

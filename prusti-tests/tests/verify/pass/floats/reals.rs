@@ -17,7 +17,7 @@ pub fn foo2(x: f64) -> f64 {
 #[requires(!f32_is_infinite(x))]
 #[requires(!y.is_nan())]
 #[requires(!f32_is_infinite(y))]
-#[ensures(((Real::from_f32(x) - Real::from_f32(y)) - Real::from_f32(result) <= Real::from_f64(0.00001)) || (Real::from_f32(result) - (Real::from_f32(x) - Real::from_f32(y)) <= Real::from_f64(0.00001)))]
+#[ensures(((Real::from_f32(x) - Real::from_f32(y)) - Real::from_f32(result) <= Real::from_f32(0.00001)) || (Real::from_f32(result) - (Real::from_f32(x) - Real::from_f32(y)) <= Real::from_f32(0.00001)))]
 pub fn foo3(x: f32, y: f32) -> f32 {
     x - y
 }
@@ -30,3 +30,14 @@ pub fn foo5(){}
 
 #[ensures(Real::from_f32(2.5) > Real::from_f32(2.0))]
 pub fn foo6(){}
+
+#[requires(!x.is_nan() && !x.is_infinite())]
+#[requires(!y.is_nan() && !y.is_infinite())]
+#[ensures(((Real::from_f32(result) + Real::from_f32(x)) - Real::from_f32(y) <= Real::from_f32(0.00001)) || (Real::from_f32(y) - (Real::from_f32(result) + Real::from_f32(x)) <= Real::from_f32(0.00001)))]
+#[ensures(((Real::from_f32(result) + Real::from_f32(y)) - Real::from_f32(x) <= Real::from_f32(0.00001)) || (Real::from_f32(x) - (Real::from_f32(result) + Real::from_f32(y)) <= Real::from_f32(0.00001)))]
+pub fn foo7(x: f32, y: f32) -> f32 {
+    x - y
+}
+
+#[ensures(Real::from_f32(8.5) / Real::from_f32(2.0) == Real::from_f32(4.25))]
+pub fn foo8(){}

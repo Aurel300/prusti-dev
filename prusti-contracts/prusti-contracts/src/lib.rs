@@ -142,8 +142,6 @@ mod private {
     /// it should not be constructed from running rust code, hence the private unit inside
     pub struct Int(());
 
-    #[non_exhaustive]
-    #[derive(PartialEq, Eq, Copy, Clone)]
     pub struct Real(());
 
     #[non_exhaustive]
@@ -358,7 +356,6 @@ mod private {
 
     /// a mathematical real type
     /// it should not be constructed from running rust code, hence the private unit inside
-    #[non_exhaustive]
     #[derive(Eq, Copy, Clone)]
     pub struct Real(());
 
@@ -398,6 +395,22 @@ mod private {
         type Output = Real;
 
         fn mul(self, _: Self) -> Self {
+            panic!()
+        }
+    }
+
+    impl Add for Real {
+        type Output = Real;
+
+        fn add(self, _: Self) -> Self {
+            panic!()
+        }
+    }
+
+    impl Div for Real {
+        type Output = Real;
+
+        fn div(self, _: Self) -> Self {
             panic!()
         }
     }

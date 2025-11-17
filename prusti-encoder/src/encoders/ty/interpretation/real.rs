@@ -5,8 +5,10 @@ use crate::encoders::ty::pure::{DomainBuilder, TyPureBuiltinData, TyPureEnc};
 
 #[derive(Debug, Clone, Copy)]
 pub struct TyRealLocal<'vir> {
+    pub real_add: FunctionIdn<'vir, (vir::CSnap, vir::CSnap), vir::CSnap>,
     pub real_sub: FunctionIdn<'vir, (vir::CSnap, vir::CSnap), vir::CSnap>,
     pub real_mul: FunctionIdn<'vir, (vir::CSnap, vir::CSnap), vir::CSnap>,
+    pub real_div: FunctionIdn<'vir, (vir::CSnap, vir::CSnap), vir::CSnap>,
     pub real_eq: FunctionIdn<'vir, (vir::CSnap, vir::CSnap), vir::Bool>,
     pub real_lt: FunctionIdn<'vir, (vir::CSnap, vir::CSnap), vir::Bool>,
     pub real_le: FunctionIdn<'vir, (vir::CSnap, vir::CSnap), vir::Bool>,
@@ -27,6 +29,18 @@ pub(crate) fn ty_pure<'vir>(
         (builder.self_type(), builder.self_type()),
         builder.self_type(),
         Some("-"),
+    );
+    let real_add = builder.backend_func(
+        "add",
+        (builder.self_type(), builder.self_type()),
+        builder.self_type(),
+        Some("+"),
+    );
+    let real_div = builder.backend_func(
+        "div",
+        (builder.self_type(), builder.self_type()),
+        builder.self_type(),
+        Some("/"),
     );
     let real_mul = builder.backend_func(
         "mul",
@@ -65,8 +79,10 @@ pub(crate) fn ty_pure<'vir>(
         Some(">="),
     );
     Ok(TyPureBuiltinData::TyPureBuiltinReal(TyRealLocal {
+        real_add,
         real_sub,
         real_mul,
+        real_div,
         real_eq,
         real_lt,
         real_le,

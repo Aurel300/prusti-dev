@@ -1078,7 +1078,8 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
         // TODO: this probably isn't necessary
         let builtin = match (
             env_query
-                .find_impl_type_name(actual_impl.unwrap_or(def_id)).as_deref(),
+                .find_impl_type_name(actual_impl.unwrap_or(def_id))
+                .as_deref(),
             item_name.as_str(),
         ) {
             (None, "forall") => PrustiBuiltin::Forall,
@@ -1396,84 +1397,124 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                     ty::FloatTy::F128 => self.ty_use(self.vcx.tcx().types.f128),
                 }
                 .expect_float();
-                let fl = self.encode_operand(curr_ver, &args[0].node).downcast_ty();
+                let fl = self
+                    .encode_operand_snap(&args[0].node, curr_ver)?
+                    .downcast_ty();
                 fl_ty.fp_to_real.call()(fl)
             }
             PrustiBuiltin::RealMul => {
-                let real1 = self.encode_operand(curr_ver, &args[0].node).downcast_ty();
-                let real2 = self.encode_operand(curr_ver, &args[1].node).downcast_ty();
+                let real1 = self
+                    .encode_operand_snap(&args[0].node, curr_ver)?
+                    .downcast_ty();
+                let real2 = self
+                    .encode_operand_snap(&args[1].node, curr_ver)?
+                    .downcast_ty();
                 self.ty_use_real().real_mul.call()(real1, real2)
             }
             PrustiBuiltin::RealEq => {
                 let a0_ty = args[0].node.ty(self.body, self.vcx.tcx());
-                let real1 = self.encode_operand(curr_ver, &args[0].node).downcast_ty();
+                let real1 = self
+                    .encode_operand_snap(&args[0].node, curr_ver)?
+                    .downcast_ty();
                 let a0_ty_use = self.ty_use(a0_ty);
                 let real1_deref = a0_ty_use.expect_immref().value_access(real1).downcast_ty();
                 let a1_ty = args[1].node.ty(self.body, self.vcx.tcx());
-                let real2 = self.encode_operand(curr_ver, &args[1].node).downcast_ty();
+                let real2 = self
+                    .encode_operand_snap(&args[1].node, curr_ver)?
+                    .downcast_ty();
                 let a1_ty_use = self.ty_use(a1_ty);
                 let real2_deref = a1_ty_use.expect_immref().value_access(real2).downcast_ty();
                 mk_bool(self.ty_use_real().real_eq.call()(real1_deref, real2_deref))
             }
             PrustiBuiltin::RealSub => {
-                let real1 = self.encode_operand(curr_ver, &args[0].node).downcast_ty();
-                let real2 = self.encode_operand(curr_ver, &args[1].node).downcast_ty();
+                let real1 = self
+                    .encode_operand_snap(&args[0].node, curr_ver)?
+                    .downcast_ty();
+                let real2 = self
+                    .encode_operand_snap(&args[1].node, curr_ver)?
+                    .downcast_ty();
                 self.ty_use_real().real_sub.call()(real1, real2)
             }
             PrustiBuiltin::RealAdd => {
-                let real1 = self.encode_operand(curr_ver, &args[0].node).downcast_ty();
-                let real2 = self.encode_operand(curr_ver, &args[1].node).downcast_ty();
+                let real1 = self
+                    .encode_operand_snap(&args[0].node, curr_ver)?
+                    .downcast_ty();
+                let real2 = self
+                    .encode_operand_snap(&args[1].node, curr_ver)?
+                    .downcast_ty();
                 self.ty_use_real().real_add.call()(real1, real2)
             }
             PrustiBuiltin::RealDiv => {
-                let real1 = self.encode_operand(curr_ver, &args[0].node).downcast_ty();
-                let real2 = self.encode_operand(curr_ver, &args[1].node).downcast_ty();
+                let real1 = self
+                    .encode_operand_snap(&args[0].node, curr_ver)?
+                    .downcast_ty();
+                let real2 = self
+                    .encode_operand_snap(&args[1].node, curr_ver)?
+                    .downcast_ty();
                 self.ty_use_real().real_div.call()(real1, real2)
             }
             PrustiBuiltin::RealNeg => {
-                let real = self.encode_operand(curr_ver, &args[0].node).downcast_ty();
+                let real = self
+                    .encode_operand_snap(&args[0].node, curr_ver)?
+                    .downcast_ty();
                 self.ty_use_real().real_neg.call()(real)
             }
             PrustiBuiltin::RealLt => {
                 let a0_ty = args[0].node.ty(self.body, self.vcx.tcx());
-                let real1 = self.encode_operand(curr_ver, &args[0].node).downcast_ty();
+                let real1 = self
+                    .encode_operand_snap(&args[0].node, curr_ver)?
+                    .downcast_ty();
                 let a0_ty_use = self.ty_use(a0_ty);
                 let real1_deref = a0_ty_use.expect_immref().value_access(real1).downcast_ty();
                 let a1_ty = args[1].node.ty(self.body, self.vcx.tcx());
-                let real2 = self.encode_operand(curr_ver, &args[1].node).downcast_ty();
+                let real2 = self
+                    .encode_operand_snap(&args[1].node, curr_ver)?
+                    .downcast_ty();
                 let a1_ty_use = self.ty_use(a1_ty);
                 let real2_deref = a1_ty_use.expect_immref().value_access(real2).downcast_ty();
                 mk_bool(self.ty_use_real().real_lt.call()(real1_deref, real2_deref))
             }
             PrustiBuiltin::RealLe => {
                 let a0_ty = args[0].node.ty(self.body, self.vcx.tcx());
-                let real1 = self.encode_operand(curr_ver, &args[0].node).downcast_ty();
+                let real1 = self
+                    .encode_operand_snap(&args[0].node, curr_ver)?
+                    .downcast_ty();
                 let a0_ty_use = self.ty_use(a0_ty);
                 let real1_deref = a0_ty_use.expect_immref().value_access(real1).downcast_ty();
                 let a1_ty = args[1].node.ty(self.body, self.vcx.tcx());
-                let real2 = self.encode_operand(curr_ver, &args[1].node).downcast_ty();
+                let real2 = self
+                    .encode_operand_snap(&args[1].node, curr_ver)?
+                    .downcast_ty();
                 let a1_ty_use = self.ty_use(a1_ty);
                 let real2_deref = a1_ty_use.expect_immref().value_access(real2).downcast_ty();
                 mk_bool(self.ty_use_real().real_le.call()(real1_deref, real2_deref))
             }
             PrustiBuiltin::RealGt => {
                 let a0_ty = args[0].node.ty(self.body, self.vcx.tcx());
-                let real1 = self.encode_operand(curr_ver, &args[0].node).downcast_ty();
+                let real1 = self
+                    .encode_operand_snap(&args[0].node, curr_ver)?
+                    .downcast_ty();
                 let a0_ty_use = self.ty_use(a0_ty);
                 let real1_deref = a0_ty_use.expect_immref().value_access(real1).downcast_ty();
                 let a1_ty = args[1].node.ty(self.body, self.vcx.tcx());
-                let real2 = self.encode_operand(curr_ver, &args[1].node).downcast_ty();
+                let real2 = self
+                    .encode_operand_snap(&args[1].node, curr_ver)?
+                    .downcast_ty();
                 let a1_ty_use = self.ty_use(a1_ty);
                 let real2_deref = a1_ty_use.expect_immref().value_access(real2).downcast_ty();
                 mk_bool(self.ty_use_real().real_gt.call()(real1_deref, real2_deref))
             }
             PrustiBuiltin::RealGe => {
                 let a0_ty = args[0].node.ty(self.body, self.vcx.tcx());
-                let real1 = self.encode_operand(curr_ver, &args[0].node).downcast_ty();
+                let real1 = self
+                    .encode_operand_snap(&args[0].node, curr_ver)?
+                    .downcast_ty();
                 let a0_ty_use = self.ty_use(a0_ty);
                 let real1_deref = a0_ty_use.expect_immref().value_access(real1).downcast_ty();
                 let a1_ty = args[1].node.ty(self.body, self.vcx.tcx());
-                let real2 = self.encode_operand(curr_ver, &args[1].node).downcast_ty();
+                let real2 = self
+                    .encode_operand_snap(&args[1].node, curr_ver)?
+                    .downcast_ty();
                 let a1_ty_use = self.ty_use(a1_ty);
                 let real2_deref = a1_ty_use.expect_immref().value_access(real2).downcast_ty();
                 mk_bool(self.ty_use_real().real_ge.call()(real1_deref, real2_deref))

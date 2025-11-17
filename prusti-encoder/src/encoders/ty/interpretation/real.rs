@@ -9,7 +9,7 @@ pub struct TyRealLocal<'vir> {
     pub real_sub: FunctionIdn<'vir, (vir::CSnap, vir::CSnap), vir::CSnap>,
     pub real_mul: FunctionIdn<'vir, (vir::CSnap, vir::CSnap), vir::CSnap>,
     pub real_div: FunctionIdn<'vir, (vir::CSnap, vir::CSnap), vir::CSnap>,
-    pub real_neg: FunctionIdn<'vir, (vir::CSnap), vir::CSnap>,
+    pub real_neg: FunctionIdn<'vir, vir::CSnap, vir::CSnap>,
     pub real_eq: FunctionIdn<'vir, (vir::CSnap, vir::CSnap), vir::Bool>,
     pub real_lt: FunctionIdn<'vir, (vir::CSnap, vir::CSnap), vir::Bool>,
     pub real_le: FunctionIdn<'vir, (vir::CSnap, vir::CSnap), vir::Bool>,
@@ -50,7 +50,7 @@ pub(crate) fn ty_pure<'vir>(
         Some("*"),
     );
     let real_neg =
-        builder.backend_func("neg", (builder.self_type()), builder.self_type(), Some("-"));
+        builder.backend_func("neg", builder.self_type(), builder.self_type(), Some("-"));
     let real_eq = builder.backend_func(
         "eq",
         (builder.self_type(), builder.self_type()),

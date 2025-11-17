@@ -1078,9 +1078,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
         // TODO: this probably isn't necessary
         let builtin = match (
             env_query
-                .find_impl_type_name(actual_impl.unwrap_or(def_id))
-                .as_ref()
-                .map(String::as_str),
+                .find_impl_type_name(actual_impl.unwrap_or(def_id)).as_deref(),
             item_name.as_str(),
         ) {
             (None, "forall") => PrustiBuiltin::Forall,

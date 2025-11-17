@@ -1063,7 +1063,10 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
             RealMul,
             RealEq,
             RealSub,
+            RealLt,
             RealLe,
+            RealGt,
+            RealGe
         }
 
         let item_name = self.vcx.tcx().item_name(def_id);
@@ -1130,7 +1133,10 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
             (Some("prusti_contracts::Real"), "mul") => PrustiBuiltin::RealMul,
             (Some("prusti_contracts::Real"), "eq") => PrustiBuiltin::RealEq,
             (Some("prusti_contracts::Real"), "sub") => PrustiBuiltin::RealSub,
+            (Some("prusti_contracts::Real"), "lt") => PrustiBuiltin::RealLt,
             (Some("prusti_contracts::Real"), "le") => PrustiBuiltin::RealLe,
+            (Some("prusti_contracts::Real"), "gt") => PrustiBuiltin::RealGt,
+            (Some("prusti_contracts::Real"), "ge") => PrustiBuiltin::RealGe,
             (_, other) => panic!("illegal prusti::builtin ({other})"),
         };
 
@@ -1410,6 +1416,17 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                 let real2 = self.encode_operand(curr_ver, &args[1].node).downcast_ty();
                 self.ty_use_real().real_sub.call()(real1, real2)
             }
+            PrustiBuiltin::RealLt => {
+                let a0_ty = args[0].node.ty(self.body, self.vcx.tcx());
+                let real1 = self.encode_operand(curr_ver, &args[0].node).downcast_ty();
+                let a0_ty_use = self.ty_use(a0_ty);
+                let real1_deref = a0_ty_use.expect_immref().value_access(real1).downcast_ty();
+                let a1_ty = args[1].node.ty(self.body, self.vcx.tcx());
+                let real2 = self.encode_operand(curr_ver, &args[1].node).downcast_ty();
+                let a1_ty_use = self.ty_use(a1_ty);
+                let real2_deref = a1_ty_use.expect_immref().value_access(real2).downcast_ty();
+                mk_bool(self.ty_use_real().real_lt.call()(real1_deref, real2_deref))
+            }
             PrustiBuiltin::RealLe => {
                 let a0_ty = args[0].node.ty(self.body, self.vcx.tcx());
                 let real1 = self.encode_operand(curr_ver, &args[0].node).downcast_ty();
@@ -1420,6 +1437,28 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                 let a1_ty_use = self.ty_use(a1_ty);
                 let real2_deref = a1_ty_use.expect_immref().value_access(real2).downcast_ty();
                 mk_bool(self.ty_use_real().real_le.call()(real1_deref, real2_deref))
+            }
+            PrustiBuiltin::RealGt => {
+                let a0_ty = args[0].node.ty(self.body, self.vcx.tcx());
+                let real1 = self.encode_operand(curr_ver, &args[0].node).downcast_ty();
+                let a0_ty_use = self.ty_use(a0_ty);
+                let real1_deref = a0_ty_use.expect_immref().value_access(real1).downcast_ty();
+                let a1_ty = args[1].node.ty(self.body, self.vcx.tcx());
+                let real2 = self.encode_operand(curr_ver, &args[1].node).downcast_ty();
+                let a1_ty_use = self.ty_use(a1_ty);
+                let real2_deref = a1_ty_use.expect_immref().value_access(real2).downcast_ty();
+                mk_bool(self.ty_use_real().real_gt.call()(real1_deref, real2_deref))
+            }
+            PrustiBuiltin::RealGe => {
+                let a0_ty = args[0].node.ty(self.body, self.vcx.tcx());
+                let real1 = self.encode_operand(curr_ver, &args[0].node).downcast_ty();
+                let a0_ty_use = self.ty_use(a0_ty);
+                let real1_deref = a0_ty_use.expect_immref().value_access(real1).downcast_ty();
+                let a1_ty = args[1].node.ty(self.body, self.vcx.tcx());
+                let real2 = self.encode_operand(curr_ver, &args[1].node).downcast_ty();
+                let a1_ty_use = self.ty_use(a1_ty);
+                let real2_deref = a1_ty_use.expect_immref().value_access(real2).downcast_ty();
+                mk_bool(self.ty_use_real().real_ge.call()(real1_deref, real2_deref))
             }
         }
         .upcast_ty())

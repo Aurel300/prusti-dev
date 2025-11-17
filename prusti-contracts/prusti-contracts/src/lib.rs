@@ -415,6 +415,14 @@ mod private {
         }
     }
 
+    impl Neg for Real {
+        type Output = Real;
+
+        fn neg(self) -> Self {
+            panic!()
+        }
+    }
+
     impl PartialOrd for Real {
         fn partial_cmp(&self, oher: &Self) -> Option<Ordering> {
             panic!()

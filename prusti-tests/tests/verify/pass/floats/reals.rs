@@ -41,3 +41,6 @@ pub fn foo7(x: f32, y: f32) -> f32 {
 
 #[ensures(Real::from_f32(8.5) / Real::from_f32(2.0) == Real::from_f32(4.25))]
 pub fn foo8(){}
+
+#[ensures(-Real::from_f32(8.5) == Real::from_f32(-8.5))]
+pub fn foo9(){}

@@ -1065,6 +1065,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
             RealSub,
             RealAdd,
             RealDiv,
+            RealNeg,
             RealLt,
             RealLe,
             RealGt,
@@ -1137,6 +1138,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
             (Some("prusti_contracts::Real"), "sub") => PrustiBuiltin::RealSub,
             (Some("prusti_contracts::Real"), "add") => PrustiBuiltin::RealAdd,
             (Some("prusti_contracts::Real"), "div") => PrustiBuiltin::RealDiv,
+            (Some("prusti_contracts::Real"), "neg") => PrustiBuiltin::RealNeg,
             (Some("prusti_contracts::Real"), "lt") => PrustiBuiltin::RealLt,
             (Some("prusti_contracts::Real"), "le") => PrustiBuiltin::RealLe,
             (Some("prusti_contracts::Real"), "gt") => PrustiBuiltin::RealGt,
@@ -1429,6 +1431,10 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                 let real1 = self.encode_operand(curr_ver, &args[0].node).downcast_ty();
                 let real2 = self.encode_operand(curr_ver, &args[1].node).downcast_ty();
                 self.ty_use_real().real_div.call()(real1, real2)
+            }
+            PrustiBuiltin::RealNeg => {
+                let real = self.encode_operand(curr_ver, &args[0].node).downcast_ty();
+                self.ty_use_real().real_neg.call()(real)
             }
             PrustiBuiltin::RealLt => {
                 let a0_ty = args[0].node.ty(self.body, self.vcx.tcx());

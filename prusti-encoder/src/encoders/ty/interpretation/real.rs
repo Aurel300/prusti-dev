@@ -49,12 +49,8 @@ pub(crate) fn ty_pure<'vir>(
         builder.self_type(),
         Some("*"),
     );
-    let real_neg = builder.backend_func(
-        "neg",
-        (builder.self_type()),
-        builder.self_type(),
-        Some("-"),
-    );
+    let real_neg =
+        builder.backend_func("neg", (builder.self_type()), builder.self_type(), Some("-"));
     let real_eq = builder.backend_func(
         "eq",
         (builder.self_type(), builder.self_type()),

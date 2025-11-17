@@ -334,8 +334,8 @@ impl<'tcx> EnvQuery<'tcx> {
     }
 
     /// Given a definition id `def_id`, returns
-    /// None if `def_id` is not an associated item within 
-    /// an implementation; Some(ty_name) where `ty_name` is 
+    /// None if `def_id` is not an associated item within
+    /// an implementation; Some(ty_name) where `ty_name` is
     /// the type name of the implementation if
     /// `def_id` is an associated item.
     pub fn find_impl_type_name(self, def_id: DefId) -> Option<String> {

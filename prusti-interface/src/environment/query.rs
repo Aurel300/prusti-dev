@@ -333,6 +333,12 @@ impl<'tcx> EnvQuery<'tcx> {
         }
     }
 
+    pub fn find_impl_type_name(self, def_id: DefId) -> Option<String> {
+        self.tcx()
+            .impl_of_assoc(def_id)
+            .map(|i| self.tcx().type_of(i).instantiate_identity().to_string())
+    }
+
     /// Given a call to `called_def_id` from within `caller_def_id`, returns
     /// the `DefId` that will actually be called if known (i.e. if a trait
     /// method call actually resolves to a concrete implementation), as well as

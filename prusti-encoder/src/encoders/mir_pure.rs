@@ -743,7 +743,14 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                     {
                         let sig = self.vcx.tcx().fn_sig(def_id);
                         let sig = sig.instantiate_identity();
-                        self.encode_prusti_builtin(def_id, sig, arg_tys, args, &new_curr_ver)
+                        self.encode_prusti_builtin(
+                            def_id,
+                            actual_impl,
+                            sig,
+                            arg_tys,
+                            args,
+                            &new_curr_ver,
+                        )
                     } else if is_pure {
                         let pure_func = self
                             .deps
@@ -1035,6 +1042,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
     fn encode_prusti_builtin(
         &mut self,
         def_id: DefId,
+        actual_impl: Option<DefId>,
         _sig: Binder<'vir, FnSig<'vir>>,
         arg_tys: ty::GenericArgsRef<'vir>,
         args: &[Spanned<mir::Operand<'vir>>],
@@ -1059,16 +1067,22 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
         }
 
         let item_name = self.vcx.tcx().item_name(def_id);
+        let env_query = EnvQuery::new(self.vcx.tcx());
 
         // TODO: this probably isn't necessary
-        let builtin = match item_name.as_str() {
-            "forall" => PrustiBuiltin::Forall,
-            "exists" => PrustiBuiltin::Exists,
-            "snapshot_equality" => PrustiBuiltin::SnapshotEquality,
-            "slice_len" => PrustiBuiltin::SliceLen,
-            "old_start" => PrustiBuiltin::ModeStart(Mode::Old),
-            "old_end" => PrustiBuiltin::ModeEnd(Mode::Old),
-            "rel_start" => PrustiBuiltin::ModeStart(Mode::Rel(
+        let builtin = match (
+            env_query
+                .find_impl_type_name(actual_impl.unwrap_or(def_id))
+                .as_ref()
+                .map(String::as_str),
+            item_name.as_str(),
+        ) {
+            (None, "forall") => PrustiBuiltin::Forall,
+            (None, "exists") => PrustiBuiltin::Exists,
+            (None, "snapshot_equality") => PrustiBuiltin::SnapshotEquality,
+            (None, "old_start") => PrustiBuiltin::ModeStart(Mode::Old),
+            (None, "old_end") => PrustiBuiltin::ModeEnd(Mode::Old),
+            (None, "rel_start") => PrustiBuiltin::ModeStart(Mode::Rel(
                 arg_tys[0]
                     .expect_const()
                     .to_value()
@@ -1077,7 +1091,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                     .unwrap()
                     .to_bits_unchecked() as usize,
             )),
-            "rel_end" => PrustiBuiltin::ModeEnd(Mode::Rel(
+            (None, "rel_end") => PrustiBuiltin::ModeEnd(Mode::Rel(
                 arg_tys[0]
                     .expect_const()
                     .to_value()
@@ -1086,29 +1100,38 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                     .unwrap()
                     .to_bits_unchecked() as usize,
             )),
-            "before_expiry_start" => PrustiBuiltin::ModeStart(Mode::BeforeExpiry),
-            "before_expiry_end" => PrustiBuiltin::ModeEnd(Mode::BeforeExpiry),
-            "f16_is_nan" => PrustiBuiltin::IsNaN(ty::FloatTy::F16),
-            "f32_is_nan" => PrustiBuiltin::IsNaN(ty::FloatTy::F32),
-            "f64_is_nan" => PrustiBuiltin::IsNaN(ty::FloatTy::F64),
-            "f128_is_nan" => PrustiBuiltin::IsNaN(ty::FloatTy::F128),
-            "f16_is_infinite" => PrustiBuiltin::IsInfinite(ty::FloatTy::F16),
-            "f32_is_infinite" => PrustiBuiltin::IsInfinite(ty::FloatTy::F32),
-            "f64_is_infinite" => PrustiBuiltin::IsInfinite(ty::FloatTy::F64),
-            "f128_is_infinite" => PrustiBuiltin::IsInfinite(ty::FloatTy::F128),
-            "f16_abs" => PrustiBuiltin::FlAbs(ty::FloatTy::F16),
-            "f32_abs" => PrustiBuiltin::FlAbs(ty::FloatTy::F32),
-            "f64_abs" => PrustiBuiltin::FlAbs(ty::FloatTy::F64),
-            "f128_abs" => PrustiBuiltin::FlAbs(ty::FloatTy::F128),
-            "from_f16" => PrustiBuiltin::FlToReal(ty::FloatTy::F16),
-            "from_f32" => PrustiBuiltin::FlToReal(ty::FloatTy::F32),
-            "from_f64" => PrustiBuiltin::FlToReal(ty::FloatTy::F64),
-            "from_f128" => PrustiBuiltin::FlToReal(ty::FloatTy::F128),
-            "mul" => PrustiBuiltin::RealMul,
-            "eq" => PrustiBuiltin::RealEq,
-            "sub" => PrustiBuiltin::RealSub,
-            "le" => PrustiBuiltin::RealLe,
-            other => panic!("illegal prusti::builtin ({other})"),
+            (None, "slice_len") => PrustiBuiltin::SliceLen,
+            (None, "before_expiry_start") => PrustiBuiltin::ModeStart(Mode::BeforeExpiry),
+            (None, "before_expiry_end") => PrustiBuiltin::ModeEnd(Mode::BeforeExpiry),
+            (None, "f16_is_nan") => PrustiBuiltin::IsNaN(ty::FloatTy::F16),
+            (None, "f32_is_nan") => PrustiBuiltin::IsNaN(ty::FloatTy::F32),
+            (None, "f64_is_nan") => PrustiBuiltin::IsNaN(ty::FloatTy::F64),
+            (None, "f128_is_nan") => PrustiBuiltin::IsNaN(ty::FloatTy::F128),
+            (None, "f16_is_infinite") => PrustiBuiltin::IsInfinite(ty::FloatTy::F16),
+            (None, "f32_is_infinite") => PrustiBuiltin::IsInfinite(ty::FloatTy::F32),
+            (None, "f64_is_infinite") => PrustiBuiltin::IsInfinite(ty::FloatTy::F64),
+            (None, "f128_is_infinite") => PrustiBuiltin::IsInfinite(ty::FloatTy::F128),
+            (None, "f16_abs") => PrustiBuiltin::FlAbs(ty::FloatTy::F16),
+            (None, "f32_abs") => PrustiBuiltin::FlAbs(ty::FloatTy::F32),
+            (None, "f64_abs") => PrustiBuiltin::FlAbs(ty::FloatTy::F64),
+            (None, "f128_abs") => PrustiBuiltin::FlAbs(ty::FloatTy::F128),
+            (Some("prusti_contracts::Real"), "from_f16") => {
+                PrustiBuiltin::FlToReal(ty::FloatTy::F16)
+            }
+            (Some("prusti_contracts::Real"), "from_f32") => {
+                PrustiBuiltin::FlToReal(ty::FloatTy::F32)
+            }
+            (Some("prusti_contracts::Real"), "from_f64") => {
+                PrustiBuiltin::FlToReal(ty::FloatTy::F64)
+            }
+            (Some("prusti_contracts::Real"), "from_f128") => {
+                PrustiBuiltin::FlToReal(ty::FloatTy::F128)
+            }
+            (Some("prusti_contracts::Real"), "mul") => PrustiBuiltin::RealMul,
+            (Some("prusti_contracts::Real"), "eq") => PrustiBuiltin::RealEq,
+            (Some("prusti_contracts::Real"), "sub") => PrustiBuiltin::RealSub,
+            (Some("prusti_contracts::Real"), "le") => PrustiBuiltin::RealLe,
+            (_, other) => panic!("illegal prusti::builtin ({other})"),
         };
 
         let bool = self.ty_use(self.vcx.tcx().types.bool);

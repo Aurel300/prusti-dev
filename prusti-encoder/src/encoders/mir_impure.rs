@@ -1016,100 +1016,101 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
 
     fn visit_statement(&mut self, statement: &mir::Statement<'vir>, location: mir::Location) {
         self.vcx.with_span(statement.source_info.span, |_vcx| {
-        if self.deps.check_cycle().is_err() {
-            return;
-        }
-
-        comment!(self, "[MIR] {location:?}: {statement:?}");
-
-        let current_fpcs = self.current_fpcs.take().unwrap();
-        let cfpcs = &current_fpcs.statements[location.statement_index];
-        for phase in EvalStmtPhase::phases() {
-            self.pcg_actions(&cfpcs.states[phase], cfpcs.actions(phase), false).unwrap();
-        }
-        self.current_fpcs = Some(current_fpcs);
-
-        // TODO: these should not be ignored, but should havoc the local instead
-        // This clears up the noise a bit, making sure StorageLive and other
-        // kinds do not show up in the comments.
-        // TODO: also make sure we don't ignore PCG annotations for these,
-        //   *if* the pcs calls for mid-statement are moved later.
-        const IGNORE_NOP_STMTS: bool = true;
-        if IGNORE_NOP_STMTS {
-            match &statement.kind {
-                mir::StatementKind::StorageLive(..) | mir::StatementKind::StorageDead(..) => {
-                    return;
-                }
-                _ => {}
+            if self.deps.check_cycle().is_err() {
+                return;
             }
-        }
 
-        let span = statement.source_info.span;
+            comment!(self, "[MIR] {location:?}: {statement:?}");
 
-        match &statement.kind {
-            mir::StatementKind::Assign(box (dest, rvalue)) => {
-                // What are we assigning to?
-                let proj_enc = self
-                    .encode_place(Place::from(*dest))
-                    .expr
-                    .expect_predicate();
+            let current_fpcs = self.current_fpcs.take().unwrap();
+            let cfpcs = &current_fpcs.statements[location.statement_index];
+            for phase in EvalStmtPhase::phases() {
+                self.pcg_actions(&cfpcs.states[phase], cfpcs.actions(phase), false).unwrap();
+            }
+            self.current_fpcs = Some(current_fpcs);
 
-                // The snapshot of the value that we are assigning.
-                let rval_enc = self.encode_rvalue_snap(rvalue, span);
-
-                match rval_enc {
-                    Ok(rval_enc) => {
-                let dest_ty = dest.ty(self.local_decls, self.vcx.tcx());
-                assert!(dest_ty.variant_index.is_none());
-                let dest_ty_out = self.ty_use_impure(dest_ty.ty);
-                let method_assign_app =
-                    dest_ty_out.apply_method_assign(self.vcx, proj_enc, rval_enc);
-                    self.stmt(method_assign_app);
+            // TODO: these should not be ignored, but should havoc the local instead
+            // This clears up the noise a bit, making sure StorageLive and other
+            // kinds do not show up in the comments.
+            // TODO: also make sure we don't ignore PCG annotations for these,
+            //   *if* the pcs calls for mid-statement are moved later.
+            const IGNORE_NOP_STMTS: bool = true;
+            if IGNORE_NOP_STMTS {
+                match &statement.kind {
+                    mir::StatementKind::StorageLive(..) | mir::StatementKind::StorageDead(..) => {
+                        return;
+                    }
+                    _ => {}
                 }
-                Err(_) => {
+            }
+
+            let span = statement.source_info.span;
+
+            match &statement.kind {
+                mir::StatementKind::Assign(box (dest, rvalue)) => {
+                    // What are we assigning to?
+                    let proj_enc = self
+                        .encode_place(Place::from(*dest))
+                        .expr
+                        .expect_predicate();
+
+                    // The snapshot of the value that we are assigning.
+                    let rval_enc = self.encode_rvalue_snap(rvalue, span);
+
+                    match rval_enc {
+                        Ok(rval_enc) => {
+                            let dest_ty = dest.ty(self.local_decls, self.vcx.tcx());
+                            assert!(dest_ty.variant_index.is_none());
+                            let dest_ty_out = self.ty_use_impure(dest_ty.ty);
+                            let method_assign_app =
+                                dest_ty_out.apply_method_assign(self.vcx, proj_enc, rval_enc);
+                                self.stmt(method_assign_app);
+                        }
+                        Err(_) => {
+                            self.vcx.with_span(span, |vcx| {
+                                let error_msg = format!("unsupported rvalue {rvalue:?} might be reached");
+                                vcx.handle_error("exhale.failed:assertion.false", move |_| {
+                                    Some(vec![PrustiError::verification(&error_msg, span.into())])
+                                });
+                                self.stmt(self.vcx.mk_exhale_stmt(self.vcx.mk_bool::<false>()));
+                            });
+                        }
+                    }
+                }
+
+                // no-ops
+                mir::StatementKind::StorageLive(..)
+                | mir::StatementKind::StorageDead(..)
+                | mir::StatementKind::FakeRead(_)
+                | mir::StatementKind::PlaceMention(_)
+                | mir::StatementKind::AscribeUserType(..)
+                | mir::StatementKind::Coverage(_)
+                | mir::StatementKind::ConstEvalCounter
+                | mir::StatementKind::Nop
+                | mir::StatementKind::BackwardIncompatibleDropHint { .. } => {}
+
+                mir::StatementKind::Intrinsic(intrinsic_kind) => {
+                    let intrinsic_kind = intrinsic_kind.clone();
                     self.vcx.with_span(span, |vcx| {
-                        let error_msg = format!("unsupported rvalue {rvalue:?} might be reached");
                         vcx.handle_error("exhale.failed:assertion.false", move |_| {
-                            Some(vec![PrustiError::verification(&error_msg, span.into())])
+                            Some(vec![PrustiError::verification(
+                                format!("unsupported intrinsic statement {intrinsic_kind:?} might be reached"),
+                                span.into(),
+                            )])
                         });
                         self.stmt(self.vcx.mk_exhale_stmt(self.vcx.mk_bool::<false>()));
                     });
-                }}
+                }
+
+                mir::StatementKind::Retag(..)
+                | mir::StatementKind::SetDiscriminant { .. }
+                | mir::StatementKind::Deinit(..) => unreachable!(
+                    "the statement kind {:?} is not allowed in the MIR analysis phase",
+                    statement.kind
+                ),
             }
-
-            // no-ops
-            mir::StatementKind::StorageLive(..)
-            | mir::StatementKind::StorageDead(..)
-            | mir::StatementKind::FakeRead(_)
-            | mir::StatementKind::PlaceMention(_)
-            | mir::StatementKind::AscribeUserType(..)
-            | mir::StatementKind::Coverage(_)
-            | mir::StatementKind::ConstEvalCounter
-            | mir::StatementKind::Nop
-            | mir::StatementKind::BackwardIncompatibleDropHint { .. } => {}
-
-            mir::StatementKind::Intrinsic(intrinsic_kind) => {
-                let intrinsic_kind = intrinsic_kind.clone();
-                self.vcx.with_span(span, |vcx| {
-                    vcx.handle_error("exhale.failed:assertion.false", move |_| {
-                        Some(vec![PrustiError::verification(
-                            format!("unsupported intrinsic statement {intrinsic_kind:?} might be reached"),
-                            span.into(),
-                        )])
-                    });
-                    self.stmt(self.vcx.mk_exhale_stmt(self.vcx.mk_bool::<false>()));
-                });
-            }
-
-            mir::StatementKind::Retag(..)
-            | mir::StatementKind::SetDiscriminant { .. }
-            | mir::StatementKind::Deinit(..) => unreachable!(
-                "the statement kind {:?} is not allowed in the MIR analysis phase",
-                statement.kind
-            ),
-        }
-        self.new_after_label(location);
-    });
+            self.new_after_label(location);
+        });
     }
 
     fn visit_terminator(&mut self, terminator: &mir::Terminator<'vir>, location: mir::Location) {

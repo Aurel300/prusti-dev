@@ -58,7 +58,6 @@ impl<'vir> TyPureBuiltinData<'vir> {
     pub fn expect_real(&'vir self) -> &'vir real::TyRealLocal<'vir> {
         match &self {
             TyPureBuiltinData::TyPureBuiltinReal(ty_real_local) => ty_real_local,
-            _ => unreachable!(),
         }
     }
 }

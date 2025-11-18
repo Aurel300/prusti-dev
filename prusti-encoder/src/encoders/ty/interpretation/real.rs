@@ -21,10 +21,16 @@ pub(crate) fn ty_pure<'vir>(
     vcx: &'vir VirCtxt<'vir>,
     builder: &mut DomainBuilder<'vir>,
 ) -> Result<TyPureBuiltinData<'vir>, EncodeFullError<'vir, TyPureEnc>> {
-    builder.set_interpretation(vcx.alloc_slice(&[vcx.alloc(BackendInterpretationPair {
-        key: "SMTLIB",
-        value: "(Real)",
-    })]));
+    builder.set_interpretation(vcx.alloc_slice(&[
+        vcx.alloc(BackendInterpretationPair {
+            key: "SMTLIB",
+            value: "(Real)",
+        }),
+        vcx.alloc(BackendInterpretationPair {
+            key: "Boogie",
+            value: "real",
+        }),
+    ]));
     let real_sub = builder.backend_func(
         "sub",
         (builder.self_type(), builder.self_type()),

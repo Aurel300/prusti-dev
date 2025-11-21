@@ -44,10 +44,11 @@ impl TaskEncoder for GArgsTyEnc {
     }
 
     fn emit_outputs<'vir>(program: &mut task_encoder::Program<'vir>) {
-        for output in GArgsTyEnc::all_outputs_local_no_errors() {
-            if let Some(dom) = output {
-                program.add_domain(dom);
-            }
+        for dom in GArgsTyEnc::all_outputs_local_no_errors()
+            .into_iter()
+            .flatten()
+        {
+            program.add_domain(dom);
         }
     }
 
@@ -100,7 +101,7 @@ impl TaskEncoder for GArgsTyEnc {
             ty_args: vcx.alloc_slice(&ty_args),
             const_args: vcx.alloc_slice(&const_args),
         });
-        if builder.functions.len() > 0 {
+        if !builder.functions.is_empty() {
             vir::with_vcx(|vcx| {
                 Ok((
                     Some(vcx.mk_domain(

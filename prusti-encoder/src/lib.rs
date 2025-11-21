@@ -21,7 +21,7 @@ use crate::encoders::{
     Impure, Pure,
     custom::PairUseEnc,
     ty::{
-        generics::GArgsCastEnc,
+        generics::{GArgsCastEnc, GArgsTyEnc},
         interpretation::bitvec::BitVecEnc,
         lifted::{TyConstructorEnc, TypeOfEnc},
     },
@@ -103,6 +103,7 @@ pub fn test_entrypoint<'tcx>(
 
     program.header("custom");
     PairUseEnc::emit_outputs(&mut program);
+    GArgsTyEnc::emit_outputs(&mut program);
 
     if std::env::var("LOCAL_TESTING").is_ok() {
         std::fs::write("local-testing/simple.vpr", program.code()).unwrap();

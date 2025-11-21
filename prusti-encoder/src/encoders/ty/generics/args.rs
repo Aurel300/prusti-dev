@@ -1,4 +1,10 @@
-use prusti_rustc_interface::middle::ty;
+use crate::{
+    DefId,
+    encoders::ty::{RustTyDecomposition, pure::TyPureEnc},
+};
+use prusti_rustc_interface::middle::{ty, ty::TyCtxt};
+use task_encoder::TaskEncoder;
+use vir::{CastType, FunctionGenData, FunctionIdn, LocalDeclData, TyVal, ViperIdent, VirCtxt};
 
 use super::GParams;
 
@@ -8,6 +14,15 @@ use super::GParams;
 pub struct GArgs<'tcx> {
     pub(super) context: GParams<'tcx>,
     pub(super) args: &'tcx [ty::GenericArg<'tcx>],
+}
+
+pub enum GParamVariant<'vir> {
+    Param(ty::ParamTy),
+    Alias(
+        &'vir str,
+        &'vir str,
+        Vec<(ty::Ty<'vir>, ty::Ty<'vir>, &'vir str)>,
+    ),
 }
 
 impl<'tcx> GArgs<'tcx> {
@@ -34,12 +49,45 @@ impl<'tcx> GArgs<'tcx> {
         self.context.normalize(ty)
     }
 
-    pub fn expect_param(self) -> ty::ParamTy {
+    pub fn expect_param<'vir>(self) -> GParamVariant<'vir> {
         assert_eq!(self.args.len(), 1);
         match self.args[0].expect_ty().kind() {
-            ty::TyKind::Param(p) => *p,
-            // TODO: this needs to be changed to support type aliases
-            ty::TyKind::Alias(..) => panic!("type aliases are not currently supported"),
+            ty::TyKind::Param(p) => GParamVariant::Param(*p),
+            ty::TyKind::Alias(k, t) => {
+                vir::with_vcx(|vcx| {
+                    let tcx = vcx.tcx();
+                    let trait_name = vcx.alloc_str(
+                        tcx.item_name(tcx.associated_item(t.def_id).container_id(tcx))
+                            .as_str(),
+                    );
+                    let type_name = vcx.alloc_str(tcx.item_name(t.def_id).as_str());
+                    let assoc_type_substs = tcx
+                        .all_impls(tcx.associated_item(t.def_id).container_id(tcx))
+                        .map(|imp| {
+                            let imp_type = tcx.type_of(imp).instantiate_identity();
+                            let assoc_types = tcx
+                                .associated_items(imp)
+                                .filter_by_name_unhygienic_and_kind(
+                                    tcx.item_name(t.def_id),
+                                    ty::AssocTag::Type,
+                                )
+                                .collect::<Vec<_>>();
+                            assert!(assoc_types.len() == 1);
+                            let assoc_type =
+                                tcx.type_of(assoc_types[0].def_id).instantiate_identity();
+                            let st_name = vcx.alloc_str(
+                                match tcx.type_of(imp).instantiate_identity().kind() {
+                                    ty::Adt(adt_def, _) => tcx.item_name(adt_def.did()),
+                                    _ => unreachable!(),
+                                }
+                                .as_str(),
+                            );
+                            (imp_type, assoc_type, st_name)
+                        })
+                        .collect::<Vec<_>>();
+                    GParamVariant::Alias(&trait_name, &type_name, assoc_type_substs)
+                })
+            }
             other => panic!("expected type parameter, {other:?}"),
         }
     }

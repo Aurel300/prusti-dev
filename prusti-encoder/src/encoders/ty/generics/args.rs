@@ -47,7 +47,7 @@ impl<'tcx> GArgs<'tcx> {
         assert_eq!(self.args.len(), 1);
         match self.args[0].expect_ty().kind() {
             ty::TyKind::Param(p) => GParamVariant::Param(*p),
-            ty::TyKind::Alias(k, t) => vir::with_vcx(|vcx| {
+            ty::TyKind::Alias(_k, t) => vir::with_vcx(|vcx| {
                 let tcx = vcx.tcx();
                 let trait_name = vcx.alloc_str(
                     tcx.item_name(tcx.associated_item(t.def_id).container_id(tcx))

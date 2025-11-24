@@ -68,11 +68,7 @@ impl<'tcx> GArgs<'tcx> {
                         assert!(assoc_types.len() == 1);
                         let assoc_type = tcx.type_of(assoc_types[0].def_id).instantiate_identity();
                         let st_name = vcx.alloc_str(
-                            match tcx.type_of(imp).instantiate_identity().kind() {
-                                ty::Adt(adt_def, _) => tcx.item_name(adt_def.did()),
-                                _ => unreachable!(),
-                            }
-                            .as_str(),
+                            tcx.type_of(imp).instantiate_identity().to_string().as_str(),
                         );
                         (imp_type, assoc_type, st_name)
                     })

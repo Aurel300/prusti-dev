@@ -11,9 +11,7 @@ use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 use vir::{CastType, HasType, Reify};
 
 use crate::encoders::{
-    MirPureEnc,
-    mir_pure::PureKind,
-    ty::{RustTyDecomposition, use_pure::TyUsePureEnc},
+    MirLocalDefEncTask, MirPureEnc, mir_pure::PureKind, ty::{RustTyDecomposition, use_pure::TyUsePureEnc}
 };
 pub struct MirSpecEnc;
 
@@ -95,8 +93,12 @@ impl TaskEncoder for MirSpecEnc {
         let (def_id, pure) = *task_key;
         deps.emit_output_ref(*task_key, ())?;
 
-        let local_defs =
-            deps.require_dep::<crate::encoders::local_def::MirLocalDefEnc>((def_id, false))?;
+        let local_defs = deps.require_dep::<crate::encoders::local_def::MirLocalDefEnc>(
+            MirLocalDefEncTask::Local {
+                def_id,
+                all_locals: false,
+            },
+        )?;
         let specs =
             deps.require_dep::<crate::encoders::SpecEnc>(crate::encoders::SpecEncTask { def_id })?;
 

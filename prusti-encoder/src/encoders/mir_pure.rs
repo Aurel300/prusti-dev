@@ -1,5 +1,6 @@
 use crate::encoders::{
-    FunctionCallEnc, TyUseImpureEnc, ViperTupleEnc,
+    FunctionCallEnc, MirLocalDefEnc, MirLocalDefEncOutput, MirLocalDefEncTask, TyUseImpureEnc,
+    ViperTupleEnc,
     mir_fn::{CallTaskDescription, RustSignature},
     mir_shared::PureRvalueEnc,
     ty::{
@@ -237,6 +238,21 @@ struct Enc<'vir: 'enc, 'enc> {
     rel0_mode: bool,
     rel1_mode: bool,
     before_expiry_mode: bool,
+    local_defs: MirLocalDefEncOutput<'vir>,
+}
+
+struct EncodedPlace<'vir> {
+    snap: ExprRet<'vir>,
+    place_ref: Option<ExprRetRef<'vir>>,
+}
+
+impl<'vir> EncodedPlace<'vir> {
+    fn new(expr: ExprRet<'vir>, place_ref: Option<ExprRetRef<'vir>>) -> Self {
+        Self {
+            snap: expr,
+            place_ref,
+        }
+    }
 }
 
 impl<'vir: 'enc, 'enc> PureRvalueEnc<'vir> for Enc<'vir, 'enc> {
@@ -265,7 +281,7 @@ impl<'vir: 'enc, 'enc> PureRvalueEnc<'vir> for Enc<'vir, 'enc> {
         place: Place<'vir>,
         curr_ver: &Self::EncodePlaceCtxt,
     ) -> ExprRet<'vir> {
-        self.encode_place_with_ref(curr_ver, place).0
+        self.encode_place_with_ref(curr_ver, place).snap
     }
 
     fn encode_operand_snap(
@@ -298,6 +314,17 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
             "MIR pure encoding does not support loops"
         );
         let rev_doms = rev_doms::ReverseDominators::new(&body.basic_blocks);
+        let local_def_enc_task = if kind.is_some() {
+            MirLocalDefEncTask::ExternSpec(def_id)
+        } else {
+            MirLocalDefEncTask::Local {
+                def_id,
+                all_locals: true,
+            }
+        };
+        let local_defs = deps
+            .require_dep::<MirLocalDefEnc>(local_def_enc_task)
+            .unwrap();
         Self {
             vcx,
             encoding_depth,
@@ -313,6 +340,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
             rel0_mode: false,
             rel1_mode: false,
             before_expiry_mode: false,
+            local_defs,
         }
     }
 
@@ -487,6 +515,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
         };
         match &term.kind {
             &mir::TerminatorKind::Goto { target }
+            | &mir::TerminatorKind::Assert { target, .. }
             | &mir::TerminatorKind::FalseEdge {
                 real_target: target,
                 ..
@@ -686,7 +715,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
             mir::Rvalue::Use(op) => self.encode_operand_snap(op, curr_ver),
             mir::Rvalue::Ref(_, kind, place) => {
                 let rvalue_snapshot_encoding = self.ty_use(rvalue_ty);
-                let (snap, place_ref) = self.encode_place_with_ref(curr_ver, (*place).into());
+                let encoded_place = self.encode_place_with_ref(curr_ver, (*place).into());
                 if kind.mutability().is_mut() {
                     let e_rvalue_ty = rvalue_snapshot_encoding.expect_mutref();
                     // We want to distinguish if `place` is a value that lives
@@ -698,15 +727,19 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                     // will return `None` if this isn't a re-borrow, and if it's
                     // a re-borrow of created-in-pure reference then it will be
                     // field projections of `null` which is also `null`.
-                    let place_ref = place_ref.unwrap_or_else(|| self.vcx.mk_null().lazy());
-                    Ok(e_rvalue_ty.prim_to_snap(place_ref, snap).upcast_ty())
+                    let place_ref = encoded_place
+                        .place_ref
+                        .unwrap_or_else(|| self.vcx.mk_null().lazy());
+                    Ok(e_rvalue_ty
+                        .prim_to_snap(place_ref, encoded_place.snap)
+                        .upcast_ty())
                 } else {
                     let e_rvalue_ty = rvalue_snapshot_encoding.expect_immref();
                     // For shared borrows we want to use just the snapshot
                     // without the reference so that snapshot equality compares
                     // only values.
                     Ok(e_rvalue_ty
-                        .prim_to_snap(self.vcx.mk_null().lazy(), snap)
+                        .prim_to_snap(self.vcx.mk_null().lazy(), encoded_place.snap)
                         .upcast_ty())
                 }
             }
@@ -760,7 +793,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
         &mut self,
         curr_ver: &HashMap<mir::Local, Version<'vir>>,
         place: Place<'vir>,
-    ) -> (ExprRet<'vir>, Option<ExprRetRef<'vir>>) {
+    ) -> EncodedPlace<'vir> {
         // TODO: remove (debug)
         assert!(curr_ver.contains_key(&place.local));
 
@@ -774,7 +807,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                 && is_in_a_mode
         };
 
-        let mut expr = if should_wrap {
+        let expr = if should_wrap {
             let local_as_uzize = place.local.as_usize();
             self.vcx.mk_lazy_expr(
                 vir::vir_format!(self.vcx, "wraped in _{}", local_as_uzize),
@@ -784,11 +817,27 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
         } else {
             self.mk_local_ex(place.local, curr_ver[&place.local])
         };
-        let mut place_ref = None;
+        if self.local_defs.locals.len() <= place.local.as_usize() {
+            let span = self.vcx.tcx().def_span(self.def_id);
+            let source = self
+                .vcx
+                .tcx()
+                .sess
+                .source_map()
+                .span_to_snippet(span)
+                .unwrap_or_default();
+            panic!(
+                "{:?} local for {:?} not found in local_defs\nSource:\n{}",
+                self.def_id, place, source
+            );
+        };
+        let place_ref: Option<ExprRetRef<'vir>> =
+            Some(self.local_defs[place.local].local_ex.lazy());
+        let mut encoded_place = EncodedPlace::new(expr, place_ref);
         // TODO: factor this out (duplication with impure encoder)?
         for elem in place.projection {
-            (expr, place_ref) =
-                self.encode_place_element(place_ty, *elem, expr.downcast_ty(), place_ref);
+            encoded_place =
+                encode_place_element(self.deps, self.context, place_ty, *elem, encoded_place);
             place_ty = place_ty.projection_ty(self.vcx.tcx(), *elem);
         }
         // Can we ever have the use of a projected place?
@@ -796,30 +845,20 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
 
         if should_wrap {
             if self.old_mode {
-                expr = self.vcx.mk_old_expr(expr);
+                encoded_place.snap = self.vcx.mk_old_expr(encoded_place.snap);
             }
             if self.rel0_mode {
-                expr = self.vcx.mk_rel_expr(expr, 0);
+                encoded_place.snap = self.vcx.mk_rel_expr(encoded_place.snap, 0);
             }
             if self.rel1_mode {
-                expr = self.vcx.mk_rel_expr(expr, 1);
+                encoded_place.snap = self.vcx.mk_rel_expr(encoded_place.snap, 1);
             }
             if self.before_expiry_mode {
-                expr = self.vcx.mk_old_lhs_expr(expr);
+                encoded_place.snap = self.vcx.mk_old_lhs_expr(encoded_place.snap);
             }
         }
 
-        (expr, place_ref)
-    }
-
-    fn encode_place_element(
-        &mut self,
-        place_ty: mir::PlaceTy<'vir>,
-        elem: mir::PlaceElem<'vir>,
-        expr: ExprCRet<'vir>,
-        place_ref: Option<ExprRetRef<'vir>>,
-    ) -> (ExprRet<'vir>, Option<ExprRetRef<'vir>>) {
-        encode_place_element(self.deps, self.context, place_ty, elem, expr, place_ref)
+        encoded_place
     }
 
     fn encode_prusti_builtin(
@@ -1200,78 +1239,13 @@ mod rev_doms {
     }
 }
 
-/*
-fn encode_place<'vir>(
-    vcx: vir::VirCtxt<'vir>
-    curr_ver: &HashMap<mir::Local, Version>,
-    place: &mir::Place<'vir>,
-) -> ExprRet<'vir> {
-    self.encode_place_with_ref(curr_ver, place).0
-}
-fn encode_place_with_ref<'vir, 'enc>(
-    vcx: &'vir vir::VirCtxt<'vir>,
-    deps: &'enc mut TaskEncoderDependencies<'vir, MirPureEnc>,
-    curr_ver: &HashMap<mir::Local, Version>,
-    place: &mir::Place<'vir>,
-) -> (ExprRet<'vir>, Option<ExprRet<'vir>>) {
-    // TODO: remove (debug)
-    assert!(curr_ver.contains_key(&place.local));
-
-    let mut place_ty = mir::tcx::PlaceTy::from_ty(self.body.local_decls[place.local].ty);
-
-    let should_wrap = {
-        let is_in_a_mode = self.old_mode || self.rel0_mode || self.rel1_mode || self.before_expiry_mode;
-        let local_kind = self.body.local_kind(place.local);
-        (local_kind == mir::LocalKind::Arg || local_kind == mir::LocalKind::ReturnPointer)
-            && is_in_a_mode
-    };
-
-    let mut expr = if should_wrap {
-        let local_as_uzize = place.local.as_usize();
-
-        self.vcx.mk_lazy_expr(
-            vir::vir_format!(self.vcx, "wraped in _{}", local_as_uzize),
-            Box::new(move |_vcx, lctx: ExprInput<'vir>| lctx.1[local_as_uzize - 1].kind),
-        )
-    } else {
-        self.mk_local_ex(place.local, curr_ver[&place.local])
-    };
-    let mut place_ref = None;
-    // TODO: factor this out (duplication with impure encoder)?
-    for elem in place.projection {
-        (expr, place_ref) = self.encode_place_element(place_ty, elem, expr, place_ref);
-        place_ty = place_ty.projection_ty(self.vcx.tcx(), elem);
-    }
-    // Can we ever have the use of a projected place?
-    assert!(place_ty.variant_index.is_none());
-
-    if should_wrap {
-        if self.old_mode {
-            expr = self.vcx.mk_old_expr(expr);
-        }
-        if self.rel0_mode {
-            expr = self.vcx.mk_rel_expr(expr, 0);
-        }
-        if self.rel1_mode {
-            expr = self.vcx.mk_rel_expr(expr, 1);
-        }
-        if self.before_expiry_mode {
-            expr = self.vcx.mk_old_lhs_expr(expr);
-        }
-    }
-
-    (expr, place_ref)
-}
-*/
-
 pub fn encode_place_element<'vir, 'enc, T: TaskEncoder>(
     deps: &'enc mut TaskEncoderDependencies<'vir, T>,
     context: impl Into<GParams<'vir>>,
     place_ty: mir::PlaceTy<'vir>,
     elem: mir::PlaceElem<'vir>,
-    expr: ExprCRet<'vir>,
-    place_ref: Option<ExprRetRef<'vir>>,
-) -> (ExprRet<'vir>, Option<ExprRetRef<'vir>>) {
+    encoded_place: EncodedPlace<'vir>,
+) -> EncodedPlace<'vir> {
     let context = context.into();
     let ty_task =
         vir::with_vcx(|vcx| RustTyDecomposition::from_ty(place_ty.ty, vcx.tcx(), context));
@@ -1285,35 +1259,29 @@ pub fn encode_place_element<'vir, 'enc, T: TaskEncoder>(
                     let e_ty_pure = deps.require_dep::<TyUsePureEnc>(ty_task).unwrap();
                     let proj =
                         e_ty_pure.expect_variant_opt(place_ty.variant_index)[abi::FieldIdx::ZERO];
-                    let proj_app = proj.read(expr);
-                    let place_ref =
-                        place_ref.map(|pr| struct_like[abi::FieldIdx::ZERO].field_ref(pr));
-                    (proj_app, place_ref)
+                    let proj_app = proj.read(encoded_place.snap.downcast_ty());
+                    let place_ref = encoded_place
+                        .place_ref
+                        .map(|pr| struct_like[abi::FieldIdx::ZERO].field_ref(pr));
+                    EncodedPlace::new(proj_app, place_ref)
                 }
                 TyKind::Ref(.., ty::Mutability::Not) => {
                     let e_ty = deps
                         .require_dep::<TyUsePureEnc>(ty_task)
                         .unwrap()
                         .expect_immref();
-                    let val_expr = e_ty.value_access(expr);
-                    (val_expr, place_ref)
+                    let val_expr = e_ty.value_access(encoded_place.snap.downcast_ty());
+                    EncodedPlace::new(val_expr, encoded_place.place_ref)
                 }
-                TyKind::Ref(_, inner_ty, ty::Mutability::Mut) => {
+                TyKind::Ref(_, _, ty::Mutability::Mut) => {
                     let e_ty = deps
                         .require_dep::<TyUsePureEnc>(ty_task)
                         .unwrap()
                         .expect_mutref();
-                    let inner_ty = vir::with_vcx(|vcx| {
-                        RustTyDecomposition::from_ty(*inner_ty, vcx.tcx(), context)
-                    });
-                    let inner_ty_out = deps.require_dep::<TyUseImpureEnc>(inner_ty).unwrap();
-                    let ref_expr = e_ty.deref_access(expr);
-                    let ref_val_expr = inner_ty_out.ref_to_snap(unsafe {
-                        std::mem::transmute::<vir::ExprGenRef<'vir, _, _>, vir::ExprRef<'vir>>(
-                            ref_expr,
-                        )
-                    }); // TODO: hack...
-                    (ref_val_expr.lift(), place_ref)
+                    EncodedPlace::new(
+                        e_ty.value_access(encoded_place.snap.downcast_ty()),
+                        encoded_place.place_ref,
+                    )
                 }
                 _ => unreachable!(),
             }
@@ -1323,11 +1291,13 @@ pub fn encode_place_element<'vir, 'enc, T: TaskEncoder>(
             let struct_like = e_ty.expect_variant_opt(place_ty.variant_index);
             let e_ty_pure = deps.require_dep::<TyUsePureEnc>(ty_task).unwrap();
             let proj = e_ty_pure.expect_variant_opt(place_ty.variant_index)[field_idx];
-            let proj_app = proj.read(expr);
-            let place_ref = place_ref.map(|pr| struct_like[field_idx].field_ref(pr));
-            (proj_app, place_ref)
+            let proj_app = proj.read(encoded_place.snap.downcast_ty());
+            let place_ref = encoded_place
+                .place_ref
+                .map(|pr| struct_like[field_idx].field_ref(pr));
+            EncodedPlace::new(proj_app, place_ref)
         }
-        mir::ProjectionElem::Downcast(..) => (expr.upcast_ty(), place_ref),
+        mir::ProjectionElem::Downcast(..) => encoded_place,
         _ => todo!("Unsupported ProjectionElem {:?}", elem),
     }
 }

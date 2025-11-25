@@ -1,11 +1,7 @@
 use prusti_rustc_interface::middle::ty;
 use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 
-use crate::encoders::{
-    ConstEnc,
-    r#const::ConstEncTask,
-    ty::RustTyDecomposition,
-};
+use crate::encoders::{ConstEnc, r#const::ConstEncTask, ty::RustTyDecomposition};
 
 use super::{GArgs, GenericParamsEnc};
 

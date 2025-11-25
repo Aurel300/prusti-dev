@@ -1,6 +1,5 @@
 use prusti_rustc_interface::{middle::ty, span::def_id::DefId};
 
-
 use super::GParams;
 
 /// The instantiation of generic arguments, typically found in `TyKind::Adt` and

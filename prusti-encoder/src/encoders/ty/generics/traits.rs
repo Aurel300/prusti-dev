@@ -1,6 +1,6 @@
 use prusti_rustc_interface::{middle::ty::AssocKind, span::def_id::DefId};
 use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
-use vir::{FunctionIdn, ViperIdent};
+use vir::{FunctionIdn, ViperIdent, vir_format_identifier};
 
 pub struct TraitEnc;
 
@@ -36,19 +36,32 @@ impl TaskEncoder for TraitEnc {
         vir::with_vcx(|vcx| {
             let tcx = vcx.tcx();
             let trait_name = vcx.alloc_str(tcx.item_name(task_key).as_str());
-            let type_did_fun_mapping = tcx.associated_items(task_key).in_definition_order().filter(|item| matches!(item.kind, AssocKind::Type{data: _})).map(|item| (item.def_id, FunctionIdn::new(
-                ViperIdent::new(
-                    vcx.alloc_str(&format!("{}_Assoc_{}_func", trait_name, tcx.item_name(item.def_id))),
-                ),
-                vir::TYPE_TYVAL,
-                vir::TYPE_TYVAL,
-            ))).collect::<Vec<_>>();
+            let type_did_fun_mapping = tcx
+                .associated_items(task_key)
+                .in_definition_order()
+                .filter(|item| matches!(item.kind, AssocKind::Type { data: _ }))
+                .map(|item| {
+                    (
+                        item.def_id,
+                        FunctionIdn::new(
+                            vir_format_identifier!(
+                                vcx,
+                                "{}_Assoc_{}_func",
+                                trait_name,
+                                tcx.item_name(item.def_id),
+                            ),
+                            vir::TYPE_TYVAL,
+                            vir::TYPE_TYVAL,
+                        ),
+                    )
+                })
+                .collect::<Vec<_>>();
             let assoc_funs = type_did_fun_mapping
                 .iter()
                 .map(|(_, function_idn)| vcx.mk_domain_function(*function_idn, false, None))
                 .collect::<Vec<_>>();
             let trait_domain = vcx.mk_domain(
-                ViperIdent::new(vcx.alloc_str(&format!("t_{}", trait_name))),
+                vir_format_identifier!(vcx, "t_{}", trait_name),
                 &[],
                 &[],
                 vcx.alloc_slice(assoc_funs.as_slice()),

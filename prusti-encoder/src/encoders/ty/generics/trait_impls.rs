@@ -1,6 +1,6 @@
 use prusti_rustc_interface::{middle::ty::AssocKind, span::def_id::DefId};
 use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
-use vir::{Domain, ViperIdent};
+use vir::{Domain, ViperIdent, vir_format_identifier};
 
 use crate::encoders::ty::{
     RustTyDecomposition,
@@ -70,23 +70,25 @@ impl TaskEncoder for TraitImplEnc {
                                 ),
                             );
                             axs.push(vcx.mk_domain_axiom(
-                                ViperIdent::new(vcx.alloc_str(&format!(
+                                vir_format_identifier!(
+                                    vcx,
                                     "{}_Assoc_{}_{}",
                                     trait_data.trait_name,
                                     tcx.item_name(impl_item.def_id),
                                     tcx.type_of(task_key.0).instantiate_identity()
-                                ))),
+                                ),
                                 vir::expr! {([assoc_fun](impl_type_expr)) == (assoc_type_expr)},
                             ))
                         });
                 });
 
             let dom = vcx.mk_domain(
-                ViperIdent::new(vcx.alloc_str(&format!(
+                vir_format_identifier!(
+                    vcx,
                     "t_{}_{}",
                     trait_data.trait_name,
-                    tcx.type_of(task_key.0).instantiate_identity()
-                ))),
+                    tcx.type_of(task_key.0).instantiate_identity().to_string()
+                ),
                 &[],
                 vcx.alloc_slice(&axs),
                 &[],

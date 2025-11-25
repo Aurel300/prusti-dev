@@ -44,6 +44,18 @@ impl TaskEncoder for TraitImplEnc {
 
             let mut axs = Vec::new();
 
+            let struct_ty = tcx.type_of(task_key.0).instantiate_identity();
+
+            let struct_ty_expr = params.ty_expr(
+                deps,
+                RustTyDecomposition::from_ty(struct_ty, tcx, task_key.1),
+            );
+
+            axs.push(vcx.mk_domain_axiom(
+                vir_format_identifier!(vcx, "{}_impl_{}", trait_data.trait_name, struct_ty),
+                vir::expr! {[trait_data.impl_fun](struct_ty_expr)},
+            ));
+
             tcx.associated_items(task_key.0)
                 .in_definition_order()
                 .filter(|item| matches!(item.kind, AssocKind::Type { data: _ }))
@@ -53,14 +65,6 @@ impl TaskEncoder for TraitImplEnc {
                         .iter()
                         .filter(|(assoc_did, _)| Some(*assoc_did) == impl_item.trait_item_def_id)
                         .for_each(|(_, assoc_fun)| {
-                            let impl_type_expr = params.ty_expr(
-                                deps,
-                                RustTyDecomposition::from_ty(
-                                    tcx.type_of(task_key.0).instantiate_identity(),
-                                    tcx,
-                                    task_key.1,
-                                ),
-                            );
                             let assoc_type_expr = params.ty_expr(
                                 deps,
                                 RustTyDecomposition::from_ty(
@@ -75,9 +79,9 @@ impl TaskEncoder for TraitImplEnc {
                                     "{}_Assoc_{}_{}",
                                     trait_data.trait_name,
                                     tcx.item_name(impl_item.def_id),
-                                    tcx.type_of(task_key.0).instantiate_identity()
+                                    struct_ty
                                 ),
-                                vir::expr! {([assoc_fun](impl_type_expr)) == (assoc_type_expr)},
+                                vir::expr! {([assoc_fun](struct_ty_expr)) == (assoc_type_expr)},
                             ))
                         });
                 });

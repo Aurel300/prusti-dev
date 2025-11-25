@@ -8,6 +8,7 @@ pub struct TraitEnc;
 pub struct TraitData<'vir> {
     pub trait_name: &'vir str,
     pub type_did_fun_mapping: &'vir [(DefId, FunctionIdn<'vir, vir::TyVal, vir::TyVal>)],
+    pub impl_fun: FunctionIdn<'vir, vir::TyVal, vir::Bool>,
 }
 
 impl TaskEncoder for TraitEnc {
@@ -56,15 +57,22 @@ impl TaskEncoder for TraitEnc {
                     )
                 })
                 .collect::<Vec<_>>();
-            let assoc_funs = type_did_fun_mapping
+            let mut funcs = type_did_fun_mapping
                 .iter()
                 .map(|(_, function_idn)| vcx.mk_domain_function(*function_idn, false, None))
                 .collect::<Vec<_>>();
+            let impl_fun = FunctionIdn::new(
+                vir_format_identifier!(vcx, "{}_impl", trait_name),
+                vir::TYPE_TYVAL,
+                vir::TYPE_BOOL,
+            );
+            let impl_fun_data = vcx.mk_domain_function(impl_fun, false, None);
+            funcs.push(impl_fun_data);
             let trait_domain = vcx.mk_domain(
                 vir_format_identifier!(vcx, "t_{}", trait_name),
                 &[],
                 &[],
-                vcx.alloc_slice(assoc_funs.as_slice()),
+                vcx.alloc_slice(funcs.as_slice()),
                 None,
             );
             Ok((
@@ -72,6 +80,7 @@ impl TaskEncoder for TraitEnc {
                 TraitData {
                     trait_name,
                     type_did_fun_mapping: vcx.alloc_slice(type_did_fun_mapping.as_slice()),
+                    impl_fun,
                 },
             ))
         })

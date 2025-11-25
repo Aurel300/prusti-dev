@@ -14,6 +14,8 @@ use super::{
     generics::{GArgs, GParams},
 };
 
+use prusti_rustc_interface::span::def_id::DefId;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct RustTyDecomposition<'tcx> {
     pub ty: RustTy<'tcx>,
@@ -442,7 +444,7 @@ impl<'tcx> TySpecifics<'tcx, RustTyDatas> {
                         ty: LazyRustTy(Self::new_param_ty(i as u32)),
                     })
                     .collect::<Vec<_>>();
-                TySpecifics::mk_structlike((), true, fields)
+                TySpecifics::mk_structlike((), true, fields, None)
             }
             ty::TyKind::Array(..) | ty::TyKind::Slice(..) => {
                 // TODO: add array/slice support
@@ -470,13 +472,13 @@ impl<'tcx> TySpecifics<'tcx, RustTyDatas> {
                         ty: LazyRustTy(ty),
                     })
                     .collect::<Vec<_>>();
-                TySpecifics::mk_structlike((), true, fields)
+                TySpecifics::mk_structlike((), true, fields, None)
             }
             ty::TyKind::Never => {
                 let data = vir::with_vcx(|vcx| RustEnumData {
                     discr: vcx.tcx().types.isize,
                 });
-                TySpecifics::mk_enumlike(data, false, Vec::new())
+                TySpecifics::mk_enumlike(data, false, Vec::new(), None)
             }
             // TODO: add str support
             ty::TyKind::Str => TySpecifics::mk_opaque(()),
@@ -496,12 +498,12 @@ impl<'tcx> TySpecifics<'tcx, RustTyDatas> {
                 fid: abi::FieldIdx::from_usize(0),
                 ty: LazyRustTy(Self::new_param_ty(0)),
             }];
-            return TySpecifics::mk_structlike((), true, fields);
+            return TySpecifics::mk_structlike((), true, fields, Some(adt.did()));
         }
 
         match adt.adt_kind() {
             ty::AdtKind::Struct => {
-                let data = Self::from_struct(adt.non_enum_variant());
+                let data = Self::from_struct(adt.non_enum_variant(), adt.did());
                 Self::StructLike(data)
             }
             ty::AdtKind::Enum => {
@@ -515,9 +517,9 @@ impl<'tcx> TySpecifics<'tcx, RustTyDatas> {
         }
     }
 
-    fn from_struct(variant: &ty::VariantDef) -> StructData<'tcx, RustTyDatas> {
+    fn from_struct(variant: &ty::VariantDef, did: DefId) -> StructData<'tcx, RustTyDatas> {
         let fields = Self::from_fields(&variant.fields);
-        StructData::new((), true, fields)
+        StructData::new((), true, fields, Some(did))
     }
 
     fn from_enum(adt: ty::AdtDef<'tcx>) -> EnumData<'tcx, RustTyDatas> {
@@ -537,11 +539,11 @@ impl<'tcx> TySpecifics<'tcx, RustTyDatas> {
                             discr_val: discr.val,
                         },
                         true,
-                        StructData::new((), true, fields),
+                        StructData::new((), true, fields, Some(adt.did())),
                     )
                 })
                 .collect::<Vec<_>>();
-            EnumData::new(data, true, variants)
+            EnumData::new(data, true, variants, Some(adt.did()))
         })
     }
 

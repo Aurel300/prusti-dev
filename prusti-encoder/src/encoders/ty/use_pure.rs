@@ -199,11 +199,12 @@ impl<'a, 'vir> TyUsePureWalker<'a, 'vir> {
             })
             .collect::<Vec<_>>();
         let inhabited = data.inhabited;
+        let did = data.did;
         let data = TyUsePureStructData {
             args: self.args_t,
             pure: *data.1,
         };
-        StructData::new(data, inhabited, fields)
+        StructData::new(data, inhabited, fields, did)
     }
 
     fn encode_enumlike(
@@ -211,6 +212,7 @@ impl<'a, 'vir> TyUsePureWalker<'a, 'vir> {
         data: &EnumData<'vir, (RustTyDatas, PureTyDatas)>,
         params: GParams<'vir>,
     ) -> EnumData<'vir, UsePureTyDatas> {
+        let did = data.did;
         let variants = data
             .variants
             .iter()
@@ -219,7 +221,7 @@ impl<'a, 'vir> TyUsePureWalker<'a, 'vir> {
                 VariantData::new(*variant.1, variant.inhabited, structlike)
             })
             .collect::<Vec<_>>();
-        EnumData::new(*data.1, data.inhabited, variants)
+        EnumData::new(*data.1, data.inhabited, variants, did)
     }
 }
 

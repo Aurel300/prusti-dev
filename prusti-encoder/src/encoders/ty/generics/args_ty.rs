@@ -37,19 +37,9 @@ impl TaskEncoder for GArgsTyEnc {
     task_encoder::encoder_cache!(GArgsTyEnc);
     type TaskDescription<'tcx> = GArgs<'tcx>;
     type OutputFullDependency<'vir> = GArgsTy<'vir>;
-    type OutputFullLocal<'vir> = Option<vir::Domain<'vir>>;
 
     fn task_to_key<'vir>(task: &Self::TaskDescription<'vir>) -> Self::TaskKey<'vir> {
         *task
-    }
-
-    fn emit_outputs<'vir>(program: &mut task_encoder::Program<'vir>) {
-        for dom in GArgsTyEnc::all_outputs_local_no_errors()
-            .into_iter()
-            .flatten()
-        {
-            program.add_domain(dom);
-        }
     }
 
     fn do_encode_full<'vir>(
@@ -58,11 +48,6 @@ impl TaskEncoder for GArgsTyEnc {
     ) -> EncodeFullResult<'vir, Self> {
         deps.emit_output_ref(*task_key, ())?;
         let params = deps.require_dep::<GenericParamsEnc>(task_key.context)?;
-        let mut builder = params::Builder {
-            functions: Vec::new(),
-            axioms: Vec::new(),
-            domain_name: "",
-        };
         let ty_args = task_key
             .args
             .iter()
@@ -72,7 +57,7 @@ impl TaskEncoder for GArgsTyEnc {
                 let decomp = vir::with_vcx(|vcx| {
                     RustTyDecomposition::from_ty(arg, vcx.tcx(), task_key.context)
                 });
-                params.ty_expr(deps, decomp, &mut builder)
+                params.ty_expr(deps, decomp)
             })
             .collect::<Vec<_>>();
         let const_args = task_key
@@ -101,21 +86,6 @@ impl TaskEncoder for GArgsTyEnc {
             ty_args: vcx.alloc_slice(&ty_args),
             const_args: vcx.alloc_slice(&const_args),
         });
-        if !builder.functions.is_empty() {
-            vir::with_vcx(|vcx| {
-                Ok((
-                    Some(vcx.mk_domain(
-                        ViperIdent::new(builder.domain_name),
-                        &[],
-                        vcx.alloc_slice(&builder.axioms),
-                        vcx.alloc_slice(&builder.functions),
-                        None,
-                    )),
-                    args,
-                ))
-            })
-        } else {
-            Ok((None, args))
-        }
+        Ok(((), args))
     }
 }

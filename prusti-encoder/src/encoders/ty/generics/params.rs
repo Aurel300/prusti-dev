@@ -11,7 +11,7 @@ use crate::encoders::{
     ty::{
         RustTyDecomposition,
         data::TySpecifics,
-        generics::{GArgsTyEnc, GParamVariant},
+        generics::{GArgsTyEnc, GParamVariant, traits::TraitEnc},
         lifted::TyConstructorEnc,
     },
 };
@@ -181,13 +181,6 @@ impl<'vir> From<DefId> for GParams<'vir> {
 /// `fn foo<T, U>(x: U)` into the Viper `method foo(x: Ref, T: Type, U: Type)`
 /// (handles the type parameters).
 pub struct GenericParamsEnc;
-
-pub struct Builder<'vir> {
-    pub axioms: Vec<vir::DomainAxiom<'vir>>,
-    pub functions: Vec<vir::DomainFunction<'vir>>,
-    pub domain_name: &'vir str,
-}
-
 #[derive(Debug, Clone)]
 pub struct GenericParams<'vir> {
     ty_args: &'vir [vir::TypeTyVal<'vir>],
@@ -258,64 +251,32 @@ impl<'vir> GenericParams<'vir> {
         &self,
         deps: &mut TaskEncoderDependencies<'vir, E>,
         ty: RustTyDecomposition<'vir>,
-        builder: &mut Builder<'vir>,
     ) -> vir::ExprTyVal<'vir> {
         if let TySpecifics::Param(()) = &ty.ty.specifics {
             let param = ty.args.expect_param();
             return match param {
                 GParamVariant::Param(p) => self.ty_exprs[self.map_idx(p.index).unwrap()],
-                GParamVariant::Alias(trait_name, type_name, assoc_type_substs) => {
-                    vir::with_vcx(|vcx| {
-                        let idn: FunctionIdn<'_, vir::TyVal, vir::TyVal> = FunctionIdn::new(
-                            ViperIdent::new(
-                                vcx.alloc_str(&format!("{}_Assoc_{}_func", trait_name, type_name)),
-                            ),
-                            vir::TYPE_TYVAL,
-                            vir::TYPE_TYVAL,
-                        );
-                        let assoc_type_func = vcx.mk_domain_function(idn, false, None);
-                        builder.functions.push(assoc_type_func);
-                        let mut axioms = assoc_type_substs
-                            .iter()
-                            .map(|(impl_type, assoc_type, impl_name)| {
-                                let impl_type_expr = self.ty_expr(
-                                    deps,
-                                    RustTyDecomposition::from_ty(
-                                        *impl_type,
-                                        vcx.tcx(),
-                                        ty.args.context,
-                                    ),
-                                    builder,
-                                );
-                                let assoc_type_expr = self.ty_expr(
-                                    deps,
-                                    RustTyDecomposition::from_ty(
-                                        *assoc_type,
-                                        vcx.tcx(),
-                                        ty.args.context,
-                                    ),
-                                    builder,
-                                );
-                                vcx.alloc(DomainAxiomData {
-                                    name: vcx.alloc_str(&format!(
-                                        "{}_Assoc_{}_{}",
-                                        trait_name, type_name, impl_name
-                                    )),
-                                    expr: vir::expr! {([idn](impl_type_expr)) == (assoc_type_expr)},
-                                })
-                            })
-                            .collect::<Vec<_>>();
-                        builder.axioms.append(&mut axioms);
-                        builder.domain_name =
-                            vcx.alloc_str(&format!("{}_Assoc_{}", trait_name, type_name));
-                        match ty.ty.data.params.params[0].expect_ty().kind() {
-                            ty::TyKind::Param(p) => {
-                                (idn)(self.ty_exprs[self.map_idx(p.index).unwrap()])
-                            }
-                            _ => unreachable!(),
+                GParamVariant::Alias(assoc_item_did) => vir::with_vcx(|vcx| {
+                    let tcx = vcx.tcx();
+                    let trait_data = deps
+                        .require_dep::<TraitEnc>(
+                            tcx.associated_item(assoc_item_did).container_id(tcx),
+                        )
+                        .unwrap();
+                    let assoc_funs = trait_data
+                        .type_did_fun_mapping
+                        .iter()
+                        .filter(|(assoc_did, _)| *assoc_did == assoc_item_did)
+                        .map(|(_, assoc_fun)| assoc_fun)
+                        .collect::<Vec<_>>();
+                    assert!(assoc_funs.len() == 1);
+                    match ty.ty.data.params.params[0].expect_ty().kind() {
+                        ty::TyKind::Param(p) => {
+                            (assoc_funs[0])(self.ty_exprs[self.map_idx(p.index).unwrap()])
                         }
-                    })
-                }
+                        _ => unreachable!(),
+                    }
+                }),
             };
         }
         let ty_constructor = deps

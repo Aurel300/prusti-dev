@@ -196,12 +196,13 @@ impl<'a, 'vir> TyUseImpureWalker<'a, 'vir> {
             })
             .collect::<Vec<_>>();
         let inhabited = data.inhabited;
+        let did = data.did;
         let data = TyUseImpureStructData {
             args: self.args_t,
             ref_to_pred,
             impure: *data.1,
         };
-        StructData::new(data, inhabited, fields)
+        StructData::new(data, inhabited, fields, did)
     }
 
     fn encode_enumlike(
@@ -219,11 +220,12 @@ impl<'a, 'vir> TyUseImpureWalker<'a, 'vir> {
             })
             .collect::<Vec<_>>();
         let inhabited = data.inhabited;
+        let did = data.did;
         let data = TyUseImpureEnumData {
             args: self.args_t,
             impure: *data.1,
         };
-        EnumData::new(data, inhabited, variants)
+        EnumData::new(data, inhabited, variants, did)
     }
 }
 

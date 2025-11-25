@@ -6,6 +6,8 @@ use std::{
 
 use prusti_rustc_interface::abi;
 
+use prusti_rustc_interface::span::def_id::DefId;
+
 pub trait TyDatas<'vir>: Debug + Clone + Copy {
     type TyData: Debug + Clone + 'vir = ();
 
@@ -46,12 +48,14 @@ pub struct StructData<'vir, D: TyDatas<'vir>> {
     pub data: D::StructData,
     pub inhabited: bool,
     pub fields: Vec<D::FieldData>,
+    pub did: Option<DefId>,
 }
 
 pub struct EnumData<'vir, D: TyDatas<'vir>> {
     pub data: D::EnumData,
     pub inhabited: bool,
     pub variants: Vec<VariantData<'vir, D>>,
+    pub did: Option<DefId>,
 }
 
 pub struct VariantData<'vir, D: TyDatas<'vir>> {
@@ -99,16 +103,22 @@ impl<'vir, D: TyDatas<'vir>> TySpecifics<'vir, D> {
         Self::MutRef(data)
     }
 
-    pub fn mk_structlike(data: D::StructData, inhabited: bool, fields: Vec<D::FieldData>) -> Self {
-        Self::StructLike(StructData::new(data, inhabited, fields))
+    pub fn mk_structlike(
+        data: D::StructData,
+        inhabited: bool,
+        fields: Vec<D::FieldData>,
+        did: Option<DefId>,
+    ) -> Self {
+        Self::StructLike(StructData::new(data, inhabited, fields, did))
     }
 
     pub fn mk_enumlike(
         data: D::EnumData,
         inhabited: bool,
         variants: Vec<VariantData<'vir, D>>,
+        did: Option<DefId>,
     ) -> Self {
-        Self::EnumLike(EnumData::new(data, inhabited, variants))
+        Self::EnumLike(EnumData::new(data, inhabited, variants, did))
     }
 
     pub fn is_param(&self) -> bool {
@@ -253,6 +263,7 @@ impl<'vir, D: TyDatas<'vir>> StructData<'vir, D> {
             data: (&self.data, &other.data),
             inhabited: self.inhabited,
             fields: fields.collect(),
+            did: self.did,
         }
     }
 }
@@ -269,6 +280,7 @@ impl<'vir, D: TyDatas<'vir>> EnumData<'vir, D> {
             data: (&self.data, &other.data),
             inhabited: self.inhabited,
             variants: variants.map(|(v1, v2)| v1.zip(v2)).collect(),
+            did: self.did,
         }
     }
 }
@@ -291,10 +303,10 @@ impl<'vir, D1: TyDatas<'vir>, D2: TyDatas<'vir>> TyDatas<'vir> for (D1, D2) {
 // Deref implementations
 
 macro_rules! impls {
-    ($container:ident$( { $field:ident: $ty:ty })?) => {
+    ($container:ident$( { $field:ident: $ty:ty $(, $did:ident)?})?) => {
 impl<'vir, D: TyDatas<'vir>> $container<'vir, D> {
-    pub fn new(data: D::$container, inhabited: bool $(, $field: $ty)?) -> Self {
-        Self { data, inhabited, $($field,)? }
+    pub fn new(data: D::$container, inhabited: bool $(, $field: $ty $(, $did: Option<DefId>)?)?) -> Self {
+        Self { data, inhabited, $($field, $($did,)?)? }
     }
 }
 
@@ -306,7 +318,7 @@ impl<'vir, D: TyDatas<'vir>> Debug for $container<'vir, D> {
 
 impl<'vir, D: TyDatas<'vir>> Clone for $container<'vir, D> {
     fn clone(&self) -> Self {
-        Self { data: self.data.clone(), inhabited: self.inhabited, $($field: self.$field.clone())? }
+        Self { data: self.data.clone(), inhabited: self.inhabited, $($field: self.$field.clone() $(, $did: self.$did.clone())?)? }
     }
 }
 
@@ -368,8 +380,8 @@ impl<'vir, D: TyDatas<'vir>> $container<'vir, D> {
 
 impls!(TyData { specifics: TySpecifics<'vir, D> });
 impl_zip!(TyData.specifics);
-impls!(StructData { fields: Vec<D::FieldData> });
-impls!(EnumData { variants: Vec<VariantData<'vir, D>> });
+impls!(StructData { fields: Vec<D::FieldData>, did });
+impls!(EnumData { variants: Vec<VariantData<'vir, D>>, did });
 impls!(VariantData { inner: StructData<'vir, D> });
 impl_zip!(VariantData.inner);
 

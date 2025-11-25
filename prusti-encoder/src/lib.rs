@@ -21,7 +21,7 @@ use crate::encoders::{
     Impure, Pure,
     custom::PairUseEnc,
     ty::{
-        generics::{GArgsCastEnc, GArgsTyEnc, trait_impls::TraitImplEnc, traits::TraitEnc},
+        generics::{GArgsCastEnc, trait_impls::TraitImplEnc, traits::TraitEnc},
         interpretation::bitvec::BitVecEnc,
         lifted::{TyConstructorEnc, TypeOfEnc},
     },

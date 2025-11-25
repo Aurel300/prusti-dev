@@ -1,6 +1,6 @@
 use prusti_rustc_interface::{middle::ty::AssocKind, span::def_id::DefId};
 use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
-use vir::{Domain, FunctionIdn, ViperIdent};
+use vir::{Domain, ViperIdent};
 
 use crate::encoders::ty::{
     RustTyDecomposition,
@@ -50,7 +50,7 @@ impl TaskEncoder for TraitImplEnc {
                 .for_each(|impl_item| {
                     trait_data
                         .type_did_fun_mapping
-                        .into_iter()
+                        .iter()
                         .filter(|(assoc_did, _)| Some(*assoc_did) == impl_item.trait_item_def_id)
                         .for_each(|(_, assoc_fun)| {
                             let impl_type_expr = params.ty_expr(
@@ -73,8 +73,8 @@ impl TaskEncoder for TraitImplEnc {
                                 ViperIdent::new(vcx.alloc_str(&format!(
                                     "{}_Assoc_{}_{}",
                                     trait_data.trait_name,
-                                    tcx.item_name(impl_item.def_id).to_string(),
-                                    tcx.type_of(task_key.0).instantiate_identity().to_string()
+                                    tcx.item_name(impl_item.def_id),
+                                    tcx.type_of(task_key.0).instantiate_identity()
                                 ))),
                                 vir::expr! {([assoc_fun](impl_type_expr)) == (assoc_type_expr)},
                             ))
@@ -85,7 +85,7 @@ impl TaskEncoder for TraitImplEnc {
                 ViperIdent::new(vcx.alloc_str(&format!(
                     "t_{}_{}",
                     trait_data.trait_name,
-                    tcx.type_of(task_key.0).instantiate_identity().to_string()
+                    tcx.type_of(task_key.0).instantiate_identity()
                 ))),
                 &[],
                 vcx.alloc_slice(&axs),

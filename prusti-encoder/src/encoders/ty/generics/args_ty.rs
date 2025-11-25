@@ -1,11 +1,10 @@
 use prusti_rustc_interface::middle::ty;
 use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
-use vir::ViperIdent;
 
 use crate::encoders::{
     ConstEnc,
     r#const::ConstEncTask,
-    ty::{RustTyDecomposition, generics::params},
+    ty::RustTyDecomposition,
 };
 
 use super::{GArgs, GenericParamsEnc};

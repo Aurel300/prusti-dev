@@ -1,7 +1,5 @@
 use prusti_rustc_interface::{middle::ty, span::def_id::DefId};
-use task_encoder::{TaskEncoder, TaskEncoderDependencies};
 
-use crate::encoders::ty::generics::trait_impls::TraitImplEnc;
 
 use super::GParams;
 

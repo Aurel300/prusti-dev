@@ -4,7 +4,7 @@ use prusti_rustc_interface::{
     span::{def_id::DefId, symbol},
 };
 use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
-use vir::{CastType, DomainAxiomData, FunctionIdn, HasType, ViperIdent};
+use vir::{CastType, HasType};
 
 use crate::encoders::{
     TyUsePureEnc,

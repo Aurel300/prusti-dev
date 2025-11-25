@@ -1,6 +1,6 @@
 use prusti_rustc_interface::{middle::ty::AssocKind, span::def_id::DefId};
 use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
-use vir::{Domain, ViperIdent, vir_format_identifier};
+use vir::{Domain, vir_format_identifier};
 
 use crate::encoders::ty::{
     RustTyDecomposition,

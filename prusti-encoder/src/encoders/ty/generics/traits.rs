@@ -1,6 +1,6 @@
 use prusti_rustc_interface::{middle::ty::AssocKind, span::def_id::DefId};
 use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
-use vir::{FunctionIdn, ViperIdent, vir_format_identifier};
+use vir::{FunctionIdn, vir_format_identifier};
 
 pub struct TraitEnc;
 

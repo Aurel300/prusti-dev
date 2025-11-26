@@ -8,7 +8,7 @@ pub mod viper_tuple;
 
 pub mod lifted;
 pub mod generics;
-mod data;
+pub mod data;
 mod rust_ty;
 pub mod interpretation;
 

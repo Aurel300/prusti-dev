@@ -1,11 +1,11 @@
 use crate::encoders::{
-    FunctionCallEnc, MirLocalDefEnc, MirLocalDefEncOutput, MirLocalDefEncTask, TyUseImpureEnc,
-    ViperTupleEnc,
+    FunctionCallEnc, MirLocalDefEnc, MirLocalDefEncOutput, MirLocalDefEncTask, Pure,
+    TyUseImpureEnc, ViperTupleEnc,
     mir_fn::{CallTaskDescription, RustSignature},
     mir_shared::PureRvalueEnc,
     ty::{
-        RustTyDecomposition,
-        generics::GParams,
+        LazyRustTy, RustTyDecomposition,
+        generics::{GArgs, GArgsCastEnc, GParams},
         use_pure::{TyUsePure, TyUsePureEnc},
     },
 };
@@ -22,7 +22,7 @@ use prusti_rustc_interface::{
         mir,
         ty::{self, Binder, FnSig, TyKind},
     },
-    span::{Span, def_id::DefId, source_map::Spanned},
+    span::{Span, def_id::DefId, source_map::Spanned, symbol},
 };
 use std::{collections::HashMap, fmt};
 use task_encoder::{EncodeFullError, EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
@@ -835,15 +835,35 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                             .unwrap()
                             .expect_mutref();
                         let val_expr = if self.in_mode() || self.kind == PureKind::Spec(None) {
-                            let inner_ty = vir::with_vcx(|vcx| {
-                                RustTyDecomposition::from_ty(*inner_ty, vcx.tcx(), self.context)
-                            });
-                            let inner_ty_out =
-                                self.deps.require_dep::<TyUseImpureEnc>(inner_ty).unwrap();
+                            let param_ty =
+                                ty::Ty::new_param(self.vcx.tcx(), 0, symbol::Symbol::intern("T"));
+                            let param_ident_substs = self.vcx.tcx().mk_args(&[param_ty.into()]);
+                            let param_substs = self.vcx.tcx().mk_args(&[(*inner_ty).into()]);
+                            let param_params = GParams::empty_env(param_ident_substs);
+                            let param_decomp = RustTyDecomposition::from_ty(
+                                param_ty,
+                                self.vcx.tcx(),
+                                param_params,
+                            );
+                            let param_ty_with_concrete_args = RustTyDecomposition {
+                                ty: param_decomp.ty,
+                                args: GArgs::new(self.context, param_substs),
+                            };
+                            let param_ty_enc = self
+                                .deps
+                                .require_dep::<TyUseImpureEnc>(param_ty_with_concrete_args)
+                                .unwrap();
+                            let normalized_inner_ty = LazyRustTy::new(param_ty)
+                                .decompose_compare_normalize(
+                                    param_params,
+                                    GArgs::new(self.context, param_substs),
+                                );
+                            let caster = self
+                                .deps
+                                .require_dep::<GArgsCastEnc<Pure>>(normalized_inner_ty)
+                                .unwrap();
                             let ref_expr = e_ty.deref_access(encoded_place.snap.downcast_ty());
-                            let ref_val_expr =
-                                inner_ty_out.ref_to_snap(ref_expr);
-                            ref_val_expr
+                            caster.cast_to_caller_ctx(param_ty_enc.ref_to_snap(ref_expr))
                         } else {
                             e_ty.value_access(encoded_place.snap.downcast_ty())
                         };

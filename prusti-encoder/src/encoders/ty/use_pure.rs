@@ -1,13 +1,15 @@
-use task_encoder::{EncodeFullResult, TaskEncoder};
-use vir::CastType;
+use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
+use vir::{CastType, VirCtxt};
 
 use crate::encoders::{
     Pure,
     ty::{
-        LazyRustTy, RustTyDatas,
-        generics::{GArgs, GArgsCastEnc, GArgsTyEnc, GParams},
+        LazyRustTy, RustTyDatas, RustTyDecomposition, RustTyNormalized, generics::{Casters, GArgs, GArgsCastEnc, GArgsTyEnc, GParams}
     },
 };
+
+use prusti_rustc_interface::middle::ty;
+use prusti_rustc_interface::span::symbol;
 
 use super::{
     TyUseEnc, UseTyDatas,

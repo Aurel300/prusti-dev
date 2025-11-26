@@ -842,13 +842,8 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                                 self.deps.require_dep::<TyUseImpureEnc>(inner_ty).unwrap();
                             let ref_expr = e_ty.deref_access(encoded_place.snap.downcast_ty());
                             let ref_val_expr =
-                                inner_ty_out.ref_to_snap(unsafe {
-                                    std::mem::transmute::<
-                                        vir::ExprGenRef<'vir, _, _>,
-                                        vir::ExprRef<'vir>,
-                                    >(ref_expr)
-                                }); // TODO: hack...
-                            ref_val_expr.lift()
+                                inner_ty_out.ref_to_snap(ref_expr);
+                            ref_val_expr
                         } else {
                             e_ty.value_access(encoded_place.snap.downcast_ty())
                         };

@@ -268,8 +268,11 @@ impl<'vir> TyUseImpureData<'vir> {
     }
 
     /// Calls the predicate (heap) dependent snapshot construction function.
-    pub fn ref_to_snap(&self, self_ref: vir::ExprRef<'vir>) -> vir::ExprSnap<'vir> {
-        (self.impure.ref_to_snap)(self_ref, self.args.get_ty(), self.args.get_const())
+    pub fn ref_to_snap<Curr, Next>(
+        &self,
+        self_ref: vir::ExprGenRef<'vir, Curr, Next>,
+    ) -> vir::ExprGenSnap<'vir, Curr, Next> {
+        self.impure.ref_to_snap.call()(self_ref, self.args.get_ty(), self.args.get_const())
     }
 
     pub fn snapshot(&self) -> vir::TypeSnap<'vir> {

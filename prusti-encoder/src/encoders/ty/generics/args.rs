@@ -12,7 +12,7 @@ pub struct GArgs<'tcx> {
 
 pub enum GParamVariant {
     Param(ty::ParamTy),
-    Alias(DefId),
+    Alias(DefId, u32),
 }
 
 impl<'tcx> GArgs<'tcx> {
@@ -43,7 +43,13 @@ impl<'tcx> GArgs<'tcx> {
         assert_eq!(self.args.len(), 1);
         match self.args[0].expect_ty().kind() {
             ty::TyKind::Param(p) => GParamVariant::Param(*p),
-            ty::TyKind::Alias(_k, t) => GParamVariant::Alias(t.def_id),
+            ty::TyKind::Alias(_k, t) => {
+                let alias_arg_ty = t.args[0].as_type().unwrap().kind();
+                match alias_arg_ty {
+                    ty::TyKind::Param(p) => GParamVariant::Alias(t.def_id, p.index),
+                    _ => unreachable!(),
+                }
+            }
             other => panic!("expected type parameter, {other:?}"),
         }
     }

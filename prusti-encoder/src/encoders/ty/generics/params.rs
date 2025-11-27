@@ -256,7 +256,7 @@ impl<'vir> GenericParams<'vir> {
             let param = ty.args.expect_param();
             return match param {
                 GParamVariant::Param(p) => self.ty_exprs[self.map_idx(p.index).unwrap()],
-                GParamVariant::Alias(assoc_item_did) => vir::with_vcx(|vcx| {
+                GParamVariant::Alias(assoc_item_did, idx) => vir::with_vcx(|vcx| {
                     let tcx = vcx.tcx();
                     let trait_data = deps
                         .require_dep::<TraitEnc>(
@@ -270,12 +270,7 @@ impl<'vir> GenericParams<'vir> {
                         .map(|(_, assoc_fun)| assoc_fun)
                         .collect::<Vec<_>>();
                     assert!(assoc_funs.len() == 1);
-                    match ty.ty.data.params.params[0].expect_ty().kind() {
-                        ty::TyKind::Param(p) => {
-                            (assoc_funs[0])(self.ty_exprs[self.map_idx(p.index).unwrap()])
-                        }
-                        _ => unreachable!(),
-                    }
+                    (assoc_funs[0])(self.ty_exprs[self.map_idx(idx).unwrap()])
                 }),
             };
         }

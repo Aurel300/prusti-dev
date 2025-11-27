@@ -31,7 +31,7 @@ impl TaskEncoder for TraitImplEnc {
     ) -> EncodeFullResult<'vir, Self> {
         deps.emit_output_ref(*task_key, ())?;
 
-        let params = deps.require_dep::<GenericParamsEnc>(task_key.1)?;
+        let params = deps.require_dep::<GenericParamsEnc>(GParams::from(task_key.0))?;
 
         vir::with_vcx(|vcx| {
             let tcx = vcx.tcx();
@@ -48,7 +48,7 @@ impl TaskEncoder for TraitImplEnc {
 
             let struct_ty_expr = params.ty_expr(
                 deps,
-                RustTyDecomposition::from_ty(struct_ty, tcx, task_key.1),
+                RustTyDecomposition::from_ty(struct_ty, tcx, GParams::from(task_key.0)),
             );
 
             axs.push(vcx.mk_domain_axiom(
@@ -65,12 +65,15 @@ impl TaskEncoder for TraitImplEnc {
                         .iter()
                         .filter(|(assoc_did, _)| Some(*assoc_did) == impl_item.trait_item_def_id)
                         .for_each(|(_, assoc_fun)| {
+                            let params = deps
+                                .require_dep::<GenericParamsEnc>(GParams::from(impl_item.def_id))
+                                .unwrap();
                             let assoc_type_expr = params.ty_expr(
                                 deps,
                                 RustTyDecomposition::from_ty(
                                     tcx.type_of(impl_item.def_id).instantiate_identity(),
                                     tcx,
-                                    task_key.1,
+                                    GParams::from(impl_item.def_id),
                                 ),
                             );
                             axs.push(vcx.mk_domain_axiom(

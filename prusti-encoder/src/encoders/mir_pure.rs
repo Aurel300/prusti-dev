@@ -4,8 +4,8 @@ use crate::encoders::{
     mir_fn::{CallTaskDescription, RustSignature},
     mir_shared::PureRvalueEnc,
     ty::{
-        LazyRustTy, RustTyDecomposition,
-        generics::{GArgs, GArgsCastEnc, GParams},
+        LazyRustTy, RustTy, RustTyData, RustTyDecomposition, RustTyNormalized,
+        generics::{GArgs, GArgsCastEnc, GArgsTyEnc, GParams, GenericParamsEnc},
         use_pure::{TyUsePure, TyUsePureEnc},
     },
 };
@@ -420,8 +420,8 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
     ) -> ExprRetAny<'vir, T> {
         update.binds.iter().rfold(expr, |expr, bind| match bind {
             UpdateBind::Local(_, version, val) => {
-                self.vcx
-                    .mk_let_expr(version.initialised.unwrap(), val, expr)
+                let decl = version.initialised.unwrap();
+                self.vcx.mk_let_expr(decl, val, expr)
             }
             UpdateBind::Phi(version, val) => {
                 self.vcx
@@ -834,39 +834,8 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                             .require_dep::<TyUsePureEnc>(ty_task)
                             .unwrap()
                             .expect_mutref();
-                        let val_expr = if self.in_mode() || self.kind == PureKind::Spec(None) {
-                            let param_ty =
-                                ty::Ty::new_param(self.vcx.tcx(), 0, symbol::Symbol::intern("T"));
-                            let param_ident_substs = self.vcx.tcx().mk_args(&[param_ty.into()]);
-                            let param_substs = self.vcx.tcx().mk_args(&[(*inner_ty).into()]);
-                            let param_params = GParams::empty_env(param_ident_substs);
-                            let param_decomp = RustTyDecomposition::from_ty(
-                                param_ty,
-                                self.vcx.tcx(),
-                                param_params,
-                            );
-                            let param_ty_with_concrete_args = RustTyDecomposition {
-                                ty: param_decomp.ty,
-                                args: GArgs::new(self.context, param_substs),
-                            };
-                            let param_ty_enc = self
-                                .deps
-                                .require_dep::<TyUseImpureEnc>(param_ty_with_concrete_args)
-                                .unwrap();
-                            let normalized_inner_ty = LazyRustTy::new(param_ty)
-                                .decompose_compare_normalize(
-                                    param_params,
-                                    GArgs::new(self.context, param_substs),
-                                );
-                            let caster = self
-                                .deps
-                                .require_dep::<GArgsCastEnc<Pure>>(normalized_inner_ty)
-                                .unwrap();
-                            let ref_expr = e_ty.deref_access(encoded_place.snap.downcast_ty());
-                            caster.cast_to_caller_ctx(param_ty_enc.ref_to_snap(ref_expr))
-                        } else {
-                            e_ty.value_access(encoded_place.snap.downcast_ty())
-                        };
+                        let val_expr =
+                            e_ty.deref_snap(encoded_place.snap.downcast_ty());
                         EncodedPlace::new(val_expr, encoded_place.place_ref)
                     }
                     _ => unreachable!(),

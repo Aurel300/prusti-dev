@@ -14,7 +14,7 @@ use vir::{
     DomainIdnSnap, FunctionIdn, Type,
 };
 
-use crate::encoders::Pure;
+use crate::encoders::{Pure, ty::impure::TyImpure};
 
 use super::{
     RustTy, ViperTyDatas,
@@ -222,7 +222,7 @@ impl TaskEncoder for TyPureEnc {
                 }
                 TySpecifics::MutRef(mutref) => {
                     let builder = builder.set_adt_builder();
-                    TySpecifics::MutRef(super::kinds::mutref::ty_pure(mutref, deps, builder)?)
+                    TySpecifics::MutRef(super::kinds::mutref::ty_pure(mutref, task_key.params, deps, builder)?)
                 }
                 TySpecifics::StructLike(structlike) => {
                     let builder = builder.set_adt_builder();

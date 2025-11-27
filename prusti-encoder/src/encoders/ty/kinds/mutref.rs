@@ -1,14 +1,13 @@
 use crate::encoders::ty::{
-    RustMutRef,
-    impure::{PredicateBuilder, TyImpureEnc, TyImpureMutRef, TyImpureMutRefData},
-    pure::{AdtBuilder, TyPureEnc, TyPureMutRef, TyPureMutRefData},
+    RustMutRef, generics::GParams, impure::{PredicateBuilder, TyImpureEnc, TyImpureMutRef, TyImpureMutRefData}, pure::{AdtBuilder, TyPureEnc, TyPureMutRef, TyPureMutRefData}
 };
 use task_encoder::{EncodeFullError, TaskEncoderDependencies};
 use vir::{CastType, HasType};
 
 pub(crate) fn ty_pure<'vir>(
-    _data: &RustMutRef<'vir>,
-    _deps: &mut TaskEncoderDependencies<'vir, TyPureEnc>,
+    data: &RustMutRef<'vir>,
+    params: GParams<'vir>,
+    deps: &mut TaskEncoderDependencies<'vir, TyPureEnc>,
     builder: &mut AdtBuilder<'vir>,
 ) -> Result<TyPureMutRef<'vir>, EncodeFullError<'vir, TyPureEnc>> {
     let (field_snaps_to_snap, field_access) =

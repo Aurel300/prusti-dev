@@ -6,9 +6,9 @@ struct T {
     f: i32,
 }
 
-#[ensures(old(x.f) == result)]
-fn extract(x: &mut T) -> i32 {
-    x.f
+#[ensures(old(*x) == result)]
+fn extract(x: &mut i32) -> i32 {
+    *x
 }
 
 fn main() {

@@ -4,12 +4,13 @@ use vir::{CastType, VirCtxt};
 use crate::encoders::{
     Pure,
     ty::{
-        LazyRustTy, RustTyDatas, RustTyDecomposition, RustTyNormalized, generics::{Casters, GArgs, GArgsCastEnc, GArgsTyEnc, GParams}
+        LazyRustTy, RustTyDatas, RustTyDecomposition, RustTyNormalized,
+        generics::{Casters, GArgs, GArgsCastEnc, GArgsTyEnc, GParams, GenericParams},
+        impure::{TyImpure, TyImpureEnc},
     },
 };
 
-use prusti_rustc_interface::middle::ty;
-use prusti_rustc_interface::span::symbol;
+use prusti_rustc_interface::{middle::ty, span::symbol};
 
 use super::{
     TyUseEnc, UseTyDatas,
@@ -45,10 +46,12 @@ pub struct TyUsePureImmRef<'vir> {
     pure: <PureTyDatas as TyDatas<'vir>>::ImmRefData,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct TyUsePureMutRef<'vir> {
+    snap_ty: vir::ExprTyVal<'vir>,
     caster: FieldCaster<'vir>,
     pure: <PureTyDatas as TyDatas<'vir>>::MutRefData,
+    inner: TyImpure<'vir>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -160,8 +163,13 @@ impl<'a, 'vir> TyUsePureWalker<'a, 'vir> {
             TySpecifics::MutRef(data) => {
                 let caster = self.encode_normalized(*data.0, ty.0.params);
                 TySpecifics::mk_mutref(TyUsePureMutRef {
+                    snap_ty: self.args_t.get_ty()[0],
                     caster,
                     pure: *data.1,
+                    inner: self
+                        .deps
+                        .require_dep::<TyImpureEnc>(data.0.decompose(ty.0.params).ty)
+                        .unwrap(),
                 })
             }
             TySpecifics::StructLike(data) => {
@@ -272,6 +280,18 @@ impl<'vir> TyUsePureMutRef<'vir> {
         snap: vir::ExprGenCSnap<'vir, Curr, Next>,
     ) -> vir::ExprGenRef<'vir, Curr, Next> {
         self.pure.deref_access.call()(snap)
+    }
+
+    pub fn deref_snap<Curr, Next>(
+        &self,
+        snap: vir::ExprGenCSnap<'vir, Curr, Next>,
+    ) -> vir::ExprGenSnap<'vir, Curr, Next> {
+        self.caster
+            .cast_to_caller_ctx(self.inner.ref_to_snap.call()(
+                self.pure.deref_access.call()(snap),
+                &[self.snap_ty.lazy()],
+                &[],
+            ))
     }
 
     pub fn value_access<Curr, Next>(

@@ -660,8 +660,12 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                     }
                 }
             }
-            RepackOp::Weaken(weaken) => self.pcg_weaken(weaken.place()),
-            ignored_op @ RepackOp::RegainLoanedCapability(..) => {
+            RepackOp::Weaken(weaken)
+                if weaken.from_cap().is_exclusive() && weaken.to_cap().is_write() =>
+            {
+                self.pcg_weaken(weaken.place())
+            }
+            ignored_op @ (RepackOp::RegainLoanedCapability(..) | RepackOp::Weaken(..)) => {
                 self.stmt(self.vcx.mk_comment_stmt(vir::vir_format!(
                     self.vcx,
                     "ignored repack op: {ignored_op:?}"

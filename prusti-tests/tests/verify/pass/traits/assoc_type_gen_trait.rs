@@ -28,7 +28,7 @@ impl<T, T2> MyTrait<T, T2> for St1<T> {
 
 impl<T> MyTrait<T, T> for St2<T> {
     type SomeType = u64;
-    type SomeOtherType = T;
+    type SomeOtherType = SomeWrapper<T>;
 
     fn gen(self) -> T{
         self.y
@@ -37,5 +37,9 @@ impl<T> MyTrait<T, T> for St2<T> {
 
 fn bar() {
     foo::<f32, St1<f32>, u32>(5.2, 6, St1 {x: 5.5});
-    foo::<bool, St2<bool>, bool>(5, false, St2 {y: true});
+    foo::<bool, St2<bool>, bool>(5, SomeWrapper {val: false}, St2 {y: true});
+}
+
+struct SomeWrapper<T> {
+    val: T
 }

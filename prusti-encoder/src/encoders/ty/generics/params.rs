@@ -1,6 +1,9 @@
 use prusti_interface::specs::typed::ExternSpecKind;
 use prusti_rustc_interface::{
-    middle::ty,
+    middle::{
+        ty,
+        ty::{ParamTy, TyKind},
+    },
     span::{def_id::DefId, symbol},
 };
 use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
@@ -176,6 +179,13 @@ impl<'vir> From<DefId> for GParams<'vir> {
     }
 }
 
+fn expect_param(kind: &TyKind) -> ParamTy {
+    match kind {
+        TyKind::Param(p) => *p,
+        _ => unreachable!(),
+    }
+}
+
 /// Handles everything relating to the encoding of generic parameters (both for
 /// Rust functions and type definitions). Used to turn e.g. the Rust function
 /// `fn foo<T, U>(x: U)` into the Viper `method foo(x: Ref, T: Type, U: Type)`
@@ -256,21 +266,27 @@ impl<'vir> GenericParams<'vir> {
             let param = ty.args.expect_param();
             return match param {
                 GParamVariant::Param(p) => self.ty_exprs[self.map_idx(p.index).unwrap()],
-                GParamVariant::Alias(assoc_item_did, idx) => vir::with_vcx(|vcx| {
+                GParamVariant::Alias(a) => vir::with_vcx(|vcx| {
                     let tcx = vcx.tcx();
-                    let trait_data = deps
-                        .require_dep::<TraitEnc>(
-                            tcx.associated_item(assoc_item_did).container_id(tcx),
-                        )
-                        .unwrap();
+                    let trait_did = tcx.associated_item(a.def_id).container_id(tcx);
+                    let trait_data = deps.require_dep::<TraitEnc>(trait_did).unwrap();
                     let assoc_funs = trait_data
                         .type_did_fun_mapping
                         .iter()
-                        .filter(|(assoc_did, _)| *assoc_did == assoc_item_did)
+                        .filter(|(assoc_did, _)| *assoc_did == a.def_id)
                         .map(|(_, assoc_fun)| assoc_fun)
                         .collect::<Vec<_>>();
                     assert!(assoc_funs.len() == 1);
-                    (assoc_funs[0])(self.ty_exprs[self.map_idx(idx).unwrap()])
+                    let tys = &a
+                        .args
+                        .iter()
+                        .map(|arg| {
+                            self.ty_exprs[self
+                                .map_idx(expect_param(arg.expect_ty().kind()).index)
+                                .unwrap()]
+                        })
+                        .collect::<Vec<_>>();
+                    (assoc_funs[0])(tys)
                 }),
             };
         }

@@ -2,13 +2,15 @@ use prusti_rustc_interface::{middle::ty::AssocKind, span::def_id::DefId};
 use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 use vir::{FunctionIdn, vir_format_identifier};
 
+use crate::encoders::ty::generics::{GParams, GenericParamsEnc};
+
 pub struct TraitEnc;
 
 #[derive(Debug, Clone, Copy)]
 pub struct TraitData<'vir> {
     pub trait_name: &'vir str,
-    pub type_did_fun_mapping: &'vir [(DefId, FunctionIdn<'vir, vir::TyVal, vir::TyVal>)],
-    pub impl_fun: FunctionIdn<'vir, vir::TyVal, vir::Bool>,
+    pub type_did_fun_mapping: &'vir [(DefId, FunctionIdn<'vir, vir::ManyTyVal, vir::TyVal>)],
+    pub impl_fun: FunctionIdn<'vir, vir::ManyTyVal, vir::Bool>,
 }
 
 impl TaskEncoder for TraitEnc {
@@ -36,6 +38,7 @@ impl TaskEncoder for TraitEnc {
         deps.emit_output_ref(*task_key, ())?;
         vir::with_vcx(|vcx| {
             let tcx = vcx.tcx();
+            let params = deps.require_dep::<GenericParamsEnc>(GParams::from(*task_key))?;
             let trait_name = vcx.alloc_str(tcx.item_name(task_key).as_str());
             let type_did_fun_mapping = tcx
                 .associated_items(task_key)
@@ -51,7 +54,7 @@ impl TaskEncoder for TraitEnc {
                                 trait_name,
                                 tcx.item_name(item.def_id),
                             ),
-                            vir::TYPE_TYVAL,
+                            vcx.alloc_slice(&(vec![vir::TYPE_TYVAL; params.ty_exprs().len()])),
                             vir::TYPE_TYVAL,
                         ),
                     )
@@ -63,7 +66,7 @@ impl TaskEncoder for TraitEnc {
                 .collect::<Vec<_>>();
             let impl_fun = FunctionIdn::new(
                 vir_format_identifier!(vcx, "{}_impl", trait_name),
-                vir::TYPE_TYVAL,
+                vcx.alloc_slice(&(vec![vir::TYPE_TYVAL; params.ty_exprs().len()])),
                 vir::TYPE_BOOL,
             );
             let impl_fun_data = vcx.mk_domain_function(impl_fun, false, None);

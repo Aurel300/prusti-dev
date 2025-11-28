@@ -1,6 +1,6 @@
 use prusti_rustc_interface::{middle::ty::AssocKind, span::def_id::DefId};
 use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
-use vir::{Domain, vir_format_identifier};
+use vir::{CastType, Domain, vir_format_identifier};
 
 use crate::encoders::ty::{
     RustTyDecomposition,
@@ -32,6 +32,7 @@ impl TaskEncoder for TraitImplEnc {
         deps.emit_output_ref(*task_key, ())?;
 
         let params = deps.require_dep::<GenericParamsEnc>(GParams::from(task_key.0))?;
+        let trait_params = params.ty_exprs();
 
         vir::with_vcx(|vcx| {
             let tcx = vcx.tcx();
@@ -51,9 +52,20 @@ impl TaskEncoder for TraitImplEnc {
                 RustTyDecomposition::from_ty(struct_ty, tcx, GParams::from(task_key.0)),
             );
 
+            let mut vec = Vec::new();
+            vec.push(struct_ty_expr);
+            vec.extend(trait_params.to_owned());
+            let trait_tys = &vec;
+
+            let impl_fun = trait_data.impl_fun;
+            let trait_ty_decls = params
+                .ty_decls()
+                .iter()
+                .map(|dec| dec.upcast_ty())
+                .collect::<Vec<_>>();
             axs.push(vcx.mk_domain_axiom(
                 vir_format_identifier!(vcx, "{}_impl_{}", trait_data.trait_name, struct_ty),
-                vir::expr! {[trait_data.impl_fun](struct_ty_expr)},
+                vir::expr! {forall ..[trait_ty_decls] :: {[impl_fun(trait_tys)]} [impl_fun(trait_tys)]},
             ));
 
             tcx.associated_items(task_key.0)
@@ -84,7 +96,7 @@ impl TaskEncoder for TraitImplEnc {
                                     tcx.item_name(impl_item.def_id),
                                     struct_ty
                                 ),
-                                vir::expr! {([assoc_fun](struct_ty_expr)) == (assoc_type_expr)},
+                                vir::expr! {forall ..[trait_ty_decls] :: {[assoc_fun(trait_tys)]} ([assoc_fun(trait_tys)]) == (assoc_type_expr)},
                             ))
                         });
                 });

@@ -1,4 +1,4 @@
-use prusti_rustc_interface::{middle::ty, span::def_id::DefId};
+use prusti_rustc_interface::middle::ty;
 
 use super::GParams;
 

@@ -16,11 +16,12 @@ impl<T, T2> MyTrait<T, T2> for St1 {
     type SomeOtherType = T2;
 }
 
-impl<T, T2> MyTrait<T, T2> for St2 {
+impl<T> MyTrait<T, T> for St2 {
     type SomeType = u64;
     type SomeOtherType = T;
 }
 
 fn bar() {
     foo::<f32, St1, u32>(5.2, 6);
+    foo::<bool, St2, bool>(5, false);
 }

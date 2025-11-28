@@ -4,7 +4,7 @@ use vir::{CastType, Domain, vir_format_identifier};
 
 use crate::encoders::ty::{
     RustTyDecomposition,
-    generics::{GParams, GenericParamsEnc, traits::TraitEnc},
+    generics::{GArgs, GArgsTyEnc, GParams, GenericParamsEnc, traits::TraitEnc},
 };
 
 pub struct TraitImplEnc;
@@ -31,31 +31,24 @@ impl TaskEncoder for TraitImplEnc {
     ) -> EncodeFullResult<'vir, Self> {
         deps.emit_output_ref(*task_key, ())?;
 
-        let params = deps.require_dep::<GenericParamsEnc>(GParams::from(task_key.0))?;
-        let trait_params = params.ty_exprs();
-
         vir::with_vcx(|vcx| {
             let tcx = vcx.tcx();
-            let trait_did = tcx
+
+            let params = deps.require_dep::<GenericParamsEnc>(GParams::from(task_key.0))?;
+
+            let trait_ref = tcx
                 .impl_trait_ref(task_key.0)
                 .unwrap()
-                .instantiate_identity()
-                .def_id;
+                .instantiate_identity();
+            let trait_did = trait_ref.def_id;
             let trait_data = deps.require_dep::<TraitEnc>(trait_did)?;
+
+            let args = deps
+                .require_dep::<GArgsTyEnc>(GArgs::new(GParams::from(task_key.0), trait_ref.args))?;
 
             let mut axs = Vec::new();
 
             let struct_ty = tcx.type_of(task_key.0).instantiate_identity();
-
-            let struct_ty_expr = params.ty_expr(
-                deps,
-                RustTyDecomposition::from_ty(struct_ty, tcx, GParams::from(task_key.0)),
-            );
-
-            let mut vec = Vec::new();
-            vec.push(struct_ty_expr);
-            vec.extend(trait_params.to_owned());
-            let trait_tys = &vec;
 
             let impl_fun = trait_data.impl_fun;
             let trait_ty_decls = params
@@ -63,6 +56,7 @@ impl TaskEncoder for TraitImplEnc {
                 .iter()
                 .map(|dec| dec.upcast_ty())
                 .collect::<Vec<_>>();
+            let trait_tys = args.get_ty();
             axs.push(vcx.mk_domain_axiom(
                 vir_format_identifier!(vcx, "{}_impl_{}", trait_data.trait_name, struct_ty),
                 vir::expr! {forall ..[trait_ty_decls] :: {[impl_fun(trait_tys)]} [impl_fun(trait_tys)]},

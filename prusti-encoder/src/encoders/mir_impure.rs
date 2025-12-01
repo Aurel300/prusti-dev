@@ -17,7 +17,7 @@ use pcg::{
     r#loop::{LoopAnalysis, LoopId, PlaceUsages},
     pcg::{CapabilityKind, EvalStmtPhase, Pcg, PcgNode, PcgSuccessor},
     results::PcgBasicBlock,
-    utils::{CompilerCtxt, HasPlace, Place, maybe_old::MaybeLabelledPlace},
+    utils::{CompilerCtxt, HasPlace, Place, display::DisplayWithCtxt, maybe_old::MaybeLabelledPlace},
 };
 use prusti_interface::{PrustiError, specs::specifications::SpecQuery};
 use prusti_rustc_interface::{
@@ -94,6 +94,31 @@ impl<'vir> FromToVars<'vir> {
     }
 }
 
+#[derive(Clone, Copy)]
+pub(crate) enum EdgeAction {
+    Add,
+    Remove,
+}
+
+impl EdgeAction {
+    pub(crate) fn is_add(self) -> bool {
+        matches!(self, EdgeAction::Add)
+    }
+}
+pub(crate) enum FoldOrUnfold {
+    Fold,
+    Unfold,
+}
+
+impl FoldOrUnfold {
+    pub(crate) fn for_action(action: EdgeAction) -> Self {
+        match action {
+            EdgeAction::Add => FoldOrUnfold::Unfold,
+            EdgeAction::Remove => FoldOrUnfold::Fold,
+        }
+    }
+}
+
 pub struct ImpureEncVisitor<'vir, 'enc, E: TaskEncoder>
 where
     'vir: 'enc,
@@ -134,19 +159,7 @@ pub(crate) struct PlaceExpr<'vir> {
 impl<'vir> PlaceExpr<'vir> {
     /// Expects the encoded place to not be behind a shared ref
     pub(crate) fn expect_predicate(&self) -> vir::ExprRef<'vir> {
-        assert!(self.snap.is_none());
         self.address
-    }
-
-    pub(crate) fn map(
-        self,
-        fa: impl FnOnce(vir::ExprRef<'vir>) -> vir::ExprRef<'vir>,
-        fs: impl FnOnce(vir::ExprSnap<'vir>) -> vir::ExprSnap<'vir>,
-    ) -> Self {
-        PlaceExpr {
-            address: fa(self.address),
-            snap: self.snap.map(fs),
-        }
     }
 }
 
@@ -290,7 +303,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                         // The snapshot of the referenced value should be encoded as a generic `Param`
                         let inner = e_rvalue_ty.expect_mutref();
                         inner
-                            .prim_to_snap(place_expr.expr.expect_predicate(), snap)
+                            .prim_to_snap(place_expr.expr.expect_predicate())
                             .upcast_ty()
                     }
                     _ => unreachable!(),
@@ -369,39 +382,30 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         Ok(new_stmts)
     }
 
-    pub(crate) fn pcs_borrow_expansion(
+    pub(crate) fn fold_or_unfold(
         &mut self,
-        expansion: BorrowPcgExpansion<'vir>,
-        unfold: bool,
+        base: MaybeLabelledPlace<'vir>,
+        fold_or_unfold: FoldOrUnfold,
         label: Option<&'vir str>,
     ) {
-        // TODO: code duplication with pcs_reborrow_expands
-        if expansion.base().place().is_owned(self.pcg_ctxt()) {
-            return;
-        }
-        let base = expansion.base();
-        let PcgNode::Place(base) = base else {
-            // Ignore expansions of region projections
-            return;
-        };
         let (place, old) = match base {
             MaybeLabelledPlace::Current(place) => (place, None),
             MaybeLabelledPlace::Labelled(snap) => {
                 // We shouldn't be unfolding old places?
-                debug_assert!(!unfold);
+                debug_assert!(!matches!(fold_or_unfold, FoldOrUnfold::Unfold));
                 (
                     snap.place(),
                     Some(Self::get_location_label(self.vcx, snap.at())),
                 )
             }
         };
-        if matches!(
-            self.local_decls[place.local].ty.kind(),
-            ty::TyKind::Ref(_, _, ty::Mutability::Not)
-        ) {
-            return; // TODO: does this make sense??? we don't want to unfold because for immut refs we only use snapshot read/writes
+
+        if place.is_shared_ref(self.pcg_ctxt()) || place.projects_shared_ref(self.pcg_ctxt()) {
+            return;
         }
+
         let ref_p = self.encode_place(place);
+
         let place_ty = ref_p.ty;
         let mut ref_p = ref_p.expr.expect_predicate();
         let data = self.ty_use_impure(place_ty.ty);
@@ -411,22 +415,31 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         } else if let Some(label) = label {
             ref_p = self.vcx.mk_local_labelled_old_expr(ref_p, label);
         }
-        if unfold {
-            for stmt in data.unfold(place_ty.variant_index, ref_p, None) {
-                self.stmt(stmt);
-            }
-        } else {
-            for stmt in data.fold(place_ty.variant_index, ref_p, None) {
-                self.stmt(stmt);
-            }
-        }
+        let stmts = match fold_or_unfold {
+            FoldOrUnfold::Unfold => data.unfold(place_ty.variant_index, ref_p, None),
+            FoldOrUnfold::Fold => data.fold(place_ty.variant_index, ref_p, None),
+        };
+        self.stmts(stmts);
+    }
+
+    pub(crate) fn pcs_borrow_expansion(
+        &mut self,
+        expansion: BorrowPcgExpansion<'vir>,
+        fold_or_unfold: FoldOrUnfold,
+        label: Option<&'vir str>,
+    ) {
+        let PcgNode::Place(base) = expansion.base() else {
+            // Ignore expansions of region projections
+            return;
+        };
+        self.fold_or_unfold(base, fold_or_unfold, label);
     }
 
     fn pcs_handle_edge(
         &mut self,
         borrows_state: &BorrowsState<'_, 'vir>,
         edge: &BorrowPcgEdge<'vir>,
-        add: bool,
+        edge_action: EdgeAction,
         label: Option<&'vir str>,
         edge_to_loop: bool,
         to_skip: &mut Vec<mir::BasicBlock>,
@@ -456,7 +469,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             self_.pcs_handle_edge_conditionless(
                 borrows_state,
                 edge,
-                add,
+                edge_action,
                 label,
                 edge_to_loop,
                 to_skip,
@@ -479,19 +492,30 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         &mut self,
         borrows_state: &BorrowsState<'_, 'vir>,
         edge: &BorrowPcgEdge<'vir>,
-        add: bool,
+        edge_action: EdgeAction,
         label: Option<&'vir str>,
         edge_to_loop: bool,
         to_skip: &mut Vec<mir::BasicBlock>,
     ) -> EncodeResult<'vir, (), E> {
         match edge.kind() {
+            BorrowPcgEdgeKind::Deref(deref) => {
+                self.fold_or_unfold(
+                    deref.blocked_place(),
+                    FoldOrUnfold::for_action(edge_action),
+                    label,
+                );
+            }
             BorrowPcgEdgeKind::BorrowPcgExpansion(expansion) => {
-                self.pcs_borrow_expansion(expansion.clone(), add, label);
+                self.pcs_borrow_expansion(
+                    expansion.clone(),
+                    FoldOrUnfold::for_action(edge_action),
+                    label,
+                );
             }
             BorrowPcgEdgeKind::Coupled(PcgCoupledEdgeKind(FunctionCallOrLoop::FunctionCall(
                 call_edge,
             ))) => {
-                if add {
+                if edge_action.is_add() {
                     // The wand will be introduced by the method call itself.
                     return Ok(());
                 }
@@ -536,7 +560,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             BorrowPcgEdgeKind::Abstraction(at @ AbstractionEdge::Loop(_)) => {
                 self.pcs_handle_wand(
                     borrows_state,
-                    add,
+                    edge_action.is_add(),
                     &at.clone().into_singleton_coupled_edge(),
                     label,
                     edge_to_loop,
@@ -544,6 +568,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             }
             other => comment!(self, "(ignoring) {other:?}"),
         }
+        comment!(self, "(PCG) handled edge: {}", edge.to_short_string(self.pcg_ctxt()));
         Ok(())
     }
 
@@ -558,7 +583,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             self.pcs_handle_edge(
                 borrows_state,
                 action.edge(),
-                false,
+                EdgeAction::Remove,
                 label,
                 false,
                 &mut to_skip,
@@ -597,7 +622,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             BorrowPcgActionKind::RemoveEdge(edge) => self.pcs_handle_edge(
                 pcg.borrow_pcg(),
                 edge,
-                false,
+                EdgeAction::Remove,
                 None,
                 edge_to_loop,
                 &mut to_skip,
@@ -605,7 +630,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             BorrowPcgActionKind::AddEdge { edge } => self.pcs_handle_edge(
                 pcg.borrow_pcg(),
                 edge,
-                true,
+                EdgeAction::Add,
                 None,
                 edge_to_loop,
                 &mut to_skip,
@@ -805,10 +830,10 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
 
         let ty_out = self.ty_use_impure(ty.ty);
         let result = self.encode_place(place);
-        let snap = result
-            .expr
-            .snap
-            .unwrap_or_else(|| ty_out.ref_to_snap(result.expr.address));
+        let snap = result.expr.snap.unwrap_or_else(|| {
+            tracing::warn!("No snap for {:?}: {:?}", place, ty);
+            ty_out.ref_to_snap(result.expr.address)
+        });
         (result, snap, ty, ty_out)
     }
 
@@ -822,14 +847,10 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             mir::ProjectionElem::Field(field_idx, _) => {
                 let e_ty = self.ty_use_impure(place_ty.ty);
                 let field_access = e_ty.expect_variant_opt(place_ty.variant_index);
-                expr.map(
-                    |r| field_access[field_idx].field_ref(r),
-                    |snap| {
-                        let e_ty = self.ty_use_pure(place_ty.ty);
-                        let field_access = e_ty.expect_variant_opt(place_ty.variant_index);
-                        field_access[field_idx].read(snap.downcast_ty())
-                    },
-                )
+                PlaceExpr {
+                    address: field_access[field_idx].field_ref(expr.address),
+                    snap: None,
+                }
             }
             // TODO: should all variants start at the same `Ref`?
             mir::ProjectionElem::Downcast(..) => expr,
@@ -839,17 +860,13 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 match place_ty.ty.kind() {
                     ty::TyKind::Adt(adt, _) if adt.is_box() => {
                         let field_access = e_ty.expect_variant_opt(None);
-                        expr.map(
-                            // TODO: this is unsound: a Box should be modelled
-                            // with a Ref field rather than a field_access
-                            // function.
-                            |r| field_access[abi::FieldIdx::ZERO].field_ref(r),
-                            |snap| {
-                                let e_ty = self.ty_use_pure(place_ty.ty);
-                                let field_access = e_ty.expect_variant_opt(None);
-                                field_access[abi::FieldIdx::ZERO].read(snap.downcast_ty())
-                            },
-                        )
+                        // TODO: this is unsound: a Box should be modelled
+                        // with a Ref field rather than a field_access
+                        // function.
+                        PlaceExpr {
+                            address: field_access[abi::FieldIdx::ZERO].field_ref(expr.address),
+                            snap: None,
+                        }
                     }
                     ty::TyKind::Ref(_, _, ty::Mutability::Not) => {
                         let snap = expr
@@ -863,18 +880,13 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                         }
                     }
                     ty::TyKind::Ref(_, _, ty::Mutability::Mut) => {
-                        if let Some(snap) = expr.snap {
-                            let snap = snap.downcast_ty();
-                            let p_ty = self.ty_use_pure(place_ty.ty).expect_mutref();
-                            PlaceExpr {
-                                address: p_ty.deref_access(snap),
-                                snap: Some(p_ty.value_access(snap)),
-                            }
-                        } else {
-                            PlaceExpr {
-                                address: e_ty.expect_mutref().deref(expr.address),
-                                snap: None,
-                            }
+                        tracing::warn!("snap for {:?}: {:?}", place_ty.ty, expr.snap);
+                        let p_ty = self.ty_use_pure(place_ty.ty).expect_mutref();
+                        let address = e_ty.expect_mutref().deref(expr.address);
+                        let snap = p_ty.deref_snap_of(address);
+                        PlaceExpr {
+                            address: e_ty.expect_mutref().deref(expr.address),
+                            snap: Some(snap),
                         }
                     }
                     _ => unreachable!(),

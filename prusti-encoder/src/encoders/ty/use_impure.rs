@@ -6,7 +6,7 @@ use crate::encoders::{
     Impure,
     ty::{
         LazyRustTy, RustTyDatas,
-        generics::{GArgs, GArgsCastEnc, GArgsTyEnc, GParams},
+        generics::{GArgs, GArgsCastEnc, GArgsTyEnc, GParams}, pure::PureTyDatas,
     },
 };
 
@@ -423,14 +423,11 @@ impl<'vir> TyUseImpureMutRef<'vir> {
         (self.impure.deref_func)(self_ref, self.args.get_ty(), self.args.get_const())
     }
 
-    fn fold(&self, _self_ref: vir::ExprRef<'vir>) -> Option<vir::Stmt<'vir>> {
-        // TODO: should the deref of a mut ref be generic or not?
-        // self.caster.cast_to_callee_ctx(self.deref(self_ref))
-        None
+    fn fold(&self, self_ref: vir::ExprRef<'vir>) -> Option<vir::Stmt<'vir>> {
+        self.caster.cast_to_callee_ctx(self.deref(self_ref))
     }
 
-    fn unfold(&self, _self_ref: vir::ExprRef<'vir>) -> Option<vir::Stmt<'vir>> {
-        // self.caster.cast_to_caller_ctx(self.deref(self_ref))
-        None
+    fn unfold(&self, self_ref: vir::ExprRef<'vir>) -> Option<vir::Stmt<'vir>> {
+        self.caster.cast_to_caller_ctx(self.deref(self_ref))
     }
 }

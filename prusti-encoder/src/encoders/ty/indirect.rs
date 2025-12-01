@@ -73,13 +73,7 @@ impl TaskEncoder for IndirectPredicatesEnc {
                         "ref_indirect",
                         vir::TYPE_BOOL,
                         Box::new(move |vcx, self_expr: vir::ExprSnap<'vir>| {
-                            inner_ty_enc
-                                .ref_to_pred(
-                                    vcx,
-                                    ref_domain.deref_access(self_expr.downcast_ty()),
-                                    None,
-                                )
-                                .kind
+                            ref_domain.inner_predicate(vcx, self_expr.downcast_ty()).kind
                         }),
                     ));
                     if let Some(new_projection) =
@@ -100,7 +94,7 @@ impl TaskEncoder for IndirectPredicatesEnc {
                                                 .reify(
                                                     vcx,
                                                     ref_domain
-                                                        .value_access(self_expr.downcast_ty()),
+                                                        .deref_snap(self_expr.downcast_ty()),
                                                 )
                                                 .kind
                                         }),

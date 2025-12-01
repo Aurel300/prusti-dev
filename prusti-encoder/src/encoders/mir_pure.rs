@@ -738,7 +738,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                         .place_ref
                         .unwrap_or_else(|| self.vcx.mk_null().lazy());
                     Ok(e_rvalue_ty
-                        .prim_to_snap(place_ref, encoded_place.snap)
+                        .prim_to_snap(place_ref)
                         .upcast_ty())
                 } else {
                     let e_rvalue_ty = rvalue_snapshot_encoding.expect_immref();

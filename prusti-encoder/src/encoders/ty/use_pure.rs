@@ -2,11 +2,12 @@ use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 use vir::{CastType, VirCtxt};
 
 use crate::encoders::{
-    Pure,
+    Pure, TyUseImpureEnc,
     ty::{
         LazyRustTy, RustTyDatas, RustTyDecomposition, RustTyNormalized,
         generics::{Casters, GArgs, GArgsCastEnc, GArgsTyEnc, GParams, GenericParams},
         impure::{TyImpure, TyImpureEnc},
+        use_impure::TyUseImpure,
     },
 };
 
@@ -160,16 +161,14 @@ impl<'a, 'vir> TyUsePureWalker<'a, 'vir> {
                     pure: *data.1,
                 })
             }
-            TySpecifics::MutRef(data) => {
-                let caster = self.encode_normalized(*data.0, ty.0.params);
+            TySpecifics::MutRef((data, ref_domain)) => {
+                let caster = self.encode_normalized(**data, ty.0.params);
+                let inner_ty = data.decompose(ty.0.params);
                 TySpecifics::mk_mutref(TyUsePureMutRef {
                     snap_ty: self.args_t.get_ty()[0],
                     caster,
-                    pure: *data.1,
-                    inner: self
-                        .deps
-                        .require_dep::<TyImpureEnc>(data.0.decompose(ty.0.params).ty)
-                        .unwrap(),
+                    pure: **ref_domain,
+                    inner: self.deps.require_dep::<TyImpureEnc>(inner_ty.ty).unwrap(),
                 })
             }
             TySpecifics::StructLike(data) => {
@@ -269,10 +268,8 @@ impl<'vir> TyUsePureMutRef<'vir> {
     pub fn prim_to_snap<Curr, Next>(
         &self,
         ref_: vir::ExprGenRef<'vir, Curr, Next>,
-        inner: vir::ExprGenSnap<'vir, Curr, Next>,
     ) -> vir::ExprGenCSnap<'vir, Curr, Next> {
-        let inner = self.caster.cast_to_callee_ctx(inner);
-        self.pure.prim_to_snap.call()(ref_, inner.downcast_ty())
+        self.pure.prim_to_snap.call()(ref_)
     }
 
     pub fn deref_access<Curr, Next>(
@@ -282,24 +279,39 @@ impl<'vir> TyUsePureMutRef<'vir> {
         self.pure.deref_access.call()(snap)
     }
 
-    pub fn deref_snap<Curr, Next>(
-        &self,
-        snap: vir::ExprGenCSnap<'vir, Curr, Next>,
+    pub fn deref_snap_of<Curr, Next>(&self,
+        ref_: vir::ExprGenRef<'vir, Curr, Next>,
     ) -> vir::ExprGenSnap<'vir, Curr, Next> {
         self.caster
             .cast_to_caller_ctx(self.inner.ref_to_snap.call()(
-                self.pure.deref_access.call()(snap),
+                ref_,
                 &[self.snap_ty.lazy()],
                 &[],
             ))
     }
 
-    pub fn value_access<Curr, Next>(
+    pub fn deref_snap<Curr, Next>(
         &self,
         snap: vir::ExprGenCSnap<'vir, Curr, Next>,
     ) -> vir::ExprGenSnap<'vir, Curr, Next> {
-        let value = self.pure.value_access.call()(snap);
-        self.caster.cast_to_caller_ctx(value.upcast_ty())
+        self.deref_snap_of(self.pure.deref_access.call()(snap))
+    }
+
+    pub fn inner_predicate<Curr, Next>(
+        &self,
+        vcx: &'vir vir::VirCtxt<'_>,
+        snap: vir::ExprGenCSnap<'vir, Curr, Next>,
+    ) -> vir::ExprGenBool<'vir, Curr, Next> {
+        if self.inner.inhabited {
+            let call: vir::PredicateAppGen<'vir, Curr, Next> = self.inner.ref_to_pred.call()(
+                self.pure.deref_access.call()(snap),
+                &[self.snap_ty.lazy()],
+                &[],
+            )(None);
+            vcx.mk_predicate_app_expr(call)
+        } else {
+            vcx.mk_bool::<false>().lazy()
+        }
     }
 }
 

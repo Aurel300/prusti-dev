@@ -17,7 +17,9 @@ use pcg::{
     r#loop::{LoopAnalysis, LoopId, PlaceUsages},
     pcg::{CapabilityKind, EvalStmtPhase, Pcg, PcgNode, PcgSuccessor},
     results::PcgBasicBlock,
-    utils::{CompilerCtxt, HasPlace, Place, display::DisplayWithCtxt, maybe_old::MaybeLabelledPlace},
+    utils::{
+        CompilerCtxt, HasPlace, Place, display::DisplayWithCtxt, maybe_old::MaybeLabelledPlace,
+    },
 };
 use prusti_interface::{PrustiError, specs::specifications::SpecQuery};
 use prusti_rustc_interface::{
@@ -151,6 +153,7 @@ where
 /// Represents the translation of a MIR place. If the place crosses a shared
 /// reference, then we will no longer have a predicate for the `address` Ref,
 /// but we do also have the snapshot available.
+#[derive(Copy, Clone)]
 pub(crate) struct PlaceExpr<'vir> {
     address: vir::ExprRef<'vir>,
     snap: Option<vir::ExprSnap<'vir>>,
@@ -568,7 +571,11 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             }
             other => comment!(self, "(ignoring) {other:?}"),
         }
-        comment!(self, "(PCG) handled edge: {}", edge.to_short_string(self.pcg_ctxt()));
+        comment!(
+            self,
+            "(PCG) handled edge: {}",
+            edge.to_short_string(self.pcg_ctxt())
+        );
         Ok(())
     }
 
@@ -799,16 +806,14 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
 
     pub(crate) fn encode_place(&mut self, place: Place<'vir>) -> EncodePlaceResult<'vir> {
         let mut place_ty = mir::PlaceTy::from_ty(self.local_decls[place.local].ty);
-        let mut encoded_place = mir::Place::from(place.local);
         let mut result = PlaceExpr {
             address: self.local_defs[place.local].local_ex,
             snap: None,
         };
         // TODO: factor this out (duplication with pure encoder)?
-        for &elem in place.projection {
-            result = self.encode_place_element(place_ty, elem, result);
+        for (place, elem) in place.iter_projections() {
+            result = self.encode_place_element(place.into(), elem, result);
             place_ty = place_ty.projection_ty(self.vcx.tcx(), elem);
-            encoded_place = encoded_place.project_deeper(&[elem], self.vcx.tcx());
         }
         EncodePlaceResult {
             expr: result,
@@ -839,18 +844,40 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
 
     fn encode_place_element(
         &mut self,
-        place_ty: mir::PlaceTy<'vir>,
+        place: Place<'vir>,
         elem: mir::PlaceElem<'vir>,
         expr: PlaceExpr<'vir>,
     ) -> PlaceExpr<'vir> {
+        let project_snapshot = place.projects_shared_ref(self.pcg_ctxt());
+        if project_snapshot {
+            assert!(expr.snap.is_some());
+        }
+        let project_expr = |project_addr: vir::ExprRef<'vir>,
+                            project_snap: Box<
+            dyn FnOnce(vir::ExprSnap<'vir>) -> vir::ExprSnap<'vir>,
+        >| {
+            PlaceExpr {
+                address: project_addr,
+                snap: if project_snapshot {
+                    Some(project_snap(expr.snap.unwrap()))
+                } else {
+                    None
+                },
+            }
+        };
+        let place_ty = place.ty(self.pcg_ctxt());
         match elem {
             mir::ProjectionElem::Field(field_idx, _) => {
                 let e_ty = self.ty_use_impure(place_ty.ty);
                 let field_access = e_ty.expect_variant_opt(place_ty.variant_index);
-                PlaceExpr {
-                    address: field_access[field_idx].field_ref(expr.address),
-                    snap: None,
-                }
+                project_expr(
+                    field_access[field_idx].field_ref(expr.address),
+                    Box::new(|snap: vir::ExprSnap<'vir>| {
+                        let e_ty = self.ty_use_pure(place_ty.ty);
+                        let field_access = e_ty.expect_variant_opt(place_ty.variant_index);
+                        field_access[field_idx].read(snap.downcast_ty())
+                    }),
+                )
             }
             // TODO: should all variants start at the same `Ref`?
             mir::ProjectionElem::Downcast(..) => expr,
@@ -860,13 +887,17 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 match place_ty.ty.kind() {
                     ty::TyKind::Adt(adt, _) if adt.is_box() => {
                         let field_access = e_ty.expect_variant_opt(None);
-                        // TODO: this is unsound: a Box should be modelled
-                        // with a Ref field rather than a field_access
-                        // function.
-                        PlaceExpr {
-                            address: field_access[abi::FieldIdx::ZERO].field_ref(expr.address),
-                            snap: None,
-                        }
+                        project_expr(
+                            // TODO: this is unsound: a Box should be modelled
+                            // with a Ref field rather than a field_access
+                            // function.
+                            field_access[abi::FieldIdx::ZERO].field_ref(expr.address),
+                            Box::new(|snap| {
+                                let e_ty = self.ty_use_pure(place_ty.ty);
+                                let field_access = e_ty.expect_variant_opt(None);
+                                field_access[abi::FieldIdx::ZERO].read(snap.downcast_ty())
+                            }),
+                        )
                     }
                     ty::TyKind::Ref(_, _, ty::Mutability::Not) => {
                         let snap = expr

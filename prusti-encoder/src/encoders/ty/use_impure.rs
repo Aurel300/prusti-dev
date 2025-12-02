@@ -288,6 +288,7 @@ impl<'vir> TyData<'vir, UseImpureTyDatas> {
         variant: Option<abi::VariantIdx>,
         self_ref: vir::ExprRef<'vir>,
         perm: Option<vir::ExprPerm<'vir>>,
+        label: Option<vir::OldLabel<'vir>>,
     ) -> Vec<vir::Stmt<'vir>> {
         if let Some(variant) = variant {
             return self
@@ -300,7 +301,7 @@ impl<'vir> TyData<'vir, UseImpureTyDatas> {
             TySpecifics::Param(_) | TySpecifics::Primitive(_) => unreachable!(),
             TySpecifics::Opaque(_) => panic!("cannot fold opaque type"),
             TySpecifics::ImmRef(..) => Vec::new(),
-            TySpecifics::MutRef(data) => data.fold(self_ref).into_iter().collect(),
+            TySpecifics::MutRef(data) => data.fold(self_ref, label).into_iter().collect(),
             TySpecifics::StructLike(data) => data.fold(self_ref, perm).collect(),
             TySpecifics::EnumLike(..) => {
                 let pred_app = self.ref_to_pred_app(self_ref, perm);
@@ -427,17 +428,15 @@ impl<'vir> TyUseImpureMutRef<'vir> {
         label: Option<vir::OldLabel<'vir>>,
     ) -> vir::ExprRef<'vir> {
         let base = (self.impure.deref_func)(self_ref, self.args.get_ty(), self.args.get_const());
-        match label {
-            Some(OldLabel::Label(label)) => vir::with_vcx(|vcx| vcx.mk_local_labelled_old_expr(base, label)),
-            Some(OldLabel::Block(block)) => todo!(),
-            Some(OldLabel::None) => vir::with_vcx(|vcx| vcx.mk_old_expr(base)),
-            Some(OldLabel::Lhs) => vir::with_vcx(|vcx| vcx.mk_old_lhs_expr(base)),
-            None => base,
-        }
+        vir::with_vcx(|vcx| vcx.maybe_apply_label(base, label))
     }
 
-    fn fold(&self, self_ref: vir::ExprRef<'vir>) -> Option<vir::Stmt<'vir>> {
-        self.caster.cast_to_callee_ctx(self.deref(self_ref, None))
+    fn fold(
+        &self,
+        self_ref: vir::ExprRef<'vir>,
+        label: Option<vir::OldLabel<'vir>>,
+    ) -> Option<vir::Stmt<'vir>> {
+        self.caster.cast_to_callee_ctx(self.deref(self_ref, label))
     }
 
     fn unfold(

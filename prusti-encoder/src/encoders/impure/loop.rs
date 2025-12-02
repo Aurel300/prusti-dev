@@ -6,7 +6,7 @@ use pcg::{
     pcg::{EvalStmtPhase, PcgNode},
     results::PcgBasicBlock,
     utils::{
-        HasCompilerCtxt, Place, maybe_old::MaybeLabelledPlace, maybe_remote::MaybeRemotePlace,
+        HasCompilerCtxt, HasPlace, Place, maybe_old::MaybeLabelledPlace, maybe_remote::MaybeRemotePlace
     },
 };
 use prusti_rustc_interface::middle::mir;
@@ -86,19 +86,18 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
 
     pub(super) fn encode_pcg_node<T: PcgLifetimeProjectionBaseLike<'vir>>(
         &mut self,
-        node: &PcgNode<'vir, MaybeRemotePlace<'vir>, T>,
+        node: &PcgNode<'vir, MaybeLabelledPlace<'vir>, T>,
         wand_rhs: &mut Vec<vir::ExprBool<'vir>>,
         old_outer: &mut WandOldOuter<'vir>,
     ) {
         match node {
-            PcgNode::Place(MaybeRemotePlace::Remote(_)) => unreachable!(),
-            PcgNode::Place(place @ MaybeRemotePlace::Local(_)) => {
-                let p = Self::get_place(*place);
+            PcgNode::Place(place) => {
+                let p = place.place();
                 let ty = (*p).ty(self.local_decls, self.vcx.tcx());
                 let task = RustTyDecomposition::from_ty(ty.ty, self.vcx.tcx(), self.def_id);
                 let ty_out = self.deps.require_dep::<TyUseImpureEnc>(task).unwrap();
                 let p = self.encode_place(p);
-                let p = self.configure_old(*place, p.expr.expect_predicate(), old_outer);
+                let p = self.configure_old((*place).into(), p.expr.expect_predicate(), old_outer);
 
                 let pred = ty_out.ref_to_pred(self.vcx, p, None);
                 wand_rhs.push(pred);

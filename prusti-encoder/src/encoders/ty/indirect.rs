@@ -4,7 +4,7 @@ use vir::{CastType, Reify};
 
 use crate::encoders::ty::RustTyDecomposition;
 
-use super::{data::TySpecifics, use_impure::TyUseImpureEnc, use_pure::TyUsePureEnc};
+use super::{data::TySpecifics, use_pure::TyUsePureEnc};
 
 pub struct IndirectPredicatesEnc;
 
@@ -68,12 +68,13 @@ impl TaskEncoder for IndirectPredicatesEnc {
                 TySpecifics::Param(_) | TySpecifics::Opaque(_) => (),
                 TySpecifics::MutRef((data, ref_domain)) => {
                     let inner_ty = data.decompose_normalize(ty.args);
-                    let inner_ty_enc = deps.require_dep::<TyUseImpureEnc>(inner_ty)?;
                     predicate_applications.push(vcx.mk_lazy_expr(
                         "ref_indirect",
                         vir::TYPE_BOOL,
                         Box::new(move |vcx, self_expr: vir::ExprSnap<'vir>| {
-                            ref_domain.inner_predicate(vcx, self_expr.downcast_ty()).kind
+                            ref_domain
+                                .inner_predicate(vcx, self_expr.downcast_ty())
+                                .kind
                         }),
                     ));
                     if let Some(new_projection) =
@@ -93,8 +94,7 @@ impl TaskEncoder for IndirectPredicatesEnc {
                                             inner_expr
                                                 .reify(
                                                     vcx,
-                                                    ref_domain
-                                                        .deref_snap(self_expr.downcast_ty()),
+                                                    ref_domain.deref_snap(self_expr.downcast_ty()),
                                                 )
                                                 .kind
                                         }),

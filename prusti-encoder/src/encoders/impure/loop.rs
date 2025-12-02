@@ -6,8 +6,7 @@ use pcg::{
     pcg::{EvalStmtPhase, PcgNode},
     results::PcgBasicBlock,
     utils::{
-        AnalysisLocation, HasCompilerCtxt, Place, SnapshotLocation, maybe_old::MaybeLabelledPlace,
-        maybe_remote::MaybeRemotePlace,
+        HasCompilerCtxt, Place, maybe_old::MaybeLabelledPlace, maybe_remote::MaybeRemotePlace,
     },
 };
 use prusti_rustc_interface::middle::mir;
@@ -16,7 +15,8 @@ use task_encoder::TaskEncoder;
 use vir::Reify;
 
 use crate::encoders::{
-    ImpureEncVisitor, TyUseImpureEnc, mir_impure::LocationLabelPrefix, ty::{RustTyDecomposition, indirect::IndirectPredicatesEnc, use_impure::TyUseImpure}
+    ImpureEncVisitor, TyUseImpureEnc,
+    ty::{RustTyDecomposition, indirect::IndirectPredicatesEnc, use_impure::TyUseImpure},
 };
 
 pub(super) enum WandOldOuter<'vir> {

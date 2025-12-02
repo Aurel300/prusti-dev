@@ -11,7 +11,9 @@ use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 use vir::{CastType, HasType, Reify};
 
 use crate::encoders::{
-    MirLocalDefEncTask, MirPureEnc, mir_pure::PureKind, ty::{RustTyDecomposition, use_pure::TyUsePureEnc}
+    MirLocalDefEncTask, MirPureEnc,
+    mir_pure::PureKind,
+    ty::{RustTyDecomposition, use_pure::TyUsePureEnc},
 };
 pub struct MirSpecEnc;
 

@@ -190,16 +190,6 @@ impl<'vir, D: TyDatas<'vir>> TyData<'vir, D> {
         }
     }
 
-    pub fn expect_param(&self) -> &D::ParamData
-    where
-        Self: Debug,
-    {
-        match &self.specifics {
-            TySpecifics::Param(data) => data,
-            _ => panic!("expected param (was {self:?})"),
-        }
-    }
-
     #[track_caller]
     pub fn expect_enumlike(&self) -> &EnumData<'vir, D>
     where

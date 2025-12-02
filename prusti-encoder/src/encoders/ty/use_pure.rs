@@ -1,17 +1,14 @@
-use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
-use vir::{CastType, VirCtxt};
+use task_encoder::{EncodeFullResult, TaskEncoder};
+use vir::CastType;
 
 use crate::encoders::{
-    Pure, TyUseImpureEnc,
+    Pure,
     ty::{
-        LazyRustTy, RustTyDatas, RustTyDecomposition, RustTyNormalized,
-        generics::{Casters, GArgs, GArgsCastEnc, GArgsTyEnc, GParams, GenericParams},
+        LazyRustTy, RustTyDatas,
+        generics::{GArgs, GArgsCastEnc, GArgsTyEnc, GParams},
         impure::{TyImpure, TyImpureEnc},
-        use_impure::TyUseImpure,
     },
 };
-
-use prusti_rustc_interface::{middle::ty, span::symbol};
 
 use super::{
     TyUseEnc, UseTyDatas,
@@ -272,14 +269,8 @@ impl<'vir> TyUsePureMutRef<'vir> {
         self.pure.prim_to_snap.call()(ref_)
     }
 
-    pub fn deref_access<Curr, Next>(
+    pub fn deref_snap_of<Curr, Next>(
         &self,
-        snap: vir::ExprGenCSnap<'vir, Curr, Next>,
-    ) -> vir::ExprGenRef<'vir, Curr, Next> {
-        self.pure.deref_access.call()(snap)
-    }
-
-    pub fn deref_snap_of<Curr, Next>(&self,
         ref_: vir::ExprGenRef<'vir, Curr, Next>,
     ) -> vir::ExprGenSnap<'vir, Curr, Next> {
         self.caster

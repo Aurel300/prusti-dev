@@ -3,7 +3,9 @@ use task_encoder::{EncodeFullResult, OutputRefAny, TaskEncoder, TaskEncoderDepen
 use vir::{FunctionIdn, Reify};
 
 use crate::encoders::{
-    MirLocalDefEnc, MirLocalDefEncTask, MirPureEnc, MirPureEncTask, MirSpecEnc, Pure, PureKind, mir_fn::{CallTaskDescription, RustSignature}, ty::generics::{GArgCaster, GArgsCastEnc, GArgsTy, GArgsTyEnc, GParams, GenericParamsEnc}
+    MirLocalDefEnc, MirLocalDefEncTask, MirPureEnc, MirPureEncTask, MirSpecEnc, Pure, PureKind,
+    mir_fn::{CallTaskDescription, RustSignature},
+    ty::generics::{GArgCaster, GArgsCastEnc, GArgsTy, GArgsTyEnc, GParams, GenericParamsEnc},
 };
 
 // Function wrapper

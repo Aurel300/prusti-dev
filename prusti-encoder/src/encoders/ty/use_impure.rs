@@ -1,13 +1,12 @@
 use prusti_rustc_interface::abi;
 use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
-use vir::{OldLabel, PredicateIdn};
+use vir::PredicateIdn;
 
 use crate::encoders::{
     Impure,
     ty::{
         LazyRustTy, RustTyDatas,
         generics::{GArgs, GArgsCastEnc, GArgsTyEnc, GParams},
-        pure::PureTyDatas,
     },
 };
 

@@ -511,12 +511,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         to_skip: &mut Vec<mir::BasicBlock>,
     ) -> EncodeResult<'vir, (), E> {
         match edge.kind() {
-            BorrowPcgEdgeKind::Borrow(borrow)
-                if borrow.is_mut(self.pcg_ctxt())
-                    && edge_action.is_remove()
-                    && !borrow.blocked_place().is_remote() =>
-            {
-                // TODO: The remote thing is a bug in the PCG
+            BorrowPcgEdgeKind::Borrow(borrow) if borrow.is_mut() && edge_action.is_remove() => {
                 self.fold_or_unfold(borrow.assigned_ref(), FoldOrUnfold::Unfold, label);
             }
             BorrowPcgEdgeKind::Deref(deref) => {

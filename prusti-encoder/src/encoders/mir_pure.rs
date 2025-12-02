@@ -1,11 +1,11 @@
 use crate::encoders::{
-    FunctionCallEnc, MirLocalDefEnc, MirLocalDefEncOutput, MirLocalDefEncTask, Pure,
-    TyUseImpureEnc, ViperTupleEnc,
+    FunctionCallEnc, MirLocalDefEnc, MirLocalDefEncOutput, MirLocalDefEncTask, TyUseImpureEnc,
+    ViperTupleEnc,
     mir_fn::{CallTaskDescription, RustSignature},
     mir_shared::PureRvalueEnc,
     ty::{
-        LazyRustTy, RustTy, RustTyData, RustTyDecomposition, RustTyNormalized,
-        generics::{GArgs, GArgsCastEnc, GArgsTyEnc, GParams, GenericParamsEnc},
+        RustTyDecomposition,
+        generics::GParams,
         use_pure::{TyUsePure, TyUsePureEnc},
     },
 };
@@ -22,7 +22,7 @@ use prusti_rustc_interface::{
         mir,
         ty::{self, Binder, FnSig, TyKind},
     },
-    span::{Span, def_id::DefId, source_map::Spanned, symbol},
+    span::{Span, def_id::DefId, source_map::Spanned},
 };
 use std::{collections::HashMap, fmt};
 use task_encoder::{EncodeFullError, EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
@@ -46,7 +46,6 @@ pub enum Mode {
 // TODO: does this need to be `&'vir [..]`?
 type ExprInput<'vir> = (DefId, &'vir [vir::ExprSnap<'vir>]);
 type ExprRet<'vir> = vir::ExprGenSnap<'vir, ExprInput<'vir>, vir::ExprKind<'vir>>;
-type ExprCRet<'vir> = vir::ExprGenCSnap<'vir, ExprInput<'vir>, vir::ExprKind<'vir>>;
 type ExprRetRef<'vir> = vir::ExprGenRef<'vir, ExprInput<'vir>, vir::ExprKind<'vir>>;
 type ExprRetAny<'vir, T> = vir::ExprGen<'vir, ExprInput<'vir>, vir::ExprKind<'vir>, T>;
 
@@ -244,7 +243,6 @@ struct Enc<'vir: 'enc, 'enc> {
     rel1_mode: bool,
     before_expiry_mode: bool,
     local_defs: MirLocalDefEncOutput<'vir>,
-    kind: PureKind,
 }
 
 struct EncodedPlace<'vir> {
@@ -347,7 +345,6 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
             rel1_mode: false,
             before_expiry_mode: false,
             local_defs,
-            kind,
         }
     }
 
@@ -737,9 +734,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                     let place_ref = encoded_place
                         .place_ref
                         .unwrap_or_else(|| self.vcx.mk_null().lazy());
-                    Ok(e_rvalue_ty
-                        .prim_to_snap(place_ref)
-                        .upcast_ty())
+                    Ok(e_rvalue_ty.prim_to_snap(place_ref).upcast_ty())
                 } else {
                     let e_rvalue_ty = rvalue_snapshot_encoding.expect_immref();
                     // For shared borrows we want to use just the snapshot
@@ -828,14 +823,13 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                         let val_expr = e_ty.value_access(encoded_place.snap.downcast_ty());
                         EncodedPlace::new(val_expr, encoded_place.place_ref)
                     }
-                    TyKind::Ref(_, inner_ty, ty::Mutability::Mut) => {
+                    TyKind::Ref(.., ty::Mutability::Mut) => {
                         let e_ty = self
                             .deps
                             .require_dep::<TyUsePureEnc>(ty_task)
                             .unwrap()
                             .expect_mutref();
-                        let val_expr =
-                            e_ty.deref_snap(encoded_place.snap.downcast_ty());
+                        let val_expr = e_ty.deref_snap(encoded_place.snap.downcast_ty());
                         EncodedPlace::new(val_expr, encoded_place.place_ref)
                     }
                     _ => unreachable!(),

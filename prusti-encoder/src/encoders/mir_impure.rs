@@ -423,16 +423,13 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         let ref_p = self.encode_place(place);
 
         let place_ty = ref_p.ty;
-        let ref_p = self.vcx.maybe_apply_label(ref_p.expr.expect_predicate(), label);
+        let ref_p = self
+            .vcx
+            .maybe_apply_label(ref_p.expr.expect_predicate(), label);
         let data = self.ty_use_impure(place_ty.ty);
 
         let stmts = match fold_or_unfold {
-            FoldOrUnfold::Unfold => data.unfold(
-                place_ty.variant_index,
-                ref_p,
-                None,
-                label,
-            ),
+            FoldOrUnfold::Unfold => data.unfold(place_ty.variant_index, ref_p, None, label),
             FoldOrUnfold::Fold => data.fold(place_ty.variant_index, ref_p, None, label),
         };
         self.stmts(stmts);
@@ -515,8 +512,11 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
     ) -> EncodeResult<'vir, (), E> {
         match edge.kind() {
             BorrowPcgEdgeKind::Borrow(borrow)
-                if borrow.is_mut(self.pcg_ctxt()) && edge_action.is_remove() =>
+                if borrow.is_mut(self.pcg_ctxt())
+                    && edge_action.is_remove()
+                    && !borrow.blocked_place().is_remote() =>
             {
+                // TODO: The remote thing is a bug in the PCG
                 self.fold_or_unfold(borrow.assigned_ref(), FoldOrUnfold::Unfold, label);
             }
             BorrowPcgEdgeKind::Deref(deref) => {

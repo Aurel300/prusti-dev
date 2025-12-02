@@ -43,8 +43,22 @@ impl TaskEncoder for TraitImplEnc {
             let trait_did = trait_ref.def_id;
             let trait_data = deps.require_dep::<TraitEnc>(trait_did)?;
 
-            let args = deps
-                .require_dep::<GArgsTyEnc>(GArgs::new(GParams::from(task_key.0), trait_ref.args))?;
+            // for some reason, just using all args (which includes the struct at index 0)
+            // leads to a cycle for simple test cases -> split up and add struct manually
+            let args = deps.require_dep::<GArgsTyEnc>(GArgs::new(
+                GParams::from(task_key.0),
+                &trait_ref.args[1..],
+            ))?;
+
+            let struct_ty = tcx.type_of(task_key.0).instantiate_identity();
+            let struct_ty_expr = params.ty_expr(
+                deps,
+                RustTyDecomposition::from_ty(struct_ty, tcx, GParams::from(task_key.0)),
+            );
+
+            let mut vec = Vec::new();
+            vec.push(struct_ty_expr);
+            vec.append(&mut args.get_ty().to_owned());
 
             let mut axs = Vec::new();
 
@@ -56,10 +70,15 @@ impl TaskEncoder for TraitImplEnc {
                 .iter()
                 .map(|dec| dec.upcast_ty())
                 .collect::<Vec<_>>();
-            let trait_tys = args.get_ty();
-            axs.push(vcx.mk_domain_axiom(
+            let trait_tys = vcx.alloc_slice(&vec);
+            axs.push(
+                vcx.mk_domain_axiom(
                 vir_format_identifier!(vcx, "{}_impl_{}", trait_data.trait_name, struct_ty),
-                vir::expr! {forall ..[trait_ty_decls] :: {[impl_fun(trait_tys)]} [impl_fun(trait_tys)]},
+                if trait_ty_decls.is_empty() {
+                    vir::expr! {[impl_fun(trait_tys)]}
+                } else {
+                    vir::expr! {forall ..[trait_ty_decls] :: {[impl_fun(trait_tys)]} [impl_fun(trait_tys)]}
+                }
             ));
 
             tcx.associated_items(task_key.0)
@@ -90,7 +109,11 @@ impl TaskEncoder for TraitImplEnc {
                                     tcx.item_name(impl_item.def_id),
                                     struct_ty
                                 ),
-                                vir::expr! {forall ..[trait_ty_decls] :: {[assoc_fun(trait_tys)]} ([assoc_fun(trait_tys)]) == (assoc_type_expr)},
+                                if trait_ty_decls.is_empty() {
+                                    vir::expr! {([assoc_fun(trait_tys)]) == (assoc_type_expr)}
+                                } else {
+                                    vir::expr! {forall ..[trait_ty_decls] :: {[assoc_fun(trait_tys)]} ([assoc_fun(trait_tys)]) == (assoc_type_expr)}
+                                }
                             ))
                         });
                 });

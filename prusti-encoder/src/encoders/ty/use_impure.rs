@@ -1,12 +1,13 @@
 use prusti_rustc_interface::abi;
 use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
-use vir::PredicateIdn;
+use vir::{OldLabel, PredicateIdn};
 
 use crate::encoders::{
     Impure,
     ty::{
         LazyRustTy, RustTyDatas,
-        generics::{GArgs, GArgsCastEnc, GArgsTyEnc, GParams}, pure::PureTyDatas,
+        generics::{GArgs, GArgsCastEnc, GArgsTyEnc, GParams},
+        pure::PureTyDatas,
     },
 };
 
@@ -314,6 +315,7 @@ impl<'vir> TyData<'vir, UseImpureTyDatas> {
         variant: Option<abi::VariantIdx>,
         self_ref: vir::ExprRef<'vir>,
         perm: Option<vir::ExprPerm<'vir>>,
+        old: Option<vir::OldLabel<'vir>>,
     ) -> Vec<vir::Stmt<'vir>> {
         if let Some(variant) = variant {
             return self
@@ -326,7 +328,7 @@ impl<'vir> TyData<'vir, UseImpureTyDatas> {
             TySpecifics::Param(_) | TySpecifics::Primitive(_) => unreachable!(),
             TySpecifics::Opaque(_) => panic!("cannot unfold opaque type"),
             TySpecifics::ImmRef(..) => Vec::new(),
-            TySpecifics::MutRef(data) => data.unfold(self_ref).into_iter().collect(),
+            TySpecifics::MutRef(data) => data.unfold(self_ref, old).into_iter().collect(),
             TySpecifics::StructLike(data) => data.unfold(self_ref, perm).collect(),
             TySpecifics::EnumLike(..) => {
                 let pred_app = self.ref_to_pred_app(self_ref, perm);
@@ -419,15 +421,30 @@ impl<'vir> TyUseImpureEnum<'vir> {
 impl<'vir> TyUseImpureImmRef<'vir> {}
 
 impl<'vir> TyUseImpureMutRef<'vir> {
-    pub fn deref(&self, self_ref: vir::ExprRef<'vir>) -> vir::ExprRef<'vir> {
-        (self.impure.deref_func)(self_ref, self.args.get_ty(), self.args.get_const())
+    pub fn deref(
+        &self,
+        self_ref: vir::ExprRef<'vir>,
+        label: Option<vir::OldLabel<'vir>>,
+    ) -> vir::ExprRef<'vir> {
+        let base = (self.impure.deref_func)(self_ref, self.args.get_ty(), self.args.get_const());
+        match label {
+            Some(OldLabel::Label(label)) => vir::with_vcx(|vcx| vcx.mk_local_labelled_old_expr(base, label)),
+            Some(OldLabel::Block(block)) => todo!(),
+            Some(OldLabel::None) => vir::with_vcx(|vcx| vcx.mk_old_expr(base)),
+            Some(OldLabel::Lhs) => vir::with_vcx(|vcx| vcx.mk_old_lhs_expr(base)),
+            None => base,
+        }
     }
 
     fn fold(&self, self_ref: vir::ExprRef<'vir>) -> Option<vir::Stmt<'vir>> {
-        self.caster.cast_to_callee_ctx(self.deref(self_ref))
+        self.caster.cast_to_callee_ctx(self.deref(self_ref, None))
     }
 
-    fn unfold(&self, self_ref: vir::ExprRef<'vir>) -> Option<vir::Stmt<'vir>> {
-        self.caster.cast_to_caller_ctx(self.deref(self_ref))
+    fn unfold(
+        &self,
+        self_ref: vir::ExprRef<'vir>,
+        label: Option<vir::OldLabel<'vir>>,
+    ) -> Option<vir::Stmt<'vir>> {
+        self.caster.cast_to_caller_ctx(self.deref(self_ref, label))
     }
 }

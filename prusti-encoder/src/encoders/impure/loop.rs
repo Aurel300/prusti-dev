@@ -6,7 +6,7 @@ use pcg::{
     pcg::{EvalStmtPhase, PcgNode},
     results::PcgBasicBlock,
     utils::{
-        HasCompilerCtxt, Place, SnapshotLocation, maybe_old::MaybeLabelledPlace,
+        AnalysisLocation, HasCompilerCtxt, Place, SnapshotLocation, maybe_old::MaybeLabelledPlace,
         maybe_remote::MaybeRemotePlace,
     },
 };
@@ -16,8 +16,7 @@ use task_encoder::TaskEncoder;
 use vir::Reify;
 
 use crate::encoders::{
-    ImpureEncVisitor, TyUseImpureEnc,
-    ty::{RustTyDecomposition, indirect::IndirectPredicatesEnc, use_impure::TyUseImpure},
+    ImpureEncVisitor, TyUseImpureEnc, mir_impure::LocationLabelPrefix, ty::{RustTyDecomposition, indirect::IndirectPredicatesEnc, use_impure::TyUseImpure}
 };
 
 pub(super) enum WandOldOuter<'vir> {
@@ -165,35 +164,11 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 self.mk_wand_outer(expr, old_outer)
             }
             MaybeRemotePlace::Local(MaybeLabelledPlace::Labelled(place)) => {
-                let label = Self::get_location_label(self.vcx, place.at());
+                let label = self.get_location_label(place.at());
                 self.vcx.mk_old(expr, label)
             }
             MaybeRemotePlace::Remote(_) => self.vcx.mk_old_expr(expr),
         }
-    }
-
-    pub(crate) fn get_location_label(
-        vcx: &'vir vir::VirCtxt<'vir>,
-        at: SnapshotLocation,
-    ) -> vir::OldLabel<'vir> {
-        if let SnapshotLocation::BeforeJoin(bb) | SnapshotLocation::Loop(bb) = at {
-            return vir::OldLabel::Block(vir::CfgBlockLabelData::BasicBlock(bb.as_usize()));
-        }
-        let label_identifier = match at {
-            SnapshotLocation::Before(..) => "before",
-            SnapshotLocation::After(..) => "after",
-            SnapshotLocation::BeforeRefReassignment(..) => "before_ref_reassignment",
-            SnapshotLocation::Loop(_) | SnapshotLocation::BeforeJoin(_) => unreachable!(),
-        };
-        let location = at.location();
-        let label = vir::vir_format!(
-            vcx,
-            "_{}_{}_{}",
-            label_identifier,
-            location.block.index(),
-            location.statement_index
-        );
-        vir::OldLabel::Label(label)
     }
 
     fn mk_wand_outer<T: SnapOrRef>(

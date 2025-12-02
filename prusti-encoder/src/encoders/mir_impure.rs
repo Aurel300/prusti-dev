@@ -18,7 +18,7 @@ use pcg::{
     pcg::{CapabilityKind, EvalStmtPhase, Pcg, PcgNode, PcgSuccessor},
     results::PcgBasicBlock,
     utils::{
-        CompilerCtxt, HasPlace, Place, display::DisplayWithCtxt, maybe_old::MaybeLabelledPlace,
+        CompilerCtxt, HasPlace, Place, SnapshotLocation, display::DisplayWithCtxt, maybe_old::MaybeLabelledPlace
     },
 };
 use prusti_interface::{PrustiError, specs::specifications::SpecQuery};
@@ -96,7 +96,7 @@ impl<'vir> FromToVars<'vir> {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub(crate) enum EdgeAction {
     Add,
     Remove,
@@ -105,6 +105,9 @@ pub(crate) enum EdgeAction {
 impl EdgeAction {
     pub(crate) fn is_add(self) -> bool {
         matches!(self, EdgeAction::Add)
+    }
+    pub(crate) fn is_remove(self) -> bool {
+        matches!(self, EdgeAction::Remove)
     }
 }
 pub(crate) enum FoldOrUnfold {
@@ -117,6 +120,23 @@ impl FoldOrUnfold {
         match action {
             EdgeAction::Add => FoldOrUnfold::Unfold,
             EdgeAction::Remove => FoldOrUnfold::Fold,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum LocationLabelPrefix {
+    Before,
+    After,
+    BeforeRefReassignment
+}
+
+impl LocationLabelPrefix {
+    pub(crate) fn to_str(&self) -> &'static str {
+        match self {
+            LocationLabelPrefix::Before => "before",
+            LocationLabelPrefix::After => "after",
+            LocationLabelPrefix::BeforeRefReassignment => "before_ref_reassignment",
         }
     }
 }
@@ -215,7 +235,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         self.deps.require_dep::<TyUseImpureEnc>(ty_task).unwrap()
     }
 
-    fn encode_rvalue_snap(
+    fn encode_rvalue(
         &mut self,
         rvalue: &mir::Rvalue<'vir>,
         span: Span,
@@ -291,27 +311,24 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 .upcast_ty())
             }
 
-            mir::Rvalue::Ref(_reg, _kind, place) => {
-                Ok(match rvalue_ty.kind() {
-                    TyKind::Ref(.., ty::Mutability::Not) => {
-                        let (address, snap, _, _) = self.encode_place_with_snap((*place).into());
-                        let inner = self.ty_use_pure(rvalue_ty).expect_immref();
-                        inner.prim_to_snap(address.expr.address, snap).upcast_ty()
-                    }
-                    TyKind::Ref(.., ty::Mutability::Mut) => {
-                        let e_rvalue_ty = self.ty_use_pure(rvalue_ty);
-                        let (place_expr, snap, _, _) =
-                            self.encode_place_with_snap(Place::from(*place));
+            mir::Rvalue::Ref(_reg, _kind, place) => Ok(match rvalue_ty.kind() {
+                TyKind::Ref(.., ty::Mutability::Not) => {
+                    let (address, snap, _, _) = self.encode_place_with_snap((*place).into());
+                    let inner = self.ty_use_pure(rvalue_ty).expect_immref();
+                    inner.prim_to_snap(address.expr.address, snap).upcast_ty()
+                }
+                TyKind::Ref(.., ty::Mutability::Mut) => {
+                    let e_rvalue_ty = self.ty_use_pure(rvalue_ty);
+                    let (place_expr, _, _, _) = self.encode_place_with_snap(Place::from(*place));
 
-                        // The snapshot of the referenced value should be encoded as a generic `Param`
-                        let inner = e_rvalue_ty.expect_mutref();
-                        inner
-                            .prim_to_snap(place_expr.expr.expect_predicate())
-                            .upcast_ty()
-                    }
-                    _ => unreachable!(),
-                })
-            }
+                    let inner = e_rvalue_ty.expect_mutref();
+
+                    inner
+                        .prim_to_snap(place_expr.expr.expect_predicate())
+                        .upcast_ty()
+                }
+                _ => unreachable!(),
+            }),
             _ => Err(EncodeRvalueError::UnsupportedRvalue),
         }
     }
@@ -393,14 +410,10 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
     ) {
         let (place, old) = match base {
             MaybeLabelledPlace::Current(place) => (place, None),
-            MaybeLabelledPlace::Labelled(snap) => {
-                // We shouldn't be unfolding old places?
-                debug_assert!(!matches!(fold_or_unfold, FoldOrUnfold::Unfold));
-                (
-                    snap.place(),
-                    Some(Self::get_location_label(self.vcx, snap.at())),
-                )
-            }
+            MaybeLabelledPlace::Labelled(snap) => (
+                snap.place(),
+                Some(self.get_location_label(snap.at())),
+            ),
         };
 
         if place.is_shared_ref(self.pcg_ctxt()) || place.projects_shared_ref(self.pcg_ctxt()) {
@@ -419,7 +432,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             ref_p = self.vcx.mk_local_labelled_old_expr(ref_p, label);
         }
         let stmts = match fold_or_unfold {
-            FoldOrUnfold::Unfold => data.unfold(place_ty.variant_index, ref_p, None),
+            FoldOrUnfold::Unfold => data.unfold(place_ty.variant_index, ref_p, None, old),
             FoldOrUnfold::Fold => data.fold(place_ty.variant_index, ref_p, None),
         };
         self.stmts(stmts);
@@ -501,6 +514,11 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         to_skip: &mut Vec<mir::BasicBlock>,
     ) -> EncodeResult<'vir, (), E> {
         match edge.kind() {
+            BorrowPcgEdgeKind::Borrow(borrow)
+                if borrow.is_mut(self.pcg_ctxt()) && edge_action.is_remove() =>
+            {
+                self.fold_or_unfold(borrow.assigned_ref(), FoldOrUnfold::Unfold, label);
+            }
             BorrowPcgEdgeKind::Deref(deref) => {
                 self.fold_or_unfold(
                     deref.blocked_place(),
@@ -569,11 +587,11 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                     edge_to_loop,
                 );
             }
-            other => comment!(self, "(ignoring) {other:?}"),
+            other => comment!(self, "(ignoring) {edge_action:?} {other:?}"),
         }
         comment!(
             self,
-            "(PCG) handled edge: {}",
+            "(PCG) handled edge {edge_action:?}: {}",
             edge.to_short_string(self.pcg_ctxt())
         );
         Ok(())
@@ -694,7 +712,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 let place_enc = place_enc.expr.expect_predicate();
                 let data = self.ty_use_impure(place_ty.ty);
                 if matches!(repack_op, pcg::free_pcs::RepackOp::Expand(..)) {
-                    for stmt in data.unfold(place_ty.variant_index, place_enc, None) {
+                    for stmt in data.unfold(place_ty.variant_index, place_enc, None, None) {
                         self.stmt(stmt);
                     }
                 } else {
@@ -913,10 +931,10 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                     ty::TyKind::Ref(_, _, ty::Mutability::Mut) => {
                         tracing::warn!("snap for {:?}: {:?}", place_ty.ty, expr.snap);
                         let p_ty = self.ty_use_pure(place_ty.ty).expect_mutref();
-                        let address = e_ty.expect_mutref().deref(expr.address);
+                        let address = e_ty.expect_mutref().deref(expr.address, None);
                         let snap = p_ty.deref_snap_of(address);
                         PlaceExpr {
-                            address: e_ty.expect_mutref().deref(expr.address),
+                            address: e_ty.expect_mutref().deref(expr.address, None),
                             snap: Some(snap),
                         }
                     }
@@ -942,14 +960,41 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         name
     }
 
-    fn new_after_label(&mut self, location: mir::Location) {
-        let name = vir::vir_format!(
+    pub(crate) fn get_location_label(
+        &self,
+        at: SnapshotLocation,
+    ) -> vir::OldLabel<'vir> {
+        if let SnapshotLocation::BeforeJoin(bb) | SnapshotLocation::Loop(bb) = at {
+            return vir::OldLabel::Block(vir::CfgBlockLabelData::BasicBlock(bb.as_usize()));
+        }
+        let prefix = match at {
+            SnapshotLocation::Before(..) => LocationLabelPrefix::Before,
+            SnapshotLocation::After(..) => LocationLabelPrefix::After,
+            SnapshotLocation::BeforeRefReassignment(..) => LocationLabelPrefix::BeforeRefReassignment,
+            SnapshotLocation::Loop(_) | SnapshotLocation::BeforeJoin(_) => unreachable!(),
+        };
+        let location = at.location();
+        let label = self.location_label(prefix, location);
+        vir::OldLabel::Label(label)
+    }
+
+    pub(crate) fn location_label(
+        &self,
+        prefix: LocationLabelPrefix,
+        location: mir::Location,
+    ) -> &'vir str {
+        vir::vir_format!(
             self.vcx,
-            "_after_{}_{}",
+            "_{}_{}_{}",
+            prefix.to_str(),
             location.block.index(),
             location.statement_index
-        );
-        self.stmt(self.vcx.mk_label_stmt(name));
+        )
+    }
+
+    fn new_before_label(&mut self, location: mir::Location) {
+        let label = self.location_label(LocationLabelPrefix::Before, location);
+        self.stmt(self.vcx.mk_label_stmt(label));
     }
 
     fn set_from_to_flag(&mut self, from: mir::BasicBlock, to: mir::BasicBlock) -> vir::Stmt<'vir> {
@@ -1101,6 +1146,8 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                 return;
             }
 
+            self.new_before_label(location);
+
             comment!(self, "[MIR] {location:?}: {statement:?}");
 
             let current_fpcs = self.current_fpcs.take().unwrap();
@@ -1136,7 +1183,7 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                         .expect_predicate();
 
                     // The snapshot of the value that we are assigning.
-                    let rval_enc = self.encode_rvalue_snap(rvalue, span);
+                    let rval_enc = self.encode_rvalue(rvalue, span);
 
                     match rval_enc {
                         Ok(rval_enc) => {
@@ -1145,7 +1192,10 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                             let dest_ty_out = self.ty_use_impure(dest_ty.ty);
                             let method_assign_app =
                                 dest_ty_out.apply_method_assign(self.vcx, proj_enc, rval_enc);
-                                self.stmt(method_assign_app);
+                            self.stmt(method_assign_app);
+                            if matches!(rvalue, mir::Rvalue::Ref(_, mir::BorrowKind::Mut {..}, _)) {
+                            dest_ty_out.fold(None, proj_enc, None).into_iter().for_each(|stmt| self.stmt(stmt));
+                            }
                         }
                         Err(_) => {
                             self.vcx.with_span(span, |vcx| {
@@ -1190,7 +1240,6 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                     statement.kind
                 ),
             }
-            self.new_after_label(location);
         });
     }
 
@@ -1198,6 +1247,7 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
         if self.deps.check_cycle().is_err() {
             return;
         }
+        self.new_before_label(location);
         comment!(self, "[MIR] {location:?}: {:?}", terminator.kind);
         let span = terminator.source_info.span;
 
@@ -1643,7 +1693,6 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                 self.vcx.mk_assume_false_stmt()
             }),
         };
-        self.new_after_label(location);
         assert!(self.current_terminator.replace(terminator).is_none());
     }
 }

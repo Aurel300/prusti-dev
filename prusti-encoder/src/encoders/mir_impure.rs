@@ -4,7 +4,6 @@ use pcg::{
     borrow_pcg::{
         action::BorrowPcgActionKind,
         borrow_pcg_edge::BorrowPcgEdge,
-        borrow_pcg_expansion::BorrowPcgExpansion,
         edge::{
             abstraction::{AbstractionEdge, FunctionCallOrLoop},
             kind::BorrowPcgEdgeKind,
@@ -202,13 +201,35 @@ macro_rules! comment {
 type EncodeResult<'vir, T, E> = Result<T, EncodeFullError<'vir, E>>;
 
 struct EncodedRvalue<'vir> {
+    /// A snapshot of the rvalue. This snapshot is guaranteed to be well-formed
+    /// in the state *before* the Rvalue has been assigned to a place. For
+    /// example, in the statement `let rx = &mut x`, the snapshot encoding of
+    /// `&mut x` relies on capabilities to `x` as they are *before* the
+    /// assignment occurs. This is because the encoding of the assignment itself
+    /// requires a snapshot of `&mut x`, and the snapshot constructor for
+    /// &mut expects a snapshot of the borrowed place which can only be created
+    /// when the capabilities are in the pre-assign state.
     expr: vir::ExprSnap<'vir>,
-    post_fold_stmts: Option<Box<dyn FnOnce(vir::ExprRef<'vir>) -> Vec<vir::Stmt<'vir>> + 'vir>>,
+
+    /// Additional statements necessary to obtain the predicate for the assigned
+    /// place of this Rvalue *after* the assignment. Such folds are necessary if
+    /// make_generic / make_concrete type casts are necessary to move the capabilities
+    /// from the state before the assignment to the predicate of the assigned place.
+    ///
+    /// For example, for the statement `let rx: &mut u32 = &mut x`, this should
+    /// be called with the place corresponding to `rx`, and it will fold the
+    /// type predicate for `rx` (in this case, this will make the `u32`
+    /// permission held conceptually in *rx generic by calling
+    /// `make_generic_u32(*rx)`
+    ///
+    /// Note that after executing these statements, the snapshot in `expr` is
+    /// no-longer well-formed.
+    post_assign_folds: Option<Box<dyn FnOnce(vir::ExprRef<'vir>) -> Vec<vir::Stmt<'vir>> + 'vir>>,
 }
 
-impl <'vir> EncodedRvalue<'vir> {
+impl<'vir> EncodedRvalue<'vir> {
     fn post_fold_stmts(self, lhs_place: vir::ExprRef<'vir>) -> Vec<vir::Stmt<'vir>> {
-        match self.post_fold_stmts {
+        match self.post_assign_folds {
             Some(f) => f(lhs_place),
             None => Vec::new(),
         }
@@ -219,7 +240,7 @@ impl<'vir> From<vir::ExprSnap<'vir>> for EncodedRvalue<'vir> {
     fn from(expr: vir::ExprSnap<'vir>) -> Self {
         Self {
             expr,
-            post_fold_stmts: None,
+            post_assign_folds: None,
         }
     }
 }
@@ -361,7 +382,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                     let place_ref = place_expr.expr.expect_predicate();
                     EncodedRvalue {
                         expr: inner.prim_to_snap(place_ref).upcast_ty(),
-                        post_fold_stmts: Some(Box::new(move |lhs_place| {
+                        post_assign_folds: Some(Box::new(move |lhs_place| {
                             p_rvalue_ty.fold(None, lhs_place, None, None)
                         })),
                     }

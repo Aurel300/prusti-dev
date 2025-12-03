@@ -173,7 +173,6 @@ where
 /// Represents the translation of a MIR place. If the place crosses a shared
 /// reference, then we will no longer have a predicate for the `address` Ref,
 /// but we do also have the snapshot available.
-#[derive(Copy, Clone)]
 pub(crate) struct PlaceExpr<'vir> {
     address: vir::ExprRef<'vir>,
     snap: Option<vir::ExprSnap<'vir>>,
@@ -718,13 +717,9 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 let place_enc = place_enc.expr.expect_predicate();
                 let data = self.ty_use_impure(place_ty.ty);
                 if matches!(repack_op, pcg::free_pcs::RepackOp::Expand(..)) {
-                    for stmt in data.unfold(place_ty.variant_index, place_enc, None, None) {
-                        self.stmt(stmt);
-                    }
+                    self.stmts(data.unfold(place_ty.variant_index, place_enc, None, None))
                 } else {
-                    for stmt in data.fold(place_ty.variant_index, place_enc, None, None) {
-                        self.stmt(stmt);
-                    }
+                    self.stmts(data.fold(place_ty.variant_index, place_enc, None, None))
                 }
             }
             RepackOp::Weaken(weaken)
@@ -1175,9 +1170,7 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                             let method_assign_app =
                                 dest_ty_out.apply_method_assign(self.vcx, proj_enc, rval_enc.expr);
                             self.stmt(method_assign_app);
-                            self.comment("Post-fold stmts start");
                             self.stmts(rval_enc.post_fold_stmts(proj_enc));
-                            self.comment("Post-fold stmts end");
                         }
                         Err(_) => {
                             self.vcx.with_span(span, |vcx| {

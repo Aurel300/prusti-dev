@@ -880,20 +880,6 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
         } else {
             self.mk_local_ex(place.local, curr_ver[&place.local])
         };
-        if self.local_defs.locals.len() <= place.local.as_usize() {
-            let span = self.vcx.tcx().def_span(self.def_id);
-            let source = self
-                .vcx
-                .tcx()
-                .sess
-                .source_map()
-                .span_to_snippet(span)
-                .unwrap_or_default();
-            panic!(
-                "{:?} local for {:?} not found in local_defs\nSource:\n{}",
-                self.def_id, place, source
-            );
-        };
         let place_ref: Option<ExprRetRef<'vir>> =
             Some(self.local_defs[place.local].local_ex.lazy());
         let mut encoded_place = EncodedPlace::new(expr, place_ref);

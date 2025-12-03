@@ -6,7 +6,8 @@ use pcg::{
     pcg::{EvalStmtPhase, PcgNode},
     results::PcgBasicBlock,
     utils::{
-        HasCompilerCtxt, HasPlace, Place, maybe_old::MaybeLabelledPlace, maybe_remote::MaybeRemotePlace
+        HasCompilerCtxt, HasPlace, Place, maybe_old::MaybeLabelledPlace,
+        maybe_remote::MaybeRemotePlace,
     },
 };
 use prusti_rustc_interface::middle::mir;

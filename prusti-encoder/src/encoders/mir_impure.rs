@@ -183,6 +183,7 @@ pub(crate) struct PlaceExpr<'vir> {
 impl<'vir> PlaceExpr<'vir> {
     /// Expects the encoded place to not be behind a shared ref
     pub(crate) fn expect_predicate(&self) -> vir::ExprRef<'vir> {
+        assert!(self.snap.is_none());
         self.address
     }
 }
@@ -848,10 +849,10 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
 
         let ty_out = self.ty_use_impure(ty.ty);
         let result = self.encode_place(place);
-        let snap = result.expr.snap.unwrap_or_else(|| {
-            tracing::warn!("No snap for {:?}: {:?}", place, ty);
-            ty_out.ref_to_snap(result.expr.address)
-        });
+        let snap = result
+            .expr
+            .snap
+            .unwrap_or_else(|| ty_out.ref_to_snap(result.expr.address));
         (result, snap, ty, ty_out)
     }
 
@@ -861,36 +862,19 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         elem: mir::PlaceElem<'vir>,
         expr: PlaceExpr<'vir>,
     ) -> PlaceExpr<'vir> {
-        let project_snapshot = place.projects_shared_ref(self.pcg_ctxt());
-        if project_snapshot {
-            assert!(expr.snap.is_some());
-        }
-        let project_expr = |project_addr: vir::ExprRef<'vir>,
-                            project_snap: Box<
-            dyn FnOnce(vir::ExprSnap<'vir>) -> vir::ExprSnap<'vir>,
-        >| {
-            PlaceExpr {
-                address: project_addr,
-                snap: if project_snapshot {
-                    Some(project_snap(expr.snap.unwrap()))
-                } else {
-                    None
-                },
-            }
-        };
         let place_ty = place.ty(self.pcg_ctxt());
         match elem {
             mir::ProjectionElem::Field(field_idx, _) => {
                 let e_ty = self.ty_use_impure(place_ty.ty);
                 let field_access = e_ty.expect_variant_opt(place_ty.variant_index);
-                project_expr(
-                    field_access[field_idx].field_ref(expr.address),
-                    Box::new(|snap: vir::ExprSnap<'vir>| {
+                PlaceExpr {
+                    address: field_access[field_idx].field_ref(expr.address),
+                    snap: expr.snap.map(|snap| {
                         let e_ty = self.ty_use_pure(place_ty.ty);
                         let field_access = e_ty.expect_variant_opt(place_ty.variant_index);
                         field_access[field_idx].read(snap.downcast_ty())
                     }),
-                )
+                }
             }
             // TODO: should all variants start at the same `Ref`?
             mir::ProjectionElem::Downcast(..) => expr,
@@ -900,17 +884,17 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 match place_ty.ty.kind() {
                     ty::TyKind::Adt(adt, _) if adt.is_box() => {
                         let field_access = e_ty.expect_variant_opt(None);
-                        project_expr(
+                        PlaceExpr {
                             // TODO: this is unsound: a Box should be modelled
                             // with a Ref field rather than a field_access
                             // function.
-                            field_access[abi::FieldIdx::ZERO].field_ref(expr.address),
-                            Box::new(|snap| {
+                            address: field_access[abi::FieldIdx::ZERO].field_ref(expr.address),
+                            snap: expr.snap.map(|snap| {
                                 let e_ty = self.ty_use_pure(place_ty.ty);
                                 let field_access = e_ty.expect_variant_opt(None);
                                 field_access[abi::FieldIdx::ZERO].read(snap.downcast_ty())
                             }),
-                        )
+                        }
                     }
                     ty::TyKind::Ref(_, _, ty::Mutability::Not) => {
                         let snap = expr
@@ -923,16 +907,10 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                             snap: Some(p_ty.value_access(snap)),
                         }
                     }
-                    ty::TyKind::Ref(_, _, ty::Mutability::Mut) => {
-                        tracing::warn!("snap for {:?}: {:?}", place_ty.ty, expr.snap);
-                        let p_ty = self.ty_use_pure(place_ty.ty).expect_mutref();
-                        let address = e_ty.expect_mutref().deref(expr.address, None);
-                        let snap = p_ty.deref_snap_of(address);
-                        PlaceExpr {
-                            address: e_ty.expect_mutref().deref(expr.address, None),
-                            snap: Some(snap),
-                        }
-                    }
+                    ty::TyKind::Ref(_, _, ty::Mutability::Mut) => PlaceExpr {
+                        address: e_ty.expect_mutref().deref(expr.address, None),
+                        snap: None,
+                    },
                     _ => unreachable!(),
                 }
             }

@@ -132,7 +132,7 @@ pub(crate) enum LocationLabelPrefix {
 }
 
 impl LocationLabelPrefix {
-    pub(crate) fn to_str(&self) -> &'static str {
+    pub(crate) fn to_str(self) -> &'static str {
         match self {
             LocationLabelPrefix::Before => "before",
             LocationLabelPrefix::After => "after",

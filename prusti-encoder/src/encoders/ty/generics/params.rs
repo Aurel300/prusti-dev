@@ -1,9 +1,6 @@
 use prusti_interface::specs::typed::ExternSpecKind;
 use prusti_rustc_interface::{
-    middle::{
-        ty,
-        ty::TyKind,
-    },
+    middle::{ty, ty::TyKind},
     span::{def_id::DefId, symbol},
 };
 use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
@@ -273,18 +270,12 @@ impl<'vir> GenericParams<'vir> {
                     let tys = &a
                         .args
                         .iter()
-                        .map(|arg| {
-                            match arg.expect_ty().kind() {
-                                TyKind::Param(p) => self.ty_exprs[self.map_idx(p.index).unwrap()],
-                                _ => self.ty_expr(
-                                    deps,
-                                    RustTyDecomposition::from_ty(
-                                        arg.expect_ty(),
-                                        tcx,
-                                        ty.args.context,
-                                    ),
-                                ),
-                            }
+                        .map(|arg| match arg.expect_ty().kind() {
+                            TyKind::Param(p) => self.ty_exprs[self.map_idx(p.index).unwrap()],
+                            _ => self.ty_expr(
+                                deps,
+                                RustTyDecomposition::from_ty(arg.expect_ty(), tcx, ty.args.context),
+                            ),
                         })
                         .collect::<Vec<_>>();
                     (assoc_funs[0])(tys)

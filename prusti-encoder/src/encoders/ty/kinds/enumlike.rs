@@ -19,10 +19,6 @@ pub(crate) fn ty_pure<'vir>(
     deps: &mut TaskEncoderDependencies<'vir, TyPureEnc>,
     builder: &mut AdtBuilder<'vir>,
 ) -> Result<EnumData<'vir, PureTyDatas>, EncodeFullError<'vir, TyPureEnc>> {
-    if let Some(d) = data.did {
-        super::structlike::generate_axioms_for_impls(d, deps)?;
-    }
-
     let discr_ty =
         deps.require_dep::<TyPureEnc>(RustTyDecomposition::from_prim_ty(data.discr).ty)?;
     let discr_prim = discr_ty.expect_primitive();
@@ -74,10 +70,6 @@ pub(crate) fn ty_impure<'vir>(
     deps: &mut TaskEncoderDependencies<'vir, TyImpureEnc>,
     builder: &mut PredicateBuilder<'vir>,
 ) -> Result<EnumData<'vir, ImpureTyDatas>, EncodeFullError<'vir, TyImpureEnc>> {
-    if let Some(d) = data.did {
-        super::structlike::generate_axioms_for_impls(d, deps)?;
-    }
-
     let ref_self_decl = builder.ref_self_decl();
     let ref_self = builder.vcx.mk_local_ex(ref_self_decl);
 

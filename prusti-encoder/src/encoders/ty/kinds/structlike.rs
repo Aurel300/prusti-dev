@@ -3,16 +3,13 @@ use crate::encoders::{
     ty::{
         RustTyDatas,
         data::{StructData, TyData},
-        generics::{GParams, trait_impls::TraitImplEnc},
         impure::{ImpureTyDatas, PredicateBuilder, TyImpureEnc, TyImpureFieldData},
         pure::{AdtBuilder, PureTyDatas, TyPureEnc, TyPureFieldData, TyPureStructData},
         use_pure::TyUsePureEnc,
     },
 };
-use task_encoder::{EncodeFullError, TaskEncoder, TaskEncoderDependencies};
+use task_encoder::{EncodeFullError, TaskEncoderDependencies};
 use vir::{CastType, HasType, PredicateIdn};
-
-use prusti_rustc_interface::span::def_id::DefId;
 
 pub(crate) fn ty_pure<'vir>(
     task_key: &TyData<'vir, RustTyDatas>,
@@ -23,25 +20,6 @@ pub(crate) fn ty_pure<'vir>(
     ty_pure_variant("", None, task_key, data, deps, builder)
 }
 
-pub(super) fn generate_axioms_for_impls<'vir, E: TaskEncoder + 'vir + ?Sized>(
-    did: DefId,
-    deps: &mut TaskEncoderDependencies<'vir, E>,
-) -> Result<(), EncodeFullError<'vir, E>> {
-    vir::with_vcx(|vcx| {
-        let tcx = vcx.tcx();
-        for trait_id in tcx.visible_traits() {
-            for impl_id in tcx.all_impls(trait_id) {
-                if tcx.type_of(impl_id).instantiate_identity()
-                    == tcx.type_of(did).instantiate_identity()
-                {
-                    deps.require_dep::<TraitImplEnc>((impl_id, GParams::empty()))?;
-                }
-            }
-        }
-        Ok(())
-    })
-}
-
 pub(super) fn ty_pure_variant<'vir>(
     prefix: &str,
     discr: Option<vir::ExprCSnap<'vir>>,
@@ -50,9 +28,6 @@ pub(super) fn ty_pure_variant<'vir>(
     deps: &mut TaskEncoderDependencies<'vir, TyPureEnc>,
     builder: &mut AdtBuilder<'vir>,
 ) -> Result<StructData<'vir, PureTyDatas>, EncodeFullError<'vir, TyPureEnc>> {
-    if let Some(d) = data.did {
-        generate_axioms_for_impls(d, deps)?;
-    }
     let field_tys = data
         .fields
         .iter()
@@ -121,9 +96,6 @@ pub(crate) fn ty_impure_variant<'vir>(
     deps: &mut TaskEncoderDependencies<'vir, TyImpureEnc>,
     builder: &mut PredicateBuilder<'vir>,
 ) -> Result<ImpureVariant<'vir>, EncodeFullError<'vir, TyImpureEnc>> {
-    if let Some(d) = data.did {
-        generate_axioms_for_impls(d, deps)?;
-    }
     let fields = data
         .fields
         .iter()

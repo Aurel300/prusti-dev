@@ -1,4 +1,3 @@
-
 use prusti_rustc_interface::{middle::ty::AssocKind, span::def_id::DefId};
 use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 use vir::{CastType, Domain, vir_format_identifier};
@@ -23,7 +22,7 @@ impl TaskEncoder for TraitImplEnc {
         }
     }
 
-    type TaskDescription<'vir> = (DefId, GParams<'vir>);
+    type TaskDescription<'vir> = DefId;
     type OutputFullLocal<'vir> = Domain<'vir>;
 
     fn do_encode_full<'vir>(
@@ -35,27 +34,21 @@ impl TaskEncoder for TraitImplEnc {
         vir::with_vcx(|vcx| {
             let tcx = vcx.tcx();
 
-            let params = deps.require_dep::<GenericParamsEnc>(GParams::from(task_key.0))?;
+            let ctx = GParams::from(*task_key);
 
-            let trait_ref = tcx
-                .impl_trait_ref(task_key.0)
-                .unwrap()
-                .instantiate_identity();
+            let params = deps.require_dep::<GenericParamsEnc>(ctx)?;
+
+            let trait_ref = tcx.impl_trait_ref(task_key).unwrap().instantiate_identity();
             let trait_did = trait_ref.def_id;
             let trait_data = deps.require_dep::<TraitEnc>(trait_did)?;
 
             // for some reason, just using all args (which includes the struct at index 0)
             // leads to a cycle for simple test cases -> split up and add struct manually
-            let args = deps.require_dep::<GArgsTyEnc>(GArgs::new(
-                GParams::from(task_key.0),
-                &trait_ref.args[1..],
-            ))?;
+            let args = deps.require_dep::<GArgsTyEnc>(GArgs::new(ctx, &trait_ref.args[1..]))?;
 
-            let struct_ty = tcx.type_of(task_key.0).instantiate_identity();
-            let struct_ty_expr = params.ty_expr(
-                deps,
-                RustTyDecomposition::from_ty(struct_ty, tcx, GParams::from(task_key.0)),
-            );
+            let struct_ty = tcx.type_of(task_key).instantiate_identity();
+            let struct_ty_expr =
+                params.ty_expr(deps, RustTyDecomposition::from_ty(struct_ty, tcx, ctx));
 
             let mut vec = Vec::new();
             vec.push(struct_ty_expr);
@@ -63,7 +56,7 @@ impl TaskEncoder for TraitImplEnc {
 
             let mut axs = Vec::new();
 
-            let struct_ty = tcx.type_of(task_key.0).instantiate_identity();
+            let struct_ty = tcx.type_of(task_key).instantiate_identity();
 
             let impl_fun = trait_data.impl_fun;
             let trait_ty_decls = params
@@ -82,7 +75,7 @@ impl TaskEncoder for TraitImplEnc {
                 }
             ));
 
-            tcx.associated_items(task_key.0)
+            tcx.associated_items(*task_key)
                 .in_definition_order()
                 .filter(|item| matches!(item.kind, AssocKind::Type { data: _ }))
                 .for_each(|impl_item| {
@@ -147,7 +140,7 @@ impl TaskEncoder for TraitImplEnc {
                     vcx,
                     "t_{}_{}",
                     trait_data.trait_name,
-                    tcx.type_of(task_key.0).instantiate_identity().to_string()
+                    tcx.type_of(*task_key).instantiate_identity().to_string()
                 ),
                 &[],
                 vcx.alloc_slice(&axs),

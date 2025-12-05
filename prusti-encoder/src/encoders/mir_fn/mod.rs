@@ -6,7 +6,7 @@ pub use function::*;
 pub use method::*;
 pub use signature::*;
 
-use crate::encoders::ty::generics::{GArgs, GParams};
+use crate::encoders::ty::generics::{GArgs, GParams, trait_impls::TraitImplEnc};
 
 use prusti_interface::specs::specifications::SpecQuery;
 use prusti_rustc_interface::{hir, middle::ty, span::def_id::DefId};
@@ -61,4 +61,19 @@ pub fn encode_all_in_crate<'tcx>(tcx: ty::TyCtxt<'tcx>) {
             }
         }
     }
+
+    for def_id in tcx.hir_crate_items(()).definitions() {
+        if let hir::def::DefKind::Impl { of_trait: true } = tcx.def_kind(def_id) {
+            TraitImplEnc::encode(def_id.to_def_id(), false).unwrap();
+        }
+    }
+
+    // for trait_id in tcx.visible_traits() {
+    //         for impl_id in tcx.all_impls(trait_id) {
+    //             {
+    //                 TraitImplEnc::encode(impl_id, false).unwrap();
+    //             }
+
+    //     }
+    // }
 }

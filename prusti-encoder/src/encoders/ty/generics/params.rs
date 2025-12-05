@@ -16,6 +16,7 @@ use crate::encoders::{
         data::TySpecifics,
         generics::{GArgsTyEnc, GParamVariant, traits::TraitEnc},
         lifted::TyConstructorEnc,
+        pure::TyPureEnc,
     },
 };
 
@@ -281,9 +282,17 @@ impl<'vir> GenericParams<'vir> {
                         .args
                         .iter()
                         .map(|arg| {
-                            self.ty_exprs[self
-                                .map_idx(expect_param(arg.expect_ty().kind()).index)
-                                .unwrap()]
+                            match arg.expect_ty().kind() {
+                                TyKind::Param(p) => self.ty_exprs[self.map_idx(p.index).unwrap()],
+                                _ => self.ty_expr(
+                                    deps,
+                                    RustTyDecomposition::from_ty(
+                                        arg.expect_ty(),
+                                        tcx,
+                                        ty.args.context,
+                                    ),
+                                ),
+                            }
                         })
                         .collect::<Vec<_>>();
                     (assoc_funs[0])(tys)

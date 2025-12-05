@@ -45,6 +45,9 @@ impl TaskEncoder for TraitEnc {
                 .in_definition_order()
                 .filter(|item| matches!(item.kind, AssocKind::Type { data: _ }))
                 .map(|item| {
+                    let params_type = deps
+                        .require_dep::<GenericParamsEnc>(GParams::from(item.def_id))
+                        .unwrap();
                     (
                         item.def_id,
                         FunctionIdn::new(
@@ -54,7 +57,7 @@ impl TaskEncoder for TraitEnc {
                                 trait_name,
                                 tcx.item_name(item.def_id),
                             ),
-                            vcx.alloc_slice(&(vec![vir::TYPE_TYVAL; params.ty_exprs().len()])),
+                            vcx.alloc_slice(&(vec![vir::TYPE_TYVAL; params_type.ty_exprs().len()])), // params_type also includes parameters of trait itself
                             vir::TYPE_TYVAL,
                         ),
                     )

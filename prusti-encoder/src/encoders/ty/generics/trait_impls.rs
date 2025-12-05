@@ -1,3 +1,5 @@
+use std::any::Any;
+
 use prusti_rustc_interface::{middle::ty::AssocKind, span::def_id::DefId};
 use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 use vir::{CastType, Domain, vir_format_identifier};
@@ -90,10 +92,18 @@ impl TaskEncoder for TraitImplEnc {
                         .iter()
                         .filter(|(assoc_did, _)| Some(*assoc_did) == impl_item.trait_item_def_id)
                         .for_each(|(_, assoc_fun)| {
-                            let params = deps
+                            // construct arguments for assoc_item function
+                            // parameters of the trait are substituted 
+                            // by the arguments used in the impl
+                            // parameters of the associated type are kept
+
+                            // parameters of assoc item include already substituted arguments
+                            let assoc_params = deps
                                 .require_dep::<GenericParamsEnc>(GParams::from(impl_item.def_id))
                                 .unwrap();
-                            let assoc_type_expr = params.ty_expr(
+
+                            // the type we want to resolve the type alias to
+                            let assoc_type_expr = assoc_params.ty_expr(
                                 deps,
                                 RustTyDecomposition::from_ty(
                                     tcx.type_of(impl_item.def_id).instantiate_identity(),
@@ -101,6 +111,21 @@ impl TaskEncoder for TraitImplEnc {
                                     GParams::from(impl_item.def_id),
                                 ),
                             );
+                            let assoc_decls = assoc_params
+                                .ty_decls()
+                                .iter()
+                                .map(|dec| dec.upcast_ty())
+                                .collect::<Vec<_>>();
+
+                            // Combine substituted trait params with the params of the associated type
+                            let mut trait_ty_decls = trait_ty_decls.clone();
+                            trait_ty_decls.extend_from_slice(&assoc_decls[params.ty_exprs().len()..]);
+
+                            // Combine substituted trait params decls with the params of the associated type
+                            let mut vec = vec.clone();
+                            vec.extend_from_slice(&assoc_params.ty_exprs()[params.ty_exprs().len()..]);
+                            let trait_tys = vcx.alloc_slice(&vec);
+
                             axs.push(vcx.mk_domain_axiom(
                                 vir_format_identifier!(
                                     vcx,
@@ -114,7 +139,7 @@ impl TaskEncoder for TraitImplEnc {
                                 } else {
                                     vir::expr! {forall ..[trait_ty_decls] :: {[assoc_fun(trait_tys)]} ([assoc_fun(trait_tys)]) == (assoc_type_expr)}
                                 }
-                            ))
+                            ));
                         });
                 });
 

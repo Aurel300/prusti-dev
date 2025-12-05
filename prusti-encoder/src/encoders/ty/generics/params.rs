@@ -2,7 +2,7 @@ use prusti_interface::specs::typed::ExternSpecKind;
 use prusti_rustc_interface::{
     middle::{
         ty,
-        ty::{ParamTy, TyKind},
+        ty::TyKind,
     },
     span::{def_id::DefId, symbol},
 };
@@ -16,7 +16,6 @@ use crate::encoders::{
         data::TySpecifics,
         generics::{GArgsTyEnc, GParamVariant, traits::TraitEnc},
         lifted::TyConstructorEnc,
-        pure::TyPureEnc,
     },
 };
 
@@ -177,13 +176,6 @@ impl<'tcx> GParams<'tcx> {
 impl<'vir> From<DefId> for GParams<'vir> {
     fn from(did: DefId) -> Self {
         Self::new_maybe_extern(did, None)
-    }
-}
-
-fn expect_param(kind: &TyKind) -> ParamTy {
-    match kind {
-        TyKind::Param(p) => *p,
-        _ => unreachable!(),
     }
 }
 

@@ -260,13 +260,6 @@ impl<'vir> GenericParams<'vir> {
                     let tcx = vcx.tcx();
                     let trait_did = tcx.associated_item(a.def_id).container_id(tcx);
                     let trait_data = deps.require_dep::<TraitEnc>(trait_did).unwrap();
-                    let assoc_funs = trait_data
-                        .type_did_fun_mapping
-                        .iter()
-                        .filter(|(assoc_did, _)| *assoc_did == a.def_id)
-                        .map(|(_, assoc_fun)| assoc_fun)
-                        .collect::<Vec<_>>();
-                    assert!(assoc_funs.len() == 1);
                     let tys = &a
                         .args
                         .iter()
@@ -278,7 +271,7 @@ impl<'vir> GenericParams<'vir> {
                             ),
                         })
                         .collect::<Vec<_>>();
-                    (assoc_funs[0])(tys)
+                    (trait_data.type_did_fun_mapping.get(&a.def_id).unwrap())(tys)
                 }),
             };
         }

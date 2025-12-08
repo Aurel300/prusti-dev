@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use prusti_rustc_interface::{middle::ty::AssocKind, span::def_id::DefId};
 use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 use vir::{FunctionIdn, vir_format_identifier};
@@ -6,10 +8,10 @@ use crate::encoders::ty::generics::{GParams, GenericParamsEnc};
 
 pub struct TraitEnc;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct TraitData<'vir> {
     pub trait_name: &'vir str,
-    pub type_did_fun_mapping: &'vir [(DefId, FunctionIdn<'vir, vir::ManyTyVal, vir::TyVal>)],
+    pub type_did_fun_mapping: HashMap<DefId, FunctionIdn<'vir, vir::ManyTyVal, vir::TyVal>>,
     pub impl_fun: FunctionIdn<'vir, vir::ManyTyVal, vir::Bool>,
 }
 
@@ -57,15 +59,15 @@ impl TaskEncoder for TraitEnc {
                                 trait_name,
                                 tcx.item_name(item.def_id),
                             ),
-                            vcx.alloc_slice(&(vec![vir::TYPE_TYVAL; params_type.ty_exprs().len()])), // params_type also includes parameters of trait itself
+                            vcx.alloc_slice(&vec![vir::TYPE_TYVAL; params_type.ty_exprs().len()]), // params_type also includes parameters of trait itself
                             vir::TYPE_TYVAL,
                         ),
                     )
                 })
-                .collect::<Vec<_>>();
+                .collect::<HashMap<DefId, FunctionIdn<'vir, vir::ManyTyVal, vir::TyVal>>>();
             let mut funcs = type_did_fun_mapping
-                .iter()
-                .map(|(_, function_idn)| vcx.mk_domain_function(*function_idn, false, None))
+                .values()
+                .map(|function_idn| vcx.mk_domain_function(*function_idn, false, None))
                 .collect::<Vec<_>>();
             let impl_fun = FunctionIdn::new(
                 vir_format_identifier!(vcx, "{}_impl", trait_name),
@@ -85,7 +87,7 @@ impl TaskEncoder for TraitEnc {
                 trait_domain,
                 TraitData {
                     trait_name,
-                    type_did_fun_mapping: vcx.alloc_slice(type_did_fun_mapping.as_slice()),
+                    type_did_fun_mapping,
                     impl_fun,
                 },
             ))

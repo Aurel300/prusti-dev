@@ -135,20 +135,21 @@ impl TaskEncoder for TraitImplEnc {
                         });
                 });
 
-            let dom = vcx.mk_domain(
-                vir_format_identifier!(
-                    vcx,
-                    "t_{}_{}",
-                    trait_data.trait_name,
-                    tcx.type_of(*task_key).instantiate_identity().to_string()
+            Ok((
+                vcx.mk_domain(
+                    vir_format_identifier!(
+                        vcx,
+                        "t_{}_{}",
+                        trait_data.trait_name,
+                        tcx.type_of(*task_key).instantiate_identity().to_string()
+                    ),
+                    &[],
+                    vcx.alloc_slice(&axs),
+                    &[],
+                    None,
                 ),
-                &[],
-                vcx.alloc_slice(&axs),
-                &[],
-                None,
-            );
-
-            Ok((dom, ()))
+                (),
+            ))
         })
     }
 }

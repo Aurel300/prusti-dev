@@ -69,13 +69,10 @@ impl TaskEncoder for TraitImplEnc {
             );
             axs.push(
                 vcx.mk_domain_axiom(
-                vir_format_identifier!(vcx, "{}_impl_{}", trait_data.trait_name, struct_ty),
-                if trait_ty_decls.is_empty() {
-                    vir::expr! {[impl_fun(trait_tys)]}
-                } else {
+                    vir_format_identifier!(vcx, "{}_impl_{}", trait_data.trait_name, struct_ty),
                     vir::expr! {forall ..[trait_ty_decls] :: {[impl_fun(trait_tys)]} [impl_fun(trait_tys)]}
-                }
-            ));
+                )
+            );
 
             tcx.associated_items(*task_key)
                 .in_definition_order()
@@ -126,11 +123,7 @@ impl TaskEncoder for TraitImplEnc {
                                     tcx.item_name(impl_item.def_id),
                                     struct_ty
                                 ),
-                                if trait_ty_decls.is_empty() {
-                                    vir::expr! {([assoc_fun(trait_tys)]) == (assoc_type_expr)}
-                                } else {
-                                    vir::expr! {forall ..[trait_ty_decls] :: {[assoc_fun(trait_tys)]} ([assoc_fun(trait_tys)]) == (assoc_type_expr)}
-                                }
+                                vir::expr! {forall ..[trait_ty_decls] :: {[assoc_fun(trait_tys)]} ([assoc_fun(trait_tys)]) == (assoc_type_expr)}
                             ));
                         });
                 });

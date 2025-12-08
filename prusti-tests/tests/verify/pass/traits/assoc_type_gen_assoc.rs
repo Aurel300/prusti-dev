@@ -1,14 +1,11 @@
-
-fn foo<Y: MyTrait> (x: Y::SomeType<u32>) {
-
-}
+fn foo<Y: MyTrait>(x: Y::SomeType<u32>) {}
 
 trait MyTrait {
     type SomeType<X>;
 }
 
-struct St1{}
-struct St2{}
+struct St1 {}
+struct St2 {}
 
 impl MyTrait for St1 {
     type SomeType<X> = X;

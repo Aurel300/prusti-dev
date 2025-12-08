@@ -1,3 +1,5 @@
+use std::iter;
+
 use prusti_rustc_interface::{middle::ty::AssocKind, span::def_id::DefId};
 use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 use vir::{CastType, Domain, vir_format_identifier};
@@ -50,10 +52,6 @@ impl TaskEncoder for TraitImplEnc {
             let struct_ty_expr =
                 params.ty_expr(deps, RustTyDecomposition::from_ty(struct_ty, tcx, ctx));
 
-            let mut vec = Vec::new();
-            vec.push(struct_ty_expr);
-            vec.append(&mut args.get_ty().to_owned());
-
             let mut axs = Vec::new();
 
             let struct_ty = tcx.type_of(task_key).instantiate_identity();
@@ -64,7 +62,11 @@ impl TaskEncoder for TraitImplEnc {
                 .iter()
                 .map(|dec| dec.upcast_ty())
                 .collect::<Vec<_>>();
-            let trait_tys = vcx.alloc_slice(&vec);
+            let trait_tys = vcx.alloc_slice(
+                &iter::once(struct_ty_expr)
+                    .chain(args.get_ty().to_owned())
+                    .collect::<Vec<_>>(),
+            );
             axs.push(
                 vcx.mk_domain_axiom(
                 vir_format_identifier!(vcx, "{}_impl_{}", trait_data.trait_name, struct_ty),
@@ -113,10 +115,8 @@ impl TaskEncoder for TraitImplEnc {
                             let mut trait_ty_decls = trait_ty_decls.clone();
                             trait_ty_decls.extend_from_slice(&assoc_decls[params.ty_exprs().len()..]);
 
-                            // Combine substituted trait params decls with the params of the associated type
-                            let mut vec = vec.clone();
-                            vec.extend_from_slice(&assoc_params.ty_exprs()[params.ty_exprs().len()..]);
-                            let trait_tys = vcx.alloc_slice(&vec);
+                            // Combine substituted trait params with the params of the associated type
+                            let trait_tys = vcx.alloc_slice(&iter::once(struct_ty_expr).chain(args.get_ty().to_owned()).chain(assoc_params.ty_exprs()[params.ty_exprs().len()..].to_owned()).collect::<Vec<_>>());
 
                             axs.push(vcx.mk_domain_axiom(
                                 vir_format_identifier!(

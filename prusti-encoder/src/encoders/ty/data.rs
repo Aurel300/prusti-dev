@@ -291,9 +291,9 @@ impl<'vir, D1: TyDatas<'vir>, D2: TyDatas<'vir>> TyDatas<'vir> for (D1, D2) {
 // Deref implementations
 
 macro_rules! impls {
-     ($container:ident$( { $field:ident: $ty:ty })?) => {
+    ($container:ident$( { $field:ident: $ty:ty })?) => {
 impl<'vir, D: TyDatas<'vir>> $container<'vir, D> {
-        pub fn new(data: D::$container, inhabited: bool $(, $field: $ty)?) -> Self {
+    pub fn new(data: D::$container, inhabited: bool $(, $field: $ty)?) -> Self {
         Self { data, inhabited, $($field,)? }
     }
 }
@@ -306,7 +306,7 @@ impl<'vir, D: TyDatas<'vir>> Debug for $container<'vir, D> {
 
 impl<'vir, D: TyDatas<'vir>> Clone for $container<'vir, D> {
     fn clone(&self) -> Self {
-                Self { data: self.data.clone(), inhabited: self.inhabited, $($field: self.$field.clone())? }
+        Self { data: self.data.clone(), inhabited: self.inhabited, $($field: self.$field.clone())? }
     }
 }
 

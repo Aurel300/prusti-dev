@@ -62,18 +62,12 @@ pub fn encode_all_in_crate<'tcx>(tcx: ty::TyCtxt<'tcx>) {
         }
     }
 
+    // This creates the impl encoding for all traits in the crate
+    // To iterate over all _visible_ impl blocks,
+    // use tcx.visible_traits and tcx.all_impls(trait_id)
     for def_id in tcx.hir_crate_items(()).definitions() {
         if let hir::def::DefKind::Impl { of_trait: true } = tcx.def_kind(def_id) {
             TraitImplEnc::encode(def_id.to_def_id(), false).unwrap();
         }
     }
-
-    // for trait_id in tcx.visible_traits() {
-    //         for impl_id in tcx.all_impls(trait_id) {
-    //             {
-    //                 TraitImplEnc::encode(impl_id, false).unwrap();
-    //             }
-
-    //     }
-    // }
 }

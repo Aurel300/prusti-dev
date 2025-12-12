@@ -51,7 +51,6 @@ pub(super) fn ty_pure_variant<'vir>(
         },
         data.inhabited,
         des,
-        data.did,
     ))
 }
 
@@ -195,7 +194,7 @@ pub(crate) fn ty_impure_variant<'vir>(
     };
 
     Ok((
-        StructData::new((), data.inhabited, field_accessors, data.did),
+        StructData::new((), data.inhabited, field_accessors),
         pred_owned,
         variant_snap_expr,
     ))

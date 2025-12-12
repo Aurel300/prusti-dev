@@ -60,7 +60,6 @@ pub(crate) fn ty_pure<'vir>(
         },
         data.inhabited,
         variants,
-        data.did,
     ))
 }
 
@@ -182,6 +181,5 @@ pub(crate) fn ty_impure<'vir>(
         },
         data.inhabited,
         variants.into_iter().map(|v| v.3).collect::<Vec<_>>(),
-        data.did,
     ))
 }

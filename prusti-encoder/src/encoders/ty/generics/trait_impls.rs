@@ -44,13 +44,7 @@ impl TaskEncoder for TraitImplEnc {
             let trait_did = trait_ref.def_id;
             let trait_data = deps.require_dep::<TraitEnc>(trait_did)?;
 
-            // for some reason, just using all args (which includes the struct at index 0)
-            // leads to a cycle for simple test cases -> split up and add struct manually
-            let args = deps.require_dep::<GArgsTyEnc>(GArgs::new(ctx, &trait_ref.args[1..]))?;
-
-            let struct_ty = tcx.type_of(task_key).instantiate_identity();
-            let struct_ty_expr =
-                params.ty_expr(deps, RustTyDecomposition::from_ty(struct_ty, tcx, ctx));
+            let args = deps.require_dep::<GArgsTyEnc>(GArgs::new(ctx, trait_ref.args))?;
 
             let mut axs = Vec::new();
 
@@ -62,11 +56,8 @@ impl TaskEncoder for TraitImplEnc {
                 .iter()
                 .map(|dec| dec.upcast_ty())
                 .collect::<Vec<_>>();
-            let trait_tys = vcx.alloc_slice(
-                &iter::once(struct_ty_expr)
-                    .chain(args.get_ty().to_owned())
-                    .collect::<Vec<_>>(),
-            );
+            let trait_tys = args.get_ty();
+
             axs.push(
                 vcx.mk_domain_axiom(
                     vir_format_identifier!(vcx, "{}_impl_{}", trait_data.trait_name, struct_ty),
@@ -104,13 +95,12 @@ impl TaskEncoder for TraitImplEnc {
                         .map(|dec| dec.upcast_ty())
                         .collect::<Vec<_>>();
 
-                    // Combine substituted trait params with the params of the associated type
+                    // Combine substituted trait ty decls with the decls of the associated type
                     let mut trait_ty_decls = trait_ty_decls.clone();
                     trait_ty_decls.extend_from_slice(&assoc_decls[params.ty_exprs().len()..]);
 
                     // Combine substituted trait params with the params of the associated type
-                    let trait_tys = vcx.alloc_slice(&iter::once(struct_ty_expr).chain(args.get_ty().to_owned()).chain(assoc_params.ty_exprs()[params.ty_exprs().len()..].to_owned()).collect::<Vec<_>>());
-
+                    let trait_tys = vcx.alloc_slice(&iter::empty().chain(args.get_ty().to_owned()).chain(assoc_params.ty_exprs()[params.ty_exprs().len()..].to_owned()).collect::<Vec<_>>());
                     axs.push(vcx.mk_domain_axiom(
                         vir_format_identifier!(
                             vcx,

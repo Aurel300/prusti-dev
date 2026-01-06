@@ -129,6 +129,14 @@ impl<'tcx> LazyRustTy<'tcx> {
         })
     }
 
+    // TODO: see comment in the `unsize` handler of `mir_builtin.rs`
+    //pub fn decompose_local_ctx(&self, _args: GArgs<'tcx>) -> RustTyDecomposition<'tcx> {
+    //    todo!()
+    //    // let dummy_param = vcx.tcx().mk_ty_from_kind(ty::TyKind::Param(ty::ParamTy::new(0, Symbol::intern("T"))));
+    //    // let mut ty_task = RustTyDecomposition::from_ty(dummy_param, vcx.tcx(), GParams::new(vcx.tcx().mk_args(&[dummy_param.into()]), ty::ParamEnv::empty(), false));
+    //    // ty_task.args = GArgs::new(params, vcx.tcx().mk_args(&[src_ty.peel_refs().into()]));
+    //}
+
     /// Similarly to `Self::decompose`, this decomposes the fields type.
     /// However, it tries to normalize the type first and only returns a
     /// decomposition if the type was a `TySpecifics::Param` and is now a

@@ -1,13 +1,13 @@
 use prusti_rustc_interface::{
     middle::{mir, ty},
-    span::def_id::DefId,
+    span::{def_id::DefId, Symbol},
 };
 use prusti_utils::config;
 use task_encoder::{EncodeFullError, EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 use vir::{CallableIdn, CastType, FunctionIdn, HasType, MethodIdn};
 
 use crate::encoders::{ConstEnc, TyUseImpureEnc, r#const::ConstEncTask, ty::{
-    RustTyDecomposition, TySpecifics, generics::{GParams, GenericParamsEnc}, interpretation::float::FloatDomain, pure::{TyPurePrimData, TyPurePrimDataKind}, use_pure::TyUsePureEnc
+    RustTyDecomposition, TySpecifics, generics::{GArgs, GParams, GenericParamsEnc}, interpretation::float::FloatDomain, pure::{TyPurePrimData, TyPurePrimDataKind}, use_pure::TyUsePureEnc
 }};
 
 pub struct MirBuiltinEnc;
@@ -143,14 +143,14 @@ impl MirBuiltinEnc {
 
         let ty_task = RustTyDecomposition::from_ty(src_ty.peel_refs(), vcx.tcx(), params);
         let src_array_pure = deps.require_dep::<TyUsePureEnc>(ty_task)?.expect_array();
-        let src_array_impure = deps.require_dep::<TyUseImpureEnc>(ty_task)?;
+        //let src_array_impure = deps.require_dep::<TyUseImpureEnc>(ty_task)?;
         let ty_task = RustTyDecomposition::from_ty(src_ty, vcx.tcx(), params);
         let src_ref_pure = deps.require_dep::<TyUsePureEnc>(ty_task)?;
         let src_ref_impure = deps.require_dep::<TyUseImpureEnc>(ty_task)?;
 
         let ty_task = RustTyDecomposition::from_ty(dst_ty.peel_refs(), vcx.tcx(), params);
         let dst_array_pure = deps.require_dep::<TyUsePureEnc>(ty_task)?.expect_array();
-        let dst_array_impure = deps.require_dep::<TyUseImpureEnc>(ty_task)?;
+        //let dst_array_impure = deps.require_dep::<TyUseImpureEnc>(ty_task)?;
         let ty_task = RustTyDecomposition::from_ty(dst_ty, vcx.tcx(), params);
         let dst_ref_pure = deps.require_dep::<TyUsePureEnc>(ty_task)?;
         let dst_ref_impure = deps.require_dep::<TyUseImpureEnc>(ty_task)?;
@@ -198,18 +198,35 @@ impl MirBuiltinEnc {
         ];
         let mut posts = vec![
             dst_ref_impure.ref_to_pred(vcx, ref_dst_ex, None),
+        ];
+        if matches!(src_ty.kind(), ty::TyKind::Ref(_, _, ty::Mutability::Mut))
+            && matches!(dst_ty.kind(), ty::TyKind::Ref(_, _, ty::Mutability::Mut)) {
+            // TODO: Move this v into a new method RustTyDecomposition::decompose_local_ctx(?)
+            //   The issue is that we want a `p_Param` predicate instance even
+            //   though we are not actually creating a generic method (which
+            //   would allow us to refer to a type variable like `T$0: Type`),
+            //   but we also don't want to fully monomorphise the predicate to
+            //   the array resp. slice. This might also be needed for the
+            //   indirect encoder, as it seems like a general need for mutref
+            //   targets if they are kept generic?
+            let dummy_param = vcx.tcx().mk_ty_from_kind(ty::TyKind::Param(ty::ParamTy::new(0, Symbol::intern("T"))));
+            let mut ty_task_param = RustTyDecomposition::from_ty(dummy_param, vcx.tcx(), GParams::new(vcx.tcx().mk_args(&[dummy_param.into()]), ty::ParamEnv::empty(), false));
+            ty_task_param.args = GArgs::new(params, vcx.tcx().mk_args(&[src_ty.peel_refs().into()]));
+            let src_param_impure = deps.require_dep::<TyUseImpureEnc>(ty_task_param)?;
+            ty_task_param.args = GArgs::new(params, vcx.tcx().mk_args(&[dst_ty.peel_refs().into()]));
+            let dst_param_impure = deps.require_dep::<TyUseImpureEnc>(ty_task_param)?;
+
+            pres.push(src_param_impure.ref_to_pred(vcx, src_ref_impure.expect_mutref().deref(ref_src_ex, None), None));
+            posts.push(dst_param_impure.ref_to_pred(vcx, dst_ref_impure.expect_mutref().deref(ref_dst_ex, None), None));
+        }
+        posts.extend(&[
             vir::expr! { (src_len) == ([dst_array_pure.len(dst_value)]) },
             vir::expr! {
                 forall idx: Int :: {[dst_array_pure.index(dst_value, idx)]}
                     ([dst_array_pure.index(dst_value, idx)])
                     == (old([src_array_pure.index(src_value, idx)]))
             },
-        ];
-        if matches!(src_ty.kind(), ty::TyKind::Ref(_, _, ty::Mutability::Mut))
-            && matches!(dst_ty.kind(), ty::TyKind::Ref(_, _, ty::Mutability::Mut)) {
-            pres.push(src_array_impure.ref_to_pred(vcx, src_ref_impure.expect_mutref().deref(ref_src_ex, None), None));
-            posts.push(dst_array_impure.ref_to_pred(vcx, dst_ref_impure.expect_mutref().deref(ref_dst_ex, None), None));
-        }
+        ]);
 
         Ok(vcx.mk_method(method, (ref_src_decl, ref_dst_decl, generics.ty_decls(), generics.const_decls()), &[], vcx.alloc_slice(&pres), vcx.alloc_slice(&posts), None))
     }

@@ -28,17 +28,23 @@ pub enum MirBuiltinEncTask<'tcx> {
 }
 
 #[derive(Copy, Clone, Debug)]
+pub struct MirBuiltinEncUnsize<'vir> {
+    pub unsize: MethodIdn<'vir, (vir::Ref, vir::Ref, vir::ManyTyVal, vir::ManyCSnap)>,
+    pub undo: MethodIdn<'vir, (vir::Ref, vir::Ref, vir::ManyTyVal, vir::ManyCSnap)>,
+}
+
+#[derive(Copy, Clone, Debug)]
 pub enum MirBuiltinEncOutputRef<'vir> {
-    Unsize(MethodIdn<'vir, (vir::Ref, vir::Ref, vir::ManyTyVal, vir::ManyCSnap)>),
+    Unsize(MirBuiltinEncUnsize<'vir>),
     Len(FunctionIdn<'vir, vir::CSnap, vir::CSnap>),
     UnOp(FunctionIdn<'vir, vir::CSnap, vir::CSnap>),
     BinOp(FunctionIdn<'vir, (vir::CSnap, vir::CSnap), vir::CSnap>),
 }
 impl<'vir> task_encoder::OutputRefAny for MirBuiltinEncOutputRef<'vir> {}
 impl<'vir> MirBuiltinEncOutputRef<'vir> {
-    pub fn unsize(self) -> Option<MethodIdn<'vir, (vir::Ref, vir::Ref, vir::ManyTyVal, vir::ManyCSnap)>> {
+    pub fn unsize(self) -> Option<MirBuiltinEncUnsize<'vir>> {
         match self {
-            MirBuiltinEncOutputRef::Unsize(idn) => Some(idn),
+            MirBuiltinEncOutputRef::Unsize(unsize) => Some(unsize),
             _ => None,
         }
     }
@@ -93,7 +99,11 @@ impl TaskEncoder for MirBuiltinEnc {
             let mut functions = Vec::new();
             let mut methods = Vec::new();
             match *task_key {
-                MirBuiltinEncTask::Unsize(arg_ty, res_ty, def_id) => methods.push(Self::handle_unsize(vcx, deps, *task_key, arg_ty, res_ty, def_id)?),
+                MirBuiltinEncTask::Unsize(arg_ty, res_ty, def_id) => {
+                    let (method, method_undo) = Self::handle_unsize(vcx, deps, *task_key, arg_ty, res_ty, def_id)?;
+                    methods.push(method);
+                    methods.push(method_undo);
+                }
                 MirBuiltinEncTask::Len(arg_ty) => functions.push(Self::handle_len(vcx, deps, *task_key, arg_ty)?),
                 MirBuiltinEncTask::UnOp(res_ty, op, operand_ty) => functions.push(Self::handle_un_op(vcx, deps, *task_key, op, operand_ty, res_ty)?),
                 MirBuiltinEncTask::BinOp(res_ty, op, l_ty, r_ty) => functions.push(Self::handle_bin_op(vcx, deps, *task_key, res_ty, op, l_ty, r_ty)?),
@@ -135,8 +145,9 @@ impl MirBuiltinEnc {
         src_ty: ty::Ty<'vir>,
         dst_ty: ty::Ty<'vir>,
         def_id: DefId,
-    ) -> Result<vir::Method<'vir>, EncodeFullError<'vir, Self>> {
+    ) -> Result<(vir::Method<'vir>, vir::Method<'vir>), EncodeFullError<'vir, Self>> {
         let name = vir::vir_format_identifier!(vcx, "mir_unsize_{src_ty:?}_to_{dst_ty:?}");
+        let name_undo = vir::vir_format_identifier!(vcx, "mir_undo_unsize_{src_ty:?}_to_{dst_ty:?}");
 
         let params = GParams::from(def_id);
         let generics = deps.require_dep::<GenericParamsEnc>(params)?;
@@ -163,7 +174,11 @@ impl MirBuiltinEnc {
             name,
             (ref_src_decl.ty(), ref_dst_decl.ty(), generics.ty_args(), generics.const_args()),
         );
-        deps.emit_output_ref(key, MirBuiltinEncOutputRef::Unsize(method))?;
+        let method_undo = MethodIdn::new(
+            name_undo,
+            (ref_src_decl.ty(), ref_dst_decl.ty(), generics.ty_args(), generics.const_args()),
+        );
+        deps.emit_output_ref(key, MirBuiltinEncOutputRef::Unsize(MirBuiltinEncUnsize { unsize: method, undo: method_undo }))?;
 
         let snap_src = src_ref_impure.ref_to_snap(ref_src_ex);
         let snap_dst = dst_ref_impure.ref_to_snap(ref_dst_ex);
@@ -193,12 +208,10 @@ impl MirBuiltinEnc {
             _ => src_array_pure.len(src_value),
         };
 
-        let mut pres = vec![
-            src_ref_impure.ref_to_pred(vcx, ref_src_ex, None),
-        ];
-        let mut posts = vec![
-            dst_ref_impure.ref_to_pred(vcx, ref_dst_ex, None),
-        ];
+        let mut pres = vec![src_ref_impure.ref_to_pred(vcx, ref_src_ex, None)];
+        let mut posts = vec![dst_ref_impure.ref_to_pred(vcx, ref_dst_ex, None)];
+        let mut pres_undo = vec![dst_ref_impure.ref_to_pred(vcx, ref_dst_ex, None)];
+        let mut posts_undo = vec![src_ref_impure.ref_to_pred(vcx, ref_src_ex, None)];
         if matches!(src_ty.kind(), ty::TyKind::Ref(_, _, ty::Mutability::Mut))
             && matches!(dst_ty.kind(), ty::TyKind::Ref(_, _, ty::Mutability::Mut)) {
             // TODO: Move this v into a new method RustTyDecomposition::decompose_local_ctx(?)
@@ -218,6 +231,16 @@ impl MirBuiltinEnc {
 
             pres.push(src_param_impure.ref_to_pred(vcx, src_ref_impure.expect_mutref().deref(ref_src_ex, None), None));
             posts.push(dst_param_impure.ref_to_pred(vcx, dst_ref_impure.expect_mutref().deref(ref_dst_ex, None), None));
+            posts.push(vir::expr! {
+                (old([src_ref_impure.expect_mutref().deref(ref_src_ex, None)]))
+                    == ([dst_ref_impure.expect_mutref().deref(ref_dst_ex, None)])
+            });
+            pres_undo.push(dst_param_impure.ref_to_pred(vcx, dst_ref_impure.expect_mutref().deref(ref_dst_ex, None), None));
+            posts_undo.push(src_param_impure.ref_to_pred(vcx, src_ref_impure.expect_mutref().deref(ref_src_ex, None), None));
+            posts_undo.push(vir::expr! {
+                ([src_ref_impure.expect_mutref().deref(ref_src_ex, None)])
+                    == (old([dst_ref_impure.expect_mutref().deref(ref_dst_ex, None)]))
+            });
         }
         posts.extend(&[
             vir::expr! { (src_len) == ([dst_array_pure.len(dst_value)]) },
@@ -227,8 +250,16 @@ impl MirBuiltinEnc {
                     == (old([src_array_pure.index(src_value, idx)]))
             },
         ]);
+        posts_undo.push(vir::expr! {
+            forall idx: Int :: {[src_array_pure.index(src_value, idx)]}
+                ([src_array_pure.index(src_value, idx)])
+                == (old([dst_array_pure.index(dst_value, idx)]))
+        });
 
-        Ok(vcx.mk_method(method, (ref_src_decl, ref_dst_decl, generics.ty_decls(), generics.const_decls()), &[], vcx.alloc_slice(&pres), vcx.alloc_slice(&posts), None))
+        Ok((
+            vcx.mk_method(method, (ref_src_decl, ref_dst_decl, generics.ty_decls(), generics.const_decls()), &[], vcx.alloc_slice(&pres), vcx.alloc_slice(&posts), None),
+            vcx.mk_method(method_undo, (ref_src_decl, ref_dst_decl, generics.ty_decls(), generics.const_decls()), &[], vcx.alloc_slice(&pres_undo), vcx.alloc_slice(&posts_undo), None),
+        ))
     }
 
     fn handle_len<'vir>(

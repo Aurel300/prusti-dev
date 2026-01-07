@@ -20,7 +20,7 @@ fn test4(x: [i32; 3]) {
     let y: &[i32] = &x;
     assert!(y[1] > 10);
 }
-/*
+
 fn test5() {
     let mut x = [13, 37, 72];
     let y: &mut [i32] = &mut x;
@@ -28,9 +28,9 @@ fn test5() {
     test5_2(x);
 }
 
-#[requires(x[1] == 3)]
+//#[requires(x[1] == 3)]
 fn test5_2(x: [i32; 3]) {}
-*/
+
 fn main() {
     // create arrays
     let x = [13, 37, 72];

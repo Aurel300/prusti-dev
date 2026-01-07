@@ -4,8 +4,8 @@ use pcg::{
     borrow_pcg::{
         action::BorrowPcgActionKind, borrow_pcg_edge::BorrowPcgEdge, borrow_pcg_expansion::BorrowPcgExpansion, edge::{
             abstraction::{AbstractionEdge, FunctionCallOrLoop},
-            kind::BorrowPcgEdgeKind,
-        }, state::BorrowsState, unblock_graph::BorrowPcgUnblockAction
+            kind::BorrowPcgEdgeKind, outlives::{BorrowFlowEdgeKind, CastData},
+        }, region_projection::PlaceOrConst, state::BorrowsState, unblock_graph::BorrowPcgUnblockAction
     },
     coupling::PcgCoupledEdgeKind,
     free_pcs::{RepackGuide, RepackOp},
@@ -596,6 +596,70 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 // folded into the Rvalue `&mut y` that is stored in `x`. This
                 // reverses that effect
                 self.unfold(borrow.assigned_ref(), label);
+            }
+            BorrowPcgEdgeKind::BorrowFlow(borrow_flow)
+                if let BorrowFlowEdgeKind::Assignment(assignment_data) = borrow_flow.kind()
+                    && let Some(CastData {
+                        kind: mir::CastKind::PointerCoercion(ty::adjustment::PointerCoercion::Unsize, _),
+                        ..
+                    }) = assignment_data.cast
+                    && edge_action.is_remove() => {
+                // For an unsize operation `let slice = &mut array;` the PCG
+                // will keep track of the connection between the two places;
+                // during the unsize operation we call a method to transter
+                // permissions from one to the other, when the slice expires,
+                // we need to undo the unsize operation.
+                let PlaceOrConst::Place(src) = borrow_flow.long().base() else { unreachable!(); };
+                let src = src.as_local_place().unwrap();
+                let dst = borrow_flow.short().base();
+
+                let ctxt = CompilerCtxt::new(self.body, self.vcx.tcx(), ());
+                let src_ty = src.ty(ctxt).ty;
+                let dst_ty = dst.ty(ctxt).ty;
+                if let ty::TyKind::Ref(_, _, ty::Mutability::Not) = dst_ty.kind() {
+                    // We don't want to undo the unsize operation for shared
+                    // references; the slice cannot have modified the array it
+                    // unsized.
+                    return Ok(());
+                }
+
+                let src_place = src.place();
+                let src_label = if let MaybeLabelledPlace::Labelled(snap) = src {
+                    Some(self.get_location_label(snap.at()))
+                } else {
+                    label.map(vir::OldLabel::Label)
+                };
+                let dst_place = dst.place();
+                let dst_label = if let MaybeLabelledPlace::Labelled(snap) = dst {
+                    Some(self.get_location_label(snap.at()))
+                } else {
+                    label.map(vir::OldLabel::Label)
+                };
+                let src_enc = self
+                    .encode_place(src_place)
+                    .expr
+                    .expect_predicate();
+                let src_enc = self
+                    .vcx
+                    .maybe_apply_label(src_enc, src_label);
+                let dst_enc = self
+                    .encode_place(dst_place)
+                    .expr
+                    .expect_predicate();
+                let dst_enc = self
+                    .vcx
+                    .maybe_apply_label(dst_enc, dst_label);
+                let def_id = self.def_id();
+                let unsize = self.deps().require_ref::<MirBuiltinEnc>(MirBuiltinEncTask::Unsize(src_ty, dst_ty, def_id)).unwrap().unsize().unwrap();
+                let params = GParams::from(def_id);
+                let generics = self.deps().require_dep::<GenericParamsEnc>(params).unwrap();
+                self.stmt(self.vcx.alloc(vir::StmtData::new(self.vcx.alloc((unsize.undo)(
+                    src_enc,
+                    dst_enc,
+                    generics.ty_exprs(),
+                    generics.const_exprs(),
+                )))));
+                return Ok(());
             }
             BorrowPcgEdgeKind::Deref(deref) => {
                 self.fold_or_unfold(
@@ -1270,7 +1334,7 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                     let unsize = self.deps().require_ref::<MirBuiltinEnc>(MirBuiltinEncTask::Unsize(src_ty, *ty, def_id)).unwrap().unsize().unwrap();
                     let params = GParams::from(def_id);
                     let generics = self.deps().require_dep::<GenericParamsEnc>(params).unwrap();
-                    self.stmt(self.vcx.alloc(vir::StmtData::new(self.vcx.alloc(unsize(
+                    self.stmt(self.vcx.alloc(vir::StmtData::new(self.vcx.alloc((unsize.unsize)(
                         src_enc,
                         dst_enc,
                         generics.ty_exprs(),

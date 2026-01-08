@@ -280,12 +280,12 @@ impl TaskEncoder for GenericParamsEnc {
                 vir::ViperIdent::sanitize(vcx, &format!("{name}${index}")).to_str()
             };
 
-            let mut indicies = vec![Ok(usize::MAX); task_key.params.len()];
+            let mut indices = vec![Ok(usize::MAX); task_key.params.len()];
             let ty_decls = task_key
                 .ty_params()
                 .enumerate()
                 .map(|(i, (gi, param))| {
-                    indicies[gi] = Ok(i);
+                    indices[gi] = Ok(i);
                     vcx.mk_local_decl(sanitize(param.name, param.index), vir::TYPE_TYVAL)
                 })
                 .collect::<Vec<_>>();
@@ -299,7 +299,7 @@ impl TaskEncoder for GenericParamsEnc {
                 .const_params()
                 .enumerate()
                 .map(|(i, (gi, p, ty))| {
-                    indicies[gi] = Err(i);
+                    indices[gi] = Err(i);
                     let ty = RustTyDecomposition::from_prim_ty(ty);
                     let lifted_const = deps.require_ref::<TyUsePureEnc>(ty)?;
                     Ok(vcx.mk_local_decl(
@@ -322,7 +322,7 @@ impl TaskEncoder for GenericParamsEnc {
                 const_args,
                 const_decls,
                 const_exprs,
-                indices: indicies,
+                indices,
             };
             Ok(((), output))
         })

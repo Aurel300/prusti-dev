@@ -172,7 +172,7 @@ pub(crate) struct PlaceExpr<'vir> {
 impl<'vir> PlaceExpr<'vir> {
     /// Expects the encoded place to not be behind a shared ref
     pub(crate) fn expect_predicate(&self) -> vir::ExprRef<'vir> {
-        // assert!(self.snap.is_none());
+        assert!(self.snap.is_none());
         self.address
     }
 }
@@ -412,32 +412,16 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
 
             mir::Rvalue::RawPtr(mir::RawPtrKind::FakeForPtrMetadata, place) => {
                 let place_ty = place.ty(self.local_decls, self.vcx.tcx());
-                //let place_ty = self.ty_use_pure(place_ty.ty).expect_enumlike();
                 let e_rvalue_ty = self.ty_use_pure(rvalue_ty);
-
-                //let place_expr = self.encode_place(Place::from(*place)).expr;
-                let (_place_expr, snap, _, _) =
-                    self.encode_place_with_snap(Place::from(*place));
-
+                let (_, snap, _, _) = self.encode_place_with_snap(Place::from(*place));
                 let tmp_exp: vir::ExprCSnap<'vir> = self.new_tmp(e_rvalue_ty.snapshot.downcast_ty());
-
                 let len = self.deps.require_ref::<MirBuiltinEnc>(MirBuiltinEncTask::Len(place_ty.ty))?.len().unwrap();
                 let ptr_metadata = self.deps.require_ref::<MirBuiltinEnc>(MirBuiltinEncTask::UnOp(self.vcx.tcx().types.usize, mir::UnOp::PtrMetadata, rvalue_ty))?.un_op().unwrap();
-                //let len = self.deps.require_ref::<MirBuiltinEnc>(MirBuiltinEncTask::)
                 self.stmt(self.vcx.mk_inhale_stmt(self.vcx.mk_eq_expr(
                     ptr_metadata.call()(tmp_exp),
                     len.call()(snap.downcast_ty()),
                 )));
-                //inhale mir_unop_PtrMetadata_$as$const$sp$$lb$i32$rb$(/*p:17*/_tmp2) == s_UInt_usize_cons(s_Slice_len(make_concrete_s_Slice(p_Ref_mutable_snap(_2p, s_Slice_type(s_Int_i32_type())).s_Ref_mutable_1, s_Int_i32_type())))
-
-                //let element_snap = self.encode_operand_snap(element, &()).unwrap();
-                //self.stmt(self.vcx.mk_inhale_stmt(self.vcx.mk_eq_expr(
-                //    al.index(tmp_exp, self.vcx.mk_const_expr(vir::ConstData::Int(idx as u128)).downcast_ty()),
-                //    element_snap,
-                //)));
                 Ok(tmp_exp.upcast_ty().into())
-
-                //Ok(snap)
             }
 
             _ => Err(EncodeRvalueError::UnsupportedRvalue),
@@ -506,7 +490,6 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         let mut index_local = None;
         if let Some(expansion) = expansion {
             if let Some(&mir::ProjectionElem::Index(idx)) = expansion.expansion()[0].place().projection.last() {
-                //if let Some(&mir::ProjectionElem::Index(index_local)) = place.projection.last() {
                 index_local = Some(idx);
             }
         };

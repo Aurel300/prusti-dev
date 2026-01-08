@@ -403,7 +403,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                     EncodedRvalue {
                         expr: inner.prim_to_snap(place_ref).upcast_ty(),
                         post_assign_folds: Some(Box::new(move |lhs_place| {
-                            p_rvalue_ty.fold(None, lhs_place, None, None)
+                            p_rvalue_ty.fold(None, lhs_place, None, None, None)
                         })),
                     }
                 }
@@ -487,26 +487,19 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         let data = self.ty_use_impure(place_ty.ty);
 
         // TODO: use `guide` from `BorrowPcgExpansion`
-        let mut index_local = None;
-        if let Some(expansion) = expansion {
-            if let Some(&mir::ProjectionElem::Index(idx)) = expansion.expansion()[0].place().projection.last() {
-                index_local = Some(idx);
-            }
-        };
+        let index = expansion
+            .and_then(|expansion| match expansion.expansion()[0].place().projection.last() {
+                Some(&mir::ProjectionElem::Index(index_local)) => {
+                    let index = self.encode_operand_snap(&mir::Operand::Copy(index_local.into()), &()).unwrap();
+                    let usize_ty_out = self.ty_use_pure(self.vcx.tcx().types.usize);
+                    Some((usize_ty_out.expect_primitive().expect_native().snap_to_prim)(index.downcast_ty()).downcast_ty())
+                }
+                _ => None,
+            });
 
-        let stmts = match (fold_or_unfold, index_local) {
-            (FoldOrUnfold::Unfold, Some(index_local)) => {
-                let index = self.encode_operand_snap(&mir::Operand::Copy(index_local.into()), &()).unwrap();
-                let usize_ty_out = self.ty_use_pure(self.vcx.tcx().types.usize);
-                data.unfold_index(ref_p, (usize_ty_out.expect_primitive().expect_native().snap_to_prim)(index.downcast_ty()).downcast_ty(), None)
-            }
-            (FoldOrUnfold::Unfold, None) => data.unfold(place_ty.variant_index, ref_p, None, label),
-            (FoldOrUnfold::Fold, Some(index_local)) => {
-                let index = self.encode_operand_snap(&mir::Operand::Copy(index_local.into()), &()).unwrap();
-                let usize_ty_out = self.ty_use_pure(self.vcx.tcx().types.usize);
-                data.fold_index(ref_p, (usize_ty_out.expect_primitive().expect_native().snap_to_prim)(index.downcast_ty()).downcast_ty(), None)
-            }
-            (FoldOrUnfold::Fold, None) => data.fold(place_ty.variant_index, ref_p, None, label),
+        let stmts = match fold_or_unfold {
+            FoldOrUnfold::Unfold => data.unfold(place_ty.variant_index, ref_p, index, None, label),
+            FoldOrUnfold::Fold => data.fold(place_ty.variant_index, ref_p, index, None, label),
         };
         self.stmts(stmts);
     }
@@ -582,10 +575,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             }
             BorrowPcgEdgeKind::BorrowFlow(borrow_flow)
                 if let BorrowFlowEdgeKind::Assignment(assignment_data) = borrow_flow.kind()
-                    && let Some(CastData {
-                        kind: mir::CastKind::PointerCoercion(ty::adjustment::PointerCoercion::Unsize, _),
-                        ..
-                    }) = assignment_data.cast
+                    && let Some(mir::CastKind::PointerCoercion(ty::adjustment::PointerCoercion::Unsize, _)) = assignment_data.cast_kind()
                     && edge_action.is_remove() => {
                 // For an unsize operation `let slice = &mut array;` the PCG
                 // will keep track of the connection between the two places;
@@ -835,24 +825,25 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 let place_ty = place_enc.ty;
                 let place_enc = place_enc.expr.expect_predicate();
                 let data = self.ty_use_impure(place_ty.ty);
-                if let pcg::free_pcs::RepackOp::Expand(expand) = repack_op {
-                    match expand.guide() {
-                        Some(RepackGuide::Index(index_local)) => {
+                // TODO: guide should be implemented on `RepackOp`
+                let guide = match repack_op {
+                    pcg::free_pcs::RepackOp::Expand(expand) => expand.guide(),
+                    pcg::free_pcs::RepackOp::Collapse(collapse) => collapse.guide(),
+                    _ => None,
+                };
+                let index = guide
+                    .and_then(|guide| match guide {
+                        RepackGuide::Index(index_local) => {
                             let index = self.encode_operand_snap(&mir::Operand::Copy(index_local.into()), &()).unwrap();
                             let usize_ty_out = self.ty_use_pure(self.vcx.tcx().types.usize);
-                            self.stmts(data.unfold_index(place_enc, (usize_ty_out.expect_primitive().expect_native().snap_to_prim)(index.downcast_ty()).downcast_ty(), None));
+                            Some((usize_ty_out.expect_primitive().expect_native().snap_to_prim)(index.downcast_ty()).downcast_ty())
                         }
-                        _ => self.stmts(data.unfold(place_ty.variant_index, place_enc, None, None)),
-                    }
-                } else if let RepackOp::Collapse(collapse) = repack_op {
-                    match collapse.guide() {
-                        Some(RepackGuide::Index(index_local)) => {
-                            let index = self.encode_operand_snap(&mir::Operand::Copy(index_local.into()), &()).unwrap();
-                            let usize_ty_out = self.ty_use_pure(self.vcx.tcx().types.usize);
-                            self.stmts(data.fold_index(place_enc, (usize_ty_out.expect_primitive().expect_native().snap_to_prim)(index.downcast_ty()).downcast_ty(), None));
-                        }
-                        _ => self.stmts(data.fold(place_ty.variant_index, place_enc, None, None)),
-                    }
+                        _ => None,
+                    });
+                if matches!(repack_op, pcg::free_pcs::RepackOp::Expand(..)) {
+                    self.stmts(data.unfold(place_ty.variant_index, place_enc, index, None, None));
+                } else if matches!(repack_op, pcg::free_pcs::RepackOp::Collapse(..)) {
+                    self.stmts(data.fold(place_ty.variant_index, place_enc, index, None, None));
                 } else {
                     unreachable!()
                 }

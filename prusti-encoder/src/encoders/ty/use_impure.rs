@@ -318,6 +318,7 @@ impl<'vir> TyData<'vir, UseImpureTyDatas> {
         &self,
         variant: Option<abi::VariantIdx>,
         self_ref: vir::ExprRef<'vir>,
+        index: Option<vir::ExprInt<'vir>>,
         perm: Option<vir::ExprPerm<'vir>>,
         label: Option<vir::OldLabel<'vir>>,
     ) -> Vec<vir::Stmt<'vir>> {
@@ -331,7 +332,20 @@ impl<'vir> TyData<'vir, UseImpureTyDatas> {
         match &self.specifics {
             TySpecifics::Param(_) | TySpecifics::Primitive(_) => unreachable!(),
             TySpecifics::Opaque(_) => panic!("cannot fold opaque type"),
-            TySpecifics::ArrayLike(_) => panic!("cannot fold array type without index"),
+            TySpecifics::ArrayLike(array) => {
+                let index = index.expect("cannot fold array type without index");
+                array.element_caster.cast_to_callee_ctx((array.impure.index_access)(self_ref))
+                    .into_iter()
+                    .chain([
+                        vir::with_vcx(|vcx| vcx.alloc(vir::StmtData::new(vcx.alloc((array.data.impure.method_fold)(
+                            index,
+                            self_ref,
+                            self.args.get_ty(),
+                            self.args.get_const(),
+                        ))))),
+                    ])
+                    .collect()
+            }
             TySpecifics::ImmRef(..) => Vec::new(),
             TySpecifics::MutRef(data) => data.fold(self_ref, label).into_iter().collect(),
             TySpecifics::StructLike(data) => data.fold(self_ref, perm).collect(),
@@ -347,6 +361,7 @@ impl<'vir> TyData<'vir, UseImpureTyDatas> {
         &self,
         variant: Option<abi::VariantIdx>,
         self_ref: vir::ExprRef<'vir>,
+        index: Option<vir::ExprInt<'vir>>,
         perm: Option<vir::ExprPerm<'vir>>,
         old: Option<vir::OldLabel<'vir>>,
     ) -> Vec<vir::Stmt<'vir>> {
@@ -360,7 +375,19 @@ impl<'vir> TyData<'vir, UseImpureTyDatas> {
         match &self.specifics {
             TySpecifics::Param(_) | TySpecifics::Primitive(_) => unreachable!(),
             TySpecifics::Opaque(_) => panic!("cannot unfold opaque type"),
-            TySpecifics::ArrayLike(_) => panic!("cannot unfold array type without index"),
+            TySpecifics::ArrayLike(array) => {
+                let index = index.expect("cannot unfold array type without index");
+                [
+                    vir::with_vcx(|vcx| vcx.alloc(vir::StmtData::new(vcx.alloc((array.data.impure.method_unfold)(
+                        index,
+                        self_ref,
+                        self.args.get_ty(),
+                        self.args.get_const(),
+                    ))))),
+                ].into_iter()
+                    .chain(array.element_caster.cast_to_caller_ctx((array.impure.index_access)(self_ref)))
+                    .collect()
+            }
             TySpecifics::ImmRef(..) => Vec::new(),
             TySpecifics::MutRef(data) => data.unfold(self_ref, old).into_iter().collect(),
             TySpecifics::StructLike(data) => data.unfold(self_ref, perm).collect(),
@@ -369,47 +396,6 @@ impl<'vir> TyData<'vir, UseImpureTyDatas> {
                 vec![vir::with_vcx(|vcx| vcx.mk_unfold_stmt(pred_app))]
             }
         }
-    }
-
-    /// Unfold an array-like predicate at the given index (including generic casts).
-    pub fn unfold_index(
-        &self,
-        self_ref: vir::ExprRef<'vir>,
-        index: vir::ExprInt<'vir>,
-        _perm: Option<vir::ExprPerm<'vir>>,
-    ) -> Vec<vir::Stmt<'vir>> {
-        let TySpecifics::ArrayLike(array) = &self.specifics else { panic!("cannot unfold_index non-array type"); };
-        [
-            vir::with_vcx(|vcx| vcx.alloc(vir::StmtData::new(vcx.alloc((array.data.impure.method_unfold)(
-                index,
-                self_ref,
-                self.args.get_ty(),
-                self.args.get_const(),
-            ))))),
-        ].into_iter()
-            .chain(array.element_caster.cast_to_caller_ctx((array.impure.index_access)(self_ref)))
-            .collect()
-    }
-
-    /// Fold an array-like predicate at the given index (including generic casts).
-    pub fn fold_index(
-        &self,
-        self_ref: vir::ExprRef<'vir>,
-        index: vir::ExprInt<'vir>,
-        _perm: Option<vir::ExprPerm<'vir>>,
-    ) -> Vec<vir::Stmt<'vir>> {
-        let TySpecifics::ArrayLike(array) = &self.specifics else { panic!("cannot fold_index non-array type"); };
-        array.element_caster.cast_to_callee_ctx((array.impure.index_access)(self_ref))
-            .into_iter()
-            .chain([
-                vir::with_vcx(|vcx| vcx.alloc(vir::StmtData::new(vcx.alloc((array.data.impure.method_fold)(
-                    index,
-                    self_ref,
-                    self.args.get_ty(),
-                    self.args.get_const(),
-                ))))),
-            ])
-            .collect()
     }
 }
 

@@ -443,7 +443,8 @@ impl<'vir, 'v, T: vir::CompType> ToViper<'vir, 'v> for vir::Expr<'vir, T> {
                     recv.to_viper_no_pos(ctx),
                     &type_map,
                     field.ty.to_viper_no_pos(ctx),
-                    ctx.adt_destructors.get(field.name)
+                    ctx.adt_destructors
+                        .get(field.name)
                         .map(|d| d.0.name)
                         .unwrap_or_else(|| {
                             println!("no such destructor {field:?} for receiver {recv:?}");

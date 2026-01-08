@@ -174,9 +174,15 @@ impl TaskEncoder for TyImpureEnc {
                 TySpecifics::Opaque(opaque) => TySpecifics::Opaque(
                     super::kinds::opaque::ty_impure(opaque, deps, &mut builder)?,
                 ),
-                TySpecifics::ArrayLike(array) => TySpecifics::ArrayLike(
-                    super::kinds::arraylike::ty_impure(&ty, array, deps, &mut builder, snap_func_ident)?,
-                ),
+                TySpecifics::ArrayLike(array) => {
+                    TySpecifics::ArrayLike(super::kinds::arraylike::ty_impure(
+                        &ty,
+                        array,
+                        deps,
+                        &mut builder,
+                        snap_func_ident,
+                    )?)
+                }
                 TySpecifics::Primitive(prim) => TySpecifics::Primitive(
                     super::kinds::primitive::ty_impure(prim, deps, &mut builder)?,
                 ),

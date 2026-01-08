@@ -1,6 +1,13 @@
-use crate::encoders::{TyUseImpureEnc, ty::{
-    RustTyDatas, data::{ArrayData, TyData}, impure::{ImpureTyDatas, PredicateBuilder, TyImpureArrayData, TyImpureEnc}, kinds::opaque::set_opaque, pure::{DomainBuilder, PureTyDatas, TyPureArrayData, TyPureEnc}
-}};
+use crate::encoders::{
+    TyUseImpureEnc,
+    ty::{
+        RustTyDatas,
+        data::{ArrayData, TyData},
+        impure::{ImpureTyDatas, PredicateBuilder, TyImpureArrayData, TyImpureEnc},
+        kinds::opaque::set_opaque,
+        pure::{DomainBuilder, PureTyDatas, TyPureArrayData, TyPureEnc},
+    },
+};
 use task_encoder::{EncodeFullError, TaskEncoderDependencies};
 use vir::{CastType, FunctionIdn, HasType};
 
@@ -9,13 +16,14 @@ pub(crate) fn ty_pure<'vir>(
     _deps: &mut TaskEncoderDependencies<'vir, TyPureEnc>,
     builder: &mut DomainBuilder<'vir>,
 ) -> Result<ArrayData<'vir, PureTyDatas>, EncodeFullError<'vir, TyPureEnc>> {
-    let index_access = builder.function("index", (builder.self_type(), vir::TYPE_INT), vir::TYPE_PSNAP);
+    let index_access = builder.function(
+        "index",
+        (builder.self_type(), vir::TYPE_INT),
+        vir::TYPE_PSNAP,
+    );
     let len = builder.function("len", builder.self_type(), vir::TYPE_INT);
     Ok(ArrayData::new(
-        TyPureArrayData {
-            index_access,
-            len,
-        },
+        TyPureArrayData { index_access, len },
         data.inhabited,
         data.slice,
     ))
@@ -50,14 +58,16 @@ pub(crate) fn ty_impure<'vir>(
     let index_decl = builder.vcx.mk_local_decl("index", vir::TYPE_INT);
     let index = builder.vcx.mk_local_ex(index_decl);
 
-    let self_pred_ident = builder.inner.predicate_ident::<(vir::Ref, vir::ManyTyVal, vir::ManyCSnap)>(
-        "",
-        (
-            ref_self_decl.ty(),
-            builder.params.ty_args(),
-            builder.params.const_args(),
-        ),
-    );
+    let self_pred_ident = builder
+        .inner
+        .predicate_ident::<(vir::Ref, vir::ManyTyVal, vir::ManyCSnap)>(
+            "",
+            (
+                ref_self_decl.ty(),
+                builder.params.ty_args(),
+                builder.params.const_args(),
+            ),
+        );
 
     let index_access = builder.function(
         "index_ref",
@@ -91,11 +101,7 @@ pub(crate) fn ty_impure<'vir>(
 
     let element_ty = data.0.decompose(task_key.0.params);
     let element_ty_out = deps.require_dep::<TyUseImpureEnc>(element_ty)?;
-    let element_pred = element_ty_out.ref_to_pred(
-        builder.vcx,
-        index_access(ref_self),
-        None,
-    );
+    let element_pred = element_ty_out.ref_to_pred(builder.vcx, index_access(ref_self), None);
 
     let array_snap = vir::expr! { [snap_func_ident](ref_self, [..[builder.params.ty_exprs()]], [..[builder.params.const_exprs()]]) }.downcast_ty();
     let array_index = data.1.index_access.call()(array_snap, index);

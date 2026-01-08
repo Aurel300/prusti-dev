@@ -69,13 +69,13 @@ pub(crate) trait PureRvalueEnc<'vir> {
                 let needs_min_check = match (from_signed, to_signed) {
                     (true, true) => from_bits > to_bits, // both signed, check required if target has fewer bits
                     (false, false) => false,             // both unsigned, no min check necessary
-                    (false, true) => false,              // unsigned to signed, no min check necessary
-                    (true, false) => false,              // signed to unsigned, `from` must be >= 0
+                    (false, true) => false, // unsigned to signed, no min check necessary
+                    (true, false) => false, // signed to unsigned, `from` must be >= 0
                 };
 
                 let needs_max_check = match (from_signed, to_signed) {
                     (false, true) => from_bits >= to_bits, // unsigned to signed, must check unless target is bigger
-                    _ => from_bits > to_bits,              // otherwise check if target has fewer bits
+                    _ => from_bits > to_bits, // otherwise check if target has fewer bits
                 };
 
                 let mut preconditions = Vec::new();

@@ -26,12 +26,22 @@ pub(crate) fn ty_impure<'vir>(
 pub(super) fn set_opaque<'vir>(builder: &mut PredicateBuilder<'vir>) {
     let ref_self_decl = builder.ref_self_decl();
     let ref_self = builder.vcx.mk_local_ex(ref_self_decl);
-    let self_pred = builder.inner.predicate::<(vir::Ref, vir::ManyTyVal, vir::ManyCSnap)>(
-        "",
-        (ref_self_decl.ty, builder.params.ty_args(), builder.params.const_args()),
-        (ref_self_decl, builder.params.ty_decls(), builder.params.const_decls()),
-        None,
-    );
+    let self_pred = builder
+        .inner
+        .predicate::<(vir::Ref, vir::ManyTyVal, vir::ManyCSnap)>(
+            "",
+            (
+                ref_self_decl.ty,
+                builder.params.ty_args(),
+                builder.params.const_args(),
+            ),
+            (
+                ref_self_decl,
+                builder.params.ty_decls(),
+                builder.params.const_decls(),
+            ),
+            None,
+        );
     builder.function_snap = Some(
         builder
             .mk_function::<(vir::Ref, vir::ManyTyVal, vir::ManyCSnap), _>(

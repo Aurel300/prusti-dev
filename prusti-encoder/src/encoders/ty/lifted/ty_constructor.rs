@@ -116,10 +116,14 @@ impl TaskEncoder for TyConstructorEnc {
                 },
             )?;
 
-            let args = ty_accessor_functions.iter()
+            let args = ty_accessor_functions
+                .iter()
                 .map(|d| vcx.mk_local_decl(d.name, d.ty).upcast_ty())
-                .chain(const_accessor_functions.iter()
-                    .map(|d| vcx.mk_local_decl(d.name, d.ty).upcast_ty()))
+                .chain(
+                    const_accessor_functions
+                        .iter()
+                        .map(|d| vcx.mk_local_decl(d.name, d.ty).upcast_ty()),
+                )
                 .collect::<Vec<vir::LocalDecl<vir::Dyn>>>();
             let variant =
                 vcx.mk_adt_constructor(type_function_ident.name().to_str(), vcx.alloc_slice(&args));

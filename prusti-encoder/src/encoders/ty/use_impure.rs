@@ -333,16 +333,20 @@ impl<'vir> TyData<'vir, UseImpureTyDatas> {
             TySpecifics::Opaque(_) => panic!("cannot fold opaque type"),
             TySpecifics::ArrayLike(array) => {
                 let index = index.expect("cannot fold array type without index");
-                array.element_caster.cast_to_callee_ctx((array.impure.index_access)(self_ref))
+                array
+                    .element_caster
+                    .cast_to_callee_ctx((array.impure.index_access)(self_ref))
                     .into_iter()
-                    .chain([
-                        vir::with_vcx(|vcx| vcx.alloc(vir::StmtData::new(vcx.alloc((array.data.impure.method_fold)(
-                            index,
-                            self_ref,
-                            self.args.get_ty(),
-                            self.args.get_const(),
-                        ))))),
-                    ])
+                    .chain([vir::with_vcx(|vcx| {
+                        vcx.alloc(vir::StmtData::new(vcx.alloc(
+                            (array.data.impure.method_fold)(
+                                index,
+                                self_ref,
+                                self.args.get_ty(),
+                                self.args.get_const(),
+                            ),
+                        )))
+                    })])
                     .collect()
             }
             TySpecifics::ImmRef(..) => Vec::new(),
@@ -376,16 +380,23 @@ impl<'vir> TyData<'vir, UseImpureTyDatas> {
             TySpecifics::Opaque(_) => panic!("cannot unfold opaque type"),
             TySpecifics::ArrayLike(array) => {
                 let index = index.expect("cannot unfold array type without index");
-                [
-                    vir::with_vcx(|vcx| vcx.alloc(vir::StmtData::new(vcx.alloc((array.data.impure.method_unfold)(
-                        index,
-                        self_ref,
-                        self.args.get_ty(),
-                        self.args.get_const(),
-                    ))))),
-                ].into_iter()
-                    .chain(array.element_caster.cast_to_caller_ctx((array.impure.index_access)(self_ref)))
-                    .collect()
+                [vir::with_vcx(|vcx| {
+                    vcx.alloc(vir::StmtData::new(vcx.alloc(
+                        (array.data.impure.method_unfold)(
+                            index,
+                            self_ref,
+                            self.args.get_ty(),
+                            self.args.get_const(),
+                        ),
+                    )))
+                })]
+                .into_iter()
+                .chain(
+                    array
+                        .element_caster
+                        .cast_to_caller_ctx((array.impure.index_access)(self_ref)),
+                )
+                .collect()
             }
             TySpecifics::ImmRef(..) => Vec::new(),
             TySpecifics::MutRef(data) => data.unfold(self_ref, old).into_iter().collect(),

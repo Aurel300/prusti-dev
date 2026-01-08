@@ -454,20 +454,16 @@ impl<'tcx> TySpecifics<'tcx, RustTyDatas> {
                     .collect::<Vec<_>>();
                 TySpecifics::mk_structlike((), true, fields)
             }
-            ty::TyKind::Array(_, _) => {
-                TySpecifics::ArrayLike(ArrayData {
-                    slice: false,
-                    inhabited: true,
-                    data: LazyRustTy(Self::new_param_ty(1)),
-                })
-            }
-            ty::TyKind::Slice(_) => {
-                TySpecifics::ArrayLike(ArrayData {
-                    slice: true,
-                    inhabited: true,
-                    data: LazyRustTy(Self::new_param_ty(0)),
-                })
-            }
+            ty::TyKind::Array(_, _) => TySpecifics::ArrayLike(ArrayData {
+                slice: false,
+                inhabited: true,
+                data: LazyRustTy(Self::new_param_ty(1)),
+            }),
+            ty::TyKind::Slice(_) => TySpecifics::ArrayLike(ArrayData {
+                slice: true,
+                inhabited: true,
+                data: LazyRustTy(Self::new_param_ty(0)),
+            }),
             ty::TyKind::Ref(_, _, mutability) => match mutability {
                 ty::Mutability::Mut => {
                     TySpecifics::mk_mutref(LazyRustTy(TySpecifics::new_param_ty(1)))

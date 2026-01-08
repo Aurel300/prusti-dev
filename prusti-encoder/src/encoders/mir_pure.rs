@@ -20,7 +20,7 @@ use prusti_rustc_interface::{
     index::IndexVec,
     middle::{
         mir,
-        ty::{self, Binder, FnSig, TyKind, Region},
+        ty::{self, Binder, FnSig, Region, TyKind},
     },
     span::{Span, def_id::DefId, source_map::Spanned},
 };
@@ -929,9 +929,15 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                 let array_like = e_ty.expect_array();
                 let e_ty_pure = self.deps.require_dep::<TyUsePureEnc>(ty_task).unwrap();
                 let proj = e_ty_pure.expect_array();
-                let idx = self.encode_place_with_ref(curr_ver, mir::Place::from(idx).into()).snap;
+                let idx = self
+                    .encode_place_with_ref(curr_ver, mir::Place::from(idx).into())
+                    .snap;
                 let usize_ty = self.ty_use(self.vcx.tcx().types.usize);
-                let idx = usize_ty.expect_primitive().expect_native().snap_to_prim.call()(idx.downcast_ty());
+                let idx = usize_ty
+                    .expect_primitive()
+                    .expect_native()
+                    .snap_to_prim
+                    .call()(idx.downcast_ty());
                 let proj_app = proj.index(encoded_place.snap.downcast_ty(), idx.downcast_ty());
                 let place_ref = encoded_place
                     .place_ref
@@ -1188,11 +1194,19 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
             PrustiBuiltin::SliceLen => {
                 assert_eq!(args.len(), 1);
                 let op = self.encode_operand_snap(&args[0].node, curr_ver)?;
-                let slice_ty = self.vcx.tcx().mk_ty_from_kind(TyKind::Slice(arg_tys[0].expect_ty()));
-                let ref_slice_ty = self.vcx.tcx().mk_ty_from_kind(TyKind::Ref(Region::new_var(self.vcx.tcx(), 0usize.into()), slice_ty, ty::Mutability::Not));
+                let slice_ty = self
+                    .vcx
+                    .tcx()
+                    .mk_ty_from_kind(TyKind::Slice(arg_tys[0].expect_ty()));
+                let ref_slice_ty = self.vcx.tcx().mk_ty_from_kind(TyKind::Ref(
+                    Region::new_var(self.vcx.tcx(), 0usize.into()),
+                    slice_ty,
+                    ty::Mutability::Not,
+                ));
                 let ref_ty_out = self.ty_use(ref_slice_ty).expect_immref();
                 let slice_ty_out = self.ty_use(slice_ty).expect_array();
-                let prim = slice_ty_out.len(ref_ty_out.value_access(op.downcast_ty()).downcast_ty());
+                let prim =
+                    slice_ty_out.len(ref_ty_out.value_access(op.downcast_ty()).downcast_ty());
                 let usize_ = self.ty_use(self.vcx.tcx().types.usize).expect_primitive();
                 usize_.prim_to_snap.call()(prim.upcast_ty())
             }

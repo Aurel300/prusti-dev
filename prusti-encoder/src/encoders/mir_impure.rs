@@ -4,7 +4,7 @@ use pcg::{
     borrow_pcg::{
         action::BorrowPcgActionKind, borrow_pcg_edge::BorrowPcgEdge, borrow_pcg_expansion::BorrowPcgExpansion, edge::{
             abstraction::{AbstractionEdge, FunctionCallOrLoop},
-            kind::BorrowPcgEdgeKind, outlives::{BorrowFlowEdgeKind, CastData},
+            kind::BorrowPcgEdgeKind, outlives::BorrowFlowEdgeKind,
         }, region_projection::PlaceOrConst, state::BorrowsState, unblock_graph::BorrowPcgUnblockAction
     },
     coupling::PcgCoupledEdgeKind,

@@ -65,8 +65,8 @@ pub struct TyUseImpureMutRef<'vir> {
 
 #[derive(Debug, Clone, Copy)]
 pub struct TyUseImpureArrayData<'vir> {
+    #[allow(dead_code)]
     args: GArgsTy<'vir>,
-    ref_to_pred: PredicateIdn<'vir, (vir::Ref, vir::ManyTyVal, vir::ManyCSnap)>,
     #[allow(dead_code)]
     impure: <ImpureTyDatas as TyDatas<'vir>>::ArrayData,
     element_caster: FieldCaster<'vir>,
@@ -194,7 +194,7 @@ impl<'a, 'vir> TyUseImpureWalker<'a, 'vir> {
     fn encode_array(
         &mut self,
         data: &ArrayData<'vir, (RustTyDatas, ImpureTyDatas)>,
-        ref_to_pred: PredicateIdn<'vir, (vir::Ref, vir::ManyTyVal, vir::ManyCSnap)>,
+        _ref_to_pred: PredicateIdn<'vir, (vir::Ref, vir::ManyTyVal, vir::ManyCSnap)>,
         params: GParams<'vir>,
     ) -> ArrayData<'vir, UseImpureTyDatas> {
         let caster = self.encode_normalized(*data.0, params);
@@ -202,7 +202,6 @@ impl<'a, 'vir> TyUseImpureWalker<'a, 'vir> {
         let inhabited = data.inhabited;
         let data = TyUseImpureArrayData {
             args: self.args_t,
-            ref_to_pred,
             impure: *data.data.1,
             element_caster: caster,
         };

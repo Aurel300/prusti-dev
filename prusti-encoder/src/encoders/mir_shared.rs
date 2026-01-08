@@ -3,7 +3,7 @@ use task_encoder::{EncodeFullError, TaskEncoder, TaskEncoderDependencies};
 use vir::CastType;
 
 use crate::encoders::{
-    ConstEnc, MirBuiltinEnc, MirBuiltinEncTask, r#const::ConstEncTask, ty::{generics::{GParams, GenericParamsEnc}, use_pure::TyUsePure},
+    ConstEnc, MirBuiltinEnc, MirBuiltinEncTask, r#const::ConstEncTask, ty::use_pure::TyUsePure,
 };
 use prusti_rustc_interface::{
     abi,

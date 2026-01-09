@@ -1079,7 +1079,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 let idx =
                     usize_ty.expect_native().snap_to_prim.call()(idx.1.downcast_ty()).downcast_ty();
                 PlaceExpr {
-                    address: e_ty.ref_to_index_ref(expr.address),
+                    address: e_ty.ref_to_index_ref(expr.address, idx),
                     snap: expr.snap.map(|snap| {
                         let e_ty = self.ty_use_pure(place_ty.ty).expect_array();
                         e_ty.index(snap.downcast_ty(), idx)

@@ -44,9 +44,10 @@ pub struct TyImpureMutRefData<'vir> {
 
 #[derive(Debug, Clone, Copy)]
 pub struct TyImpureArrayData<'vir> {
-    pub index_access: vir::FunctionIdn<'vir, vir::Ref, vir::Ref>,
-    pub index_frame: vir::FunctionIdn<'vir, (vir::Ref, vir::ManyTyVal, vir::ManyCSnap), vir::CSnap>,
-    pub index_predicate: PredicateIdn<'vir, (vir::Ref, vir::ManyTyVal, vir::ManyCSnap)>,
+    pub index_access: vir::FunctionIdn<'vir, (vir::Ref, vir::Int), vir::Ref>,
+    pub index_frame:
+        vir::FunctionIdn<'vir, (vir::Ref, vir::Int, vir::ManyTyVal, vir::ManyCSnap), vir::CSnap>,
+    pub index_predicate: PredicateIdn<'vir, (vir::Ref, vir::Int, vir::ManyTyVal, vir::ManyCSnap)>,
     pub method_fold: vir::MethodIdn<'vir, (vir::Int, vir::Ref, vir::ManyTyVal, vir::ManyCSnap)>,
     pub method_unfold: vir::MethodIdn<'vir, (vir::Int, vir::Ref, vir::ManyTyVal, vir::ManyCSnap)>,
 }

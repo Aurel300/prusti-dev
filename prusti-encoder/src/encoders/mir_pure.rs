@@ -937,11 +937,12 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                     .expect_primitive()
                     .expect_native()
                     .snap_to_prim
-                    .call()(idx.downcast_ty());
-                let proj_app = proj.index(encoded_place.snap.downcast_ty(), idx.downcast_ty());
+                    .call()(idx.downcast_ty())
+                .downcast_ty();
+                let proj_app = proj.index(encoded_place.snap.downcast_ty(), idx);
                 let place_ref = encoded_place
                     .place_ref
-                    .map(|pr| array_like.ref_to_index_ref(pr));
+                    .map(|pr| array_like.ref_to_index_ref(pr, idx));
                 EncodedPlace::new(proj_app, place_ref)
             }
             mir::ProjectionElem::Downcast(..) => encoded_place,

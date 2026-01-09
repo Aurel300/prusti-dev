@@ -335,7 +335,7 @@ impl<'vir> TyData<'vir, UseImpureTyDatas> {
                 let index = index.expect("cannot fold array type without index");
                 array
                     .element_caster
-                    .cast_to_callee_ctx((array.impure.index_access)(self_ref))
+                    .cast_to_callee_ctx((array.impure.index_access)(self_ref, index))
                     .into_iter()
                     .chain([vir::with_vcx(|vcx| {
                         vcx.alloc(vir::StmtData::new(vcx.alloc(
@@ -394,7 +394,7 @@ impl<'vir> TyData<'vir, UseImpureTyDatas> {
                 .chain(
                     array
                         .element_caster
-                        .cast_to_caller_ctx((array.impure.index_access)(self_ref)),
+                        .cast_to_caller_ctx((array.impure.index_access)(self_ref, index)),
                 )
                 .collect()
             }
@@ -413,8 +413,9 @@ impl<'vir> TyUseImpureArray<'vir> {
     pub fn ref_to_index_ref<Curr, Next>(
         &self,
         self_ref: vir::ExprGenRef<'vir, Curr, Next>,
+        index: vir::ExprGenInt<'vir, Curr, Next>,
     ) -> vir::ExprGenRef<'vir, Curr, Next> {
-        self.data.impure.index_access.call()(self_ref)
+        self.data.impure.index_access.call()(self_ref, index)
     }
 }
 

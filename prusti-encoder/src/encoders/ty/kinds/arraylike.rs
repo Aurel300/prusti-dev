@@ -39,24 +39,26 @@ pub(crate) fn ty_impure<'vir>(
     set_opaque(builder);
     let ref_self_decl = builder.ref_self_decl();
     let ref_self = builder.vcx.mk_local_ex(ref_self_decl);
+    let index_decl = builder.vcx.mk_local_decl("index", vir::TYPE_INT);
+    let index = builder.vcx.mk_local_ex(index_decl);
     let index_predicate = builder
         .inner
-        .predicate::<(vir::Ref, vir::ManyTyVal, vir::ManyCSnap)>(
+        .predicate::<(vir::Ref, vir::Int, vir::ManyTyVal, vir::ManyCSnap)>(
             "index",
             (
                 ref_self_decl.ty(),
+                index_decl.ty(),
                 builder.params.ty_args(),
                 builder.params.const_args(),
             ),
             (
                 ref_self_decl,
+                index_decl,
                 builder.params.ty_decls(),
                 builder.params.const_decls(),
             ),
             None,
         );
-    let index_decl = builder.vcx.mk_local_decl("index", vir::TYPE_INT);
-    let index = builder.vcx.mk_local_ex(index_decl);
 
     let self_pred_ident = builder
         .inner
@@ -71,9 +73,9 @@ pub(crate) fn ty_impure<'vir>(
 
     let index_access = builder.function(
         "index_ref",
+        (vir::TYPE_REF, vir::TYPE_INT),
         vir::TYPE_REF,
-        vir::TYPE_REF,
-        (ref_self_decl,),
+        (ref_self_decl, index_decl),
         &[],
         &[],
         None,
@@ -83,17 +85,19 @@ pub(crate) fn ty_impure<'vir>(
         "index_frame",
         (
             ref_self_decl.ty(),
+            index_decl.ty(),
             builder.params.ty_args(),
             builder.params.const_args(),
         ),
         (task_key.1.domain)().downcast_ty(),
         (
             ref_self_decl,
+            index_decl,
             builder.params.ty_decls(),
             builder.params.const_decls(),
         ),
         &[
-            vir::expr! { [index_predicate](ref_self, [..[builder.params.ty_exprs()]], [..[builder.params.const_exprs()]]) },
+            vir::expr! { [index_predicate](ref_self, index, [..[builder.params.ty_exprs()]], [..[builder.params.const_exprs()]]) },
         ],
         &[],
         None,
@@ -101,7 +105,7 @@ pub(crate) fn ty_impure<'vir>(
 
     let element_ty = data.0.decompose(task_key.0.params);
     let element_ty_out = deps.require_dep::<TyUseImpureEnc>(element_ty)?;
-    let element_pred = element_ty_out.ref_to_pred(builder.vcx, index_access(ref_self), None);
+    let element_pred = element_ty_out.ref_to_pred(builder.vcx, index_access(ref_self, index), None);
 
     let array_snap = vir::expr! { [snap_func_ident](ref_self, [..[builder.params.ty_exprs()]], [..[builder.params.const_exprs()]]) }.downcast_ty();
     let array_index = data.1.index_access.call()(array_snap, index);
@@ -124,7 +128,7 @@ pub(crate) fn ty_impure<'vir>(
             ),
             &[
                 element_pred,
-                vir::expr! { [index_predicate](ref_self, [..[builder.params.ty_exprs()]], [..[builder.params.const_exprs()]]) },
+                vir::expr! { [index_predicate](ref_self, index, [..[builder.params.ty_exprs()]], [..[builder.params.const_exprs()]]) },
             ],
             &[
                 vir::expr! { [self_pred_ident](ref_self, [..[builder.params.ty_exprs()]], [..[builder.params.const_exprs()]]) },
@@ -132,8 +136,8 @@ pub(crate) fn ty_impure<'vir>(
                     forall idx: Int :: {[data.1.index_access](array_snap, idx)}
                         ([data.1.index_access](array_snap, idx)) == (
                             ((idx) == (index))
-                            ? ([builder.vcx.mk_old_expr(element_ty_out.ref_to_snap(vir::expr! { [index_access](ref_self) }).downcast_ty())])
-                            : (old([data.1.index_access](([index_frame](ref_self, [..[builder.params.ty_exprs()]], [..[builder.params.const_exprs()]])), idx)))
+                            ? ([builder.vcx.mk_old_expr(element_ty_out.ref_to_snap(vir::expr! { [index_access](ref_self, index) }).downcast_ty())])
+                            : (old([data.1.index_access](([index_frame](ref_self, index, [..[builder.params.ty_exprs()]], [..[builder.params.const_exprs()]])), idx)))
                         )
                 },
             ],
@@ -160,13 +164,13 @@ pub(crate) fn ty_impure<'vir>(
             ],
             &[
                 element_pred,
-                vir::expr! { [index_predicate](ref_self, [..[builder.params.ty_exprs()]], [..[builder.params.const_exprs()]]) },
+                vir::expr! { [index_predicate](ref_self, index, [..[builder.params.ty_exprs()]], [..[builder.params.const_exprs()]]) },
                 vir::expr! {
-                    ([element_ty_out.ref_to_snap(vir::expr! { [index_access](ref_self) })])
+                    ([element_ty_out.ref_to_snap(vir::expr! { [index_access](ref_self, index) })])
                     == ([builder.vcx.mk_old_expr(array_index).upcast_ty()])
                 },
                 vir::expr! {
-                    ([index_frame](ref_self, [..[builder.params.ty_exprs()]], [..[builder.params.const_exprs()]]))
+                    ([index_frame](ref_self, index, [..[builder.params.ty_exprs()]], [..[builder.params.const_exprs()]]))
                     == (old(array_snap))
                 }
             ],

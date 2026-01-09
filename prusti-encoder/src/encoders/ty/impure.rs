@@ -27,7 +27,6 @@ impl<'vir> TyDatas<'vir> for ImpureTyDatas {
 }
 
 pub type TyImpure<'vir> = Ty<'vir, ImpureTyDatas>;
-pub type TyImpureArray<'vir> = <ImpureTyDatas as TyDatas<'vir>>::ArrayData;
 pub type TyImpureParam<'vir> = <ImpureTyDatas as TyDatas<'vir>>::ParamData;
 pub type TyImpureOpaque<'vir> = <ImpureTyDatas as TyDatas<'vir>>::OpaqueData;
 pub type TyImpurePrimitive<'vir> = <ImpureTyDatas as TyDatas<'vir>>::PrimitiveData;
@@ -45,8 +44,10 @@ pub struct TyImpureMutRefData<'vir> {
 #[derive(Debug, Clone, Copy)]
 pub struct TyImpureArrayData<'vir> {
     pub index_access: vir::FunctionIdn<'vir, (vir::Ref, vir::Int), vir::Ref>,
+    #[allow(dead_code)]
     pub index_frame:
         vir::FunctionIdn<'vir, (vir::Ref, vir::Int, vir::ManyTyVal, vir::ManyCSnap), vir::CSnap>,
+    #[allow(dead_code)]
     pub index_predicate: PredicateIdn<'vir, (vir::Ref, vir::Int, vir::ManyTyVal, vir::ManyCSnap)>,
     pub method_fold: vir::MethodIdn<'vir, (vir::Int, vir::Ref, vir::ManyTyVal, vir::ManyCSnap)>,
     pub method_unfold: vir::MethodIdn<'vir, (vir::Int, vir::Ref, vir::ManyTyVal, vir::ManyCSnap)>,

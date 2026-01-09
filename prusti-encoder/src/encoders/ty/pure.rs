@@ -39,7 +39,6 @@ impl<'vir> TyDatas<'vir> for PureTyDatas {
 }
 
 pub type TyPure<'vir> = Ty<'vir, PureTyDatas>;
-pub type TyPureArray<'vir> = <PureTyDatas as TyDatas<'vir>>::ArrayData;
 pub type TyPureParam<'vir> = <PureTyDatas as TyDatas<'vir>>::ParamData;
 pub type TyPureOpaque<'vir> = <PureTyDatas as TyDatas<'vir>>::OpaqueData;
 pub type TyPurePrimitive<'vir> = <PureTyDatas as TyDatas<'vir>>::PrimitiveData;

@@ -1,12 +1,16 @@
 use crate::{ServerMessage, VIPER};
 use log::{debug, info};
 use std::{sync::mpsc, thread, time};
-use viper::{jni_utils::JniUtils, VerificationContext, VerificationResultKind};
+use viper::{
+    jni_utils::JniUtils,
+    lifetime_state::{Configured, Started},
+    VerificationContext, VerificationResultKind,
+};
 use viper_sys::wrappers::{java, viper::*};
 
 pub enum Backend<'a> {
     Viper(
-        viper::Verifier<'a>,
+        viper::Verifier<'a, Started>,
         &'a VerificationContext<'a>,
         jni::objects::GlobalRef,
     ),
@@ -49,7 +53,7 @@ impl<'a> Backend<'a> {
 
 #[allow(clippy::disallowed_types)]
 fn verify_and_poll_msgs(
-    verifier: &mut viper::Verifier,
+    verifier: &mut viper::Verifier<'_, Started>,
     verification_context: &viper::VerificationContext,
     viper_program: viper::Program,
     procedures: std::collections::HashSet<String>,

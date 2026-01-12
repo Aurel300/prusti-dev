@@ -5,8 +5,7 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 use crate::{
-    ast_factory::*, ast_utils::*, lifetime_state::Started,
-    verification_backend::VerificationBackend, verifier::Verifier,
+    ast_factory::*, ast_utils::*, verification_backend::VerificationBackend, verifier::Verifier,
 };
 use jni::AttachGuard;
 use log::{debug, info};
@@ -39,10 +38,7 @@ impl<'a> VerificationContext<'a> {
     }
 
     /// Should be used only by tests.
-    pub fn new_verifier_with_default_smt(
-        &self,
-        backend: VerificationBackend,
-    ) -> Verifier<'_, Started> {
+    pub fn new_verifier_with_default_smt(&self, backend: VerificationBackend) -> Verifier<'_> {
         self.new_verifier_with_default_smt_and_extra_args(backend, vec![])
     }
 
@@ -51,7 +47,7 @@ impl<'a> VerificationContext<'a> {
         &self,
         backend: VerificationBackend,
         extra_args: Vec<String>,
-    ) -> Verifier<'_, Started> {
+    ) -> Verifier<'_> {
         let z3_exe =
             env::var("Z3_EXE").expect("the Z3_EXE environment variable should not be empty");
         let boogie_exe = env::var("BOOGIE_EXE").ok();
@@ -74,7 +70,7 @@ impl<'a> VerificationContext<'a> {
         z3_exe: String,
         boogie_exe: Option<String>,
         smt_manager: SmtManager,
-    ) -> Verifier<'_, Started> {
+    ) -> Verifier<'_> {
         let mut verifier_args: Vec<String> = vec![];
 
         // Set Z3 binary

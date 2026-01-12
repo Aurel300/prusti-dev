@@ -25,7 +25,7 @@ use std::{
 };
 use viper_sys::wrappers::{scala, viper::*};
 
-pub mod lifetime_state {
+mod lifetime_state {
     /// The JVM object for the underlying verifier has been created, but not yet configured.
     pub(crate) struct Instantiated;
 
@@ -79,7 +79,7 @@ pub(crate) trait TransitionsTo<Next: LifetimeState> {}
 
 impl TransitionsTo<Started> for Instantiated {}
 
-pub struct Verifier<'a, State> {
+pub struct Verifier<'a, State = Started> {
     env: &'a JNIEnv<'a>,
     backend: VerificationBackend,
     verifier_wrapper: silver::verifier::Verifier<'a>,
@@ -272,7 +272,7 @@ impl<'a> Verifier<'a, Instantiated> {
     }
 }
 
-impl<'a> Verifier<'a, Started> {
+impl<'a> Verifier<'a> {
     #[tracing::instrument(name = "viper::verify", level = "debug", skip_all)]
     pub fn verify(
         &mut self,

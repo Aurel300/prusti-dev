@@ -18,8 +18,8 @@ use std::{
     sync::{self, mpsc, OnceLock},
 };
 use viper::{
-    self, lifetime_state, smt_manager::SmtManager, VerificationBackend, VerificationResult,
-    VerificationResultKind, Viper,
+    self, smt_manager::SmtManager, VerificationBackend, VerificationResult, VerificationResultKind,
+    Viper,
 };
 
 /// The JVM object should only instantiated once, so it is stored in a
@@ -232,7 +232,7 @@ fn new_viper_verifier<'v, 't: 'v>(
     program_name: &str,
     verification_context: &'v viper::VerificationContext<'t>,
     backend_config: ViperBackendConfig,
-) -> viper::Verifier<'v, lifetime_state::Started> {
+) -> viper::Verifier<'v> {
     let mut verifier_args: Vec<String> = backend_config.verifier_args;
     let report_path: Option<PathBuf>;
     if config::dump_debug_info() {

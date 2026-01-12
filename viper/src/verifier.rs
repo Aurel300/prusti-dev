@@ -232,7 +232,7 @@ impl<'a> Verifier<'a, Instantiated> {
             ast_utils,
             smt_manager,
             backend,
-            _marker: PhantomData::default(),
+            _marker: PhantomData,
         };
         verifier.assert_lifetime_state_consistency();
         verifier

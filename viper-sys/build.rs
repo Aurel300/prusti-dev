@@ -150,7 +150,6 @@ fn main() {
             // Silver
             java_class!("viper.silver.frontend.SilFrontend", vec![
                 method!("init"),
-                method!("configureVerifier"),
                 method!("setVerifier"),
                 method!("verification"),
                 method!("getVerificationResult"),
@@ -213,7 +212,7 @@ fn main() {
                 method!("start"),
                 method!("stop"),
                 method!("verify"),
-                method!("reporter")
+                method!("reporter"),
             ]),
             java_class!("viper.silver.frontend.DefaultStates", vec![
                 method!("ConsistencyCheck"),

@@ -26,39 +26,44 @@ use std::{
 use viper_sys::wrappers::{scala, viper::*};
 
 pub mod lifetime_state {
-    use jni::objects::JObject;
-
+    /// The JVM object for the underlying verifier has been created, but not yet configured.
     pub(crate) struct Instantiated;
-    pub struct Configured;
 
+    /// The verifier has been configured, and verification has started on a
+    /// Viper program.
     pub struct Started;
 }
 
 use lifetime_state::*;
 
-pub(crate) trait TransitionsTo<Next: LifetimeState> {
-    fn log_transition() {}
-}
-
-impl TransitionsTo<Started> for Instantiated {}
-
+/// Implementations of this trait correspond to the different states of the
+/// underlying Viper verifier. See [`lifetime_state::Instantiated`] and
+/// [`lifetime_state::Started`].
 pub(crate) trait LifetimeState {
-    const JAVA_CLASSNAME: &'static str;
+    /// Silicon tracks the lifetime state of the verifier explicitly via a value
+    /// of a Scala enumeration type.  Implementations of LifetimeState should
+    /// provide the class name of the corresponding Scala enumeration value that
+    /// would be used in Silicon: if Silicon is used, then Prusti will verify
+    /// that the Silicon's enumeration value is consistent with the tracked
+    /// state in the [`Verifier`] object (see [`Verifier::assert_verifier_state_and_invariants`]).
+    const SILICON_JAVA_CLASSNAME: &'static str;
 
+    /// Asserts properties that should hold when the verifier is in this state.
     fn assert_state_invariants<'a>(
-        jni_utils: &JniUtils<'a>,
-        frontend_wrapper: &silver::frontend::SilFrontend<'a>,
-        frontend_instance: JObject<'a>,
+        _jni_utils: &JniUtils<'a>,
+        _frontend_wrapper: &silver::frontend::SilFrontend<'a>,
+        _frontend_instance: JObject<'a>,
     ) {
     }
 }
 
 impl LifetimeState for Instantiated {
-    const JAVA_CLASSNAME: &'static str = "viper.silicon.Silicon$LifetimeState$Instantiated$";
+    const SILICON_JAVA_CLASSNAME: &'static str =
+        "viper.silicon.Silicon$LifetimeState$Instantiated$";
 }
 
 impl LifetimeState for Started {
-    const JAVA_CLASSNAME: &'static str = "viper.silicon.Silicon$LifetimeState$Started$";
+    const SILICON_JAVA_CLASSNAME: &'static str = "viper.silicon.Silicon$LifetimeState$Started$";
 
     fn assert_state_invariants<'a>(
         jni_utils: &JniUtils<'a>,
@@ -70,7 +75,11 @@ impl LifetimeState for Started {
     }
 }
 
-pub struct Verifier<'a, State: LifetimeState> {
+pub(crate) trait TransitionsTo<Next: LifetimeState> {}
+
+impl TransitionsTo<Started> for Instantiated {}
+
+pub struct Verifier<'a, State> {
     env: &'a JNIEnv<'a>,
     backend: VerificationBackend,
     verifier_wrapper: silver::verifier::Verifier<'a>,
@@ -83,7 +92,9 @@ pub struct Verifier<'a, State: LifetimeState> {
     _marker: PhantomData<State>,
 }
 
-impl<'a, State: LifetimeState> Verifier<'a, State> {
+impl<'a, State> Verifier<'a, State> {
+    /// Asserts that the underlying Viper verifier is an a state that is
+    /// consistent with `ExpectedState` (this does not take the current state into account).
     fn assert_verifier_state_and_invariants<ExpectedState: LifetimeState>(&self) {
         if let VerificationBackend::Silicon = self.backend {
             let wrapper = silicon::Silicon::with(self.env);
@@ -92,7 +103,7 @@ impl<'a, State: LifetimeState> Verifier<'a, State> {
                 .unwrap_result(wrapper.get_lifetimeState(self.verifier_instance));
             assert_eq!(
                 self.jni.class_name(jni_state),
-                ExpectedState::JAVA_CLASSNAME,
+                ExpectedState::SILICON_JAVA_CLASSNAME,
             );
             ExpectedState::assert_state_invariants(
                 &self.jni,
@@ -102,15 +113,22 @@ impl<'a, State: LifetimeState> Verifier<'a, State> {
         }
     }
 
-    fn assert_lifetime_state_consistency(&self) {
+    /// Asserts that the underlying Viper verifier is in a state that is
+    /// consistent with the current state of the [`Verifier`] object.
+    fn assert_lifetime_state_consistency(&self)
+    where
+        State: LifetimeState,
+    {
         self.assert_verifier_state_and_invariants::<State>();
     }
 
-    pub fn transition_state_to<Next: LifetimeState>(self) -> Verifier<'a, Next>
+    /// Verifies that the underlying Viper verifier state corresponds to to
+    /// `Next`, and returns an instance of [`Verifier`] representing that the
+    /// underlying Viper verifier is in that state.
+    fn transition_state_to<Next: LifetimeState>(self) -> Verifier<'a, Next>
     where
         State: TransitionsTo<Next>,
     {
-        State::log_transition();
         self.assert_verifier_state_and_invariants::<Next>();
         // SAFETY: Only ghost state changes
         unsafe { std::mem::transmute(self) }
@@ -346,13 +364,13 @@ impl<'a> Verifier<'a, Started> {
     }
 }
 
-impl<'a, State: LifetimeState> Verifier<'a, State> {
+impl<'a, State> Verifier<'a, State> {
     pub fn verifier_instance(&self) -> &JObject<'a> {
         &self.verifier_instance
     }
 }
 
-impl<'a, State: LifetimeState> Drop for Verifier<'a, State> {
+impl<State> Drop for Verifier<'_, State> {
     fn drop(&mut self) {
         // Tell the verifier to stop its threads.
         self.jni

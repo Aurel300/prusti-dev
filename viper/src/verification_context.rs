@@ -5,7 +5,8 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 use crate::{
-    lifetime_state::{Configured, Started}, ast_factory::*, ast_utils::*, verification_backend::VerificationBackend, verifier::Verifier
+    ast_factory::*, ast_utils::*, lifetime_state::Started,
+    verification_backend::VerificationBackend, verifier::Verifier,
 };
 use jni::AttachGuard;
 use log::{debug, info};
@@ -38,7 +39,10 @@ impl<'a> VerificationContext<'a> {
     }
 
     /// Should be used only by tests.
-    pub fn new_verifier_with_default_smt(&self, backend: VerificationBackend) -> Verifier<'_, Started> {
+    pub fn new_verifier_with_default_smt(
+        &self,
+        backend: VerificationBackend,
+    ) -> Verifier<'_, Started> {
         self.new_verifier_with_default_smt_and_extra_args(backend, vec![])
     }
 

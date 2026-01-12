@@ -2,9 +2,7 @@ use crate::{ServerMessage, VIPER};
 use log::{debug, info};
 use std::{sync::mpsc, thread, time};
 use viper::{
-    jni_utils::JniUtils,
-    lifetime_state::{Configured, Started},
-    VerificationContext, VerificationResultKind,
+    jni_utils::JniUtils, lifetime_state::Started, VerificationContext, VerificationResultKind,
 };
 use viper_sys::wrappers::{java, viper::*};
 

@@ -18,7 +18,8 @@ use std::{
     sync::{self, mpsc, OnceLock},
 };
 use viper::{
-    self, VerificationBackend, VerificationResult, VerificationResultKind, Viper, lifetime_state, smt_manager::SmtManager
+    self, lifetime_state, smt_manager::SmtManager, VerificationBackend, VerificationResult,
+    VerificationResultKind, Viper,
 };
 
 /// The JVM object should only instantiated once, so it is stored in a

@@ -1147,8 +1147,14 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
 
         let bool = self.ty_use(self.vcx.tcx().types.bool);
         let bool = bool.expect_primitive();
+        let real = self.ty_use_real();
         let mk_bool =
             |prim: vir::ExprGenBool<'vir, _, _>| bool.prim_to_snap.call()(prim.upcast_ty());
+        let mk_real =
+            |perm: vir::ExprGenPrim<'vir, _, _>| real.perm_to_snap.call()(perm.downcast_ty());
+        let mk_perm = |real_val: vir::ExprGenSnap<'vir, _, _>| {
+            real.snap_to_perm.call()(real_val.downcast_ty())
+        };
 
         Ok(match builtin {
             PrustiBuiltin::SnapshotEquality => {
@@ -1400,16 +1406,13 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                 let fl = self
                     .encode_operand_snap(&args[0].node, curr_ver)?
                     .downcast_ty();
-                fl_ty.fp_to_real.call()(fl)
+                let res = fl_ty.fp_to_real.call()(fl);
+                self.ty_use_real().perm_to_snap.call()(res)
             }
             PrustiBuiltin::RealMul => {
-                let real1 = self
-                    .encode_operand_snap(&args[0].node, curr_ver)?
-                    .downcast_ty();
-                let real2 = self
-                    .encode_operand_snap(&args[1].node, curr_ver)?
-                    .downcast_ty();
-                self.ty_use_real().real_mul.call()(real1, real2)
+                let real1 = mk_perm(self.encode_operand_snap(&args[0].node, curr_ver)?);
+                let real2 = mk_perm(self.encode_operand_snap(&args[1].node, curr_ver)?);
+                mk_real(self.vcx.mk_bin_op_expr(vir::BinOpKind::Mul, real1, real2))
             }
             PrustiBuiltin::RealEq => {
                 let a0_ty = args[0].node.ty(self.body, self.vcx.tcx());
@@ -1417,47 +1420,36 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                     .encode_operand_snap(&args[0].node, curr_ver)?
                     .downcast_ty();
                 let a0_ty_use = self.ty_use(a0_ty);
-                let real1_deref = a0_ty_use.expect_immref().value_access(real1).downcast_ty();
+                let real1_deref = mk_perm(a0_ty_use.expect_immref().value_access(real1));
                 let a1_ty = args[1].node.ty(self.body, self.vcx.tcx());
                 let real2 = self
                     .encode_operand_snap(&args[1].node, curr_ver)?
                     .downcast_ty();
                 let a1_ty_use = self.ty_use(a1_ty);
-                let real2_deref = a1_ty_use.expect_immref().value_access(real2).downcast_ty();
-                mk_bool(self.ty_use_real().real_eq.call()(real1_deref, real2_deref))
+                let real2_deref = mk_perm(a1_ty_use.expect_immref().value_access(real2));
+                mk_bool(self.vcx.mk_eq_expr(real1_deref, real2_deref))
             }
             PrustiBuiltin::RealSub => {
-                let real1 = self
-                    .encode_operand_snap(&args[0].node, curr_ver)?
-                    .downcast_ty();
-                let real2 = self
-                    .encode_operand_snap(&args[1].node, curr_ver)?
-                    .downcast_ty();
-                self.ty_use_real().real_sub.call()(real1, real2)
+                let real1 = mk_perm(self.encode_operand_snap(&args[0].node, curr_ver)?);
+                let real2 = mk_perm(self.encode_operand_snap(&args[1].node, curr_ver)?);
+                mk_real(self.vcx.mk_bin_op_expr(vir::BinOpKind::Sub, real1, real2))
             }
             PrustiBuiltin::RealAdd => {
-                let real1 = self
-                    .encode_operand_snap(&args[0].node, curr_ver)?
-                    .downcast_ty();
-                let real2 = self
-                    .encode_operand_snap(&args[1].node, curr_ver)?
-                    .downcast_ty();
-                self.ty_use_real().real_add.call()(real1, real2)
+                let real1 = mk_perm(self.encode_operand_snap(&args[0].node, curr_ver)?);
+                let real2 = mk_perm(self.encode_operand_snap(&args[1].node, curr_ver)?);
+                mk_real(self.vcx.mk_bin_op_expr(vir::BinOpKind::Add, real1, real2))
             }
             PrustiBuiltin::RealDiv => {
-                let real1 = self
-                    .encode_operand_snap(&args[0].node, curr_ver)?
-                    .downcast_ty();
-                let real2 = self
-                    .encode_operand_snap(&args[1].node, curr_ver)?
-                    .downcast_ty();
-                self.ty_use_real().real_div.call()(real1, real2)
+                let real1 = mk_perm(self.encode_operand_snap(&args[0].node, curr_ver)?);
+                let real2 = mk_perm(self.encode_operand_snap(&args[1].node, curr_ver)?);
+                mk_real(self.vcx.mk_bin_op_expr(vir::BinOpKind::Div, real1, real2))
             }
             PrustiBuiltin::RealNeg => {
-                let real = self
-                    .encode_operand_snap(&args[0].node, curr_ver)?
-                    .downcast_ty();
-                self.ty_use_real().real_neg.call()(real)
+                let real_val = mk_perm(self.encode_operand_snap(&args[0].node, curr_ver)?);
+                mk_real(
+                    self.vcx
+                        .mk_unary_op_expr(vir::UnOpKind::Neg, real_val.upcast_ty()),
+                )
             }
             PrustiBuiltin::RealLt => {
                 let a0_ty = args[0].node.ty(self.body, self.vcx.tcx());
@@ -1465,14 +1457,18 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                     .encode_operand_snap(&args[0].node, curr_ver)?
                     .downcast_ty();
                 let a0_ty_use = self.ty_use(a0_ty);
-                let real1_deref = a0_ty_use.expect_immref().value_access(real1).downcast_ty();
+                let real1_deref = mk_perm(a0_ty_use.expect_immref().value_access(real1));
                 let a1_ty = args[1].node.ty(self.body, self.vcx.tcx());
                 let real2 = self
                     .encode_operand_snap(&args[1].node, curr_ver)?
                     .downcast_ty();
                 let a1_ty_use = self.ty_use(a1_ty);
-                let real2_deref = a1_ty_use.expect_immref().value_access(real2).downcast_ty();
-                mk_bool(self.ty_use_real().real_lt.call()(real1_deref, real2_deref))
+                let real2_deref = mk_perm(a1_ty_use.expect_immref().value_access(real2));
+                mk_bool(
+                    self.vcx
+                        .mk_bin_op_expr(vir::BinOpKind::CmpLt, real1_deref, real2_deref)
+                        .downcast_ty(),
+                )
             }
             PrustiBuiltin::RealLe => {
                 let a0_ty = args[0].node.ty(self.body, self.vcx.tcx());
@@ -1480,14 +1476,18 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                     .encode_operand_snap(&args[0].node, curr_ver)?
                     .downcast_ty();
                 let a0_ty_use = self.ty_use(a0_ty);
-                let real1_deref = a0_ty_use.expect_immref().value_access(real1).downcast_ty();
+                let real1_deref = mk_perm(a0_ty_use.expect_immref().value_access(real1));
                 let a1_ty = args[1].node.ty(self.body, self.vcx.tcx());
                 let real2 = self
                     .encode_operand_snap(&args[1].node, curr_ver)?
                     .downcast_ty();
                 let a1_ty_use = self.ty_use(a1_ty);
-                let real2_deref = a1_ty_use.expect_immref().value_access(real2).downcast_ty();
-                mk_bool(self.ty_use_real().real_le.call()(real1_deref, real2_deref))
+                let real2_deref = mk_perm(a1_ty_use.expect_immref().value_access(real2));
+                mk_bool(
+                    self.vcx
+                        .mk_bin_op_expr(vir::BinOpKind::CmpLe, real1_deref, real2_deref)
+                        .downcast_ty(),
+                )
             }
             PrustiBuiltin::RealGt => {
                 let a0_ty = args[0].node.ty(self.body, self.vcx.tcx());
@@ -1495,14 +1495,18 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                     .encode_operand_snap(&args[0].node, curr_ver)?
                     .downcast_ty();
                 let a0_ty_use = self.ty_use(a0_ty);
-                let real1_deref = a0_ty_use.expect_immref().value_access(real1).downcast_ty();
+                let real1_deref = mk_perm(a0_ty_use.expect_immref().value_access(real1));
                 let a1_ty = args[1].node.ty(self.body, self.vcx.tcx());
                 let real2 = self
                     .encode_operand_snap(&args[1].node, curr_ver)?
                     .downcast_ty();
                 let a1_ty_use = self.ty_use(a1_ty);
-                let real2_deref = a1_ty_use.expect_immref().value_access(real2).downcast_ty();
-                mk_bool(self.ty_use_real().real_gt.call()(real1_deref, real2_deref))
+                let real2_deref = mk_perm(a1_ty_use.expect_immref().value_access(real2));
+                mk_bool(
+                    self.vcx
+                        .mk_bin_op_expr(vir::BinOpKind::CmpGt, real1_deref, real2_deref)
+                        .downcast_ty(),
+                )
             }
             PrustiBuiltin::RealGe => {
                 let a0_ty = args[0].node.ty(self.body, self.vcx.tcx());
@@ -1510,14 +1514,18 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                     .encode_operand_snap(&args[0].node, curr_ver)?
                     .downcast_ty();
                 let a0_ty_use = self.ty_use(a0_ty);
-                let real1_deref = a0_ty_use.expect_immref().value_access(real1).downcast_ty();
+                let real1_deref = mk_perm(a0_ty_use.expect_immref().value_access(real1));
                 let a1_ty = args[1].node.ty(self.body, self.vcx.tcx());
                 let real2 = self
                     .encode_operand_snap(&args[1].node, curr_ver)?
                     .downcast_ty();
                 let a1_ty_use = self.ty_use(a1_ty);
-                let real2_deref = a1_ty_use.expect_immref().value_access(real2).downcast_ty();
-                mk_bool(self.ty_use_real().real_ge.call()(real1_deref, real2_deref))
+                let real2_deref = mk_perm(a1_ty_use.expect_immref().value_access(real2));
+                mk_bool(
+                    self.vcx
+                        .mk_bin_op_expr(vir::BinOpKind::CmpGe, real1_deref, real2_deref)
+                        .downcast_ty(),
+                )
             }
         }
         .upcast_ty())

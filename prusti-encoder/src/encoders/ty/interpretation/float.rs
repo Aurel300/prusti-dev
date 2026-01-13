@@ -3,7 +3,6 @@ use task_encoder::{EncodeFullError, TaskEncoderDependencies};
 use vir::{BackendInterpretationPair, CallableIdn, FunctionIdn, VirCtxt};
 
 use crate::encoders::ty::{
-    data::TyData,
     interpretation::bitvec::{BitVecEnc, BitVecSize},
     pure::{DomainBuilder, TyPureEnc},
 };
@@ -28,7 +27,7 @@ pub struct FloatDomainData<'vir> {
     pub fp_geq: FunctionIdn<'vir, (vir::CSnap, vir::CSnap), vir::Bool>,
     pub fp_neg: FunctionIdn<'vir, vir::CSnap, vir::CSnap>,
     pub fp_abs: FunctionIdn<'vir, vir::CSnap, vir::CSnap>,
-    pub fp_to_real: FunctionIdn<'vir, vir::CSnap, vir::CSnap>,
+    pub fp_to_real: FunctionIdn<'vir, vir::CSnap, vir::Perm>,
 }
 
 pub(crate) fn ty_pure_float<'vir>(
@@ -191,11 +190,10 @@ pub(crate) fn ty_pure_float<'vir>(
     };
     let from_bv = builder.backend_func("from_bv", (bit_vec.domain)(), builder.self_type(), Some(i));
 
-    let real = deps.require_dep::<TyPureEnc>(TyData::from_real().0)?;
     let fp_to_real = builder.backend_func(
         "to_real",
         builder.self_type(),
-        (real.domain.cast_ty())(),
+        vir::TYPE_PERM,
         Some("fp.to_real"),
     );
 

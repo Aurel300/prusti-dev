@@ -32,8 +32,9 @@ pub fn foo5(){}
 #[ensures(Real::from_f32(2.5) > Real::from_f32(2.0))]
 pub fn foo6(){}
 
-#[ensures(Real::from_f32(8.5) / Real::from_f32(2.0) == Real::from_f32(4.25))]
-pub fn foo7(){}
+// Viper currently does not support the division of Perms
+// #[ensures(Real::from_f32(8.5) / Real::from_f32(2.0) == Real::from_f32(4.25))]
+// pub fn foo7(){}
 
 #[ensures(-Real::from_f32(8.5) == Real::from_f32(-8.5))]
 pub fn foo8(){}

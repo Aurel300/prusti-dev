@@ -265,8 +265,8 @@ impl TaskEncoder for TyPureEnc {
                     )?)
                 }
                 TySpecifics::Builtin(RustBuiltinData::BuiltinReal) => {
-                    let builder = builder.set_domain_builder();
-                    TySpecifics::Builtin(real::ty_pure(vcx, builder)?)
+                    let builder = builder.set_adt_builder();
+                    TySpecifics::Builtin(real::ty_pure(builder)?)
                 }
             };
             let output = TyData::new(output_ref, task_key.inhabited, specifics).alloc();

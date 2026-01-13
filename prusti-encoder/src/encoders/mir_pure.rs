@@ -1442,7 +1442,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
             PrustiBuiltin::RealDiv => {
                 let real1 = mk_perm(self.encode_operand_snap(&args[0].node, curr_ver)?);
                 let real2 = mk_perm(self.encode_operand_snap(&args[1].node, curr_ver)?);
-                mk_real(self.vcx.mk_bin_op_expr(vir::BinOpKind::Div, real1, real2))
+                mk_real(self.vcx.mk_bin_op_expr(vir::BinOpKind::DivRational, real1, real2))
             }
             PrustiBuiltin::RealNeg => {
                 let real_val = mk_perm(self.encode_operand_snap(&args[0].node, curr_ver)?);

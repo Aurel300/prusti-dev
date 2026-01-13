@@ -464,7 +464,6 @@ impl<'vir> TyPureBuilder<'vir> {
             BuilderData::Adt(data) => {
                 let adt = self.vcx.mk_adt(
                     self.domain_ident.name(),
-                    // if self.domain_ident.name().to_str() == "s_Real" { ViperIdent::new("s_Real_123") } else { self.domain_ident.name() },
                     &[],
                     self.vcx.alloc_slice(data.constructors.as_slice()),
                 );

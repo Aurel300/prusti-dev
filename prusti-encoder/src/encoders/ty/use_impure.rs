@@ -172,7 +172,7 @@ impl<'a, 'vir> TyUseImpureWalker<'a, 'vir> {
             TySpecifics::EnumLike(data) => {
                 TySpecifics::EnumLike(self.encode_enumlike(data, ty.0.params))
             }
-            TySpecifics::Builtin(_) => unreachable!(),
+            TySpecifics::Builtin(..) => TySpecifics::mk_builtin(()),
         };
         let data = TyUseImpureData {
             args: self.args_t,

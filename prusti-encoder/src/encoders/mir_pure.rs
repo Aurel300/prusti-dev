@@ -764,7 +764,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                             .iter()
                             .map(|arg| self.encode_operand_snap(&arg.node, &new_curr_ver))
                             .collect::<Result<Vec<_>, _>>()?;
-                        pure_func.call(snap_args)
+                        Ok(pure_func.call(snap_args))
                     } else {
                         let item_name = self.vcx.tcx().item_name(def_id);
                         panic!(
@@ -775,7 +775,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
 
                 let mut term_update = Update::new();
                 assert!(destination.projection.is_empty());
-                self.bump_version(&mut term_update, destination.local, expr, location);
+                self.bump_version(&mut term_update, destination.local, expr?, location);
                 term_update.add_to_map(&mut new_curr_ver);
 
                 // walk rest of CFG
@@ -1442,7 +1442,10 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
             PrustiBuiltin::RealDiv => {
                 let real1 = mk_perm(self.encode_operand_snap(&args[0].node, curr_ver)?);
                 let real2 = mk_perm(self.encode_operand_snap(&args[1].node, curr_ver)?);
-                mk_real(self.vcx.mk_bin_op_expr(vir::BinOpKind::DivRational, real1, real2))
+                mk_real(
+                    self.vcx
+                        .mk_bin_op_expr(vir::BinOpKind::DivRational, real1, real2),
+                )
             }
             PrustiBuiltin::RealNeg => {
                 let real_val = mk_perm(self.encode_operand_snap(&args[0].node, curr_ver)?);

@@ -7,7 +7,6 @@ use crate::encoders::{
         LazyRustTy, RustTyDatas,
         generics::{GArgs, GArgsCastEnc, GArgsTyEnc, GParams},
         impure::{TyImpure, TyImpureEnc},
-        pure::TyPureBuiltinData,
     },
 };
 

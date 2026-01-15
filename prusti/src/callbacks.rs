@@ -4,7 +4,7 @@ use ide::{fake_error, IdeInfo};
 use prusti_interface::{
     data::VerificationTask,
     environment::{mir_storage, Environment},
-    specs::{self, cross_crate::CrossCrateSpecs, is_spec_fn},
+    specs::{self, cross_crate::CrossCrateSpecs},
     PrustiError,
 };
 use prusti_rustc_interface::{
@@ -39,7 +39,7 @@ fn mir_borrowck<'tcx>(tcx: TyCtxt<'tcx>, def_id: LocalDefId) -> MirBorrowck<'tcx
     // when calling `get_body_with_borrowck_facts`. TODO: figure out if we need
     // (anon) const bodies at all, and if so, how to get them?
     if !is_anon_const {
-        let consumer_opts = if is_spec_fn(tcx, def_id.to_def_id()) || config::no_verify() {
+        let consumer_opts = if config::no_verify() {
             consumers::ConsumerOptions::RegionInferenceContext
         } else {
             consumers::ConsumerOptions::PoloniusOutputFacts

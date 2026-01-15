@@ -39,9 +39,6 @@ pub fn encode_all_in_crate<'tcx>(tcx: ty::TyCtxt<'tcx>) {
         match kind {
             hir::def::DefKind::Fn | hir::def::DefKind::AssocFn => {
                 let def_id = def_id.to_def_id();
-                if prusti_interface::specs::is_spec_fn(tcx, def_id) {
-                    continue;
-                }
 
                 let (is_pure, is_trusted) = crate::encoders::with_proc_spec(
                     SpecQuery::GetProcKind(def_id, ty::List::identity_for_item(tcx, def_id)),

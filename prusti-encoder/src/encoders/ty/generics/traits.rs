@@ -42,47 +42,47 @@ impl TaskEncoder for TraitEnc {
             let tcx = vcx.tcx();
             let params = deps.require_dep::<GenericParamsEnc>(GParams::from(*task_key))?;
             let trait_name = vcx.alloc_str(tcx.item_name(task_key).as_str());
-            let type_did_fun_mapping = tcx
-                .associated_items(task_key)
-                .in_definition_order()
-                .filter(|item| matches!(item.kind, AssocKind::Type { data: _ }))
-                .map(|item| {
-                    let params_type = deps
-                        .require_dep::<GenericParamsEnc>(GParams::from(item.def_id))
-                        .unwrap();
-                    (
-                        item.def_id,
-                        FunctionIdn::new(
+            let mut funcs = Vec::new();
+            let mut type_did_fun_mapping = HashMap::new();
+            for item in tcx.associated_items(task_key).in_definition_order() {
+                match item.kind {
+                    AssocKind::Type { .. } => {
+                        let params_type = deps
+                            .require_dep::<GenericParamsEnc>(GParams::from(item.def_id))
+                            .unwrap();
+                        let type_func = FunctionIdn::new(
                             vir_format_identifier!(
                                 vcx,
-                                "{}_Assoc_{}_func",
+                                "{}_assoc_type_{}",
                                 trait_name,
                                 tcx.item_name(item.def_id),
                             ),
                             vcx.alloc_slice(&vec![vir::TYPE_TYVAL; params_type.ty_exprs().len()]), // params_type also includes parameters of trait itself
                             vir::TYPE_TYVAL,
-                        ),
-                    )
-                })
-                .collect::<HashMap<DefId, FunctionIdn<'vir, vir::ManyTyVal, vir::TyVal>>>();
-            let mut funcs = type_did_fun_mapping
-                .values()
-                .map(|function_idn| vcx.mk_domain_function(*function_idn, false, None))
-                .collect::<Vec<_>>();
+                        );
+                        type_did_fun_mapping.insert(item.def_id, type_func);
+                        funcs.push(vcx.mk_domain_function(type_func, false, None));
+                    }
+                    AssocKind::Fn { ../*name, has_self*/ } => (), // TODO
+                    AssocKind::Const { .. } => (), // noop?
+                }
+            }
+
             let impl_fun = FunctionIdn::new(
                 vir_format_identifier!(vcx, "{}_impl", trait_name),
                 vcx.alloc_slice(&(vec![vir::TYPE_TYVAL; params.ty_exprs().len()])),
                 vir::TYPE_BOOL,
             );
-            let impl_fun_data = vcx.mk_domain_function(impl_fun, false, None);
-            funcs.push(impl_fun_data);
+            funcs.push(vcx.mk_domain_function(impl_fun, false, None));
+
             let trait_domain = vcx.mk_domain(
-                vir_format_identifier!(vcx, "t_{}", trait_name),
+                vir_format_identifier!(vcx, "trait_{}", trait_name),
                 &[],
                 &[],
-                vcx.alloc_slice(funcs.as_slice()),
+                vcx.alloc_slice(&funcs),
                 None,
             );
+
             Ok((
                 trait_domain,
                 TraitData {

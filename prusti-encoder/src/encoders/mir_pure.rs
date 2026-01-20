@@ -733,16 +733,11 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                     )
                     .unwrap_or_default();
 
-                    let crate_name = self.vcx.tcx().crate_name(def_id.krate);
                     let env_query = EnvQuery::new(self.vcx.tcx());
-                    let actual_impl = env_query.find_impl_of_trait_method_call(def_id, arg_tys);
-                    if crate_name.as_str() == "prusti_contracts"
-                        || actual_impl.is_some_and(|x| {
-                            self.vcx.tcx().crate_name(x.krate).as_str() == "prusti_contracts"
-                        })
-                    {
+                    if env_query.is_function_in_crate(def_id, arg_tys, "prusti_contracts") {
                         let sig = self.vcx.tcx().fn_sig(def_id);
                         let sig = sig.instantiate_identity();
+                        let actual_impl = env_query.find_impl_of_trait_method_call(def_id, arg_tys);
                         self.encode_prusti_builtin(
                             def_id,
                             actual_impl,
@@ -767,9 +762,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                         Ok(pure_func.call(snap_args))
                     } else {
                         let item_name = self.vcx.tcx().item_name(def_id);
-                        panic!(
-                            "call to unknown non-pure function in pure code ({crate_name}::{item_name})"
-                        );
+                        panic!("call to unknown non-pure function in pure code ({item_name})");
                     }
                 };
 

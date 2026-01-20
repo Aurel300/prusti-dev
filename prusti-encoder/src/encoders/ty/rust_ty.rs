@@ -2,6 +2,7 @@ use std::ops::Deref;
 
 use itertools::Itertools;
 use pcg::borrow_pcg::region_projection::{HasRegions, PcgRegion, RegionIdx};
+use prusti_interface::environment::EnvQuery;
 use prusti_rustc_interface::{
     abi, hir,
     index::{self, IndexVec},
@@ -540,24 +541,30 @@ impl<'tcx> TySpecifics<'tcx, RustTyDatas> {
             return TySpecifics::mk_structlike((), true, fields);
         }
 
-        match adt.adt_kind() {
-            ty::AdtKind::Struct => {
-                if adt.non_enum_variant().name.to_string() == "Real" {
-                    Self::Builtin(RustBuiltinData::BuiltinReal)
-                } else {
-                    let data = Self::from_struct(adt.non_enum_variant());
-                    Self::StructLike(data)
+        vir::with_vcx(|vcx| {
+            let env_query = EnvQuery::new(vcx.tcx());
+
+            match adt.adt_kind() {
+                ty::AdtKind::Struct => {
+                    if env_query.is_adt_in_crate(adt, "prusti_contracts")
+                        && adt.non_enum_variant().name.to_string() == "Real"
+                    {
+                        Self::Builtin(RustBuiltinData::BuiltinReal)
+                    } else {
+                        let data = Self::from_struct(adt.non_enum_variant());
+                        Self::StructLike(data)
+                    }
+                }
+                ty::AdtKind::Enum => {
+                    let data = Self::from_enum(adt);
+                    Self::EnumLike(data)
+                }
+                ty::AdtKind::Union => {
+                    // TODO: add union support
+                    Self::mk_opaque(())
                 }
             }
-            ty::AdtKind::Enum => {
-                let data = Self::from_enum(adt);
-                Self::EnumLike(data)
-            }
-            ty::AdtKind::Union => {
-                // TODO: add union support
-                Self::mk_opaque(())
-            }
-        }
+        })
     }
 
     fn from_struct(variant: &ty::VariantDef) -> StructData<'tcx, RustTyDatas> {

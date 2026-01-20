@@ -333,6 +333,25 @@ impl<'tcx> EnvQuery<'tcx> {
         }
     }
 
+    /// Given a definition id of a function (def_id) and some substs applied for a call (arg_tys), this method returns if the function call calls a function in the crate specified (crate_name)
+    pub fn is_function_in_crate(
+        self,
+        def_id: DefId,
+        arg_tys: GenericArgsRef<'tcx>,
+        crate_name: &'tcx str,
+    ) -> bool {
+        let did_crate_name = self.tcx.crate_name(def_id.krate);
+        let actual_impl = self.find_impl_of_trait_method_call(def_id, arg_tys);
+        did_crate_name.as_str() == crate_name
+            || actual_impl.is_some_and(|x| self.tcx.crate_name(x.krate).as_str() == crate_name)
+    }
+
+    /// Given an adt definition (adt), this method returns if the adt is defined in the crate specified (crate_name)
+    pub fn is_adt_in_crate(self, adt: ty::AdtDef<'tcx>, crate_name: &'tcx str) -> bool {
+        let did_crate_name = self.tcx.crate_name(adt.did().krate);
+        did_crate_name.as_str() == crate_name
+    }
+
     /// Given a definition id `def_id`, returns
     /// None if `def_id` is not an associated item within
     /// an implementation; Some(ty_name) where `ty_name` is

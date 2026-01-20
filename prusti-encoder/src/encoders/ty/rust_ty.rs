@@ -544,24 +544,25 @@ impl<'tcx> TySpecifics<'tcx, RustTyDatas> {
         vir::with_vcx(|vcx| {
             let env_query = EnvQuery::new(vcx.tcx());
 
-            match adt.adt_kind() {
-                ty::AdtKind::Struct => {
-                    if env_query.is_adt_in_crate(adt, "prusti_contracts")
-                        && adt.non_enum_variant().name.to_string() == "Real"
-                    {
-                        Self::Builtin(RustBuiltinData::BuiltinReal)
-                    } else {
+            if env_query.is_adt_in_crate(adt, "prusti_contracts") {
+                match adt.non_enum_variant().name.to_string().as_str() {
+                    "Real" => Self::Builtin(RustBuiltinData::BuiltinReal),
+                    s => panic!("Found unrecognized builtin {}", s),
+                }
+            } else {
+                match adt.adt_kind() {
+                    ty::AdtKind::Struct => {
                         let data = Self::from_struct(adt.non_enum_variant());
                         Self::StructLike(data)
                     }
-                }
-                ty::AdtKind::Enum => {
-                    let data = Self::from_enum(adt);
-                    Self::EnumLike(data)
-                }
-                ty::AdtKind::Union => {
-                    // TODO: add union support
-                    Self::mk_opaque(())
+                    ty::AdtKind::Enum => {
+                        let data = Self::from_enum(adt);
+                        Self::EnumLike(data)
+                    }
+                    ty::AdtKind::Union => {
+                        // TODO: add union support
+                        Self::mk_opaque(())
+                    }
                 }
             }
         })

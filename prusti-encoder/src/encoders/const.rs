@@ -1,4 +1,4 @@
-use prusti_interface::{PrustiError, specs::is_spec_fn};
+use prusti_interface::PrustiError;
 use prusti_rustc_interface::{
     middle::{
         mir::{

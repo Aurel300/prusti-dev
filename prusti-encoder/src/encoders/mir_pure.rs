@@ -1059,7 +1059,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
             IsNaN(ty::FloatTy),
             IsInfinite(ty::FloatTy),
             FlAbs(ty::FloatTy),
-            FlToReal(ty::FloatTy),
+            FlToReal,
             RealMul,
             RealEq,
             RealSub,
@@ -1120,18 +1120,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
             (None, "f32_abs") => PrustiBuiltin::FlAbs(ty::FloatTy::F32),
             (None, "f64_abs") => PrustiBuiltin::FlAbs(ty::FloatTy::F64),
             (None, "f128_abs") => PrustiBuiltin::FlAbs(ty::FloatTy::F128),
-            (Some("prusti_contracts::Real"), "from_f16") => {
-                PrustiBuiltin::FlToReal(ty::FloatTy::F16)
-            }
-            (Some("prusti_contracts::Real"), "from_f32") => {
-                PrustiBuiltin::FlToReal(ty::FloatTy::F32)
-            }
-            (Some("prusti_contracts::Real"), "from_f64") => {
-                PrustiBuiltin::FlToReal(ty::FloatTy::F64)
-            }
-            (Some("prusti_contracts::Real"), "from_f128") => {
-                PrustiBuiltin::FlToReal(ty::FloatTy::F128)
-            }
+            (Some("prusti_contracts::Real"), "from") => PrustiBuiltin::FlToReal,
             (Some("prusti_contracts::Real"), "mul") => PrustiBuiltin::RealMul,
             (Some("prusti_contracts::Real"), "eq") => PrustiBuiltin::RealEq,
             (Some("prusti_contracts::Real"), "sub") => PrustiBuiltin::RealSub,
@@ -1395,14 +1384,9 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                     .downcast_ty();
                 fl_ty.fp_abs.call()(fl1)
             }
-            PrustiBuiltin::FlToReal(float_ty) => {
-                let fl_ty = match float_ty {
-                    ty::FloatTy::F16 => self.ty_use(self.vcx.tcx().types.f16),
-                    ty::FloatTy::F32 => self.ty_use(self.vcx.tcx().types.f32),
-                    ty::FloatTy::F64 => self.ty_use(self.vcx.tcx().types.f64),
-                    ty::FloatTy::F128 => self.ty_use(self.vcx.tcx().types.f128),
-                }
-                .expect_float();
+            PrustiBuiltin::FlToReal => {
+                let a_ty = args[0].node.ty(self.body, self.vcx.tcx());
+                let fl_ty = self.ty_use(a_ty).expect_float();
                 let fl = self
                     .encode_operand_snap(&args[0].node, curr_ver)?
                     .downcast_ty();

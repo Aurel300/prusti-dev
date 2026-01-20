@@ -359,21 +359,27 @@ mod private {
     #[derive(Eq, Copy, Clone)]
     pub struct Real(());
 
-    impl Real {
-        pub fn from_f16(_: f16) -> Self {
-            panic!()
+    impl From<f16> for Real {
+        fn from(value: f16) -> Self {
+            panic!();
         }
+    }
 
-        pub fn from_f32(_: f32) -> Self {
-            panic!()
+    impl From<f32> for Real {
+        fn from(value: f32) -> Self {
+            panic!();
         }
+    }
 
-        pub fn from_f64(_: f64) -> Self {
-            panic!()
+    impl From<f64> for Real {
+        fn from(value: f64) -> Self {
+            panic!();
         }
+    }
 
-        pub fn from_f128(_: f128) -> Self {
-            panic!()
+    impl From<f128> for Real {
+        fn from(value: f128) -> Self {
+            panic!();
         }
     }
 

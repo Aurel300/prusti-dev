@@ -1,4 +1,4 @@
-use prusti_interface::PrustiError;
+use prusti_interface::{PrustiError, specs::is_spec_fn};
 use prusti_rustc_interface::{
     middle::{
         mir::{
@@ -90,19 +90,48 @@ impl ConstEnc {
                         GlobalAlloc::Memory(_mem) => {
                             // If the `unwrap` ever panics we need a different way to get the inner type
                             // let inner_ty = ty.builtin_deref(true).map(|t| t.ty).unwrap_or(ty);
-                            let _inner_ty = ty.builtin_deref(true).unwrap();
-                            vcx.with_span(span.unwrap(), |vcx| {
-                                vcx.handle_error(
-                                    "application.precondition:assertion.false",
-                                    move |_| {
-                                        Some(vec![PrustiError::verification(
-                                            format!("unsupported const {val:?} might be reached"),
-                                            span.unwrap().into(),
-                                        )])
-                                    },
-                                );
-                                kind.unreachable_to_snap().downcast_ty()
-                            })
+
+                            let inner_ty = ty.builtin_deref(true).unwrap();
+
+                            // In general we cannot encode such pointers. However, we add a special case
+                            // for pointers to closures that do not contain upvars: these are sometimes
+                            // generated when Prusti specifications are desugared into Rust. For example,
+                            // encoding #[ensures(forall(|i: u32| i >= 0))], a pointer to the closure
+                            // |i: u32| i >= 0 is passed as an argument to the `forall` function
+                            //
+                            // Conceptually, values of such closures are empty structs, so we can generate
+                            // the corresponding Viper expression. This special case can be removed once we
+                            // have more general support for supporting constants.
+                            if let ty::TyKind::Closure(_, args) = inner_ty.kind()
+                                && args.as_closure().upvar_tys().is_empty()
+                            {
+                                let inner_ty_task =
+                                    RustTyDecomposition::from_ty(inner_ty, vcx.tcx(), context);
+                                let inner_ty_snap =
+                                    deps.require_dep::<TyUsePureEnc>(inner_ty_task)?;
+                                kind.expect_immref().prim_to_snap(
+                                    vcx.mk_null(),
+                                    (inner_ty_snap
+                                        .expect_structlike()
+                                        .field_snaps_to_snap(vec![]))
+                                    .upcast_ty(),
+                                )
+                            } else {
+                                vcx.with_span(span.unwrap(), |vcx| {
+                                    vcx.handle_error(
+                                        "application.precondition:assertion.false",
+                                        move |_| {
+                                            Some(vec![PrustiError::verification(
+                                                format!(
+                                                    "unsupported const {val:?} might be reached"
+                                                ),
+                                                span.unwrap().into(),
+                                            )])
+                                        },
+                                    );
+                                    kind.unreachable_to_snap().downcast_ty()
+                                })
+                            }
                         }
                         GlobalAlloc::TypeId { .. } => todo!(),
                     }
@@ -170,6 +199,7 @@ impl TaskEncoder for ConstEnc {
                             .const_eval_resolve(typing_env, uneval, vcx.tcx().def_span(def_id))
                     };
                     if let Ok(val) = resolved {
+                        eprintln!("Resolved: {val:?}");
                         Self::encode_const_val(deps, val, ty, def_id.into(), Some(span))
                     } else if let Some(promoted) = uneval.promoted {
                         let task = MirPureEncTask {

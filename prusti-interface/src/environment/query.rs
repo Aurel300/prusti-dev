@@ -340,10 +340,14 @@ impl<'tcx> EnvQuery<'tcx> {
         arg_tys: GenericArgsRef<'tcx>,
         crate_name: &'tcx str,
     ) -> bool {
-        let did_crate_name = self.tcx.crate_name(def_id.krate);
         let actual_impl = self.find_impl_of_trait_method_call(def_id, arg_tys);
-        did_crate_name.as_str() == crate_name
-            || actual_impl.is_some_and(|x| self.tcx.crate_name(x.krate).as_str() == crate_name)
+        actual_impl.map_or_else(
+            || {
+                let did_crate_name = self.tcx.crate_name(def_id.krate);
+                did_crate_name.as_str() == crate_name
+            },
+            |x| self.tcx.crate_name(x.krate).as_str() == crate_name,
+        )
     }
 
     /// Given an adt definition (adt), this method returns if the adt is defined in the crate specified (crate_name)

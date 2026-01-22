@@ -74,8 +74,17 @@ impl<'tcx> RustTyDecomposition<'tcx> {
     }
 
     pub fn from_real() -> Self {
-        let (ty, args) = TyData::<'tcx, RustTyDatas>::from_real();
-        Self { ty, args }
+        let name = "Real";
+        let params = GParams::empty();
+        let data = RustTyData {
+            name: symbol::Symbol::intern(name),
+            params,
+        };
+        let specifics = TySpecifics::Builtin(RustBuiltinData::BuiltinReal);
+        Self {
+            ty: TyData::<'tcx, RustTyDatas>::new(data, true, specifics).alloc(),
+            args: GArgs::new(params, &[]),
+        }
     }
 
     /// Same as `from_ty` to get a `RustTyDecomposition` for use in encoding,
@@ -292,20 +301,6 @@ impl<'tcx> TyData<'tcx, RustTyDatas> {
         let specifics = TySpecifics::from_ty(ty);
         let inhabited = !ty.is_privately_uninhabited(tcx, ty::TypingEnv::fully_monomorphized());
         (Self::new(data, inhabited, specifics).alloc(), args)
-    }
-
-    pub fn from_real() -> (RustTy<'tcx>, GArgs<'tcx>) {
-        let name = "Real";
-        let params: GParams = GParams::empty();
-        let data = RustTyData {
-            name: symbol::Symbol::intern(name),
-            params,
-        };
-        let specifics = TySpecifics::Builtin(RustBuiltinData::BuiltinReal);
-        (
-            Self::new(data, true, specifics).alloc(),
-            GArgs::new(params, &[]),
-        )
     }
 
     fn from_prim_ty(ty: ty::Ty<'tcx>) -> (RustTy<'tcx>, GArgs<'tcx>) {
@@ -538,34 +533,30 @@ impl<'tcx> TySpecifics<'tcx, RustTyDatas> {
                 fid: abi::FieldIdx::from_usize(0),
                 ty: LazyRustTy(Self::new_param_ty(0)),
             }];
-            return TySpecifics::mk_structlike((), true, fields);
-        }
-
-        vir::with_vcx(|vcx| {
-            let env_query = EnvQuery::new(vcx.tcx());
-
-            if env_query.is_adt_in_crate(adt, "prusti_contracts") {
-                match adt.non_enum_variant().name.to_string().as_str() {
-                    "Real" => Self::Builtin(RustBuiltinData::BuiltinReal),
-                    s => panic!("Found unrecognized builtin {}", s),
+            TySpecifics::mk_structlike((), true, fields)
+        } else if vir::with_vcx(|vcx| {
+            EnvQuery::new(vcx.tcx()).is_adt_in_crate(adt, "prusti_contracts")
+        }) {
+            match adt.non_enum_variant().name.to_string().as_str() {
+                "Real" => Self::Builtin(RustBuiltinData::BuiltinReal),
+                s => panic!("Found unrecognized builtin {}", s),
+            }
+        } else {
+            match adt.adt_kind() {
+                ty::AdtKind::Struct => {
+                    let data = Self::from_struct(adt.non_enum_variant());
+                    Self::StructLike(data)
                 }
-            } else {
-                match adt.adt_kind() {
-                    ty::AdtKind::Struct => {
-                        let data = Self::from_struct(adt.non_enum_variant());
-                        Self::StructLike(data)
-                    }
-                    ty::AdtKind::Enum => {
-                        let data = Self::from_enum(adt);
-                        Self::EnumLike(data)
-                    }
-                    ty::AdtKind::Union => {
-                        // TODO: add union support
-                        Self::mk_opaque(())
-                    }
+                ty::AdtKind::Enum => {
+                    let data = Self::from_enum(adt);
+                    Self::EnumLike(data)
+                }
+                ty::AdtKind::Union => {
+                    // TODO: add union support
+                    Self::mk_opaque(())
                 }
             }
-        })
+        }
     }
 
     fn from_struct(variant: &ty::VariantDef) -> StructData<'tcx, RustTyDatas> {

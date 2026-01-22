@@ -1088,19 +1088,11 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                 .value_access(real2)
                 .downcast_ty(),
         );
-
-        if bin_op == vir::BinOpKind::CmpEq {
-            // otherwise we get a panic to use mk_eq_expr..
-            Ok(bool.prim_to_snap.call()(
-                self.vcx.mk_eq_expr(real1_deref, real2_deref).upcast_ty(),
-            ))
-        } else {
-            Ok(bool.prim_to_snap.call()(self.vcx.mk_bin_op_expr(
-                bin_op,
-                real1_deref,
-                real2_deref,
-            )))
-        }
+        Ok(bool.prim_to_snap.call()(
+            self.vcx
+                .mk_bin_op_expr_inner(bin_op, real1_deref.as_dyn(), real2_deref.as_dyn())
+                .downcast_ty(),
+        ))
     }
 
     fn encode_prusti_builtin(

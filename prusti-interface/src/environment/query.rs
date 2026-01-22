@@ -285,7 +285,7 @@ impl<'tcx> EnvQuery<'tcx> {
     }
 
     /// Given some procedure `proc_def_id` which is called, this method returns the actual method which will be executed when `proc_def_id` is defined on a trait.
-    /// Returns `None` if this method can not be found or the provided `proc_def_id` is no trait item.
+    /// Returns `None` if this method can not be found or the provided `proc_def_id` is no trait item. Also returns `None` if a default implementation is called.
     #[tracing::instrument(level = "debug", skip(self))]
     pub fn find_impl_of_trait_method_call(
         self,
@@ -323,6 +323,14 @@ impl<'tcx> EnvQuery<'tcx> {
                                 return Some(item.def_id);
                             }
                         }
+                    }
+                    if self
+                        .tcx
+                        .associated_item(proc_def_id)
+                        .defaultness(self.tcx)
+                        .has_value()
+                    {
+                        return None;
                     }
                     unreachable!()
                 }

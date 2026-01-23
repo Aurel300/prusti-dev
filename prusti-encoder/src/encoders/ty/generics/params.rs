@@ -277,7 +277,7 @@ impl<'vir> GenericParams<'vir> {
                             ),
                         })
                         .collect::<Vec<_>>();
-                    (trait_data.type_did_fun_mapping.get(&a.def_id).unwrap())(tys)
+                    (trait_data.assoc_types.get(&a.def_id).unwrap())(tys)
                 }),
             };
         }

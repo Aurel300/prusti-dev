@@ -73,7 +73,7 @@ impl TaskEncoder for TraitImplEnc {
                 .in_definition_order()
                 .filter(|item| matches!(item.kind, AssocKind::Type { data: _ }))
                 .for_each(|impl_item| {
-                    let assoc_fun = trait_data.type_did_fun_mapping.get(&impl_item.trait_item_def_id.unwrap()).unwrap();
+                    let assoc_fun = trait_data.assoc_types.get(&impl_item.trait_item_def_id.unwrap()).unwrap();
                     // construct arguments for assoc_item function
                     // parameters of the trait are substituted 
                     // by the arguments used in the impl

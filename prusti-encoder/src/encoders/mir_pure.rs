@@ -1,13 +1,7 @@
 use crate::encoders::{
-    FunctionCallEnc, MirLocalDefEnc, MirLocalDefEncOutput, MirLocalDefEncTask, TyUseImpureEnc,
-    ViperTupleEnc,
-    mir_fn::{CallTaskDescription, RustSignature},
-    mir_shared::PureRvalueEnc,
-    ty::{
-        RustTyDecomposition,
-        generics::GParams,
-        use_pure::{TyUsePure, TyUsePureEnc},
-    },
+    mir_fn::{CallTaskDescription, CallingCtxt, RustSignature}, mir_shared::PureRvalueEnc, ty::{
+        generics::GParams, use_pure::{TyUsePure, TyUsePureEnc}, RustTyDecomposition
+    }, FunctionCallEnc, MirLocalDefEnc, MirLocalDefEncOutput, MirLocalDefEncTask, TyUseImpureEnc, ViperTupleEnc
 };
 use pcg::utils::Place;
 use prusti_interface::{
@@ -734,7 +728,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                             .iter()
                             .map(|arg| self.encode_operand_snap(&arg.node, &new_curr_ver))
                             .collect::<Result<Vec<_>, _>>()?;
-                        pure_func.call(snap_args)
+                        pure_func.call(CallingCtxt::Pure, snap_args)
                     } else {
                         let sig = self.vcx.tcx().fn_sig(def_id);
                         let sig = sig.instantiate_identity();

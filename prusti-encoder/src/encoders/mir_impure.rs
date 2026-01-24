@@ -40,7 +40,7 @@ use vir::{CastType, CompType, LocalDeclData};
 
 use crate::encoders::{
     self, FunctionCallEnc, MirBuiltinEnc, MirBuiltinEncTask, TyUseImpureEnc, WandEnc, WandEncTask,
-    mir_fn::{CallTaskDescription, RustSignature},
+    mir_fn::{CallingCtxt, CallTaskDescription, RustSignature},
     mir_shared::PureRvalueEnc,
     ty::{
         RustTyDecomposition,
@@ -1630,7 +1630,7 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                             })
                         })
                         .collect::<Vec<_>>();
-                    let pure_func_app = pure_func.call(snap_args);
+                    let pure_func_app = pure_func.call(CallingCtxt::Impure, snap_args);
 
                     let return_ty = destination.ty(self.local_decls, self.vcx.tcx()).ty;
                     let assign_stmt = self.ty_use_impure(return_ty).apply_method_assign(

@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 
 use prusti_interface::specs::is_spec_fn;
-use prusti_rustc_interface::{middle::ty::AssocKind, span::def_id::DefId};
+use prusti_rustc_interface::{middle::{mir, ty::AssocKind}, span::def_id::DefId};
 use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
-use vir::{FunctionIdn, vir_format_identifier};
+use vir::{FunctionIdn, MethodIdn, vir_format_identifier};
 
 use crate::encoders::{MirLocalDefEnc, MirLocalDefEncTask, MirSpecEnc, ty::generics::{GParams, GenericParamsEnc}};
 
@@ -16,6 +16,7 @@ pub struct TraitData<'vir> {
     pub assoc_funcs: HashMap<DefId, (
         FunctionIdn<'vir, (vir::ManySnap, vir::ManyTyVal, vir::ManyCSnap), vir::Bool>,
         FunctionIdn<'vir, (vir::Snap, vir::ManySnap, vir::ManyTyVal, vir::ManyCSnap), vir::Bool>,
+        MethodIdn<'vir, (vir::ManyRef, vir::ManyTyVal, vir::ManyCSnap)>,
     )>,
     pub impl_fun: FunctionIdn<'vir, vir::ManyTyVal, vir::Bool>,
 }
@@ -30,11 +31,17 @@ impl TaskEncoder for TraitEnc {
     type TaskDescription<'vir> = DefId;
 
     type OutputFullDependency<'vir> = TraitData<'vir>;
-    type OutputFullLocal<'vir> = vir::Domain<'vir>;
+    type OutputFullLocal<'vir> = (
+        vir::Domain<'vir>,
+        Vec<vir::Method<'vir>>,
+    );
 
     fn emit_outputs<'vir>(program: &mut task_encoder::Program<'vir>) {
-        for dom in TraitEnc::all_outputs_local_no_errors() {
+        for (dom, methods) in TraitEnc::all_outputs_local_no_errors() {
             program.add_domain(dom);
+            for method in methods {
+                program.add_method(method);
+            }
         }
     }
 
@@ -49,6 +56,7 @@ impl TaskEncoder for TraitEnc {
             let trait_name = vcx.alloc_str(tcx.item_name(task_key).as_str());
             let mut axioms = Vec::new();
             let mut funcs = Vec::new();
+            let mut methods = Vec::new();
             let mut assoc_types = HashMap::new();
             let mut assoc_funcs = HashMap::new();
             for item in tcx.associated_items(task_key).in_definition_order() {
@@ -80,11 +88,13 @@ impl TaskEncoder for TraitEnc {
                             def_id: def_id,
                             all_locals: false,
                         })?;
+                        let arg_count = local_defs.arg_count + 1;
                         let arg_types = vcx.alloc_slice(&local_defs.snap_ty_args().collect::<Vec<_>>());
                         let return_type = local_defs.snap_ty_return();
                         let params = GParams::from(def_id);
                         let generics = deps.require_dep::<GenericParamsEnc>(params)?;
                         let func_args = local_defs.local_decl_args().collect::<Vec<_>>();
+                        let ref_args = vcx.alloc_slice(&vec![vir::TYPE_REF; arg_count]);
                         let func_ret = local_defs.local_decl_ret();
 
                         let pre_func = FunctionIdn::new(
@@ -99,12 +109,18 @@ impl TaskEncoder for TraitEnc {
                             vir::TYPE_BOOL,
                         );
                         // TODO: spec functions for each pledge
+                        let stub = MethodIdn::new(
+                            vir_format_identifier!(vcx, "{trait_name}_fn_stub_{item_name}"),
+                            (ref_args, generics.ty_args(), generics.const_args()),
+                        );
                         assoc_funcs.insert(def_id, (
                             pre_func,
                             post_func,
+                            stub,
                         ));
                         funcs.push(vcx.mk_domain_function(pre_func, false, None));
                         funcs.push(vcx.mk_domain_function(post_func, false, None));
+
 
                         let spec = deps.require_dep_spanned::<MirSpecEnc>((def_id, true), span)?;
                         let pres = vcx.mk_conj(&spec.pres);
@@ -140,6 +156,40 @@ impl TaskEncoder for TraitEnc {
                                     (post_func_call) ==> (posts)
                             },
                         ));
+
+                        let mut stub_pres = Vec::new();
+                        let mut stub_posts = Vec::new();
+                        let mut args = Vec::with_capacity(arg_count + params.count());
+                        for arg_idx in (0..arg_count).map(mir::Local::from) {
+                            let name_p = local_defs[arg_idx].local.name;
+                            args.push(vir::vir_local_decl! { vcx; [name_p] : Ref });
+                            if arg_idx != mir::RETURN_PLACE {
+                                stub_pres.push(local_defs[arg_idx].impure_pred);
+                            }
+                        }
+                        stub_posts.push(local_defs[mir::RETURN_PLACE].impure_pred);
+
+                        stub_pres.push(pre_func.call()(
+                            vcx.alloc_slice(&local_defs.args().map(|arg| arg.impure_snap).collect::<Vec<_>>()),
+                            generics.ty_exprs(),
+                            generics.const_exprs(),
+                        ));
+                        // TODO: mutable arguments should also have a post-state
+                        stub_posts.push(post_func.call()(
+                            local_defs.ret().impure_snap,
+                            vcx.alloc_slice(&local_defs.args().map(|arg| vcx.mk_old_expr(arg.impure_snap)).collect::<Vec<_>>()),
+                            generics.ty_exprs(),
+                            generics.const_exprs(),
+                        ));
+
+                        methods.push(vcx.mk_method(
+                            stub,
+                            (args.as_slice(), generics.ty_decls(), generics.const_decls()),
+                            &[],
+                            vcx.alloc_slice(&stub_pres),
+                            vcx.alloc_slice(&stub_posts),
+                            None,
+                        ));
                     },
                     AssocKind::Const { .. } => (), // noop?
                 }
@@ -161,7 +211,10 @@ impl TaskEncoder for TraitEnc {
             );
 
             Ok((
-                trait_domain,
+                (
+                    trait_domain,
+                    methods,
+                ),
                 TraitData {
                     trait_name,
                     assoc_types,

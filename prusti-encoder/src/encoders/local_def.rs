@@ -65,6 +65,10 @@ impl<'vir> MirLocalDefEncOutput<'vir> {
     pub fn local_decl_args(&self) -> impl Iterator<Item = vir::LocalDeclSnap<'vir>> + '_ {
         self.args().map(|arg| arg.local_snap)
     }
+
+    pub fn local_decl_ret(&self) -> vir::LocalDeclSnap<'vir> {
+        self.ret().local_snap
+    }
 }
 
 pub type MirLocalDefEncError = ();

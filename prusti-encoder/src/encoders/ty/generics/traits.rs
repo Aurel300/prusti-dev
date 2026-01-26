@@ -5,7 +5,7 @@ use prusti_rustc_interface::{middle::ty::AssocKind, span::def_id::DefId};
 use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 use vir::{FunctionIdn, vir_format_identifier};
 
-use crate::encoders::{MirLocalDefEnc, MirLocalDefEncTask, ty::generics::{GParams, GenericParamsEnc}};
+use crate::encoders::{MirLocalDefEnc, MirLocalDefEncTask, MirSpecEnc, ty::generics::{GParams, GenericParamsEnc}};
 
 pub struct TraitEnc;
 
@@ -15,7 +15,7 @@ pub struct TraitData<'vir> {
     pub assoc_types: HashMap<DefId, FunctionIdn<'vir, vir::ManyTyVal, vir::TyVal>>,
     pub assoc_funcs: HashMap<DefId, (
         FunctionIdn<'vir, (vir::ManySnap, vir::ManyTyVal, vir::ManyCSnap), vir::Bool>,
-        FunctionIdn<'vir, (vir::ManySnap, vir::Snap, vir::ManyTyVal, vir::ManyCSnap), vir::Bool>,
+        FunctionIdn<'vir, (vir::Snap, vir::ManySnap, vir::ManyTyVal, vir::ManyCSnap), vir::Bool>,
     )>,
     pub impl_fun: FunctionIdn<'vir, vir::ManyTyVal, vir::Bool>,
 }
@@ -47,20 +47,24 @@ impl TaskEncoder for TraitEnc {
             let tcx = vcx.tcx();
             let params = deps.require_dep::<GenericParamsEnc>(GParams::from(*task_key))?;
             let trait_name = vcx.alloc_str(tcx.item_name(task_key).as_str());
+            let mut axioms = Vec::new();
             let mut funcs = Vec::new();
             let mut assoc_types = HashMap::new();
             let mut assoc_funcs = HashMap::new();
             for item in tcx.associated_items(task_key).in_definition_order() {
+                let def_id = item.def_id;
+                let span = vcx.tcx().def_span(def_id);
+
                 // TODO: explain
-                if is_spec_fn(tcx, item.def_id) {
+                if is_spec_fn(tcx, def_id) {
                     continue;
                 }
 
                 // params_type also includes parameters of trait itself
                 let params_type = deps
-                    .require_dep::<GenericParamsEnc>(GParams::from(item.def_id))
+                    .require_dep::<GenericParamsEnc>(GParams::from(def_id))
                     .unwrap();
-                let item_name = tcx.item_name(item.def_id);
+                let item_name = tcx.item_name(def_id);
                 match item.kind {
                     AssocKind::Type { .. } => {
                         let type_func = FunctionIdn::new(
@@ -68,18 +72,20 @@ impl TaskEncoder for TraitEnc {
                             vcx.alloc_slice(&vec![vir::TYPE_TYVAL; params_type.ty_exprs().len()]),
                             vir::TYPE_TYVAL,
                         );
-                        assoc_types.insert(item.def_id, type_func);
+                        assoc_types.insert(def_id, type_func);
                         funcs.push(vcx.mk_domain_function(type_func, false, None));
                     }
                     AssocKind::Fn { ../*name, has_self*/ } => {
                         let local_defs = deps.require_dep::<MirLocalDefEnc>(MirLocalDefEncTask::Local {
-                            def_id: item.def_id,
+                            def_id: def_id,
                             all_locals: false,
                         })?;
                         let arg_types = vcx.alloc_slice(&local_defs.snap_ty_args().collect::<Vec<_>>());
                         let return_type = local_defs.snap_ty_return();
-                        let params = GParams::from(item.def_id);
+                        let params = GParams::from(def_id);
                         let generics = deps.require_dep::<GenericParamsEnc>(params)?;
+                        let func_args = local_defs.local_decl_args().collect::<Vec<_>>();
+                        let func_ret = local_defs.local_decl_ret();
 
                         let pre_func = FunctionIdn::new(
                             vir_format_identifier!(vcx, "{trait_name}_fn_pre_{item_name}"),
@@ -89,16 +95,51 @@ impl TaskEncoder for TraitEnc {
                         let post_func = FunctionIdn::new(
                             vir_format_identifier!(vcx, "{trait_name}_fn_post_{item_name}"),
                             // TODO: old(arg) types (if applicable)
-                            (arg_types, return_type, generics.ty_args(), generics.const_args()),
+                            (return_type, arg_types, generics.ty_args(), generics.const_args()),
                             vir::TYPE_BOOL,
                         );
                         // TODO: spec functions for each pledge
-                        assoc_funcs.insert(item.def_id, (
+                        assoc_funcs.insert(def_id, (
                             pre_func,
                             post_func,
                         ));
                         funcs.push(vcx.mk_domain_function(pre_func, false, None));
                         funcs.push(vcx.mk_domain_function(post_func, false, None));
+
+                        let spec = deps.require_dep_spanned::<MirSpecEnc>((def_id, true), span)?;
+                        let pres = vcx.mk_conj(&spec.pres);
+                        let pre_func_call = pre_func.call()(
+                            vcx.alloc_slice(&func_args.iter().map(|arg| vcx.mk_local_ex(arg)).collect::<Vec<_>>()),
+                            generics.ty_exprs(),
+                            generics.const_exprs(),
+                        );
+                        axioms.push(vcx.mk_domain_axiom(
+                            vir_format_identifier!(
+                                vcx,
+                                "{trait_name}_fn_pre_{item_name}_base",
+                            ),
+                            vir::expr! {
+                                forall ..[func_args], ..[generics.ty_decls()] :: {[pre_func_call]}
+                                    (pres) ==> (pre_func_call)
+                            },
+                        ));
+                        let posts = vcx.mk_conj(&spec.posts);
+                        let post_func_call = post_func.call()(
+                            vcx.mk_local_ex(func_ret),
+                            vcx.alloc_slice(&func_args.iter().map(|arg| vcx.mk_local_ex(arg)).collect::<Vec<_>>()),
+                            generics.ty_exprs(),
+                            generics.const_exprs(),
+                        );
+                        axioms.push(vcx.mk_domain_axiom(
+                            vir_format_identifier!(
+                                vcx,
+                                "{trait_name}_fn_post_{item_name}_base",
+                            ),
+                            vir::expr! {
+                                forall [func_ret], ..[func_args], ..[generics.ty_decls()] :: {[post_func_call]}
+                                    (post_func_call) ==> (posts)
+                            },
+                        ));
                     },
                     AssocKind::Const { .. } => (), // noop?
                 }
@@ -114,7 +155,7 @@ impl TaskEncoder for TraitEnc {
             let trait_domain = vcx.mk_domain(
                 vir_format_identifier!(vcx, "trait_{}", trait_name),
                 &[],
-                &[],
+                vcx.alloc_slice(&axioms),
                 vcx.alloc_slice(&funcs),
                 None,
             );

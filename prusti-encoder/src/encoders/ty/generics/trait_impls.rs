@@ -2,7 +2,7 @@ use std::iter;
 
 use prusti_rustc_interface::{middle::ty::AssocKind, span::def_id::DefId};
 use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
-use vir::{CastType, Domain, vir_format_identifier};
+use vir::{Domain, vir_format_identifier};
 
 use crate::encoders::ty::{
     RustTyDecomposition,
@@ -55,11 +55,7 @@ impl TaskEncoder for TraitImplEnc {
             let implementing_ty = implementing_ty.ty.name();
 
             let impl_fun = trait_data.impl_fun;
-            let trait_ty_decls = params
-                .ty_decls()
-                .iter()
-                .map(|dec| dec.upcast_ty())
-                .collect::<Vec<_>>();
+            let trait_ty_decls = params.ty_decls().to_vec();
             let trait_tys = args.get_ty();
 
             axs.push(
@@ -92,11 +88,7 @@ impl TaskEncoder for TraitImplEnc {
                             GParams::from(impl_item.def_id),
                         ),
                     );
-                    let assoc_decls = assoc_params
-                        .ty_decls()
-                        .iter()
-                        .map(|dec| dec.upcast_ty())
-                        .collect::<Vec<_>>();
+                    let assoc_decls = assoc_params.ty_decls();
 
                     // Combine substituted trait ty decls with the decls of the associated type
                     let mut trait_ty_decls = trait_ty_decls.clone();

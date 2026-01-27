@@ -18,6 +18,7 @@ pub(super) mod type_eq {
 
 #[extern_spec(core::panicking)]
 #[requires(false)]
+#[pure]
 fn panic(expr: &'static str) -> !;
 
 #[extern_spec]

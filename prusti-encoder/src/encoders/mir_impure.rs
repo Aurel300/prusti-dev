@@ -1755,7 +1755,9 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                 let assert = self.vcx.mk_eq_expr(enc, expected);
                 let error_msg = match **msg {
                     mir::AssertMessage::BoundsCheck { .. } => Some("bounds check may fail"),
-                    mir::AssertMessage::Overflow(..) | mir::AssertMessage::OverflowNeg(..) if !config::check_overflows() => {
+                    mir::AssertMessage::Overflow(..) | mir::AssertMessage::OverflowNeg(..)
+                        if !config::check_overflows() =>
+                    {
                         // If we are not checking for overflows, encode an overflow-checking
                         // assertion as an assume instead.
                         None
@@ -1774,8 +1776,12 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                     mir::AssertMessage::MisalignedPointerDereference { .. } => {
                         Some("misaligned pointer may be dereferenced")
                     }
-                    mir::AssertKind::ResumedAfterDrop(..) => Some("execution may continue after drop"),
-                    mir::AssertKind::NullPointerDereference => Some("null pointer may be dereferenced"),
+                    mir::AssertKind::ResumedAfterDrop(..) => {
+                        Some("execution may continue after drop")
+                    }
+                    mir::AssertKind::NullPointerDereference => {
+                        Some("null pointer may be dereferenced")
+                    }
                     mir::AssertKind::InvalidEnumConstruction(..) => {
                         Some("invalid enum construction may occur")
                     }

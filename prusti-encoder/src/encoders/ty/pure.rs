@@ -14,10 +14,7 @@ use vir::{
     DomainIdnSnap, FunctionIdn, Type,
 };
 
-use crate::encoders::{
-    Pure,
-    ty::interpretation::real,
-};
+use crate::encoders::{Pure, ty::interpretation::real};
 
 use super::{
     RustTy, ViperTyDatas,

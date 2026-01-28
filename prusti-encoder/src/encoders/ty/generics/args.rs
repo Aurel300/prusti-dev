@@ -47,4 +47,19 @@ impl<'tcx> GArgs<'tcx> {
             other => panic!("expected type parameter, {other:?}"),
         }
     }
+
+    pub fn substitute(self, to_sub_in: GArgs<'tcx>) -> GArgs<'tcx> {
+        assert_eq!(self.context.rust_params().len(), to_sub_in.args.len());
+        let args = vir::with_vcx(|vcx| {
+            let args = self
+                .args
+                .iter()
+                .map(|arg| ty::EarlyBinder::bind(*arg).instantiate(vcx.tcx(), to_sub_in.args));
+            vcx.tcx().mk_args_from_iter(args)
+        });
+        GArgs {
+            context: to_sub_in.context,
+            args,
+        }
+    }
 }

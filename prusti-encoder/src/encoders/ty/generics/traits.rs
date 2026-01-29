@@ -40,7 +40,7 @@ impl TaskEncoder for TraitEnc {
     );
 
     fn emit_outputs<'vir>(program: &mut task_encoder::Program<'vir>) {
-        for (dom, methods) in TraitEnc::all_outputs_local_no_errors() {
+        for (dom, methods) in Self::all_outputs_local_no_errors() {
             program.add_domain(dom);
             for method in methods {
                 program.add_method(method);

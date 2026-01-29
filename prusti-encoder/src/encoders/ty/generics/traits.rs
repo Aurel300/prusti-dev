@@ -172,6 +172,7 @@ impl TaskEncoder for TraitEnc {
                             }
                         }
                         stub_posts.push(local_defs[mir::RETURN_PLACE].impure_pred);
+                        // TODO: wands
 
                         stub_pres.push(pre_func.call()(
                             vcx.alloc_slice(&local_defs.args().map(|arg| arg.impure_snap).collect::<Vec<_>>()),
@@ -202,7 +203,7 @@ impl TaskEncoder for TraitEnc {
             }
 
             let impl_fun = FunctionIdn::new(
-                vir_format_identifier!(vcx, "{}_impl", trait_name),
+                vir_format_identifier!(vcx, "impl_{trait_name}"),
                 vcx.alloc_slice(&(vec![vir::TYPE_TYVAL; params.ty_exprs().len()])),
                 vir::TYPE_BOOL,
             );

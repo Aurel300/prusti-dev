@@ -98,6 +98,7 @@ impl TaskEncoder for MirSpecEnc {
 
     type TaskDescription<'tcx> = (
         DefId, // The function annotated with specs
+        DefId, // Context, i.e., where the specs are emitted
         bool,  // If to encode as pure or not
     );
 
@@ -113,20 +114,26 @@ impl TaskEncoder for MirSpecEnc {
         task_key: &Self::TaskKey<'vir>,
         deps: &mut TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self> {
-        let (def_id, pure) = *task_key;
+        let (def_id, context_def_id, pure) = *task_key;
         deps.emit_output_ref(*task_key, ())?;
 
-        let local_defs = deps.require_dep::<crate::encoders::local_def::MirLocalDefEnc>(
-            MirLocalDefEncTask::Local {
-                def_id,
-                all_locals: false,
-            },
-        )?;
-        let specs =
-            deps.require_dep::<crate::encoders::SpecEnc>(crate::encoders::SpecEncTask { def_id })?;
-
         vir::with_vcx(|vcx| {
-            let substs = ty::GenericArgs::identity_for_item(vcx.tcx(), def_id);
+            let base_substs = ty::GenericArgs::identity_for_item(vcx.tcx(), def_id);
+            let context_substs = ty::GenericArgs::identity_for_item(vcx.tcx(), context_def_id);
+            let substs = find_trait_method_substs(vcx.tcx(), context_def_id, context_substs)
+                .map(|s| s.1)
+                .unwrap_or(base_substs);
+
+            let local_defs = deps.require_dep::<crate::encoders::local_def::MirLocalDefEnc>(
+                MirLocalDefEncTask::LocalSubsts {
+                    def_id,
+                    substs,
+                    all_locals: false,
+                },
+            )?;
+            let specs =
+                deps.require_dep::<crate::encoders::SpecEnc>(crate::encoders::SpecEncTask { def_id })?;
+
             let local_iter = (1..=local_defs.arg_count).map(mir::Local::from);
             let all_args: Vec<vir::ExprSnap<'vir>> = if pure {
                 let result_ty = local_defs[mir::RETURN_PLACE].local_snap.ty();
@@ -153,10 +160,6 @@ impl TaskEncoder for MirSpecEnc {
                 .expect_native()
                 .snap_to_prim;
 
-            let substs = find_trait_method_substs(vcx.tcx(), def_id, substs)
-                .map(|s| s.1)
-                .unwrap_or(substs);
-
             let pres = specs
                 .pres
                 .iter()
@@ -170,7 +173,7 @@ impl TaskEncoder for MirSpecEnc {
                                 param_env: vcx.tcx().param_env(spec_def_id),
                                 substs,
                                 // TODO: should this be `def_id` or `caller_def_id`
-                                caller_def_id: Some(def_id),
+                                caller_def_id: Some(context_def_id),
                             },
                         )
                         .unwrap()
@@ -213,7 +216,7 @@ impl TaskEncoder for MirSpecEnc {
                                     param_env: vcx.tcx().param_env(spec_def_id),
                                     substs,
                                     // TODO: should this be `def_id` or `caller_def_id`
-                                    caller_def_id: Some(def_id),
+                                    caller_def_id: Some(context_def_id),
                                 },
                             )?
                             .expr
@@ -242,7 +245,7 @@ impl TaskEncoder for MirSpecEnc {
                                     param_env: vcx.tcx().param_env(lhs_def_id),
                                     substs,
                                     // TODO: should this be `def_id` or `caller_def_id`
-                                    caller_def_id: Some(def_id),
+                                    caller_def_id: Some(context_def_id),
                                 },
                             )
                             .unwrap()
@@ -258,7 +261,7 @@ impl TaskEncoder for MirSpecEnc {
                                     param_env: vcx.tcx().param_env(rhs_def_id),
                                     substs,
                                     // TODO: should this be `def_id` or `caller_def_id`
-                                    caller_def_id: Some(def_id),
+                                    caller_def_id: Some(context_def_id),
                                 },
                             )
                             .unwrap()

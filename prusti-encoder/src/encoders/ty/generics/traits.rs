@@ -126,7 +126,7 @@ impl TaskEncoder for TraitEnc {
                         funcs.push(vcx.mk_domain_function(pre_func, false, None));
                         funcs.push(vcx.mk_domain_function(post_func, false, None));
 
-                        let spec = deps.require_dep_spanned::<MirSpecEnc>((def_id, true), span)?;
+                        let spec = deps.require_dep_spanned::<MirSpecEnc>((def_id, def_id, true), span)?;
                         let pres = vcx.mk_conj(&spec.pres);
                         let pre_func_call = pre_func.call()(
                             vcx.alloc_slice(&func_args.iter().map(|arg| vcx.mk_local_ex(arg)).collect::<Vec<_>>()),

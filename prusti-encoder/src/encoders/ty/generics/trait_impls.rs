@@ -4,10 +4,10 @@ use prusti_rustc_interface::{middle::ty::AssocKind, span::def_id::DefId};
 use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 use vir::{Domain, vir_format_identifier};
 
-use crate::encoders::ty::{
+use crate::encoders::{MirLocalDefEnc, MirLocalDefEncTask, MirSpecEnc, ty::{
     RustTyDecomposition,
     generics::{GArgs, GArgsTyEnc, GParams, GenericParamsEnc, traits::TraitEnc},
-};
+}};
 
 pub struct TraitImplEnc;
 
@@ -69,19 +69,33 @@ impl TaskEncoder for TraitImplEnc {
             for impl_item in tcx.associated_items(task_key).in_definition_order() {
                 let trait_item_def_id = impl_item.trait_item_def_id.unwrap();
                 let impl_item_def_id = impl_item.def_id;
+                let impl_span = vcx.tcx().def_span(impl_item_def_id);
                 let item_name = tcx.item_name(impl_item_def_id);
+
+                // construct arguments for assoc_item function
+                // parameters of the trait are substituted
+                // by the arguments used in the impl
+                // parameters of the associated type are kept
+
+                // parameters of assoc item include already substituted arguments
+                let assoc_params = deps
+                    .require_dep::<GenericParamsEnc>(GParams::from(impl_item_def_id))
+                    .unwrap();
+
+                let assoc_decls = assoc_params.ty_decls();
+
+                // Combine substituted trait ty decls with the decls of the associated type
+                let mut trait_ty_decls = trait_ty_decls.clone();
+                trait_ty_decls.extend_from_slice(&assoc_decls[params.ty_exprs().len()..]);
+
+                // Combine substituted trait params with the params of the associated type
+                let trait_tys = vcx.alloc_slice(&iter::empty().chain(args.get_ty().to_owned()).chain(assoc_params.ty_exprs()[params.ty_exprs().len()..].to_owned()).collect::<Vec<_>>());
+
+                // TODO: do we correctly handle const generics?
+
                 match impl_item.kind {
                     AssocKind::Type { .. } => {
-                        let assoc_fun = trait_data.assoc_types.get(&trait_item_def_id).unwrap();
-                        // construct arguments for assoc_item function
-                        // parameters of the trait are substituted
-                        // by the arguments used in the impl
-                        // parameters of the associated type are kept
-
-                        // parameters of assoc item include already substituted arguments
-                        let assoc_params = deps
-                            .require_dep::<GenericParamsEnc>(GParams::from(impl_item_def_id))
-                            .unwrap();
+                        let assoc_type = trait_data.assoc_types.get(&trait_item_def_id).unwrap();
 
                         // the type we want to resolve the type alias to
                         let assoc_type_expr = assoc_params.ty_expr(
@@ -91,21 +105,56 @@ impl TaskEncoder for TraitImplEnc {
                                 GParams::from(impl_item_def_id),
                             ),
                         );
-                        let assoc_decls = assoc_params.ty_decls();
-
-                        // Combine substituted trait ty decls with the decls of the associated type
-                        let mut trait_ty_decls = trait_ty_decls.clone();
-                        trait_ty_decls.extend_from_slice(&assoc_decls[params.ty_exprs().len()..]);
-
-                        // Combine substituted trait params with the params of the associated type
-                        let trait_tys = vcx.alloc_slice(&iter::empty().chain(args.get_ty().to_owned()).chain(assoc_params.ty_exprs()[params.ty_exprs().len()..].to_owned()).collect::<Vec<_>>());
                         axioms.push(vcx.mk_domain_axiom(
-                            vir_format_identifier!(vcx, "{trait_name}_assoc_type_{implementing_ty}_{idx}_{item_name}"),
-                            vir::expr! {forall ..[trait_ty_decls] :: {[assoc_fun(trait_tys)]} ([assoc_fun(trait_tys)]) == (assoc_type_expr)},
+                            vir_format_identifier!(vcx, "{trait_name}_impl_{implementing_ty}_{idx}_assoc_type_{item_name}"),
+                            vir::expr! {forall ..[trait_ty_decls] :: {[assoc_type(trait_tys)]} ([assoc_type(trait_tys)]) == (assoc_type_expr)},
                         ));
                     }
-                    AssocKind::Fn { ../*name, has_self*/ } => {
-                        // TODO
+                    AssocKind::Fn { .. } => {
+                        let assoc_fn = trait_data.assoc_funcs.get(&trait_item_def_id).unwrap();
+                        let local_defs = deps.require_dep::<MirLocalDefEnc>(MirLocalDefEncTask::Local {
+                            def_id: impl_item_def_id,
+                            all_locals: false,
+                        })?;
+                        let params = GParams::from(impl_item_def_id);
+                        let generics = deps.require_dep::<GenericParamsEnc>(params)?;
+                        let func_args = local_defs.local_decl_args().collect::<Vec<_>>();
+                        let func_ret = local_defs.local_decl_ret();
+
+                        let spec = deps.require_dep_spanned::<MirSpecEnc>((impl_item_def_id, true), impl_span)?;
+                        let pres = vcx.mk_conj(&spec.pres);
+                        let pre_func_call = assoc_fn.pre_func.call()(
+                            vcx.alloc_slice(&func_args.iter().map(|arg| vcx.mk_local_ex(arg)).collect::<Vec<_>>()),
+                            trait_tys,
+                            generics.const_exprs(),
+                        );
+                        axioms.push(vcx.mk_domain_axiom(
+                            vir_format_identifier!(
+                                vcx,
+                                "{trait_name}_impl_{implementing_ty}_{idx}_fn_pre_{item_name}",
+                            ),
+                            vir::expr! {
+                                forall ..[func_args], ..[trait_ty_decls] :: {[pre_func_call]}
+                                    (pres) ==> (pre_func_call)
+                            },
+                        ));
+                        let posts = vcx.mk_conj(&spec.posts);
+                        let post_func_call = assoc_fn.post_func.call()(
+                            vcx.mk_local_ex(func_ret),
+                            vcx.alloc_slice(&func_args.iter().map(|arg| vcx.mk_local_ex(arg)).collect::<Vec<_>>()),
+                            trait_tys,
+                            generics.const_exprs(),
+                        );
+                        axioms.push(vcx.mk_domain_axiom(
+                            vir_format_identifier!(
+                                vcx,
+                                "{trait_name}_impl_{implementing_ty}_{idx}_fn_post_{item_name}",
+                            ),
+                            vir::expr! {
+                                forall [func_ret], ..[func_args], ..[trait_ty_decls] :: {[post_func_call]}
+                                    (post_func_call) ==> (posts)
+                            },
+                        ));
                     },
                     AssocKind::Const { .. } => (), // noop?
                 }

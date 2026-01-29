@@ -13,12 +13,15 @@ pub struct TraitEnc;
 pub struct TraitData<'vir> {
     pub trait_name: &'vir str,
     pub assoc_types: HashMap<DefId, FunctionIdn<'vir, vir::ManyTyVal, vir::TyVal>>,
-    pub assoc_funcs: HashMap<DefId, (
-        FunctionIdn<'vir, (vir::ManySnap, vir::ManyTyVal, vir::ManyCSnap), vir::Bool>,
-        FunctionIdn<'vir, (vir::Snap, vir::ManySnap, vir::ManyTyVal, vir::ManyCSnap), vir::Bool>,
-        MethodIdn<'vir, (vir::ManyRef, vir::ManyTyVal, vir::ManyCSnap)>,
-    )>,
+    pub assoc_funcs: HashMap<DefId, TraitAssocFnData<'vir>>,
     pub impl_fun: FunctionIdn<'vir, vir::ManyTyVal, vir::Bool>,
+}
+
+#[derive(Debug, Clone)]
+pub struct TraitAssocFnData<'vir> {
+    pub pre_func: FunctionIdn<'vir, (vir::ManySnap, vir::ManyTyVal, vir::ManyCSnap), vir::Bool>,
+    pub post_func: FunctionIdn<'vir, (vir::Snap, vir::ManySnap, vir::ManyTyVal, vir::ManyCSnap), vir::Bool>,
+    pub call_stub: MethodIdn<'vir, (vir::ManyRef, vir::ManyTyVal, vir::ManyCSnap)>,
 }
 
 impl TaskEncoder for TraitEnc {
@@ -63,7 +66,9 @@ impl TaskEncoder for TraitEnc {
                 let def_id = item.def_id;
                 let span = vcx.tcx().def_span(def_id);
 
-                // TODO: explain
+                // Prusti specifications on trait methods emit additional spec-
+                // only fn items (with default implementations). We need to
+                // ignore these items.
                 if is_spec_fn(tcx, def_id) {
                     continue;
                 }
@@ -83,9 +88,9 @@ impl TaskEncoder for TraitEnc {
                         assoc_types.insert(def_id, type_func);
                         funcs.push(vcx.mk_domain_function(type_func, false, None));
                     }
-                    AssocKind::Fn { ../*name, has_self*/ } => {
+                    AssocKind::Fn { .. } => {
                         let local_defs = deps.require_dep::<MirLocalDefEnc>(MirLocalDefEncTask::Local {
-                            def_id: def_id,
+                            def_id,
                             all_locals: false,
                         })?;
                         let arg_count = local_defs.arg_count + 1;
@@ -109,18 +114,17 @@ impl TaskEncoder for TraitEnc {
                             vir::TYPE_BOOL,
                         );
                         // TODO: spec functions for each pledge
-                        let stub = MethodIdn::new(
+                        let call_stub = MethodIdn::new(
                             vir_format_identifier!(vcx, "{trait_name}_fn_stub_{item_name}"),
                             (ref_args, generics.ty_args(), generics.const_args()),
                         );
-                        assoc_funcs.insert(def_id, (
+                        assoc_funcs.insert(def_id, TraitAssocFnData {
                             pre_func,
                             post_func,
-                            stub,
-                        ));
+                            call_stub,
+                        });
                         funcs.push(vcx.mk_domain_function(pre_func, false, None));
                         funcs.push(vcx.mk_domain_function(post_func, false, None));
-
 
                         let spec = deps.require_dep_spanned::<MirSpecEnc>((def_id, true), span)?;
                         let pres = vcx.mk_conj(&spec.pres);
@@ -183,13 +187,15 @@ impl TaskEncoder for TraitEnc {
                         ));
 
                         methods.push(vcx.mk_method(
-                            stub,
+                            call_stub,
                             (args.as_slice(), generics.ty_decls(), generics.const_decls()),
                             &[],
                             vcx.alloc_slice(&stub_pres),
                             vcx.alloc_slice(&stub_posts),
                             None,
                         ));
+
+                        // TODO: no method stub should be emitted for pure functions
                     },
                     AssocKind::Const { .. } => (), // noop?
                 }

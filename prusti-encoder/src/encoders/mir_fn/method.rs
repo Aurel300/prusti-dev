@@ -8,7 +8,7 @@ use crate::{
         Impure, ImpureEncVisitor, MirLocalDefEnc, MirLocalDefEncTask, MirSpecEnc, WandEnc,
         WandEncTask,
         mir_fn::{CallTaskDescription, RustSignature},
-        ty::generics::{GArgCaster, GArgsCastEnc, GArgsTy, GArgsTyEnc, GParams, GenericParamsEnc},
+        ty::generics::{GArgCaster, GArgsCastEnc, GArgsTy, GArgsTyEnc, GParams, GenericParamsEnc, traits::TraitEnc},
     },
     trait_support::is_function_with_body,
 };
@@ -64,8 +64,22 @@ impl TaskEncoder for MethodCallEnc {
         deps: &mut TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self> {
         deps.emit_output_ref(*task_key, ())?;
-        let method_ref = deps.require_ref::<MethodEnc>(task_key.callee)?;
-        let signature = RustSignature::new(task_key.callee);
+        let (callee_def_id, method_ref) = vir::with_vcx(|vcx| {
+            if let Some(assoc_item) = vcx.tcx().opt_associated_item(task_key.callee) {
+                if let Some(trait_def_id) = assoc_item.trait_container(vcx.tcx()) {
+                    let trait_item_def_id = assoc_item.def_id;
+                    let trait_enc = deps.require_dep::<TraitEnc>(trait_def_id)?;
+                    let assoc_enc = trait_enc.assoc_funcs.get(&trait_item_def_id).unwrap();
+                    let method_ref = MethodEncOutputRef {
+                        method_ref: assoc_enc.2,
+                    };
+                    return Ok((trait_item_def_id, method_ref));
+                }
+            }
+            let method_ref = deps.require_ref::<MethodEnc>(task_key.callee)?;
+            Ok((task_key.callee, method_ref))
+        })?;
+        let signature = RustSignature::new(callee_def_id);
         let ty_args = deps.require_dep::<GArgsTyEnc>(task_key.gargs)?;
         let inputs = signature
             .inputs

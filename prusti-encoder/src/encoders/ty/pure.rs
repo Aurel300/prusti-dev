@@ -445,12 +445,11 @@ impl<'vir> TyPureBuilder<'vir> {
 
     pub(crate) fn build(self) -> TyPureEncLocal<'vir> {
         let unreachable_to_snap = vir::with_vcx(|vcx| {
-            let false_ = vcx.alloc_array(&[vcx.mk_bool::<false>()]);
             vcx.mk_function(
                 self.unreachable_to_snap,
                 (self.params.ty_decls(), self.params.const_decls()),
                 &[],
-                false_,
+                vcx.alloc_array(&[vcx.mk_bool::<false>()]),
                 None,
                 None,
             )

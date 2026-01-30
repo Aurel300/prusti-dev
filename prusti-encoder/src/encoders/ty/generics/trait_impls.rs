@@ -5,7 +5,7 @@ use prusti_rustc_interface::{middle::{mir, ty::AssocKind}, span::def_id::DefId};
 use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 use vir::{Domain, Method, MethodIdn, vir_format_identifier};
 
-use crate::encoders::{MirLocalDefEnc, MirLocalDefEncTask, MirSpecEnc, ty::{
+use crate::encoders::{MirLocalDefEnc, MirLocalDefEncTask, MirSpecEnc, pure::spec::MirSpecEncMode, ty::{
     RustTyDecomposition,
     generics::{GArgs, GArgsTyEnc, GParams, GenericParamsEnc, traits::TraitEnc},
 }};
@@ -131,8 +131,8 @@ impl TaskEncoder for TraitImplEnc {
                         let ref_args = vcx.alloc_slice(&vec![vir::TYPE_REF; arg_count]);
                         let func_ret = local_defs.local_decl_ret();
 
-                        let trait_item_spec = deps.require_dep_spanned::<MirSpecEnc>((trait_item_def_id, impl_item_def_id, true), impl_span)?;
-                        let impl_item_spec = deps.require_dep_spanned::<MirSpecEnc>((impl_item_def_id, impl_item_def_id, true), impl_span)?;
+                        let trait_item_spec = deps.require_dep_spanned::<MirSpecEnc>((trait_item_def_id, impl_item_def_id, MirSpecEncMode::PureWithoutResult), impl_span)?;
+                        let impl_item_spec = deps.require_dep_spanned::<MirSpecEnc>((impl_item_def_id, impl_item_def_id, MirSpecEncMode::PureWithoutResult), impl_span)?;
                         let pres = vcx.mk_conj(&impl_item_spec.pres);
                         let pre_func_call = assoc_fn.pre_func.call()(
                             vcx.alloc_slice(&func_args.iter().map(|arg| vcx.mk_local_ex(arg)).collect::<Vec<_>>()),
@@ -167,8 +167,8 @@ impl TaskEncoder for TraitImplEnc {
                             },
                         ));
 
-                        let trait_item_spec = deps.require_dep_spanned::<MirSpecEnc>((trait_item_def_id, impl_item_def_id, false), impl_span)?;
-                        let impl_item_spec = deps.require_dep_spanned::<MirSpecEnc>((impl_item_def_id, impl_item_def_id, false), impl_span)?;
+                        let trait_item_spec = deps.require_dep_spanned::<MirSpecEnc>((trait_item_def_id, impl_item_def_id, MirSpecEncMode::Impure), impl_span)?;
+                        let impl_item_spec = deps.require_dep_spanned::<MirSpecEnc>((impl_item_def_id, impl_item_def_id, MirSpecEncMode::Impure), impl_span)?;
 
                         let mut pre_weaken_pres = Vec::new();
                         let mut args = Vec::with_capacity(arg_count + params.count());
@@ -227,7 +227,22 @@ impl TaskEncoder for TraitImplEnc {
                         // exceptionally, we also put the allocated result in the precondition
                         post_strengthen_pres.push(local_defs[mir::RETURN_PLACE].impure_pred);
 
-                        post_strengthen_pres.extend(impl_item_spec.posts);
+                        // here we inhale the impl postconditions, since they
+                        // can contain "old" variables
+                        let mut stmts = Vec::new();
+                        for post in &impl_item_spec.posts {
+                            stmts.push(vcx.mk_inhale_stmt(post));
+                        }
+                        for post in trait_item_spec.posts {
+                            vcx.with_span(impl_span, |vcx| {
+                                // TODO: make span point precisely to the postcondition we cannot show
+                                let error_msg = format!("trait implementation is not a behavioral subtype (postcondition is not strengthened)");
+                                vcx.handle_error("exhale.failed:assertion.false", move |_| {
+                                    Some(vec![PrustiError::verification(&error_msg, impl_span.into())])
+                                });
+                                stmts.push(vcx.mk_exhale_stmt(post));
+                            });
+                        }
 
                         methods.push(vcx.mk_method(
                             MethodIdn::<(vir::ManyRef, vir::ManyTyVal, vir::ManyCSnap)>::new(
@@ -242,16 +257,7 @@ impl TaskEncoder for TraitImplEnc {
                                 vcx.mk_cfg_block(
                                     &vir::CfgBlockLabelData::Start,
                                     &[],
-                                    vcx.alloc_slice(&trait_item_spec.posts.iter()
-                                        .map(|pre| vcx.with_span(impl_span, |vcx| {
-                                            // TODO: make span point precisely to the postcondition we cannot show
-                                            let error_msg = format!("trait implementation is not a behavioral subtype (postcondition is not strengthened)");
-                                            vcx.handle_error("exhale.failed:assertion.false", move |_| {
-                                                Some(vec![PrustiError::verification(&error_msg, impl_span.into())])
-                                            });
-                                            vcx.mk_exhale_stmt(pre)
-                                        }))
-                                        .collect::<Vec<_>>()),
+                                    vcx.alloc_slice(&stmts),
                                     vcx.alloc(vir::TerminatorStmtData::Exit),
                                 )
                             ])),

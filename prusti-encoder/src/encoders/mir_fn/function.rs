@@ -3,9 +3,7 @@ use task_encoder::{EncodeFullResult, OutputRefAny, TaskEncoder, TaskEncoderDepen
 use vir::{FunctionIdn, Reify};
 
 use crate::encoders::{
-    MirLocalDefEnc, MirLocalDefEncTask, MirPureEnc, MirPureEncTask, MirSpecEnc, Pure, PureKind,
-    mir_fn::{CallTaskDescription, RustSignature},
-    ty::generics::{GArgCaster, GArgsCastEnc, GArgsTy, GArgsTyEnc, GParams, GenericParamsEnc},
+    MirLocalDefEnc, MirLocalDefEncTask, MirPureEnc, MirPureEncTask, MirSpecEnc, Pure, PureKind, mir_fn::{CallTaskDescription, RustSignature}, pure::spec::MirSpecEncMode, ty::generics::{GArgCaster, GArgsCastEnc, GArgsTy, GArgsTyEnc, GParams, GenericParamsEnc}
 };
 
 // Function wrapper
@@ -144,7 +142,7 @@ impl TaskEncoder for FunctionEnc {
             deps.emit_output_ref(def_id, FunctionEncOutputRef { function_ref })?;
 
             let substs = ty::GenericArgs::identity_for_item(vcx.tcx(), def_id);
-            let spec = deps.require_dep::<MirSpecEnc>((def_id, def_id, true))?;
+            let spec = deps.require_dep::<MirSpecEnc>((def_id, def_id, MirSpecEncMode::PureWithResult))?;
 
             let expr = if trusted {
                 None

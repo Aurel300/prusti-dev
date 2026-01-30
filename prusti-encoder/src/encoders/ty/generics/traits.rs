@@ -5,7 +5,7 @@ use prusti_rustc_interface::{middle::{mir, ty::AssocKind}, span::def_id::DefId};
 use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 use vir::{FunctionIdn, MethodIdn, vir_format_identifier};
 
-use crate::encoders::{MirLocalDefEnc, MirLocalDefEncTask, MirSpecEnc, ty::generics::{GParams, GenericParamsEnc}};
+use crate::encoders::{MirLocalDefEnc, MirLocalDefEncTask, MirSpecEnc, pure::spec::MirSpecEncMode, ty::generics::{GParams, GenericParamsEnc}};
 
 pub struct TraitEnc;
 
@@ -126,7 +126,7 @@ impl TaskEncoder for TraitEnc {
                         funcs.push(vcx.mk_domain_function(pre_func, false, None));
                         funcs.push(vcx.mk_domain_function(post_func, false, None));
 
-                        let spec = deps.require_dep_spanned::<MirSpecEnc>((def_id, def_id, true), span)?;
+                        let spec = deps.require_dep_spanned::<MirSpecEnc>((def_id, def_id, MirSpecEncMode::PureWithoutResult), span)?;
                         let pres = vcx.mk_conj(&spec.pres);
                         let pre_func_call = pre_func.call()(
                             vcx.alloc_slice(&func_args.iter().map(|arg| vcx.mk_local_ex(arg)).collect::<Vec<_>>()),

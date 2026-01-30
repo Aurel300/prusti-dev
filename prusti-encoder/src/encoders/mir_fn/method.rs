@@ -5,10 +5,7 @@ use vir::MethodIdn;
 
 use crate::{
     encoders::{
-        Impure, ImpureEncVisitor, MirLocalDefEnc, MirLocalDefEncTask, MirSpecEnc, WandEnc,
-        WandEncTask,
-        mir_fn::{CallTaskDescription, RustSignature},
-        ty::generics::{GArgCaster, GArgsCastEnc, GArgsTy, GArgsTyEnc, GParams, GenericParamsEnc, traits::TraitEnc},
+        Impure, ImpureEncVisitor, MirLocalDefEnc, MirLocalDefEncTask, MirSpecEnc, WandEnc, WandEncTask, mir_fn::{CallTaskDescription, RustSignature}, pure::spec::MirSpecEncMode, ty::generics::{GArgCaster, GArgsCastEnc, GArgsTy, GArgsTyEnc, GParams, GenericParamsEnc, traits::TraitEnc}
     },
     trait_support::is_function_with_body,
 };
@@ -199,7 +196,7 @@ impl TaskEncoder for MethodEnc {
             // wands in case of a reborrowing function.
             let mut pres = Vec::new();
             let mut posts = Vec::new();
-            let spec = deps.require_dep_spanned::<MirSpecEnc>((def_id, def_id, false), span)?;
+            let spec = deps.require_dep_spanned::<MirSpecEnc>((def_id, def_id, MirSpecEncMode::Impure), span)?;
             let function_data = FunctionData::new(def_id, params.rust_params(), None);
             let wands = deps.require_dep_spanned::<WandEnc>(
                 WandEncTask {

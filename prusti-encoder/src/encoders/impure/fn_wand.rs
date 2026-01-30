@@ -58,7 +58,7 @@ impl<'vir, E: TaskEncoder> ImpureEncVisitor<'vir, '_, E> {
             for EncodedPledge {
                 expiry_postcondition,
                 ..
-            } in wand_data.pledges.iter().copied()
+            } in &wand_data.pledges
             {
                 let span = expiry_postcondition.span();
                 self.vcx.with_span(span, |vcx| {

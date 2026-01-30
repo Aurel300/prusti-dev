@@ -114,6 +114,15 @@ impl<'vir> MirLocalDefEncTask<'vir> {
         }
     }
 
+    fn substs(self, vcx: &vir::VirCtxt<'vir>) -> ty::GenericArgsRef<'vir> {
+        match self {
+            MirLocalDefEncTask::ExternSpec(def_id)
+            | MirLocalDefEncTask::Local { def_id, .. } =>
+                ty::GenericArgs::identity_for_item(vcx.tcx(), def_id),
+            MirLocalDefEncTask::LocalSubsts { substs, .. } => substs,
+        }
+    }
+
     fn body(self, vcx: &vir::VirCtxt<'vir>) -> Option<MirBody<'vir>> {
         match self {
             MirLocalDefEncTask::ExternSpec(def_id) => {
@@ -225,7 +234,7 @@ impl TaskEncoder for MirLocalDefEnc {
             } else {
                 let typing_env = ty::TypingEnv::post_analysis(vcx.tcx(), task_key.def_id());
                 let sig = vcx.tcx().instantiate_and_normalize_erasing_regions(
-                    ty::GenericArgs::identity_for_item(vcx.tcx(), task_key.def_id()),
+                    task_key.substs(vcx),
                     typing_env,
                     vcx.tcx().fn_sig(task_key.def_id()),
                 );

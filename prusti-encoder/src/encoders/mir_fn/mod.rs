@@ -6,7 +6,7 @@ pub use function::*;
 pub use method::*;
 pub use signature::*;
 
-use crate::encoders::ty::generics::{GArgs, GParams, trait_impls::TraitImplEnc};
+use crate::encoders::ty::generics::{GArgs, GParams, trait_impls::TraitImplEnc, traits::TraitEnc};
 
 use prusti_interface::specs::specifications::SpecQuery;
 use prusti_rustc_interface::{hir, middle::ty, span::def_id::DefId};
@@ -35,8 +35,7 @@ impl<'tcx> CallTaskDescription<'tcx> {
 pub fn encode_all_in_crate<'tcx>(tcx: ty::TyCtxt<'tcx>) {
     for def_id in tcx.hir_body_owners() {
         tracing::debug!("test_entrypoint item: {def_id:?}");
-        let kind = tcx.def_kind(def_id);
-        match kind {
+        match tcx.def_kind(def_id) {
             hir::def::DefKind::Fn | hir::def::DefKind::AssocFn => {
                 let def_id = def_id.to_def_id();
                 if prusti_interface::specs::is_spec_fn(tcx, def_id) {
@@ -67,8 +66,14 @@ pub fn encode_all_in_crate<'tcx>(tcx: ty::TyCtxt<'tcx>) {
     // To iterate over all _visible_ impl blocks,
     // use tcx.visible_traits and tcx.all_impls(trait_id)
     for def_id in tcx.hir_crate_items(()).definitions() {
-        if let hir::def::DefKind::Impl { of_trait: true } = tcx.def_kind(def_id) {
-            TraitImplEnc::encode(def_id.to_def_id(), false).unwrap();
+        match tcx.def_kind(def_id) {
+            hir::def::DefKind::Trait => {
+                TraitEnc::encode(def_id.to_def_id(), false).unwrap();
+            }
+            hir::def::DefKind::Impl { of_trait: true } => {
+                TraitImplEnc::encode(def_id.to_def_id(), false).unwrap();
+            }
+            _ => (),
         }
     }
 }

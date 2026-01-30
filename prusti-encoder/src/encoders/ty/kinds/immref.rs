@@ -1,16 +1,30 @@
-use crate::encoders::ty::{
-    RustImmRef,
-    impure::{PredicateBuilder, TyImpureEnc, TyImpureImmRef, TyImpureImmRefData},
-    pure::{AdtBuilder, TyPureEnc, TyPureImmRef, TyPureImmRefData},
-};
+use crate::encoders::{TyUsePureEnc, ty::{
+    RustImmRef, RustTyDecomposition, generics::GParams, impure::{PredicateBuilder, TyImpureEnc, TyImpureImmRef, TyImpureImmRefData}, pure::{AdtBuilder, TyPureEnc, TyPureImmRef, TyPureImmRefData}
+}};
+use prusti_rustc_interface::{middle::ty, span::Symbol};
 use task_encoder::{EncodeFullError, TaskEncoderDependencies};
 use vir::CastType;
 
 pub(crate) fn ty_pure<'vir>(
     _data: &RustImmRef<'vir>,
-    _deps: &mut TaskEncoderDependencies<'vir, TyPureEnc>,
+    deps: &mut TaskEncoderDependencies<'vir, TyPureEnc>,
     builder: &mut AdtBuilder<'vir>,
 ) -> Result<TyPureImmRef<'vir>, EncodeFullError<'vir, TyPureEnc>> {
+    let dummy_param = builder
+        .vcx
+        .tcx()
+        .mk_ty_from_kind(ty::TyKind::Param(ty::ParamTy::new(0, Symbol::intern("T"))));
+    let ty_task_param = RustTyDecomposition::from_ty(
+        dummy_param,
+        builder.vcx.tcx(),
+        GParams::new(
+            builder.vcx.tcx().mk_args(&[dummy_param.into()]),
+            ty::ParamEnv::empty(),
+            false,
+        ),
+    );
+    deps.require_ref::<TyUsePureEnc>(ty_task_param)?;
+
     let (field_snaps_to_snap, field_access) =
         builder.constructor("", (vir::TYPE_REF, vir::TYPE_PSNAP), None);
 

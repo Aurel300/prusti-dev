@@ -1,6 +1,6 @@
 use prusti_interface::specs::typed::ExternSpecKind;
 use prusti_rustc_interface::{
-    middle::{ty, ty::TyKind},
+    middle::ty,
     span::{def_id::DefId, symbol},
 };
 use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
@@ -262,22 +262,12 @@ impl<'vir> GenericParams<'vir> {
             let param = ty.args.expect_param();
             return match param {
                 GParamVariant::Param(p) => self.ty_exprs[self.map_idx(p.index).unwrap()],
-                GParamVariant::Alias(a) => vir::with_vcx(|vcx| {
+                GParamVariant::Alias(alias) => vir::with_vcx(|vcx| {
                     let tcx = vcx.tcx();
-                    let trait_did = tcx.associated_item(a.def_id).container_id(tcx);
+                    let trait_did = tcx.associated_item(alias.def_id).container_id(tcx);
                     let trait_data = deps.require_dep::<TraitEnc>(trait_did).unwrap();
-                    let tys = &a
-                        .args
-                        .iter()
-                        .map(|arg| match arg.expect_ty().kind() {
-                            TyKind::Param(p) => self.ty_exprs[self.map_idx(p.index).unwrap()],
-                            _ => self.ty_expr(
-                                deps,
-                                RustTyDecomposition::from_ty(arg.expect_ty(), ty.args.context),
-                            ),
-                        })
-                        .collect::<Vec<_>>();
-                    (trait_data.assoc_types.get(&a.def_id).unwrap())(tys)
+                    let args = deps.require_dep::<GArgsTyEnc>(ty.args).unwrap();
+                    (trait_data.assoc_types.get(&alias.def_id).unwrap())(args.get_ty(), args.get_const())
                 }),
             };
         }

@@ -54,7 +54,7 @@ impl TaskEncoder for TraitImplEnc {
             let trait_data = deps.require_dep::<TraitEnc>(trait_did)?;
             let trait_name = trait_data.trait_name;
 
-            let args = deps.require_dep::<GArgsTyEnc>(GArgs::new(GParams::from(*task_key), trait_ref.args))?;
+            let args = deps.require_dep::<GArgsTyEnc>(GArgs::new(ctx, trait_ref.args))?;
 
             let mut axioms = Vec::new();
             let mut methods = Vec::new();
@@ -65,11 +65,13 @@ impl TaskEncoder for TraitImplEnc {
 
             let impl_fun = trait_data.impl_fun;
             let trait_ty_decls = params.ty_decls().to_vec();
+            let trait_const_decls = params.const_decls().to_vec();
             let trait_tys = args.get_ty();
+            let trait_consts = args.get_const();
 
             axioms.push(vcx.mk_domain_axiom(
                 vir_format_identifier!(vcx, "{trait_name}_impl_{implementing_ty}_{idx}_does_impl"),
-                vir::expr! {forall ..[trait_ty_decls] :: {[impl_fun(trait_tys)]} [impl_fun(trait_tys)]},
+                vir::expr! {forall ..[trait_ty_decls] :: {[impl_fun(trait_tys, trait_consts)]} [impl_fun(trait_tys, trait_consts)]},
             ));
 
             for impl_item in tcx.associated_items(task_key).in_definition_order() {
@@ -88,16 +90,22 @@ impl TaskEncoder for TraitImplEnc {
                     .require_dep::<GenericParamsEnc>(GParams::from(impl_item_def_id))
                     .unwrap();
 
-                let assoc_decls = assoc_params.ty_decls();
+                let assoc_ty_decls = assoc_params.ty_decls();
+                let assoc_const_decls = assoc_params.const_decls();
 
                 // Combine substituted trait ty decls with the decls of the associated type
                 let mut trait_ty_decls = trait_ty_decls.clone();
-                trait_ty_decls.extend_from_slice(&assoc_decls[params.ty_exprs().len()..]);
+                trait_ty_decls.extend_from_slice(&assoc_ty_decls[params.ty_exprs().len()..]);
+                let mut trait_const_decls = trait_const_decls.clone();
+                trait_const_decls.extend_from_slice(&assoc_const_decls[params.const_exprs().len()..]);
 
                 // Combine substituted trait params with the params of the associated type
-                let trait_tys = vcx.alloc_slice(&iter::empty().chain(args.get_ty().to_owned()).chain(assoc_params.ty_exprs()[params.ty_exprs().len()..].to_owned()).collect::<Vec<_>>());
-
-                // TODO: do we correctly handle const generics?
+                let trait_tys = vcx.alloc_slice(&iter::empty()
+                    .chain(args.get_ty().to_owned())
+                    .chain(assoc_params.ty_exprs()[params.ty_exprs().len()..].to_owned()).collect::<Vec<_>>());
+                let trait_consts = vcx.alloc_slice(&iter::empty()
+                    .chain(args.get_const().to_owned())
+                    .chain(assoc_params.const_exprs()[params.const_exprs().len()..].to_owned()).collect::<Vec<_>>());
 
                 match impl_item.kind {
                     AssocKind::Type { .. } => {
@@ -113,7 +121,7 @@ impl TaskEncoder for TraitImplEnc {
                         );
                         axioms.push(vcx.mk_domain_axiom(
                             vir_format_identifier!(vcx, "{trait_name}_impl_{implementing_ty}_{idx}_assoc_type_{item_name}"),
-                            vir::expr! {forall ..[trait_ty_decls] :: {[assoc_type(trait_tys)]} ([assoc_type(trait_tys)]) == (assoc_type_expr)},
+                            vir::expr! {forall ..[trait_ty_decls], ..[trait_const_decls] :: {[assoc_type(trait_tys, trait_consts)]} ([assoc_type(trait_tys, trait_consts)]) == (assoc_type_expr)},
                         ));
                     }
                     AssocKind::Fn { .. } => {
@@ -137,7 +145,7 @@ impl TaskEncoder for TraitImplEnc {
                         let pre_func_call = assoc_fn.pre_func.call()(
                             vcx.alloc_slice(&func_args.iter().map(|arg| vcx.mk_local_ex(arg)).collect::<Vec<_>>()),
                             trait_tys,
-                            generics.const_exprs(),
+                            trait_consts,
                         );
                         axioms.push(vcx.mk_domain_axiom(
                             vir_format_identifier!(
@@ -154,7 +162,7 @@ impl TaskEncoder for TraitImplEnc {
                             vcx.mk_local_ex(func_ret),
                             vcx.alloc_slice(&func_args.iter().map(|arg| vcx.mk_local_ex(arg)).collect::<Vec<_>>()),
                             trait_tys,
-                            generics.const_exprs(),
+                            trait_consts,
                         );
                         axioms.push(vcx.mk_domain_axiom(
                             vir_format_identifier!(

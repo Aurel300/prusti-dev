@@ -68,7 +68,7 @@ impl TaskEncoder for MethodCallEnc {
                     let trait_enc = deps.require_dep::<TraitEnc>(trait_def_id)?;
                     let assoc_enc = trait_enc.assoc_funcs.get(&trait_item_def_id).unwrap();
                     let method_ref = MethodEncOutputRef {
-                        method_ref: assoc_enc.call_stub,
+                        method_ref: assoc_enc.call_stub_impure.unwrap(),
                     };
                     return Ok((trait_item_def_id, method_ref));
                 }

@@ -186,7 +186,7 @@ impl TaskEncoder for MethodEnc {
             let mut pres = Vec::new();
             let mut posts = Vec::new();
             let spec = deps.require_dep_spanned::<MirSpecEnc>((def_id, false), span)?;
-            let function_data = FunctionData::new(def_id, params.rust_params(), None);
+            let function_data = FunctionData::new(def_id);
             let wands = deps.require_dep_spanned::<WandEnc>(
                 WandEncTask {
                     data: function_data,

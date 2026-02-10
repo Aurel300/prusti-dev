@@ -16,6 +16,7 @@ use task_encoder::TaskEncoder;
 pub struct CallTaskDescription<'tcx> {
     gargs: GArgs<'tcx>,
     callee: DefId,
+    resolve_trait_calls: bool,
 }
 
 impl<'tcx> CallTaskDescription<'tcx> {
@@ -27,6 +28,14 @@ impl<'tcx> CallTaskDescription<'tcx> {
         Self {
             gargs: GArgs::new(context, args),
             callee,
+            resolve_trait_calls: true,
+        }
+    }
+
+    pub fn resolve_trait_calls(self, resolve_trait_calls: bool) -> Self {
+        Self {
+            resolve_trait_calls,
+            ..self
         }
     }
 }

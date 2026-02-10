@@ -766,7 +766,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                             .iter()
                             .map(|arg| self.encode_operand_snap(&arg.node, &new_curr_ver))
                             .collect::<Result<Vec<_>, _>>()?;
-                        Ok(pure_func.call(snap_args))
+                        Ok(pure_func.call_pure(snap_args))
                     } else {
                         panic!("call to unknown non-pure function in pure code ({def_id:?})");
                     }

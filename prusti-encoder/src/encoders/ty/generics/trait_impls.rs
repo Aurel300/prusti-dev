@@ -1,14 +1,14 @@
 use std::iter;
 
-use prusti_interface::PrustiError;
-use prusti_rustc_interface::{middle::{mir, ty::AssocKind}, span::def_id::DefId};
+use prusti_interface::{PrustiError, specs::specifications::SpecQuery};
+use prusti_rustc_interface::{middle::{mir, ty}, span::def_id::DefId};
 use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 use vir::{Domain, Method, MethodIdn, vir_format_identifier};
 
-use crate::encoders::{MirLocalDefEnc, MirLocalDefEncTask, MirSpecEnc, pure::spec::MirSpecEncMode, ty::{
+use crate::{encoders::{FunctionCallEnc, MirLocalDefEnc, MirLocalDefEncTask, MirSpecEnc, mir_fn::CallTaskDescription, pure::spec::MirSpecEncMode, ty::{
     RustTyDecomposition,
     generics::{GArgs, GArgsTyEnc, GParams, GenericParamsEnc, traits::TraitEnc},
-}};
+}}, trait_support::is_function_with_body};
 
 pub struct TraitImplEnc;
 
@@ -108,7 +108,7 @@ impl TaskEncoder for TraitImplEnc {
                     .chain(assoc_params.const_exprs()[params.const_exprs().len()..].to_owned()).collect::<Vec<_>>());
 
                 match impl_item.kind {
-                    AssocKind::Type { .. } => {
+                    ty::AssocKind::Type { .. } => {
                         let assoc_type = trait_data.assoc_types.get(&trait_item_def_id).unwrap();
 
                         // the type we want to resolve the type alias to
@@ -124,22 +124,42 @@ impl TaskEncoder for TraitImplEnc {
                             vir::expr! {forall ..[trait_ty_decls], ..[trait_const_decls] :: {[assoc_type(trait_tys, trait_consts)]} ([assoc_type(trait_tys, trait_consts)]) == (assoc_type_expr)},
                         ));
                     }
-                    AssocKind::Fn { .. } => {
+                    ty::AssocKind::Fn { .. } => {
                         let assoc_fn = trait_data.assoc_funcs.get(&trait_item_def_id).unwrap();
                         let local_defs = deps.require_dep::<MirLocalDefEnc>(MirLocalDefEncTask::Local {
                             def_id: impl_item_def_id,
                             all_locals: false,
                         })?;
                         let arg_count = local_defs.arg_count + 1;
-                        let arg_types = vcx.alloc_slice(&local_defs.snap_ty_args().collect::<Vec<_>>());
-                        let return_type = local_defs.snap_ty_return();
+                        //let arg_types = vcx.alloc_slice(&local_defs.snap_ty_args().collect::<Vec<_>>());
+                        //let return_type = local_defs.snap_ty_return();
                         let params = GParams::from(impl_item_def_id);
                         let generics = deps.require_dep::<GenericParamsEnc>(params)?;
                         let func_args = local_defs.local_decl_args().collect::<Vec<_>>();
                         let ref_args = vcx.alloc_slice(&vec![vir::TYPE_REF; arg_count]);
                         let func_ret = local_defs.local_decl_ret();
 
-                        let trait_item_spec = deps.require_dep_spanned::<MirSpecEnc>((trait_item_def_id, impl_item_def_id, MirSpecEncMode::PureWithoutResult), impl_span)?;
+                        let trait_item_is_pure = crate::encoders::with_proc_spec(
+                            SpecQuery::GetProcKind(
+                                trait_item_def_id,
+                                ty::List::identity_for_item(vcx.tcx(), trait_item_def_id),
+                            ),
+                            |spec| spec.kind.is_pure().unwrap_or_default(),
+                        )
+                        .unwrap_or_default();
+                        let impl_item_is_pure = crate::encoders::with_proc_spec(
+                            SpecQuery::GetProcKind(
+                                impl_item_def_id,
+                                ty::List::identity_for_item(vcx.tcx(), impl_item_def_id),
+                            ),
+                            |spec| spec.kind.is_pure().unwrap_or_default(),
+                        )
+                        .unwrap_or_default();
+
+                        let trait_item_has_body = is_function_with_body(vcx.tcx(), trait_item_def_id);
+                        let impl_item_has_body = is_function_with_body(vcx.tcx(), impl_item_def_id);
+
+                        //let trait_item_spec = deps.require_dep_spanned::<MirSpecEnc>((trait_item_def_id, impl_item_def_id, MirSpecEncMode::PureWithoutResult), impl_span)?;
                         let impl_item_spec = deps.require_dep_spanned::<MirSpecEnc>((impl_item_def_id, impl_item_def_id, MirSpecEncMode::PureWithoutResult), impl_span)?;
                         let pres = vcx.mk_conj(&impl_item_spec.pres);
                         let pre_func_call = assoc_fn.pre_func.call()(
@@ -157,7 +177,20 @@ impl TaskEncoder for TraitImplEnc {
                                     (pres) ==> (pre_func_call)
                             },
                         ));
-                        let posts = vcx.mk_conj(&impl_item_spec.posts);
+                        let mut posts = impl_item_spec.posts;
+                        if impl_item_has_body && impl_item_is_pure {
+                            let pure_func = deps
+                                .require_dep::<FunctionCallEnc>(CallTaskDescription::new(
+                                    impl_item_def_id,
+                                    ty::List::identity_for_item(vcx.tcx(), impl_item_def_id),
+                                    impl_item_def_id,
+                                ).resolve_trait_calls(false))?;
+                            let pure_func_app = pure_func.call_pure(func_args.iter().map(|arg| vcx.mk_local_ex(arg)).collect::<Vec<_>>());
+                            posts.push(vir::expr! {
+                                ([func_ret]) == ([pure_func_app])
+                            });
+                        }
+                        let posts = vcx.mk_conj(&posts);
                         let post_func_call = assoc_fn.post_func.call()(
                             vcx.mk_local_ex(func_ret),
                             vcx.alloc_slice(&func_args.iter().map(|arg| vcx.mk_local_ex(arg)).collect::<Vec<_>>()),
@@ -241,6 +274,18 @@ impl TaskEncoder for TraitImplEnc {
                         for post in &impl_item_spec.posts {
                             stmts.push(vcx.mk_inhale_stmt(post));
                         }
+                        if impl_item_has_body && impl_item_is_pure {
+                            let pure_func = deps
+                                .require_dep::<FunctionCallEnc>(CallTaskDescription::new(
+                                    impl_item_def_id,
+                                    ty::List::identity_for_item(vcx.tcx(), impl_item_def_id),
+                                    impl_item_def_id,
+                                ).resolve_trait_calls(false))?;
+                            let pure_func_app = pure_func.call_pure(local_defs.args().map(|arg| arg.impure_snap).collect::<Vec<_>>());
+                            stmts.push(vcx.mk_inhale_stmt(vir::expr! {
+                                ([local_defs[mir::RETURN_PLACE].impure_snap]) == ([pure_func_app])
+                            }));
+                        }
                         for post in trait_item_spec.posts {
                             vcx.with_span(impl_span, |vcx| {
                                 // TODO: make span point precisely to the postcondition we cannot show
@@ -249,6 +294,24 @@ impl TaskEncoder for TraitImplEnc {
                                     Some(vec![PrustiError::verification(&error_msg, impl_span.into())])
                                 });
                                 stmts.push(vcx.mk_exhale_stmt(post));
+                            });
+                        }
+                        if trait_item_has_body && trait_item_is_pure {
+                            let pure_func = deps
+                                .require_dep::<FunctionCallEnc>(CallTaskDescription::new(
+                                    impl_item_def_id,
+                                    trait_ref.args,
+                                    trait_item_def_id,
+                                ).resolve_trait_calls(false))?;
+                            let pure_func_app = pure_func.call_pure(local_defs.args().map(|arg| arg.impure_snap).collect::<Vec<_>>());
+                            vcx.with_span(impl_span, |vcx| {
+                                let error_msg = format!("trait implementation is not a behavioral subtype (body is not strengthened)");
+                                vcx.handle_error("exhale.failed:assertion.false", move |_| {
+                                    Some(vec![PrustiError::verification(&error_msg, impl_span.into())])
+                                });
+                                stmts.push(vcx.mk_exhale_stmt(vir::expr! {
+                                    ([local_defs[mir::RETURN_PLACE].impure_snap]) == ([pure_func_app])
+                                }));
                             });
                         }
 
@@ -271,7 +334,7 @@ impl TaskEncoder for TraitImplEnc {
                             ])),
                         ));
                     },
-                    AssocKind::Const { .. } => (), // noop?
+                    ty::AssocKind::Const { .. } => (), // noop?
                 }
             }
 

@@ -62,7 +62,7 @@ impl TaskEncoder for MethodCallEnc {
     ) -> EncodeFullResult<'vir, Self> {
         deps.emit_output_ref(*task_key, ())?;
         let (callee_def_id, method_ref) = vir::with_vcx(|vcx| {
-            if let Some(assoc_item) = vcx.tcx().opt_associated_item(task_key.callee) {
+            if task_key.resolve_trait_calls && let Some(assoc_item) = vcx.tcx().opt_associated_item(task_key.callee) {
                 if let Some(trait_def_id) = assoc_item.trait_container(vcx.tcx()) {
                     let trait_item_def_id = assoc_item.def_id;
                     let trait_enc = deps.require_dep::<TraitEnc>(trait_def_id)?;

@@ -5,7 +5,14 @@ use vir::MethodIdn;
 
 use crate::{
     encoders::{
-        Impure, ImpureEncVisitor, MirLocalDefEnc, MirLocalDefEncTask, MirSpecEnc, WandEnc, WandEncTask, mir_fn::{CallTaskDescription, RustSignature}, pure::spec::MirSpecEncMode, ty::generics::{GArgCaster, GArgsCastEnc, GArgsTy, GArgsTyEnc, GParams, GenericParamsEnc, traits::TraitEnc}
+        Impure, ImpureEncVisitor, MirLocalDefEnc, MirLocalDefEncTask, MirSpecEnc, WandEnc,
+        WandEncTask,
+        mir_fn::{CallTaskDescription, RustSignature},
+        pure::spec::MirSpecEncMode,
+        ty::generics::{
+            GArgCaster, GArgsCastEnc, GArgsTy, GArgsTyEnc, GParams, GenericParamsEnc,
+            traits::TraitEnc,
+        },
     },
     trait_support::is_function_with_body,
 };
@@ -62,16 +69,17 @@ impl TaskEncoder for MethodCallEnc {
     ) -> EncodeFullResult<'vir, Self> {
         deps.emit_output_ref(*task_key, ())?;
         let (callee_def_id, method_ref) = vir::with_vcx(|vcx| {
-            if task_key.resolve_trait_calls && let Some(assoc_item) = vcx.tcx().opt_associated_item(task_key.callee) {
-                if let Some(trait_def_id) = assoc_item.trait_container(vcx.tcx()) {
-                    let trait_item_def_id = assoc_item.def_id;
-                    let trait_enc = deps.require_dep::<TraitEnc>(trait_def_id)?;
-                    let assoc_enc = trait_enc.assoc_funcs.get(&trait_item_def_id).unwrap();
-                    let method_ref = MethodEncOutputRef {
-                        method_ref: assoc_enc.call_stub_impure.unwrap(),
-                    };
-                    return Ok((trait_item_def_id, method_ref));
-                }
+            if task_key.resolve_trait_calls
+                && let Some(assoc_item) = vcx.tcx().opt_associated_item(task_key.callee)
+                && let Some(trait_def_id) = assoc_item.trait_container(vcx.tcx())
+            {
+                let trait_item_def_id = assoc_item.def_id;
+                let trait_enc = deps.require_dep::<TraitEnc>(trait_def_id)?;
+                let assoc_enc = trait_enc.assoc_funcs.get(&trait_item_def_id).unwrap();
+                let method_ref = MethodEncOutputRef {
+                    method_ref: assoc_enc.call_stub_impure.unwrap(),
+                };
+                return Ok((trait_item_def_id, method_ref));
             }
             let method_ref = deps.require_ref::<MethodEnc>(task_key.callee)?;
             Ok((task_key.callee, method_ref))
@@ -196,7 +204,10 @@ impl TaskEncoder for MethodEnc {
             // wands in case of a reborrowing function.
             let mut pres = Vec::new();
             let mut posts = Vec::new();
-            let spec = deps.require_dep_spanned::<MirSpecEnc>((def_id, def_id, MirSpecEncMode::Impure), span)?;
+            let spec = deps.require_dep_spanned::<MirSpecEnc>(
+                (def_id, def_id, MirSpecEncMode::Impure),
+                span,
+            )?;
             let function_data = FunctionData::new(def_id, params.rust_params(), None);
             let wands = deps.require_dep_spanned::<WandEnc>(
                 WandEncTask {

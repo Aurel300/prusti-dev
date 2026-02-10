@@ -101,8 +101,15 @@ fn should_encode_locals<'vir>(vcx: &vir::VirCtxt<'vir>, def_id: DefId) -> bool {
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum MirLocalDefEncTask<'vir> {
     ExternSpec(DefId),
-    Local { def_id: DefId, all_locals: bool },
-    LocalSubsts { def_id: DefId, substs: ty::GenericArgsRef<'vir>, all_locals: bool },
+    Local {
+        def_id: DefId,
+        all_locals: bool,
+    },
+    LocalSubsts {
+        def_id: DefId,
+        substs: ty::GenericArgsRef<'vir>,
+        all_locals: bool,
+    },
 }
 
 impl<'vir> MirLocalDefEncTask<'vir> {
@@ -116,9 +123,9 @@ impl<'vir> MirLocalDefEncTask<'vir> {
 
     fn substs(self, vcx: &vir::VirCtxt<'vir>) -> ty::GenericArgsRef<'vir> {
         match self {
-            MirLocalDefEncTask::ExternSpec(def_id)
-            | MirLocalDefEncTask::Local { def_id, .. } =>
-                ty::GenericArgs::identity_for_item(vcx.tcx(), def_id),
+            MirLocalDefEncTask::ExternSpec(def_id) | MirLocalDefEncTask::Local { def_id, .. } => {
+                ty::GenericArgs::identity_for_item(vcx.tcx(), def_id)
+            }
             MirLocalDefEncTask::LocalSubsts { substs, .. } => substs,
         }
     }

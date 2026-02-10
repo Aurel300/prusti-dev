@@ -148,8 +148,8 @@ impl TaskEncoder for MirSpecEnc {
                     all_locals: false,
                 },
             )?;
-            let specs =
-                deps.require_dep::<crate::encoders::SpecEnc>(crate::encoders::SpecEncTask { def_id })?;
+            let specs = deps
+                .require_dep::<crate::encoders::SpecEnc>(crate::encoders::SpecEncTask { def_id })?;
 
             let local_iter = (1..=local_defs.arg_count).map(mir::Local::from);
             let all_args: Vec<vir::ExprSnap<'vir>> = match enc_mode {
@@ -216,8 +216,7 @@ impl TaskEncoder for MirSpecEnc {
                         .collect();
                     vcx.alloc_slice(&post_args)
                 }
-                MirSpecEncMode::PureWithResult
-                | MirSpecEncMode::PureWithoutResult => all_args,
+                MirSpecEncMode::PureWithResult | MirSpecEncMode::PureWithoutResult => all_args,
             };
             let posts = specs
                 .posts

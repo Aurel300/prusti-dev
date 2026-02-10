@@ -1,18 +1,30 @@
 use std::collections::HashMap;
 
 use prusti_interface::specs::{is_spec_fn, specifications::SpecQuery};
-use prusti_rustc_interface::{middle::{mir, ty}, span::def_id::DefId};
+use prusti_rustc_interface::{
+    middle::{mir, ty},
+    span::def_id::DefId,
+};
 use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 use vir::{FunctionIdn, MethodIdn, vir_format_identifier};
 
-use crate::{encoders::{FunctionCallEnc, MirLocalDefEnc, MirLocalDefEncTask, MirSpecEnc, mir_fn::CallTaskDescription, pure::spec::MirSpecEncMode, ty::generics::{GParams, GenericParamsEnc}}, trait_support::is_function_with_body};
+use crate::{
+    encoders::{
+        FunctionCallEnc, MirLocalDefEnc, MirLocalDefEncTask, MirSpecEnc,
+        mir_fn::CallTaskDescription,
+        pure::spec::MirSpecEncMode,
+        ty::generics::{GParams, GenericParamsEnc},
+    },
+    trait_support::is_function_with_body,
+};
 
 pub struct TraitEnc;
 
 #[derive(Debug, Clone)]
 pub struct TraitData<'vir> {
     pub trait_name: &'vir str,
-    pub assoc_types: HashMap<DefId, FunctionIdn<'vir, (vir::ManyTyVal, vir::ManyCSnap), vir::TyVal>>,
+    pub assoc_types:
+        HashMap<DefId, FunctionIdn<'vir, (vir::ManyTyVal, vir::ManyCSnap), vir::TyVal>>,
     pub assoc_funcs: HashMap<DefId, TraitAssocFnData<'vir>>,
     pub impl_fun: FunctionIdn<'vir, (vir::ManyTyVal, vir::ManyCSnap), vir::Bool>,
 }
@@ -20,10 +32,13 @@ pub struct TraitData<'vir> {
 #[derive(Debug, Clone)]
 pub struct TraitAssocFnData<'vir> {
     pub pre_func: FunctionIdn<'vir, (vir::ManySnap, vir::ManyTyVal, vir::ManyCSnap), vir::Bool>,
-    pub post_func: FunctionIdn<'vir, (vir::Snap, vir::ManySnap, vir::ManyTyVal, vir::ManyCSnap), vir::Bool>,
+    pub post_func:
+        FunctionIdn<'vir, (vir::Snap, vir::ManySnap, vir::ManyTyVal, vir::ManyCSnap), vir::Bool>,
     pub call_stub_impure: Option<MethodIdn<'vir, (vir::ManyRef, vir::ManyTyVal, vir::ManyCSnap)>>,
-    pub call_stub_pure_caller: Option<FunctionIdn<'vir, (vir::ManySnap, vir::ManyTyVal, vir::ManyCSnap), vir::Snap>>,
-    pub call_stub_pure_function: Option<FunctionIdn<'vir, (vir::ManySnap, vir::ManyTyVal, vir::ManyCSnap), vir::Snap>>,
+    pub call_stub_pure_caller:
+        Option<FunctionIdn<'vir, (vir::ManySnap, vir::ManyTyVal, vir::ManyCSnap), vir::Snap>>,
+    pub call_stub_pure_function:
+        Option<FunctionIdn<'vir, (vir::ManySnap, vir::ManyTyVal, vir::ManyCSnap), vir::Snap>>,
 }
 
 impl TaskEncoder for TraitEnc {
@@ -98,12 +113,14 @@ impl TaskEncoder for TraitEnc {
                         dom_funcs.push(vcx.mk_domain_function(type_func, false, None));
                     }
                     ty::AssocKind::Fn { .. } => {
-                        let local_defs = deps.require_dep::<MirLocalDefEnc>(MirLocalDefEncTask::Local {
-                            def_id,
-                            all_locals: false,
-                        })?;
+                        let local_defs =
+                            deps.require_dep::<MirLocalDefEnc>(MirLocalDefEncTask::Local {
+                                def_id,
+                                all_locals: false,
+                            })?;
                         let arg_count = local_defs.arg_count + 1;
-                        let arg_types = vcx.alloc_slice(&local_defs.snap_ty_args().collect::<Vec<_>>());
+                        let arg_types =
+                            vcx.alloc_slice(&local_defs.snap_ty_args().collect::<Vec<_>>());
                         let return_type = local_defs.snap_ty_return();
                         let func_args = local_defs.local_decl_args().collect::<Vec<_>>();
                         let ref_args = vcx.alloc_slice(&vec![vir::TYPE_REF; arg_count]);
@@ -121,45 +138,83 @@ impl TaskEncoder for TraitEnc {
 
                         let pre_func = FunctionIdn::new(
                             vir_format_identifier!(vcx, "{trait_name}_fn_pre_{item_name}"),
-                            (arg_types, item_generics.ty_args(), item_generics.const_args()),
+                            (
+                                arg_types,
+                                item_generics.ty_args(),
+                                item_generics.const_args(),
+                            ),
                             vir::TYPE_BOOL,
                         );
                         let post_func = FunctionIdn::new(
                             vir_format_identifier!(vcx, "{trait_name}_fn_post_{item_name}"),
                             // TODO: old(arg) types (if applicable)
-                            (return_type, arg_types, item_generics.ty_args(), item_generics.const_args()),
+                            (
+                                return_type,
+                                arg_types,
+                                item_generics.ty_args(),
+                                item_generics.const_args(),
+                            ),
                             vir::TYPE_BOOL,
                         );
                         // TODO: spec functions for each pledge
 
-                        let call_stub_impure = (!is_pure).then(|| MethodIdn::new(
-                            vir_format_identifier!(vcx, "{trait_name}_fn_stub_{item_name}"),
-                            (ref_args, item_generics.ty_args(), item_generics.const_args()),
-                        ));
-                        let call_stub_pure_caller = is_pure.then(|| FunctionIdn::new(
-                            vir_format_identifier!(vcx, "{trait_name}_cfn_stub_{item_name}"),
-                            (arg_types, item_generics.ty_args(), item_generics.const_args()),
-                            return_type,
-                        ));
-                        let call_stub_pure_function = is_pure.then(|| FunctionIdn::new(
-                            vir_format_identifier!(vcx, "{trait_name}_fn_stub_{item_name}"),
-                            (arg_types, item_generics.ty_args(), item_generics.const_args()),
-                            return_type,
-                        ));
-                        assoc_funcs.insert(def_id, TraitAssocFnData {
-                            pre_func,
-                            post_func,
-                            call_stub_impure,
-                            call_stub_pure_caller,
-                            call_stub_pure_function,
+                        let call_stub_impure = (!is_pure).then(|| {
+                            MethodIdn::new(
+                                vir_format_identifier!(vcx, "{trait_name}_fn_stub_{item_name}"),
+                                (
+                                    ref_args,
+                                    item_generics.ty_args(),
+                                    item_generics.const_args(),
+                                ),
+                            )
                         });
+                        let call_stub_pure_caller = is_pure.then(|| {
+                            FunctionIdn::new(
+                                vir_format_identifier!(vcx, "{trait_name}_cfn_stub_{item_name}"),
+                                (
+                                    arg_types,
+                                    item_generics.ty_args(),
+                                    item_generics.const_args(),
+                                ),
+                                return_type,
+                            )
+                        });
+                        let call_stub_pure_function = is_pure.then(|| {
+                            FunctionIdn::new(
+                                vir_format_identifier!(vcx, "{trait_name}_fn_stub_{item_name}"),
+                                (
+                                    arg_types,
+                                    item_generics.ty_args(),
+                                    item_generics.const_args(),
+                                ),
+                                return_type,
+                            )
+                        });
+                        assoc_funcs.insert(
+                            def_id,
+                            TraitAssocFnData {
+                                pre_func,
+                                post_func,
+                                call_stub_impure,
+                                call_stub_pure_caller,
+                                call_stub_pure_function,
+                            },
+                        );
                         dom_funcs.push(vcx.mk_domain_function(pre_func, false, None));
                         dom_funcs.push(vcx.mk_domain_function(post_func, false, None));
 
-                        let spec = deps.require_dep_spanned::<MirSpecEnc>((def_id, def_id, MirSpecEncMode::PureWithoutResult), span)?;
+                        let spec = deps.require_dep_spanned::<MirSpecEnc>(
+                            (def_id, def_id, MirSpecEncMode::PureWithoutResult),
+                            span,
+                        )?;
                         let pres = vcx.mk_conj(&spec.pres);
                         let pre_func_call = pre_func.call()(
-                            vcx.alloc_slice(&func_args.iter().map(|arg| vcx.mk_local_ex(arg)).collect::<Vec<_>>()),
+                            vcx.alloc_slice(
+                                &func_args
+                                    .iter()
+                                    .map(|arg| vcx.mk_local_ex(arg))
+                                    .collect::<Vec<_>>(),
+                            ),
                             item_generics.ty_exprs(),
                             item_generics.const_exprs(),
                         );
@@ -175,13 +230,20 @@ impl TaskEncoder for TraitEnc {
                         ));
                         let mut posts = spec.posts;
                         if has_body && is_pure {
-                            let pure_func = deps
-                                .require_dep::<FunctionCallEnc>(CallTaskDescription::new(
+                            let pure_func = deps.require_dep::<FunctionCallEnc>(
+                                CallTaskDescription::new(
                                     def_id,
                                     ty::List::identity_for_item(vcx.tcx(), def_id),
                                     def_id,
-                                ).resolve_trait_calls(false))?;
-                            let pure_func_app = pure_func.call_pure(func_args.iter().map(|arg| vcx.mk_local_ex(arg)).collect::<Vec<_>>());
+                                )
+                                .resolve_trait_calls(false),
+                            )?;
+                            let pure_func_app = pure_func.call_pure(
+                                func_args
+                                    .iter()
+                                    .map(|arg| vcx.mk_local_ex(arg))
+                                    .collect::<Vec<_>>(),
+                            );
                             posts.push(vir::expr! {
                                 ([func_ret]) == ([pure_func_app])
                             });
@@ -189,7 +251,12 @@ impl TaskEncoder for TraitEnc {
                         let posts = vcx.mk_conj(&posts);
                         let post_func_call = post_func.call()(
                             vcx.mk_local_ex(func_ret),
-                            vcx.alloc_slice(&func_args.iter().map(|arg| vcx.mk_local_ex(arg)).collect::<Vec<_>>()),
+                            vcx.alloc_slice(
+                                &func_args
+                                    .iter()
+                                    .map(|arg| vcx.mk_local_ex(arg))
+                                    .collect::<Vec<_>>(),
+                            ),
                             item_generics.ty_exprs(),
                             item_generics.const_exprs(),
                         );
@@ -208,18 +275,29 @@ impl TaskEncoder for TraitEnc {
                             let mut stub_pres = Vec::new();
                             let mut stub_posts = Vec::new();
                             stub_pres.push(pre_func.call()(
-                                vcx.alloc_slice(&local_defs.args().map(|arg| vcx.mk_local_ex(arg.local_snap)).collect::<Vec<_>>()),
+                                vcx.alloc_slice(
+                                    &local_defs
+                                        .args()
+                                        .map(|arg| vcx.mk_local_ex(arg.local_snap))
+                                        .collect::<Vec<_>>(),
+                                ),
                                 item_generics.ty_exprs(),
                                 item_generics.const_exprs(),
                             ));
                             stub_posts.push(post_func.call()(
                                 vcx.mk_result(local_defs.snap_ty_return()),
-                                vcx.alloc_slice(&local_defs.args().map(|arg| vcx.mk_local_ex(arg.local_snap)).collect::<Vec<_>>()),
+                                vcx.alloc_slice(
+                                    &local_defs
+                                        .args()
+                                        .map(|arg| vcx.mk_local_ex(arg.local_snap))
+                                        .collect::<Vec<_>>(),
+                                ),
                                 item_generics.ty_exprs(),
                                 item_generics.const_exprs(),
                             ));
                             let wrapped_call = call_stub_pure_function.unwrap().call()(
-                                &func_args.iter()
+                                &func_args
+                                    .iter()
                                     .map(|arg| vcx.mk_local_ex(arg))
                                     .collect::<Vec<_>>(),
                                 item_generics.ty_exprs(),
@@ -227,7 +305,11 @@ impl TaskEncoder for TraitEnc {
                             );
                             funcs.push(vcx.mk_function(
                                 call_stub_pure_caller.unwrap(),
-                                (&func_args, item_generics.ty_decls(), item_generics.const_decls()),
+                                (
+                                    &func_args,
+                                    item_generics.ty_decls(),
+                                    item_generics.const_decls(),
+                                ),
                                 vcx.alloc_slice(&stub_pres),
                                 vcx.alloc_slice(&stub_posts),
                                 Some(&vir::DecreasesGenData::Star),
@@ -235,7 +317,11 @@ impl TaskEncoder for TraitEnc {
                             ));
                             funcs.push(vcx.mk_function(
                                 call_stub_pure_function.unwrap(),
-                                (&func_args, item_generics.ty_decls(), item_generics.const_decls()),
+                                (
+                                    &func_args,
+                                    item_generics.ty_decls(),
+                                    item_generics.const_decls(),
+                                ),
                                 &[],
                                 vcx.alloc_slice(&stub_posts),
                                 None,
@@ -256,28 +342,42 @@ impl TaskEncoder for TraitEnc {
                             // TODO: wands
 
                             stub_pres.push(pre_func.call()(
-                                vcx.alloc_slice(&local_defs.args().map(|arg| arg.impure_snap).collect::<Vec<_>>()),
+                                vcx.alloc_slice(
+                                    &local_defs
+                                        .args()
+                                        .map(|arg| arg.impure_snap)
+                                        .collect::<Vec<_>>(),
+                                ),
                                 item_generics.ty_exprs(),
                                 item_generics.const_exprs(),
                             ));
                             // TODO: mutable arguments should also have a post-state
                             stub_posts.push(post_func.call()(
                                 local_defs.ret().impure_snap,
-                                vcx.alloc_slice(&local_defs.args().map(|arg| vcx.mk_old_expr(arg.impure_snap)).collect::<Vec<_>>()),
+                                vcx.alloc_slice(
+                                    &local_defs
+                                        .args()
+                                        .map(|arg| vcx.mk_old_expr(arg.impure_snap))
+                                        .collect::<Vec<_>>(),
+                                ),
                                 item_generics.ty_exprs(),
                                 item_generics.const_exprs(),
                             ));
 
                             methods.push(vcx.mk_method(
                                 call_stub_impure.unwrap(),
-                                (args.as_slice(), item_generics.ty_decls(), item_generics.const_decls()),
+                                (
+                                    args.as_slice(),
+                                    item_generics.ty_decls(),
+                                    item_generics.const_decls(),
+                                ),
                                 &[],
                                 vcx.alloc_slice(&stub_pres),
                                 vcx.alloc_slice(&stub_posts),
                                 None,
                             ));
                         }
-                    },
+                    }
                     ty::AssocKind::Const { .. } => (), // noop?
                 }
             }
@@ -298,11 +398,7 @@ impl TaskEncoder for TraitEnc {
             );
 
             Ok((
-                (
-                    trait_domain,
-                    funcs,
-                    methods,
-                ),
+                (trait_domain, funcs, methods),
                 TraitData {
                     trait_name,
                     assoc_types,

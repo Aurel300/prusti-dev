@@ -254,7 +254,9 @@ impl TaskEncoder for TyPureEnc {
                 }
                 TySpecifics::ImmRef(immref) => {
                     let builder = builder.set_adt_builder();
-                    TySpecifics::ImmRef(super::kinds::immref::ty_pure(task_key, immref, deps, builder)?)
+                    TySpecifics::ImmRef(super::kinds::immref::ty_pure(
+                        task_key, immref, deps, builder,
+                    )?)
                 }
                 TySpecifics::MutRef(_) => {
                     let builder = builder.set_adt_builder();

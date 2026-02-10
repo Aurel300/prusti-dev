@@ -267,7 +267,10 @@ impl<'vir> GenericParams<'vir> {
                     let trait_did = tcx.associated_item(alias.def_id).container_id(tcx);
                     let trait_data = deps.require_dep::<TraitEnc>(trait_did).unwrap();
                     let args = deps.require_dep::<GArgsTyEnc>(ty.args).unwrap();
-                    (trait_data.assoc_types.get(&alias.def_id).unwrap())(args.get_ty(), args.get_const())
+                    (trait_data.assoc_types.get(&alias.def_id).unwrap())(
+                        args.get_ty(),
+                        args.get_const(),
+                    )
                 }),
             };
         }

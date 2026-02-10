@@ -2,9 +2,18 @@ use prusti_rustc_interface::{middle::ty, span::def_id::DefId};
 use task_encoder::{EncodeFullResult, OutputRefAny, TaskEncoder, TaskEncoderDependencies};
 use vir::{FunctionIdn, Reify};
 
-use crate::{encoders::{
-    MirLocalDefEnc, MirLocalDefEncTask, MirPureEnc, MirPureEncTask, MirSpecEnc, Pure, PureKind, mir_fn::{CallTaskDescription, RustSignature}, pure::spec::MirSpecEncMode, ty::generics::{GArgCaster, GArgsCastEnc, GArgsTy, GArgsTyEnc, GParams, GenericParamsEnc, traits::TraitEnc}
-}, trait_support::is_function_with_body};
+use crate::{
+    encoders::{
+        MirLocalDefEnc, MirLocalDefEncTask, MirPureEnc, MirPureEncTask, MirSpecEnc, Pure, PureKind,
+        mir_fn::{CallTaskDescription, RustSignature},
+        pure::spec::MirSpecEncMode,
+        ty::generics::{
+            GArgCaster, GArgsCastEnc, GArgsTy, GArgsTyEnc, GParams, GenericParamsEnc,
+            traits::TraitEnc,
+        },
+    },
+    trait_support::is_function_with_body,
+};
 
 // Function wrapper
 
@@ -45,11 +54,8 @@ impl<'vir> FunctionCallEncOutput<'vir> {
         for (arg, caster) in a {
             *arg = caster.cast_to_callee_ctx(*arg);
         }
-        let call = self.function.caller_ref.call()(
-            &args,
-            self.ty_args.get_ty(),
-            self.ty_args.get_const(),
-        );
+        let call =
+            self.function.caller_ref.call()(&args, self.ty_args.get_ty(), self.ty_args.get_const());
         self.output.cast_to_caller_ctx(call)
     }
 }
@@ -69,17 +75,18 @@ impl TaskEncoder for FunctionCallEnc {
     ) -> EncodeFullResult<'vir, Self> {
         deps.emit_output_ref(*task_key, ())?;
         let (callee_def_id, function_ref) = vir::with_vcx(|vcx| {
-            if task_key.resolve_trait_calls && let Some(assoc_item) = vcx.tcx().opt_associated_item(task_key.callee) {
-                if let Some(trait_def_id) = assoc_item.trait_container(vcx.tcx()) {
-                    let trait_item_def_id = assoc_item.def_id;
-                    let trait_enc = deps.require_dep::<TraitEnc>(trait_def_id)?;
-                    let assoc_enc = trait_enc.assoc_funcs.get(&trait_item_def_id).unwrap();
-                    let function_ref = FunctionEncOutputRef {
-                        caller_ref: assoc_enc.call_stub_pure_caller.unwrap(),
-                        function_ref: assoc_enc.call_stub_pure_function.unwrap(),
-                    };
-                    return Ok((trait_item_def_id, function_ref));
-                }
+            if task_key.resolve_trait_calls
+                && let Some(assoc_item) = vcx.tcx().opt_associated_item(task_key.callee)
+                && let Some(trait_def_id) = assoc_item.trait_container(vcx.tcx())
+            {
+                let trait_item_def_id = assoc_item.def_id;
+                let trait_enc = deps.require_dep::<TraitEnc>(trait_def_id)?;
+                let assoc_enc = trait_enc.assoc_funcs.get(&trait_item_def_id).unwrap();
+                let function_ref = FunctionEncOutputRef {
+                    caller_ref: assoc_enc.call_stub_pure_caller.unwrap(),
+                    function_ref: assoc_enc.call_stub_pure_function.unwrap(),
+                };
+                return Ok((trait_item_def_id, function_ref));
             }
             let function_ref = deps.require_ref::<FunctionEnc>(task_key.callee)?;
             Ok((task_key.callee, function_ref))
@@ -180,13 +187,17 @@ impl TaskEncoder for FunctionEnc {
                 (arg_types, generics.ty_args(), generics.const_args()),
                 return_type,
             );
-            deps.emit_output_ref(def_id, FunctionEncOutputRef {
-                caller_ref,
-                function_ref,
-            })?;
+            deps.emit_output_ref(
+                def_id,
+                FunctionEncOutputRef {
+                    caller_ref,
+                    function_ref,
+                },
+            )?;
 
             let substs = ty::GenericArgs::identity_for_item(vcx.tcx(), def_id);
-            let spec = deps.require_dep::<MirSpecEnc>((def_id, def_id, MirSpecEncMode::PureWithResult))?;
+            let spec =
+                deps.require_dep::<MirSpecEnc>((def_id, def_id, MirSpecEncMode::PureWithResult))?;
 
             let expr = if trusted || !is_function_with_body(vcx.tcx(), def_id) {
                 None
@@ -241,7 +252,8 @@ impl TaskEncoder for FunctionEnc {
 
             let func_args = local_defs.local_decl_args().collect::<Vec<_>>();
             let wrapped_call = function_ref.call()(
-                &func_args.iter()
+                &func_args
+                    .iter()
                     .map(|arg| vcx.mk_local_ex(arg))
                     .collect::<Vec<_>>(),
                 generics.ty_exprs(),
@@ -263,10 +275,7 @@ impl TaskEncoder for FunctionEnc {
                 expr.is_none().then_some(&vir::DecreasesGenData::Star),
                 expr,
             );
-            Ok((FunctionEncOutput {
-                caller,
-                function,
-            }, ()))
+            Ok((FunctionEncOutput { caller, function }, ()))
         })
     }
 

@@ -1,6 +1,12 @@
-use crate::encoders::{TyUsePureEnc, ty::{
-    RustImmRef, RustTyDatas, data::TyData, impure::{PredicateBuilder, TyImpureEnc, TyImpureImmRef, TyImpureImmRefData}, pure::{AdtBuilder, TyPureEnc, TyPureImmRef, TyPureImmRefData}
-}};
+use crate::encoders::{
+    TyUsePureEnc,
+    ty::{
+        RustImmRef, RustTyDatas,
+        data::TyData,
+        impure::{PredicateBuilder, TyImpureEnc, TyImpureImmRef, TyImpureImmRefData},
+        pure::{AdtBuilder, TyPureEnc, TyPureImmRef, TyPureImmRefData},
+    },
+};
 use task_encoder::{EncodeFullError, TaskEncoderDependencies};
 use vir::CastType;
 

@@ -104,12 +104,8 @@ impl<'vir> WandEncOutput<'vir> {
         self.function_data.identity_fn_sig(vcx.tcx())
     }
 
-    pub(crate) fn g_params(&self, vcx: &'vir vir::VirCtxt<'vir>) -> GParams<'vir> {
-        GParams::new(
-            self.function_data.identity_substs(vcx.tcx()),
-            self.function_data.param_env(vcx.tcx()),
-            false,
-        )
+    pub(crate) fn g_params(&self) -> GParams<'vir> {
+        GParams::from(self.function_data.def_id())
     }
 
     fn encode_predicates_for_function_shape_node(
@@ -122,7 +118,7 @@ impl<'vir> WandEncOutput<'vir> {
         use vir::Reify;
         let g = g.into();
         let fn_sig = self.fn_sig(vcx);
-        let ty = RustTyDecomposition::from_ty(g.ty(fn_sig), self.g_params(vcx));
+        let ty = RustTyDecomposition::from_ty(g.ty(fn_sig), self.g_params());
         let predicates = deps
             .require_dep::<IndirectPredicatesEnc>(g.with_base(ty))
             .unwrap()

@@ -116,12 +116,10 @@ impl MirLocalDefEncTask {
             }
             MirLocalDefEncTask::Local { def_id, .. } => {
                 if should_encode_locals(vcx, def_id) {
-                    let substs = ty::GenericArgs::identity_for_item(vcx.tcx(), def_id);
-                    Some(vcx.body_mut().get_impure_fn_body(
-                        def_id.as_local().unwrap(),
-                        substs,
-                        None,
-                    ))
+                    Some(
+                        vcx.body_mut()
+                            .get_impure_fn_body_identity(def_id.as_local().unwrap()),
+                    )
                 } else {
                     None
                 }

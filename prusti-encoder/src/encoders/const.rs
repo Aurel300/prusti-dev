@@ -1,5 +1,5 @@
-use prusti_interface::PrustiError;
 use prusti_rustc_interface::{
+    const_eval::interpret::AllocRange,
     middle::{
         mir::{
             self, ConstValue,
@@ -14,6 +14,7 @@ use vir::CastType;
 
 use crate::encoders::{
     MirPureEnc, MirPureEncTask, PureKind,
+    addr::AddrUseEnc,
     ty::{
         RustTyDecomposition,
         generics::{GParams, GenericParamsEnc},
@@ -70,7 +71,7 @@ impl ConstEnc {
         val: ConstValue,
         ty: ty::Ty<'vir>,
         context: GParams<'vir>,
-        span: Option<Span>,
+        _span: Option<Span>,
     ) -> Result<vir::ExprCSnap<'vir>, EncodeFullError<'vir, Self>> {
         vir::with_vcx(|vcx| {
             let ty_task = RustTyDecomposition::from_ty(ty, context);
@@ -87,22 +88,41 @@ impl ConstEnc {
                         GlobalAlloc::Function { .. } => todo!(),
                         GlobalAlloc::VTable(_, _) => todo!(),
                         GlobalAlloc::Static(_) => todo!(),
-                        GlobalAlloc::Memory(_mem) => {
-                            // If the `unwrap` ever panics we need a different way to get the inner type
-                            // let inner_ty = ty.builtin_deref(true).map(|t| t.ty).unwrap_or(ty);
-                            let _inner_ty = ty.builtin_deref(true).unwrap();
-                            vcx.with_span(span.unwrap(), |vcx| {
-                                vcx.handle_error(
-                                    "application.precondition:assertion.false",
-                                    move |_| {
-                                        Some(vec![PrustiError::verification(
-                                            format!("unsupported const {val:?} might be reached"),
-                                            span.unwrap().into(),
-                                        )])
+                        GlobalAlloc::Memory(mem) => {
+                            let inner_ty = ty.builtin_deref(true).unwrap();
+                            let inner_ty_task =
+                                RustTyDecomposition::from_ty(inner_ty, vcx.tcx(), context);
+                            let inner_kind = deps
+                                .require_dep::<TyUsePureEnc>(inner_ty_task)?
+                                .expect_primitive();
+                            let bytes = mem
+                                .0
+                                .0
+                                .read_scalar(
+                                    &vcx.tcx(),
+                                    AllocRange {
+                                        start: ptr.prov_and_relative_offset().1,
+                                        size: mem.0.0.size(),
                                     },
-                                );
-                                kind.unreachable_to_snap().downcast_ty()
-                            })
+                                    false,
+                                )
+                                .unwrap();
+                            let addr_to_ref = deps.require_dep::<AddrUseEnc>(())?.ref_from_addr;
+                            let (prov, offset) = ptr.prov_and_relative_offset();
+                            let alloc_id = prov.alloc_id().0;
+                            let rel_addr =
+                                ((alloc_id.get() as u128) << 64) | offset.bytes() as u128;
+
+                            kind.expect_immref().prim_to_snap(
+                                (addr_to_ref)(
+                                    vcx.mk_const_expr(vir::ConstData::Int(rel_addr))
+                                        .downcast_ty(),
+                                ),
+                                ((inner_kind.prim_to_snap)(vcx.mk_const_expr(
+                                    vir::ConstData::Int(bytes.to_bits(mem.0.0.size()).unwrap()),
+                                )))
+                                .upcast_ty(),
+                            )
                         }
                         GlobalAlloc::TypeId { .. } => todo!(),
                     }

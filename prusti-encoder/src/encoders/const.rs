@@ -91,7 +91,7 @@ impl ConstEnc {
                         GlobalAlloc::Memory(mem) => {
                             let inner_ty = ty.builtin_deref(true).unwrap();
                             let inner_ty_task =
-                                RustTyDecomposition::from_ty(inner_ty, vcx.tcx(), context);
+                                RustTyDecomposition::from_ty(inner_ty, context);
                             let inner_kind = deps
                                 .require_dep::<TyUsePureEnc>(inner_ty_task)?
                                 .expect_primitive();

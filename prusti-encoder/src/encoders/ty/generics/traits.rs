@@ -10,10 +10,7 @@ use vir::{FunctionIdn, MethodIdn, vir_format_identifier};
 
 use crate::{
     encoders::{
-        FunctionCallEnc, MirLocalDefEnc, MirLocalDefEncTask, MirSpecEnc,
-        mir_fn::CallTaskDescription,
-        pure::spec::MirSpecEncMode,
-        ty::generics::{GParams, GenericParamsEnc},
+        FunctionCallEnc, MirLocalDefEnc, MirLocalDefEncTask, MirSpecEnc, mir_fn::CallTaskDescription, pure::spec::MirSpecEncMode, ty::generics::{GParams, GenericParamsEnc}
     },
     trait_support::is_function_with_body,
 };
@@ -106,6 +103,7 @@ impl TaskEncoder for TraitEnc {
                 let item_params = GParams::from(def_id);
                 let item_generics = deps.require_dep::<GenericParamsEnc>(item_params)?;
                 let item_name = tcx.item_name(def_id);
+                let item_identity_substs = ty::List::identity_for_item(vcx.tcx(), def_id);
 
                 match item.kind {
                     ty::AssocKind::Type { .. } => {
@@ -132,7 +130,7 @@ impl TaskEncoder for TraitEnc {
                         let is_pure = crate::encoders::with_proc_spec(
                             SpecQuery::GetProcKind(
                                 def_id,
-                                ty::List::identity_for_item(vcx.tcx(), def_id),
+                                item_identity_substs,
                             ),
                             |spec| spec.kind.is_pure().unwrap_or_default(),
                         )
@@ -237,6 +235,7 @@ impl TaskEncoder for TraitEnc {
                 let item_params = GParams::from(def_id);
                 let item_generics = deps.require_dep::<GenericParamsEnc>(item_params)?;
                 let item_name = tcx.item_name(def_id);
+                let item_identity_substs = ty::List::identity_for_item(vcx.tcx(), def_id);
 
                 match item.kind {
                     ty::AssocKind::Fn { .. } => {
@@ -252,7 +251,7 @@ impl TaskEncoder for TraitEnc {
                         let is_pure = crate::encoders::with_proc_spec(
                             SpecQuery::GetProcKind(
                                 def_id,
-                                ty::List::identity_for_item(vcx.tcx(), def_id),
+                                item_identity_substs,
                             ),
                             |spec| spec.kind.is_pure().unwrap_or_default(),
                         )
@@ -297,7 +296,7 @@ impl TaskEncoder for TraitEnc {
                             let pure_func = deps.require_dep::<FunctionCallEnc>(
                                 CallTaskDescription::new(
                                     def_id,
-                                    ty::List::identity_for_item(vcx.tcx(), def_id),
+                                    item_identity_substs,
                                     def_id,
                                 )
                                 .resolve_trait_calls(false),

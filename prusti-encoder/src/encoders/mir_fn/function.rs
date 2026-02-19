@@ -80,7 +80,7 @@ impl TaskEncoder for FunctionCallEnc {
                 && let Some(trait_def_id) = assoc_item.trait_container(vcx.tcx())
             {
                 let trait_item_def_id = assoc_item.def_id;
-                let trait_enc = deps.require_dep::<TraitEnc>(trait_def_id)?;
+                let trait_enc = deps.require_ref::<TraitEnc>(trait_def_id)?;
                 let assoc_enc = trait_enc.assoc_funcs.get(&trait_item_def_id).unwrap();
                 let function_ref = FunctionEncOutputRef {
                     caller_ref: assoc_enc.call_stub_pure_caller.unwrap(),

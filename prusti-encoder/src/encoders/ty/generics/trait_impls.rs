@@ -59,7 +59,7 @@ impl TaskEncoder for TraitImplEnc {
 
             let trait_ref = tcx.impl_trait_ref(task_key).unwrap().instantiate_identity();
             let trait_did = trait_ref.def_id;
-            let trait_data = deps.require_dep::<TraitEnc>(trait_did)?;
+            let trait_data = deps.require_ref::<TraitEnc>(trait_did)?;
             let trait_name = trait_data.trait_name;
 
             let args = deps.require_dep::<GArgsTyEnc>(GArgs::new(ctx, trait_ref.args))?;
@@ -140,7 +140,8 @@ impl TaskEncoder for TraitImplEnc {
                         ));
                     }
                     ty::AssocKind::Fn { .. } => {
-                        let assoc_fn = trait_data.assoc_funcs.get(&trait_item_def_id).unwrap();
+                        let trait_data_dep = deps.require_ref::<TraitEnc>(trait_did)?;
+                        let assoc_fn = trait_data_dep.assoc_funcs.get(&trait_item_def_id).unwrap();
                         let local_defs =
                             deps.require_dep::<MirLocalDefEnc>(MirLocalDefEncTask::Local {
                                 def_id: impl_item_def_id,

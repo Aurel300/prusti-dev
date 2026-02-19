@@ -74,7 +74,7 @@ impl TaskEncoder for MethodCallEnc {
                 && let Some(trait_def_id) = assoc_item.trait_container(vcx.tcx())
             {
                 let trait_item_def_id = assoc_item.def_id;
-                let trait_enc = deps.require_dep::<TraitEnc>(trait_def_id)?;
+                let trait_enc = deps.require_ref::<TraitEnc>(trait_def_id)?;
                 let assoc_enc = trait_enc.assoc_funcs.get(&trait_item_def_id).unwrap();
                 let method_ref = MethodEncOutputRef {
                     method_ref: assoc_enc.call_stub_impure.unwrap(),

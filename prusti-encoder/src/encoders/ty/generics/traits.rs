@@ -5,7 +5,7 @@ use prusti_rustc_interface::{
     middle::{mir, ty},
     span::def_id::DefId,
 };
-use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
+use task_encoder::{EncodeFullResult, OutputRefAny, TaskEncoder, TaskEncoderDependencies};
 use vir::{FunctionIdn, MethodIdn, vir_format_identifier};
 
 use crate::{
@@ -21,13 +21,15 @@ use crate::{
 pub struct TraitEnc;
 
 #[derive(Debug, Clone)]
-pub struct TraitData<'vir> {
+pub struct TraitEncOutputRef<'vir> {
     pub trait_name: &'vir str,
     pub assoc_types:
         HashMap<DefId, FunctionIdn<'vir, (vir::ManyTyVal, vir::ManyCSnap), vir::TyVal>>,
     pub assoc_funcs: HashMap<DefId, TraitAssocFnData<'vir>>,
     pub impl_fun: FunctionIdn<'vir, (vir::ManyTyVal, vir::ManyCSnap), vir::Bool>,
 }
+
+impl<'vir> OutputRefAny for TraitEncOutputRef<'vir> {}
 
 #[derive(Debug, Clone)]
 pub struct TraitAssocFnData<'vir> {
@@ -50,7 +52,7 @@ impl TaskEncoder for TraitEnc {
 
     type TaskDescription<'vir> = DefId;
 
-    type OutputFullDependency<'vir> = TraitData<'vir>;
+    type OutputRef<'vir> = TraitEncOutputRef<'vir>;
     type OutputFullLocal<'vir> = (
         vir::Domain<'vir>,
         Vec<vir::Function<'vir>>,
@@ -73,22 +75,25 @@ impl TaskEncoder for TraitEnc {
         task_key: &Self::TaskKey<'vir>,
         deps: &mut TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self> {
-        deps.emit_output_ref(*task_key, ())?;
         vir::with_vcx(|vcx| {
             let tcx = vcx.tcx();
             let trait_params = GParams::from(*task_key);
             let trait_generics = deps.require_dep::<GenericParamsEnc>(trait_params)?;
 
             let trait_name = vcx.alloc_str(tcx.item_name(task_key).as_str());
+
             let mut axioms = Vec::new();
             let mut funcs = Vec::new();
             let mut dom_funcs = Vec::new();
             let mut methods = Vec::new();
             let mut assoc_types = HashMap::new();
             let mut assoc_funcs = HashMap::new();
+
+            // First pass: we iterate over all the associated items to create
+            // function identifiers and as much of the domain as possible
+            // without causing cyclic dependencies.
             for item in tcx.associated_items(task_key).in_definition_order() {
                 let def_id = item.def_id;
-                let span = vcx.tcx().def_span(def_id);
 
                 // Prusti specifications on trait methods emit additional spec-
                 // only fn items (with default implementations). We need to
@@ -122,9 +127,7 @@ impl TaskEncoder for TraitEnc {
                         let arg_types =
                             vcx.alloc_slice(&local_defs.snap_ty_args().collect::<Vec<_>>());
                         let return_type = local_defs.snap_ty_return();
-                        let func_args = local_defs.local_decl_args().collect::<Vec<_>>();
                         let ref_args = vcx.alloc_slice(&vec![vir::TYPE_REF; arg_count]);
-                        let func_ret = local_defs.local_decl_ret();
 
                         let is_pure = crate::encoders::with_proc_spec(
                             SpecQuery::GetProcKind(
@@ -134,7 +137,6 @@ impl TaskEncoder for TraitEnc {
                             |spec| spec.kind.is_pure().unwrap_or_default(),
                         )
                         .unwrap_or_default();
-                        let has_body = is_function_with_body(vcx.tcx(), def_id);
 
                         let pre_func = FunctionIdn::new(
                             vir_format_identifier!(vcx, "{trait_name}_fn_pre_{item_name}"),
@@ -202,6 +204,68 @@ impl TaskEncoder for TraitEnc {
                         );
                         dom_funcs.push(vcx.mk_domain_function(pre_func, false, None));
                         dom_funcs.push(vcx.mk_domain_function(post_func, false, None));
+                    }
+                    ty::AssocKind::Const { .. } => (), // noop?
+                }
+            }
+            let impl_fun = FunctionIdn::new(
+                vir_format_identifier!(vcx, "impl_{trait_name}"),
+                (trait_generics.ty_args(), trait_generics.const_args()),
+                vir::TYPE_BOOL,
+            );
+            deps.emit_output_ref(*task_key, TraitEncOutputRef {
+                trait_name,
+                assoc_types,
+                assoc_funcs: assoc_funcs.clone(),
+                impl_fun,
+            })?;
+
+            // Second pass: we emit specifications etc that may cyclically
+            // depend on the functions and associated types in the trait.
+            for item in tcx.associated_items(task_key).in_definition_order() {
+                let def_id = item.def_id;
+                let span = vcx.tcx().def_span(def_id);
+
+                // Prusti specifications on trait methods emit additional spec-
+                // only fn items (with default implementations). We need to
+                // ignore these items.
+                if is_spec_fn(tcx, def_id) {
+                    continue;
+                }
+
+                // item_generics also includes parameters of trait itself
+                let item_params = GParams::from(def_id);
+                let item_generics = deps.require_dep::<GenericParamsEnc>(item_params)?;
+                let item_name = tcx.item_name(def_id);
+
+                match item.kind {
+                    ty::AssocKind::Fn { .. } => {
+                        let local_defs =
+                            deps.require_dep::<MirLocalDefEnc>(MirLocalDefEncTask::Local {
+                                def_id,
+                                all_locals: false,
+                            })?;
+                        let arg_count = local_defs.arg_count + 1;
+                        let func_args = local_defs.local_decl_args().collect::<Vec<_>>();
+                        let func_ret = local_defs.local_decl_ret();
+
+                        let is_pure = crate::encoders::with_proc_spec(
+                            SpecQuery::GetProcKind(
+                                def_id,
+                                ty::List::identity_for_item(vcx.tcx(), def_id),
+                            ),
+                            |spec| spec.kind.is_pure().unwrap_or_default(),
+                        )
+                        .unwrap_or_default();
+                        let has_body = is_function_with_body(vcx.tcx(), def_id);
+
+                        let TraitAssocFnData {
+                            pre_func,
+                            post_func,
+                            call_stub_impure,
+                            call_stub_pure_caller,
+                            call_stub_pure_function,
+                        } = assoc_funcs.get(&def_id).unwrap();
 
                         let spec = deps.require_dep_spanned::<MirSpecEnc>(
                             (def_id, def_id, MirSpecEncMode::PureWithoutResult),
@@ -378,15 +442,10 @@ impl TaskEncoder for TraitEnc {
                             ));
                         }
                     }
-                    ty::AssocKind::Const { .. } => (), // noop?
+                    _ => (),
                 }
             }
 
-            let impl_fun = FunctionIdn::new(
-                vir_format_identifier!(vcx, "impl_{trait_name}"),
-                (trait_generics.ty_args(), trait_generics.const_args()),
-                vir::TYPE_BOOL,
-            );
             dom_funcs.push(vcx.mk_domain_function(impl_fun, false, None));
 
             let trait_domain = vcx.mk_domain(
@@ -397,15 +456,7 @@ impl TaskEncoder for TraitEnc {
                 None,
             );
 
-            Ok((
-                (trait_domain, funcs, methods),
-                TraitData {
-                    trait_name,
-                    assoc_types,
-                    assoc_funcs,
-                    impl_fun,
-                },
-            ))
+            Ok(((trait_domain, funcs, methods), ()))
         })
     }
 }

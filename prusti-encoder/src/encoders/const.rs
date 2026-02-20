@@ -88,7 +88,6 @@ impl ConstEnc {
                     GlobalAlloc::VTable(_, _) => todo!(),
                     GlobalAlloc::Static(_) => todo!(),
                     GlobalAlloc::Memory(mem) => {
-                        let inner_ty = ty.builtin_deref(true).unwrap();
                         let (prov, offset) = ptr.prov_and_relative_offset();
                         let range = AllocRange {
                             start: offset,
@@ -96,12 +95,13 @@ impl ConstEnc {
                         };
                         // TODO: the unwrap can fail, e.g., for zero-sized types
                         let bytes = mem.0.read_scalar(&vcx.tcx(), range, false).unwrap();
-                        let addr_to_ref = deps.require_dep::<AddrUseEnc>(())?.ref_from_addr;
                         let alloc_id = prov.alloc_id().0;
                         let rel_addr = ((alloc_id.get() as u128) << 64) | offset.bytes() as u128;
 
+                        let addr_to_ref = deps.require_dep::<AddrUseEnc>(())?.ref_from_addr;
+                        let inner_ty = ty.builtin_deref(true).unwrap();
                         kind.expect_immref().prim_to_snap(
-                            (addr_to_ref)(
+                            addr_to_ref(
                                 vcx.mk_const_expr(vir::ConstData::Int(rel_addr))
                                     .downcast_ty(),
                             ),

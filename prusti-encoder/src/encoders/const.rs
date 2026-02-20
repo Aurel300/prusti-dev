@@ -87,7 +87,10 @@ impl ConstEnc {
                     GlobalAlloc::VTable(_, _) => todo!(),
                     GlobalAlloc::Static(_) => todo!(),
                     GlobalAlloc::Memory(mem) => {
+                        // If the `unwrap` ever panics we need a different way to get the inner type
+                        // let inner_ty = ty.builtin_deref(true).map(|t| t.ty).unwrap_or(ty);
                         let inner_ty = ty.builtin_deref(true).unwrap();
+                        // The unwrap after read_scalar could also fail - for example for zero-sized types
                         let bytes = mem
                             .0
                             .0

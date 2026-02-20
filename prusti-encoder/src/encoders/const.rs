@@ -89,21 +89,14 @@ impl ConstEnc {
                     GlobalAlloc::Static(_) => todo!(),
                     GlobalAlloc::Memory(mem) => {
                         let inner_ty = ty.builtin_deref(true).unwrap();
-                        // TODO: the unwrap below can fail, e.g., for zero-sized types
-                        let bytes = mem
-                            .0
-                            .0
-                            .read_scalar(
-                                &vcx.tcx(),
-                                AllocRange {
-                                    start: ptr.prov_and_relative_offset().1,
-                                    size: mem.0.0.size(),
-                                },
-                                false,
-                            )
-                            .unwrap();
-                        let addr_to_ref = deps.require_dep::<AddrUseEnc>(())?.ref_from_addr;
                         let (prov, offset) = ptr.prov_and_relative_offset();
+                        let range = AllocRange {
+                            start: offset,
+                            size: mem.0.size(),
+                        };
+                        // TODO: the unwrap can fail, e.g., for zero-sized types
+                        let bytes = mem.0.read_scalar(&vcx.tcx(), range, false).unwrap();
+                        let addr_to_ref = deps.require_dep::<AddrUseEnc>(())?.ref_from_addr;
                         let alloc_id = prov.alloc_id().0;
                         let rel_addr = ((alloc_id.get() as u128) << 64) | offset.bytes() as u128;
 

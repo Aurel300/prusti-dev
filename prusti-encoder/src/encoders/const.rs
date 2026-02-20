@@ -77,6 +77,7 @@ impl ConstEnc {
         vir::with_vcx(|vcx| {
             Ok(match val {
                 Scalar::Int(int) => {
+                    // TODO: this can also be the raw bytes of, e.g., a struct
                     let prim = kind.expect_primitive();
                     let val = int.to_bits(int.size());
                     let val = prim.expr_from_bits(ty, val);
@@ -87,10 +88,8 @@ impl ConstEnc {
                     GlobalAlloc::VTable(_, _) => todo!(),
                     GlobalAlloc::Static(_) => todo!(),
                     GlobalAlloc::Memory(mem) => {
-                        // If the `unwrap` ever panics we need a different way to get the inner type
-                        // let inner_ty = ty.builtin_deref(true).map(|t| t.ty).unwrap_or(ty);
                         let inner_ty = ty.builtin_deref(true).unwrap();
-                        // The unwrap after read_scalar could also fail - for example for zero-sized types
+                        // TODO: the unwrap below can fail, e.g., for zero-sized types
                         let bytes = mem
                             .0
                             .0

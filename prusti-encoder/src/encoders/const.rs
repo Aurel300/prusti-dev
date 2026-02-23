@@ -6,8 +6,10 @@ use prusti_rustc_interface::{
             interpret::{GlobalAlloc, Scalar},
         },
         ty,
+        ty::Value
     },
     span::{Span, def_id::DefId},
+    abi::HasDataLayout
 };
 use task_encoder::{EncodeFullError, EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 use vir::CastType;
@@ -59,6 +61,7 @@ impl ConstEnc {
                 Ok(params.const_expr(param))
             }
             ty::ConstKind::Value(val) => {
+                println!("{:?}", val.valtree);
                 let val = vir::with_vcx(|vcx| vcx.tcx().valtree_to_const_val(val));
                 Self::encode_const_val(deps, val, ty, context, None)
             }
@@ -89,17 +92,22 @@ impl ConstEnc {
                     GlobalAlloc::Static(_) => todo!(),
                     GlobalAlloc::Memory(mem) => {
                         let (prov, offset) = ptr.prov_and_relative_offset();
-                        let range = AllocRange {
-                            start: offset,
-                            size: mem.0.size(),
-                        };
+
+                        let inner_ty = ty.builtin_deref(true).unwrap();
+
                         // TODO: the unwrap can fail, e.g., for zero-sized types
-                        let bytes = mem.0.read_scalar(&vcx.tcx(), range, false).unwrap();
+                        let bytes = mem.0.read_scalar(
+                            &vcx.tcx(),
+                            AllocRange {
+                                start: offset,
+                                size: if inner_ty.is_any_ptr() { vcx.tcx().data_layout().pointer_size() } else { mem.0.size() }
+                            },
+                            inner_ty.is_any_ptr(),
+                        ).unwrap();
                         let alloc_id = prov.alloc_id().0;
                         let rel_addr = ((alloc_id.get() as u128) << 64) | offset.bytes() as u128;
 
                         let addr_to_ref = deps.require_dep::<AddrUseEnc>(())?.ref_from_addr;
-                        let inner_ty = ty.builtin_deref(true).unwrap();
                         kind.expect_immref().prim_to_snap(
                             addr_to_ref(
                                 vcx.mk_const_expr(vir::ConstData::Int(rel_addr))
@@ -170,13 +178,14 @@ impl TaskEncoder for ConstEnc {
                 const_,
                 ty,
                 context,
-            } => Self::encode_ty_const(deps, const_, ty, context)?,
+            } => {Self::encode_ty_const(deps, const_, ty, context)?},
             ConstEncTask::Mir {
                 const_,
                 encoding_depth,
                 def_id,
                 span,
             } => match const_ {
+                
                 mir::Const::Val(val, ty) => {
                     Self::encode_const_val(deps, val, ty, def_id.into(), Some(span))?
                 }
@@ -187,6 +196,7 @@ impl TaskEncoder for ConstEnc {
                             .const_eval_resolve(typing_env, uneval, vcx.tcx().def_span(def_id))
                     };
                     if let Ok(val) = resolved {
+                        println!("WELL {:?}", vcx.tcx().param_env(def_id).and(val));
                         Self::encode_const_val(deps, val, ty, def_id.into(), Some(span))
                     } else if let Some(promoted) = uneval.promoted {
                         let task = MirPureEncTask {

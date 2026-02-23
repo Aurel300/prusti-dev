@@ -61,7 +61,6 @@ impl ConstEnc {
                 Ok(params.const_expr(param))
             }
             ty::ConstKind::Value(val) => {
-                println!("{:?}", val.valtree);
                 let val = vir::with_vcx(|vcx| vcx.tcx().valtree_to_const_val(val));
                 Self::encode_const_val(deps, val, ty, context, None)
             }

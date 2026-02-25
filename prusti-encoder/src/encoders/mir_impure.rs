@@ -7,8 +7,8 @@ use pcg::{
         borrow_pcg_expansion::BorrowPcgExpansion,
         edge::{
             abstraction::{AbstractionEdge, FunctionCallOrLoop},
+            borrow_flow::BorrowFlowEdgeKind,
             kind::BorrowPcgEdgeKind,
-            outlives::BorrowFlowEdgeKind,
         },
         region_projection::PlaceOrConst,
         state::BorrowsState,

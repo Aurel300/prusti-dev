@@ -144,7 +144,12 @@ impl TaskEncoder for MirSpecEnc {
             let local_defs = deps.require_dep::<crate::encoders::local_def::MirLocalDefEnc>(
                 MirLocalDefEncTask::LocalSubsts {
                     def_id,
-                    substs,
+                    context_def_id,
+                    substs: if def_id == context_def_id {
+                        context_substs
+                    } else {
+                        substs
+                    },
                     all_locals: false,
                 },
             )?;

@@ -107,6 +107,7 @@ pub enum MirLocalDefEncTask<'vir> {
     },
     LocalSubsts {
         def_id: DefId,
+        context_def_id: DefId,
         substs: ty::GenericArgsRef<'vir>,
         all_locals: bool,
     },
@@ -167,6 +168,14 @@ impl<'vir> MirLocalDefEncTask<'vir> {
             MirLocalDefEncTask::ExternSpec(def_id) => def_id,
             MirLocalDefEncTask::Local { def_id, .. } => def_id,
             MirLocalDefEncTask::LocalSubsts { def_id, .. } => def_id,
+        }
+    }
+
+    fn context_def_id(self) -> DefId {
+        match self {
+            MirLocalDefEncTask::ExternSpec(def_id) => def_id,
+            MirLocalDefEncTask::Local { def_id, .. } => def_id,
+            MirLocalDefEncTask::LocalSubsts { context_def_id, .. } => context_def_id,
         }
     }
 }
@@ -261,7 +270,7 @@ impl TaskEncoder for MirLocalDefEnc {
                         } else {
                             sig.inputs()[local.index() - 1]
                         };
-                        let rust_ty_task = RustTyDecomposition::from_ty(rust_ty, task_key.def_id());
+                        let rust_ty_task = RustTyDecomposition::from_ty(rust_ty, task_key.context_def_id());
                         let ty = deps.require_dep::<TyUseImpureEnc>(rust_ty_task)?;
                         Ok(mk_local_def(vcx, local, ty))
                     })

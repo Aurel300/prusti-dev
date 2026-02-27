@@ -7,10 +7,7 @@ use crate::{
         MirLocalDefEnc, MirLocalDefEncTask, MirPureEnc, MirPureEncTask, MirSpecEnc, Pure, PureKind,
         mir_fn::{CallTaskDescription, RustSignature},
         pure::spec::MirSpecEncMode,
-        ty::generics::{
-            GArgCaster, GArgsCastEnc, GArgsTy, GArgsTyEnc, GParams, GenericParamsEnc,
-            traits::TraitEnc,
-        },
+        ty::generics::{GArgCaster, GArgsCastEnc, GArgsTy, GArgsTyEnc, GParams, GenericParamsEnc},
     },
     trait_support::is_function_with_body,
 };
@@ -74,23 +71,15 @@ impl TaskEncoder for FunctionCallEnc {
         deps: &mut TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self> {
         deps.emit_output_ref(*task_key, ())?;
-        let (callee_def_id, function_ref) = vir::with_vcx(|vcx| {
-            if task_key.resolve_trait_calls
-                && let Some(assoc_item) = vcx.tcx().opt_associated_item(task_key.callee)
-                && let Some(trait_def_id) = assoc_item.trait_container(vcx.tcx())
-            {
-                let trait_item_def_id = assoc_item.def_id;
-                let trait_enc = deps.require_ref::<TraitEnc>(trait_def_id)?;
-                let assoc_enc = trait_enc.assoc_funcs.get(&trait_item_def_id).unwrap();
-                let function_ref = FunctionEncOutputRef {
-                    caller_ref: assoc_enc.call_stub_pure_caller.unwrap(),
-                    function_ref: assoc_enc.call_stub_pure_function.unwrap(),
-                };
-                return Ok((trait_item_def_id, function_ref));
+        let (callee_def_id, assoc_enc) = task_key.trait_call(deps)?;
+        let function_ref = if let Some(assoc_enc) = assoc_enc {
+            FunctionEncOutputRef {
+                caller_ref: assoc_enc.call_stub_pure_caller.unwrap(),
+                function_ref: assoc_enc.call_stub_pure_function.unwrap(),
             }
-            let function_ref = deps.require_ref::<FunctionEnc>(task_key.callee)?;
-            Ok((task_key.callee, function_ref))
-        })?;
+        } else {
+            deps.require_ref::<FunctionEnc>(task_key.callee)?
+        };
         let signature = RustSignature::new(callee_def_id);
         let ty_args = deps.require_dep::<GArgsTyEnc>(task_key.gargs)?;
         let inputs = signature

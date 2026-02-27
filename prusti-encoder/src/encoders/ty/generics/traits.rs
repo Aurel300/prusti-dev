@@ -28,7 +28,7 @@ pub struct TraitEncOutputRef<'vir> {
 
 impl<'vir> OutputRefAny for TraitEncOutputRef<'vir> {}
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct TraitAssocFnData<'vir> {
     pub pre_func: FunctionIdn<'vir, (vir::ManySnap, vir::ManyTyVal, vir::ManyCSnap), vir::Bool>,
     pub post_func:

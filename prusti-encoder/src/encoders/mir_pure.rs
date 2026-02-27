@@ -25,7 +25,8 @@ use prusti_rustc_interface::{
     },
     span::{Span, def_id::DefId, source_map::Spanned},
 };
-use std::{collections::HashMap, fmt};
+use rustc_hash::FxHashMap;
+use std::fmt;
 use task_encoder::{EncodeFullError, EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 use vir::{CastType, CompType, add_debug_note};
 
@@ -170,7 +171,7 @@ impl TaskEncoder for MirPureEnc {
 #[derive(Debug, Default)]
 struct Update<'vir> {
     binds: Vec<UpdateBind<'vir>>,
-    versions: HashMap<mir::Local, Version<'vir>>,
+    versions: FxHashMap<mir::Local, Version<'vir>>,
 }
 
 #[derive(Debug)]
@@ -221,7 +222,7 @@ impl<'vir> Update<'vir> {
         }
     }
 
-    fn add_to_map(&self, curr_ver: &mut HashMap<mir::Local, Version<'vir>>) {
+    fn add_to_map(&self, curr_ver: &mut FxHashMap<mir::Local, Version<'vir>>) {
         for (local, ver) in &self.versions {
             curr_ver.insert(*local, *ver);
         }
@@ -263,7 +264,7 @@ impl<'vir> EncodedPlace<'vir> {
 
 impl<'vir: 'enc, 'enc> PureRvalueEnc<'vir> for Enc<'vir, 'enc> {
     type Encoder = MirPureEnc;
-    type EncodePlaceCtxt = HashMap<mir::Local, Version<'vir>>;
+    type EncodePlaceCtxt = FxHashMap<mir::Local, Version<'vir>>;
     type ExprCurr = ExprInput<'vir>;
     type ExprNext = vir::ExprKind<'vir>;
     fn def_id(&self) -> DefId {
@@ -293,7 +294,7 @@ impl<'vir: 'enc, 'enc> PureRvalueEnc<'vir> for Enc<'vir, 'enc> {
     fn encode_operand_snap(
         &mut self,
         operand: &mir::Operand<'vir>,
-        curr_ver: &HashMap<mir::Local, Version<'vir>>,
+        curr_ver: &FxHashMap<mir::Local, Version<'vir>>,
     ) -> Result<ExprRet<'vir>, EncodeFullError<'vir, Self::Encoder>> {
         Ok(match operand {
             mir::Operand::Copy(place) | mir::Operand::Move(place) => {
@@ -444,7 +445,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
         &mut self,
         tuple_ref: &crate::encoders::ViperTupleEncOutput<'vir>,
         mod_locals: &[mir::Local],
-        curr_ver: &HashMap<mir::Local, Version<'vir>>,
+        curr_ver: &FxHashMap<mir::Local, Version<'vir>>,
         update: Option<Update<'vir>>,
     ) -> ExprRet<'vir> {
         update
@@ -501,7 +502,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
 
     fn encode_cfg(
         &mut self,
-        curr_ver: &HashMap<mir::Local, Version<'vir>>,
+        curr_ver: &FxHashMap<mir::Local, Version<'vir>>,
         curr: mir::BasicBlock,
         join_point: mir::BasicBlock,
     ) -> Result<Option<Update<'vir>>, EncodeFullError<'vir, MirPureEnc>> {
@@ -790,7 +791,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
 
     fn encode_stmt(
         &mut self,
-        curr_ver: &HashMap<mir::Local, Version<'vir>>,
+        curr_ver: &FxHashMap<mir::Local, Version<'vir>>,
         stmt: &mir::Statement<'vir>,
         location: mir::Location,
     ) -> Result<Update<'vir>, EncodeFullError<'vir, MirPureEnc>> {
@@ -817,7 +818,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
 
     fn encode_rvalue(
         &mut self,
-        curr_ver: &HashMap<mir::Local, Version<'vir>>,
+        curr_ver: &FxHashMap<mir::Local, Version<'vir>>,
         rvalue: &mir::Rvalue<'vir>,
         span: Span,
     ) -> Result<ExprRet<'vir>, EncodeFullError<'vir, MirPureEnc>> {
@@ -902,7 +903,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
 
     fn encode_place_element(
         &mut self,
-        curr_ver: &HashMap<mir::Local, Version<'vir>>,
+        curr_ver: &FxHashMap<mir::Local, Version<'vir>>,
         place_ty: mir::PlaceTy<'vir>,
         elem: mir::PlaceElem<'vir>,
         encoded_place: EncodedPlace<'vir>,
@@ -988,7 +989,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
 
     fn encode_place_with_ref(
         &mut self,
-        curr_ver: &HashMap<mir::Local, Version<'vir>>,
+        curr_ver: &FxHashMap<mir::Local, Version<'vir>>,
         place: Place<'vir>,
     ) -> EncodedPlace<'vir> {
         // TODO: remove (debug)
@@ -1044,7 +1045,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
         &mut self,
         bin_op: vir::BinOpKind,
         args: &[Spanned<mir::Operand<'vir>>],
-        curr_ver: &HashMap<mir::Local, Version<'vir>>,
+        curr_ver: &FxHashMap<mir::Local, Version<'vir>>,
     ) -> Result<
         vir::ExprGenCSnap<'vir, ExprInput<'vir>, vir::ExprKind<'vir>>,
         EncodeFullError<'vir, MirPureEnc>,
@@ -1067,7 +1068,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
         &mut self,
         bin_op: vir::BinOpKind,
         args: &[Spanned<mir::Operand<'vir>>],
-        curr_ver: &HashMap<mir::Local, Version<'vir>>,
+        curr_ver: &FxHashMap<mir::Local, Version<'vir>>,
     ) -> Result<
         vir::ExprGenCSnap<'vir, ExprInput<'vir>, vir::ExprKind<'vir>>,
         EncodeFullError<'vir, MirPureEnc>,
@@ -1110,7 +1111,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
         _sig: Binder<'vir, FnSig<'vir>>,
         arg_tys: ty::GenericArgsRef<'vir>,
         args: &[Spanned<mir::Operand<'vir>>],
-        curr_ver: &HashMap<mir::Local, Version<'vir>>,
+        curr_ver: &FxHashMap<mir::Local, Version<'vir>>,
     ) -> Result<ExprRet<'vir>, EncodeFullError<'vir, MirPureEnc>> {
         #[derive(Debug, PartialEq, Eq)]
         enum PrustiBuiltin {

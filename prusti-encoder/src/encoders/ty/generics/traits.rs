@@ -1,10 +1,9 @@
-use std::collections::HashMap;
-
 use prusti_interface::specs::{is_spec_fn, specifications::SpecQuery};
 use prusti_rustc_interface::{
     middle::{mir, ty},
     span::def_id::DefId,
 };
+use rustc_hash::FxHashMap;
 use task_encoder::{EncodeFullResult, OutputRefAny, TaskEncoder, TaskEncoderDependencies};
 use vir::{FunctionIdn, MethodIdn, vir_format_identifier};
 
@@ -21,8 +20,8 @@ pub struct TraitEnc;
 pub struct TraitEncOutputRef<'vir> {
     pub trait_name: &'vir str,
     pub assoc_types:
-        HashMap<DefId, FunctionIdn<'vir, (vir::ManyTyVal, vir::ManyCSnap), vir::TyVal>>,
-    pub assoc_funcs: HashMap<DefId, TraitAssocFnData<'vir>>,
+        FxHashMap<DefId, FunctionIdn<'vir, (vir::ManyTyVal, vir::ManyCSnap), vir::TyVal>>,
+    pub assoc_funcs: FxHashMap<DefId, TraitAssocFnData<'vir>>,
     pub impl_fun: FunctionIdn<'vir, (vir::ManyTyVal, vir::ManyCSnap), vir::Bool>,
 }
 
@@ -83,8 +82,8 @@ impl TaskEncoder for TraitEnc {
             let mut funcs = Vec::new();
             let mut dom_funcs = Vec::new();
             let mut methods = Vec::new();
-            let mut assoc_types = HashMap::new();
-            let mut assoc_funcs = HashMap::new();
+            let mut assoc_types = FxHashMap::default();
+            let mut assoc_funcs = FxHashMap::default();
 
             // First pass: we iterate over all the associated items to create
             // function identifiers and as much of the domain as possible

@@ -11,7 +11,7 @@ use crate::encoders::{
     ty::{
         RustTyDecomposition,
         data::TySpecifics,
-        generics::{GArgsTyEnc, GParamVariant, traits::TraitEnc},
+        generics::{GArgs, GArgsTyEnc, GParamVariant, traits::TraitEnc},
         lifted::TyConstructorEnc,
     },
 };
@@ -266,28 +266,12 @@ impl<'vir> GenericParams<'vir> {
                     let tcx = vcx.tcx();
                     let trait_did = tcx.associated_item(alias.def_id).container_id(tcx);
                     let trait_data = deps.require_ref::<TraitEnc>(trait_did).unwrap();
-                    /*
-                    let args = deps.require_dep::<GArgsTyEnc>(ty.args).unwrap();
+                    let args = GArgs::new(ty.args.context, alias.args);
+                    let args = deps.require_dep::<GArgsTyEnc>(args).unwrap();
                     (trait_data.assoc_types.get(&alias.def_id).unwrap())(
                         args.get_ty(),
                         args.get_const(),
                     )
-                    */
-
-
-                    let tys = &alias
-                        .args
-                        .iter()
-                        .map(|arg| match arg.expect_ty().kind() {
-                            ty::TyKind::Param(p) => self.ty_exprs[self.map_idx(p.index).unwrap()],
-                            _ => self.ty_expr(
-                                deps,
-                                RustTyDecomposition::from_ty(arg.expect_ty(), ty.args.context),
-                            ),
-                        })
-                        .collect::<Vec<_>>();
-                    (trait_data.assoc_types.get(&alias.def_id).unwrap())(tys, &[])
-
                 }),
             };
         }

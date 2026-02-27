@@ -1,5 +1,3 @@
-use std::iter;
-
 use prusti_interface::{PrustiError, specs::specifications::SpecQuery};
 use prusti_rustc_interface::{
     middle::{mir, ty},
@@ -10,10 +8,15 @@ use vir::{Domain, Method, MethodIdn, vir_format_identifier};
 
 use crate::{
     encoders::{
-        FunctionCallEnc, MirLocalDefEnc, MirLocalDefEncTask, MirSpecEnc, Pure, mir_fn::{CallTaskDescription, RustSignature}, pure::spec::MirSpecEncMode, ty::{
+        FunctionCallEnc, MirLocalDefEnc, MirLocalDefEncTask, MirSpecEnc, Pure,
+        mir_fn::{CallTaskDescription, RustSignature},
+        pure::spec::MirSpecEncMode,
+        ty::{
             RustTyDecomposition,
-            generics::{GArgs, GArgsCastEnc, GArgsTyEnc, GParams, GenericParamsEnc, traits::TraitEnc},
-        }
+            generics::{
+                GArgs, GArgsCastEnc, GArgsTyEnc, GParams, GenericParamsEnc, traits::TraitEnc,
+            },
+        },
     },
     trait_support::is_function_with_body,
 };
@@ -69,14 +72,14 @@ impl TaskEncoder for TraitImplEnc {
             let implementing_ty = implementing_ty.ty.name();
 
             let impl_fun = trait_data.impl_fun;
-            let trait_ty_decls = params.ty_decls().to_vec();
-            let trait_const_decls = params.const_decls().to_vec();
+            let trait_ty_decls = params.ty_decls();
+            let trait_const_decls = params.const_decls();
             let trait_tys = args.get_ty();
             let trait_consts = args.get_const();
 
             axioms.push(vcx.mk_domain_axiom(
                 vir_format_identifier!(vcx, "{trait_name}_impl_{implementing_ty}_{idx}_does_impl"),
-                vir::expr! {forall ..[trait_ty_decls] :: {[impl_fun(trait_tys, trait_consts)]} [impl_fun(trait_tys, trait_consts)]},
+                vir::expr! {forall ..[trait_ty_decls], ..[trait_const_decls] :: {[impl_fun(trait_tys, trait_consts)]} [impl_fun(trait_tys, trait_consts)]},
             ));
 
             for impl_item in tcx.associated_items(task_key).in_definition_order() {
@@ -96,29 +99,24 @@ impl TaskEncoder for TraitImplEnc {
                     .require_dep::<GenericParamsEnc>(impl_item_params)
                     .unwrap();
 
-                let assoc_ty_decls = assoc_params.ty_decls();
-                let assoc_const_decls = assoc_params.const_decls();
+                let (param_ty_len, param_const_len) =
+                    (params.ty_exprs().len(), params.const_exprs().len());
 
                 // Combine substituted trait ty decls with the decls of the associated type
-                let mut trait_ty_decls = trait_ty_decls.clone();
-                trait_ty_decls.extend_from_slice(&assoc_ty_decls[params.ty_exprs().len()..]);
-                let mut trait_const_decls = trait_const_decls.clone();
-                trait_const_decls
-                    .extend_from_slice(&assoc_const_decls[params.const_exprs().len()..]);
+                let trait_ty_decls =
+                    [trait_ty_decls, &assoc_params.ty_decls()[param_ty_len..]].concat();
+                let trait_const_decls = [
+                    trait_const_decls,
+                    &assoc_params.const_decls()[param_const_len..],
+                ]
+                .concat();
 
                 // Combine substituted trait params with the params of the associated type
-                let trait_tys = vcx.alloc_slice(
-                    &iter::empty()
-                        .chain(args.get_ty().to_owned())
-                        .chain(assoc_params.ty_exprs()[params.ty_exprs().len()..].to_owned())
-                        .collect::<Vec<_>>(),
-                );
-                let trait_consts = vcx.alloc_slice(
-                    &iter::empty()
-                        .chain(args.get_const().to_owned())
-                        .chain(assoc_params.const_exprs()[params.const_exprs().len()..].to_owned())
-                        .collect::<Vec<_>>(),
-                );
+                let trait_tys = &[trait_tys, &assoc_params.ty_exprs()[param_ty_len..]].concat();
+                let trait_tys = vcx.alloc_slice(&trait_tys);
+                let trait_consts =
+                    &[trait_consts, &assoc_params.const_exprs()[param_const_len..]].concat();
+                let trait_consts = vcx.alloc_slice(&trait_consts);
 
                 match impl_item.kind {
                     ty::AssocKind::Type { .. } => {

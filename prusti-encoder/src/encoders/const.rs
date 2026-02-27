@@ -15,7 +15,7 @@ use vir::CastType;
 
 use crate::encoders::{
     MirPureEnc, MirPureEncTask, PureKind,
-    addr::AddrUseEnc,
+    addr::RefDataEnc,
     ty::{
         RustTyDecomposition,
         generics::{GParams, GenericParamsEnc},
@@ -78,9 +78,11 @@ impl ConstEnc {
         vir::with_vcx(|vcx| {
             Ok(match val {
                 Scalar::Int(int) => {
-                    // TODO: Aggregates like str will also show up as scalars (because the first value is a scalar)
-                    // This means that the scalar doesn't contain all the data and that it doesn't match the type of ty, which will lead to a panic.
-                    // We would have to encode these by looking at the memory layout and iterating over the individual fields
+                    // TODO: Aggregates like structs will also show up as scalars
+                    // This means that the scalar doesn't contain all the data
+                    // and that it doesn't match the type of ty, which will lead
+                    // to a panic. We would have to encode these by looking at
+                    // the memory layout and iterating over the individual fields
                     let prim = kind.expect_primitive();
                     let val = int.to_bits(int.size());
                     let val = prim.expr_from_bits(ty, val);
@@ -116,7 +118,7 @@ impl ConstEnc {
                         let alloc_id = prov.alloc_id().0;
                         let rel_addr = ((alloc_id.get() as u128) << 64) | offset.bytes() as u128;
 
-                        let addr_to_ref = deps.require_dep::<AddrUseEnc>(())?.ref_from_addr;
+                        let addr_to_ref = deps.require_dep::<RefDataEnc>(())?.addr_to_ref;
                         kind.expect_immref().prim_to_snap(
                             addr_to_ref(
                                 vcx.mk_const_expr(vir::ConstData::Int(rel_addr))

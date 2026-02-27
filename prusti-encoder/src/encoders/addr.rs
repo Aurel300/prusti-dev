@@ -1,23 +1,26 @@
 use task_encoder::TaskEncoder;
 use vir::{Function, FunctionIdn, ViperIdent};
 
-pub struct AddrUseEnc;
+/// Encodes the `Int` to `Ref` function to construct a reference from an address. In
+/// the future this will also likely include a second `Int` tag argument
+/// (from SB or TB) and inverse functions for both.
+pub struct RefDataEnc;
 
 #[derive(Debug, Clone)]
-pub struct AddrUse<'vir> {
-    pub ref_from_addr: vir::FunctionIdn<'vir, vir::Int, vir::Ref>,
+pub struct RefData<'vir> {
+    pub addr_to_ref: vir::FunctionIdn<'vir, vir::Int, vir::Ref>,
 }
 
 #[derive(Debug, Clone)]
-pub struct AddrLocal<'vir> {
-    pub ref_from_addr: Function<'vir>,
+pub struct RefDataLocal<'vir> {
+    addr_to_ref_fn: Function<'vir>,
 }
 
-impl TaskEncoder for AddrUseEnc {
-    task_encoder::encoder_cache!(AddrUseEnc);
+impl TaskEncoder for RefDataEnc {
+    task_encoder::encoder_cache!(RefDataEnc);
     type TaskDescription<'vir> = ();
-    type OutputFullLocal<'vir> = AddrLocal<'vir>;
-    type OutputFullDependency<'vir> = AddrUse<'vir>;
+    type OutputFullLocal<'vir> = RefDataLocal<'vir>;
+    type OutputFullDependency<'vir> = RefData<'vir>;
 
     type TaskKey<'vir> = Self::TaskDescription<'vir>;
 
@@ -27,27 +30,20 @@ impl TaskEncoder for AddrUseEnc {
         task_key: &Self::TaskKey<'vir>,
         deps: &mut task_encoder::TaskEncoderDependencies<'vir, Self>,
     ) -> task_encoder::EncodeFullResult<'vir, Self> {
-        let ref_from_addr = FunctionIdn::new(
-            ViperIdent::new("ref_from_addr"),
-            vir::TYPE_INT,
-            vir::TYPE_REF,
-        );
         deps.emit_output_ref(*task_key, ())?;
-        Ok((
-            AddrLocal {
-                ref_from_addr: vir::with_vcx(|vcx| {
-                    let arg_decl = vcx.mk_local_decl("arg", vir::TYPE_INT);
-                    vcx.mk_function(ref_from_addr, (arg_decl,), &[], &[], None, None)
-                }),
-            },
-            AddrUse { ref_from_addr },
-        ))
+        let addr_to_ref =
+            FunctionIdn::new(ViperIdent::new("addr_to_ref"), vir::TYPE_INT, vir::TYPE_REF);
+        let addr_to_ref_fn = vir::with_vcx(|vcx| {
+            let arg_decl = vcx.mk_local_decl("arg", vir::TYPE_INT);
+            vcx.mk_function(addr_to_ref, (arg_decl,), &[], &[], None, None)
+        });
+        Ok((RefDataLocal { addr_to_ref_fn }, RefData { addr_to_ref }))
     }
 
     fn emit_outputs<'vir>(program: &mut task_encoder::Program<'vir>) {
-        let outputs = AddrUseEnc::all_outputs_local_no_errors();
+        let outputs = RefDataEnc::all_outputs_local_no_errors();
         for output in outputs {
-            program.add_function(output.ref_from_addr);
+            program.add_function(output.addr_to_ref_fn);
         }
     }
 }

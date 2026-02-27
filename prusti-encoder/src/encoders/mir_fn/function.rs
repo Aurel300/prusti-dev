@@ -212,55 +212,39 @@ impl TaskEncoder for FunctionEnc {
                 Some(expr)
             };
 
-            // TODO: type preconditions do not currently work
-            /*
-            let arg_type_assertions = local_defs.args().map(|arg| {
-                let snap = vcx.mk_local_ex(arg.local_snap);
-                generics.ty_assertion(deps, snap, arg.rust_ty)
-            }).collect::<Vec<_>>();
-            */
-
             tracing::debug!("finished {def_id:?}");
 
-            let mut pres = Vec::new(); // arg_type_assertions;
-            pres.extend(spec.pres);
-
-            // TODO: type preconditions do not currently work
-            /*
-            let ret = local_defs.ret();
-            let snap = vcx.mk_result(ret.local_snap.ty());
-            let ret_type_assertions = generics.ty_assertion(deps, snap, ret.rust_ty);
-            */
-            let mut posts = Vec::new(); // vec![ret_type_assertions];
-            posts.extend(spec.posts.into_iter().map(|post| {
+            let posts = spec.posts.into_iter().map(|post| {
                 // use inhale-exhale expression to prevent viper checking that
                 // the function body expression satisfies the postcondition:
                 // that's checked in the method encoding of this function.
                 vcx.mk_inhale_exhale_expr(post, vcx.mk_bool::<true>())
-            }));
+            }).collect::<Vec<_>>();
+            let posts = vcx.alloc_slice(&posts);
 
             let func_args = local_defs.local_decl_args().collect::<Vec<_>>();
-            let wrapped_call = function_ref.call()(
-                &func_args
+            let wrapped_call_args = func_args
                     .iter()
                     .map(|arg| vcx.mk_local_ex(arg))
-                    .collect::<Vec<_>>(),
+                    .collect::<Vec<_>>();
+            let wrapped_call = function_ref.call()(
+                &wrapped_call_args,
                 generics.ty_exprs(),
                 generics.const_exprs(),
             );
             let caller = vcx.mk_function(
                 caller_ref,
                 (&func_args, generics.ty_decls(), generics.const_decls()),
-                vcx.alloc_slice(&pres),
-                vcx.alloc_slice(&posts),
-                expr.is_none().then_some(&vir::DecreasesGenData::Star),
+                vcx.alloc_slice(&spec.pres),
+                posts,
+                None,
                 Some(wrapped_call),
             );
             let function = vcx.mk_function(
                 function_ref,
                 (&func_args, generics.ty_decls(), generics.const_decls()),
-                &[], // vcx.alloc_slice(&pres),
-                vcx.alloc_slice(&posts),
+                &[],
+                posts,
                 expr.is_none().then_some(&vir::DecreasesGenData::Star),
                 expr,
             );

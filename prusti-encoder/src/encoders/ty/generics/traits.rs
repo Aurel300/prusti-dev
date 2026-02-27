@@ -263,7 +263,7 @@ impl TaskEncoder for TraitEnc {
                             call_stub_impure,
                             call_stub_pure_caller,
                             call_stub_pure_function,
-                        } = assoc_funcs.get(&def_id).unwrap();
+                        } = assoc_funcs[&def_id];
 
                         let spec = deps.require_dep_spanned::<MirSpecEnc>(
                             (def_id, def_id, MirSpecEncMode::PureWithoutResult),

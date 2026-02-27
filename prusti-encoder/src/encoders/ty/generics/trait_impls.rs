@@ -120,7 +120,7 @@ impl TaskEncoder for TraitImplEnc {
 
                 match impl_item.kind {
                     ty::AssocKind::Type { .. } => {
-                        let assoc_type = trait_data.assoc_types.get(&trait_item_def_id).unwrap();
+                        let assoc_type = trait_data.assoc_types[&trait_item_def_id];
 
                         // the type we want to resolve the type alias to
                         let assoc_type_expr = assoc_params.ty_expr(
@@ -137,7 +137,7 @@ impl TaskEncoder for TraitImplEnc {
                     }
                     ty::AssocKind::Fn { .. } => {
                         let trait_data_dep = deps.require_ref::<TraitEnc>(trait_did)?;
-                        let assoc_fn = trait_data_dep.assoc_funcs.get(&trait_item_def_id).unwrap();
+                        let assoc_fn = trait_data_dep.assoc_funcs[&trait_item_def_id];
                         let local_defs =
                             deps.require_dep::<MirLocalDefEnc>(MirLocalDefEncTask::Local {
                                 def_id: impl_item_def_id,

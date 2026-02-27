@@ -3,7 +3,6 @@ use task_encoder::{EncodeFullResult, EncodeFullError, TaskEncoder, TaskEncoderDe
 use prusti_rustc_interface::type_ir::TypeVisitableExt;
 use vir::{CastType, Reify};
 
-
 use crate::encoders::{TyUseImpureEnc, ty::RustTyDecomposition};
 
 use super::{data::TySpecifics, use_pure::TyUsePureEnc};
@@ -135,7 +134,7 @@ impl TaskEncoder for IndirectPredicatesEnc {
                         match new_projection {
                             Some(new_projection) => {
                                 let field_indirect =
-                                deps.require_dep::<IndirectPredicatesEnc>(new_projection)?;
+                                    deps.require_dep::<IndirectPredicatesEnc>(new_projection)?;
                                 predicate_applications.extend(
                                     field_indirect
                                         .predicate_applications
@@ -149,7 +148,10 @@ impl TaskEncoder for IndirectPredicatesEnc {
                                 // Check if it could be nested inside a type arg (e.g. Box<&'r mut i32>),
                                 // which we don't support. If so, return an encoding error rather than
                                 // silently producing an incomplete contract.
-                                if field_ty.args.args().iter()
+                                if field_ty
+                                    .args
+                                    .args()
+                                    .iter()
                                     .filter_map(|arg| arg.as_type())
                                     .any(|ty| ty.has_free_regions())
                                 {

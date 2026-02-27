@@ -54,32 +54,32 @@ impl TaskEncoder for TraitImplEnc {
             let all_impls = tcx.trait_impls_in_crate(task_key.krate);
             let idx = all_impls.iter().position(|did| did == task_key).unwrap();
 
-            let ctx = GParams::from(*task_key);
-            let params = deps.require_dep::<GenericParamsEnc>(ctx)?;
+            let impl_context = GParams::from(*task_key);
+            let impl_params = deps.require_dep::<GenericParamsEnc>(impl_context)?;
 
             let trait_ref = tcx.impl_trait_ref(task_key).unwrap().instantiate_identity();
             let trait_did = trait_ref.def_id;
             let trait_data = deps.require_ref::<TraitEnc>(trait_did)?;
             let trait_name = trait_data.trait_name;
 
-            let args = deps.require_dep::<GArgsTyEnc>(GArgs::new(ctx, trait_ref.args))?;
+            let args = deps.require_dep::<GArgsTyEnc>(GArgs::new(impl_context, trait_ref.args))?;
 
             let mut axioms = Vec::new();
             let mut methods = Vec::new();
 
             let implementing_ty = tcx.type_of(task_key).instantiate_identity();
-            let implementing_ty = RustTyDecomposition::from_ty(implementing_ty, *task_key);
+            let implementing_ty = RustTyDecomposition::from_ty(implementing_ty, impl_context);
             let implementing_ty = implementing_ty.ty.name();
 
             let impl_fun = trait_data.impl_fun;
-            let trait_ty_decls = params.ty_decls();
-            let trait_const_decls = params.const_decls();
+            let impl_ty_decls = impl_params.ty_decls();
+            let impl_const_decls = impl_params.const_decls();
             let trait_tys = args.get_ty();
             let trait_consts = args.get_const();
 
             axioms.push(vcx.mk_domain_axiom(
                 vir_format_identifier!(vcx, "{trait_name}_impl_{implementing_ty}_{idx}_does_impl"),
-                vir::expr! {forall ..[trait_ty_decls], ..[trait_const_decls] :: {[impl_fun(trait_tys, trait_consts)]} [impl_fun(trait_tys, trait_consts)]},
+                vir::expr! {forall ..[impl_ty_decls], ..[impl_const_decls] :: {[impl_fun(trait_tys, trait_consts)]} [impl_fun(trait_tys, trait_consts)]},
             ));
 
             for impl_item in tcx.associated_items(task_key).in_definition_order() {
@@ -94,40 +94,49 @@ impl TaskEncoder for TraitImplEnc {
                 // parameters of the associated type are kept
 
                 // parameters of assoc item include already substituted arguments
-                let impl_item_params = GParams::from(impl_item_def_id);
-                let assoc_params = deps
-                    .require_dep::<GenericParamsEnc>(impl_item_params)
+                let impl_item_context = GParams::from(impl_item_def_id);
+                let impl_item_params = deps
+                    .require_dep::<GenericParamsEnc>(impl_item_context)
                     .unwrap();
 
-                let (param_ty_len, param_const_len) =
-                    (params.ty_exprs().len(), params.const_exprs().len());
+                // The ty and const decls of the trait items are the decls of
+                // the item itself prefixed by the decls of the impl itself.
+                assert_eq!(impl_ty_decls, &impl_item_params.ty_decls()[..impl_ty_decls.len()]);
+                let trait_ty_decls = impl_item_params.ty_decls();
+                assert_eq!(impl_const_decls, &impl_item_params.const_decls()[..impl_const_decls.len()]);
+                let trait_const_decls = impl_item_params.const_decls();
 
-                // Combine substituted trait ty decls with the decls of the associated type
-                let trait_ty_decls =
-                    [trait_ty_decls, &assoc_params.ty_decls()[param_ty_len..]].concat();
-                let trait_const_decls = [
-                    trait_const_decls,
-                    &assoc_params.const_decls()[param_const_len..],
-                ]
-                .concat();
+                // Combine the args to the trait in the impl and the identity
+                // args for the item itself. That is, for:
+                // ```
+                // trait MyTrait<'a, A> { fn foo<'b, B>() {} }
+                // impl<T> MyTrait<'static, (T, bool)> for MyType {
+                //     fn foo<'b, B>() {}
+                // }
+                // ```
+                // The `trait_item_context` of `foo` is `<Self, 'a, A, 'b, B>`
+                // and we combine the identity suffix of this with the args to
+                // the trait to get: `<MyType, 'static, (T, bool), 'b, B>`.
+                let trait_item_context = GParams::from(trait_item_def_id);
+                let item_args = &trait_item_context.rust_params()[trait_ref.args.len()..];
+                let args = trait_ref.args.iter().chain(item_args.iter().copied());
+                let args = tcx.mk_args_from_iter(args);
+                let impl_item_args = GArgs::new(impl_item_context, args);
+                let args = deps.require_dep::<GArgsTyEnc>(impl_item_args)?;
 
-                // Combine substituted trait params with the params of the associated type
-                let trait_tys = &[trait_tys, &assoc_params.ty_exprs()[param_ty_len..]].concat();
-                let trait_tys = vcx.alloc_slice(&trait_tys);
-                let trait_consts =
-                    &[trait_consts, &assoc_params.const_exprs()[param_const_len..]].concat();
-                let trait_consts = vcx.alloc_slice(&trait_consts);
+                let trait_tys = args.get_ty();
+                let trait_consts = args.get_const();
 
                 match impl_item.kind {
                     ty::AssocKind::Type { .. } => {
                         let assoc_type = trait_data.assoc_types[&trait_item_def_id];
 
                         // the type we want to resolve the type alias to
-                        let assoc_type_expr = assoc_params.ty_expr(
+                        let assoc_type_expr = impl_item_params.ty_expr(
                             deps,
                             RustTyDecomposition::from_ty(
                                 tcx.type_of(impl_item_def_id).instantiate_identity(),
-                                impl_item_params,
+                                impl_item_context,
                             ),
                         );
                         axioms.push(vcx.mk_domain_axiom(
@@ -146,7 +155,6 @@ impl TaskEncoder for TraitImplEnc {
                         let arg_count = local_defs.arg_count + 1;
                         //let arg_types = vcx.alloc_slice(&local_defs.snap_ty_args().collect::<Vec<_>>());
                         //let return_type = local_defs.snap_ty_return();
-                        let generics = deps.require_dep::<GenericParamsEnc>(impl_item_params)?;
                         let func_args = local_defs.local_decl_args().collect::<Vec<_>>();
                         let ref_args = vcx.alloc_slice(&vec![vir::TYPE_REF; arg_count]);
                         let func_ret = local_defs.local_decl_ret();
@@ -184,8 +192,6 @@ impl TaskEncoder for TraitImplEnc {
                         let pres = vcx.mk_conj(&impl_item_spec.pres);
 
                         let signature = RustSignature::new(trait_item_def_id);
-                        let gargs = GArgs::new(impl_item_params, trait_ref.args);
-                        // TODO: trait_ref.args here is probably insufficient: what if the method itself is generic?
 
                         let pre_func_call = assoc_fn.pre_func.call()(
                             vcx.alloc_slice(
@@ -193,7 +199,7 @@ impl TaskEncoder for TraitImplEnc {
                                     .iter()
                                     .zip(signature.inputs)
                                     .map(|(arg, ty)| {
-                                        let normalized = ty.decompose_compare_normalize(impl_item_params, gargs);
+                                        let normalized = ty.decompose_compare_normalize(trait_item_context, impl_item_args);
                                         let caster = deps.require_dep::<GArgsCastEnc<Pure>>(normalized).unwrap();
                                         caster.cast_to_callee_ctx(vcx.mk_local_ex(arg))
                                     })
@@ -228,7 +234,7 @@ impl TaskEncoder for TraitImplEnc {
                                     .zip(signature.inputs)
                                     .map(|(arg, ty)| {
                                         // TODO: test if this works
-                                        let normalized = ty.decompose_compare_normalize(impl_item_params, gargs);
+                                        let normalized = ty.decompose_compare_normalize(trait_item_context, impl_item_args);
                                         let caster = deps.require_dep::<GArgsCastEnc<Pure>>(normalized).unwrap();
                                         caster.cast_to_callee_ctx(vcx.mk_local_ex(arg))
                                     })
@@ -241,7 +247,7 @@ impl TaskEncoder for TraitImplEnc {
                         let posts = vcx.mk_conj(&posts);
                         let post_func_call = assoc_fn.post_func.call()(
                             {
-                                let normalized = signature.output.decompose_compare_normalize(impl_item_params, gargs);
+                                let normalized = signature.output.decompose_compare_normalize(trait_item_context, impl_item_args);
                                 let caster = deps.require_dep::<GArgsCastEnc<Pure>>(normalized).unwrap();
                                 caster.cast_to_callee_ctx(vcx.mk_local_ex(func_ret))
                             },
@@ -250,7 +256,7 @@ impl TaskEncoder for TraitImplEnc {
                                     .iter()
                                     .zip(signature.inputs)
                                     .map(|(arg, ty)| {
-                                        let normalized = ty.decompose_compare_normalize(impl_item_params, gargs);
+                                        let normalized = ty.decompose_compare_normalize(trait_item_context, impl_item_args);
                                         let caster = deps.require_dep::<GArgsCastEnc<Pure>>(normalized).unwrap();
                                         caster.cast_to_callee_ctx(vcx.mk_local_ex(arg))
                                     })
@@ -280,7 +286,7 @@ impl TaskEncoder for TraitImplEnc {
                         )?;
 
                         let mut pre_weaken_pres = Vec::new();
-                        let mut args = Vec::with_capacity(arg_count + impl_item_params.count());
+                        let mut args = Vec::with_capacity(arg_count + impl_item_context.count());
                         for arg_idx in (0..arg_count).map(mir::Local::from) {
                             let name_p = local_defs[arg_idx].local.name;
                             args.push(vir::vir_local_decl! { vcx; [name_p] : Ref });
@@ -295,9 +301,9 @@ impl TaskEncoder for TraitImplEnc {
                         methods.push(vcx.mk_method(
                             MethodIdn::<(vir::ManyRef, vir::ManyTyVal, vir::ManyCSnap)>::new(
                                 vir_format_identifier!(vcx, "trait_{trait_name}_impl_{implementing_ty}_{idx}_fn_pre_weaken_{item_name}"),
-                                (ref_args, assoc_params.ty_args(), generics.const_args()),
+                                (ref_args, impl_item_params.ty_args(), impl_item_params.const_args()),
                             ),
-                            (args.as_slice(), assoc_params.ty_decls(), generics.const_decls()),
+                            (args.as_slice(), trait_ty_decls, trait_const_decls),
                             &[],
                             vcx.alloc_slice(&pre_weaken_pres),
                             &[],
@@ -320,7 +326,7 @@ impl TaskEncoder for TraitImplEnc {
                         ));
 
                         let mut post_strengthen_pres = Vec::new();
-                        let mut args = Vec::with_capacity(arg_count + impl_item_params.count());
+                        let mut args = Vec::with_capacity(arg_count + impl_item_context.count());
                         for arg_idx in (0..arg_count).map(mir::Local::from) {
                             let name_p = local_defs[arg_idx].local.name;
                             args.push(vir::vir_local_decl! { vcx; [name_p] : Ref });
@@ -397,9 +403,9 @@ impl TaskEncoder for TraitImplEnc {
                         methods.push(vcx.mk_method(
                             MethodIdn::<(vir::ManyRef, vir::ManyTyVal, vir::ManyCSnap)>::new(
                                 vir_format_identifier!(vcx, "trait_{trait_name}_impl_{implementing_ty}_{idx}_fn_post_strengthen_{item_name}"),
-                                (ref_args, assoc_params.ty_args(), generics.const_args()),
+                                (ref_args, impl_item_params.ty_args(), impl_item_params.const_args()),
                             ),
-                            (args.as_slice(), assoc_params.ty_decls(), generics.const_decls()),
+                            (args.as_slice(), trait_ty_decls, trait_const_decls),
                             &[],
                             vcx.alloc_slice(&post_strengthen_pres),
                             &[],

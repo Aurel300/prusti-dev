@@ -1,6 +1,8 @@
 use pcg::borrow_pcg::region_projection::{LifetimeProjection, PcgRegion};
-use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
+use task_encoder::{EncodeFullResult, EncodeFullError, TaskEncoder, TaskEncoderDependencies};
+use prusti_rustc_interface::type_ir::TypeVisitableExt;
 use vir::{CastType, Reify};
+
 
 use crate::encoders::{TyUseImpureEnc, ty::RustTyDecomposition};
 
@@ -127,18 +129,36 @@ impl TaskEncoder for IndirectPredicatesEnc {
 
                         // TODO: invalid recursion here if the defined struct is
                         // recursive!
-                        let field_ty = field_ty.decompose(ty.ty.params);
+                        let field_ty = field_ty.decompose_context(ty.ty.params, ty.args);
                         let new_projection =
-                            LifetimeProjection::new(field_ty, task_key.region(()), None, ())
-                                .unwrap();
-                        let field_indirect =
-                            deps.require_dep::<IndirectPredicatesEnc>(new_projection)?;
-                        predicate_applications.extend(
-                            field_indirect
-                                .predicate_applications
-                                .into_iter()
-                                .map(project),
-                        );
+                            LifetimeProjection::new(field_ty, task_key.region(()), None, ());
+                        match new_projection {
+                            Some(new_projection) => {
+                                let field_indirect =
+                                deps.require_dep::<IndirectPredicatesEnc>(new_projection)?;
+                                predicate_applications.extend(
+                                    field_indirect
+                                        .predicate_applications
+                                        .into_iter()
+                                        .map(project),
+                                );
+                            }
+                            None => {
+                                println!("skipping field with unsupported type for indirect predicates: {field_ty:?}");
+                                // The region is not a direct arg of this field type.
+                                // Check if it could be nested inside a type arg (e.g. Box<&'r mut i32>),
+                                // which we don't support. If so, return an encoding error rather than
+                                // silently producing an incomplete contract.
+                                if field_ty.args.args().iter()
+                                    .filter_map(|arg| arg.as_type())
+                                    .any(|ty| ty.has_free_regions())
+                                {
+                                    return Err(EncodeFullError::EncodingError((), None));
+                                }
+                                // No free regions in any type arg means the field genuinely has no
+                                // resources through this lifetime (e.g. Box<i32>) → safe to skip.
+                            }
+                        }
                     }
                 }
                 // TODO: recurse into other types

@@ -1,12 +1,13 @@
+use itertools::Itertools;
 use prusti_rustc_interface::{
-    abi::HasDataLayout,
-    const_eval::interpret::AllocRange,
+    const_eval::{
+        const_eval::{CompileTimeMachine, mk_eval_cx_for_const_val},
+        interpret::{CtfeProvenance, InterpCx, Projectable},
+    },
     middle::{
-        mir::{
-            self, ConstValue,
-            interpret::{GlobalAlloc, Scalar},
-        },
+        mir::{self, ConstValue},
         ty,
+        ty::{TyKind, TypingEnv},
     },
     span::{Span, def_id::DefId},
 };
@@ -67,68 +68,176 @@ impl ConstEnc {
         }
     }
 
-    fn encode_scalar<'vir>(
+    fn encode_const_val_tree<'vir, T>(
         deps: &mut TaskEncoderDependencies<'vir, Self>,
-        val: Scalar,
+        val: T,
         ty: ty::Ty<'vir>,
         context: GParams<'vir>,
-    ) -> Result<vir::ExprCSnap<'vir>, EncodeFullError<'vir, Self>> {
+        ecx: &InterpCx<'vir, CompileTimeMachine<'vir>>,
+    ) -> Result<vir::ExprCSnap<'vir>, EncodeFullError<'vir, Self>>
+    where
+        T: Projectable<'vir, CtfeProvenance>,
+    {
         let ty_task = RustTyDecomposition::from_ty(ty, context);
         let kind = deps.require_dep::<TyUsePureEnc>(ty_task)?;
+
         vir::with_vcx(|vcx| {
-            Ok(match val {
-                Scalar::Int(int) => {
-                    // TODO: Aggregates like structs will also show up as scalars
-                    // This means that the scalar doesn't contain all the data
-                    // and that it doesn't match the type of ty, which will lead
-                    // to a panic. We would have to encode these by looking at
-                    // the memory layout and iterating over the individual fields
-                    let prim = kind.expect_primitive();
+            Ok(match &kind.specifics {
+                super::ty::TySpecifics::ArrayLike(_array_data) => todo!(),
+                super::ty::TySpecifics::Param(_) => todo!(),
+                super::ty::TySpecifics::Opaque(_) => todo!(),
+                super::ty::TySpecifics::Primitive(prim) => {
+                    let int = ecx
+                        .read_scalar(&val)
+                        .unwrap()
+                        .try_to_scalar_int()
+                        .expect("Expected an integer");
                     let val = int.to_bits(int.size());
                     let val = prim.expr_from_bits(ty, val);
                     (prim.prim_to_snap)(val)
                 }
-                Scalar::Ptr(ptr, _) => match vcx.tcx().global_alloc(ptr.provenance.alloc_id()) {
-                    GlobalAlloc::Function { .. } => todo!(),
-                    GlobalAlloc::VTable(_, _) => todo!(),
-                    GlobalAlloc::Static(_) => todo!(),
-                    GlobalAlloc::Memory(mem) => {
-                        let (prov, offset) = ptr.prov_and_relative_offset();
+                super::ty::TySpecifics::ImmRef(imm_ref) => {
+                    let inner_ty = ty.builtin_deref(true).unwrap();
+                    let addr_to_ref = deps.require_dep::<RefDataEnc>(())?.addr_to_ref;
 
-                        let inner_ty = ty.builtin_deref(true).unwrap();
+                    if ty.builtin_deref(true).is_some()
+                        && (ty.builtin_deref(true).unwrap().is_str()
+                            || ty.builtin_deref(true).unwrap().is_slice())
+                    {
+                        let sl_ty = ty.peel_refs();
+                        let sl_ty_task = RustTyDecomposition::from_ty(sl_ty, context);
+                        let sl_snap = deps.require_dep::<TyUsePureEnc>(sl_ty_task)?;
+                        let sl_snap = sl_snap.expect_opaque();
+                        // first, we create a slice snapshot
+                        let snap = (sl_snap.arbitrary)().upcast_ty();
+                        // wrap it in a ref
+                        vir::with_vcx(|vcx| imm_ref.prim_to_snap(vcx.mk_null(), snap))
+                    } else {
+                        let ptr = ecx.read_pointer(&val).expect("Expected a pointer");
 
-                        let size = if inner_ty.is_any_ptr() {
-                            vcx.tcx().data_layout().pointer_size()
-                        } else {
-                            mem.0.size()
+                        let rel_addr = match ptr.into_pointer_or_addr() {
+                            Ok(ptr) => {
+                                ((ptr.provenance.alloc_id().0.get() as u128) << 64)
+                                    | ptr.prov_and_relative_offset().1.bytes() as u128
+                            }
+                            Err(addr) => addr.bytes() as u128,
                         };
-
-                        // TODO: the unwrap can fail, e.g., for zero-sized types or empty strs/slices
-                        let bytes = mem
-                            .0
-                            .read_scalar(
-                                &vcx.tcx(),
-                                AllocRange {
-                                    start: offset,
-                                    size,
-                                },
-                                inner_ty.is_any_ptr(),
-                            )
-                            .unwrap();
-                        let alloc_id = prov.alloc_id().0;
-                        let rel_addr = ((alloc_id.get() as u128) << 64) | offset.bytes() as u128;
-
-                        let addr_to_ref = deps.require_dep::<RefDataEnc>(())?.addr_to_ref;
-                        kind.expect_immref().prim_to_snap(
+                        imm_ref.prim_to_snap(
                             addr_to_ref(
                                 vcx.mk_const_expr(vir::ConstData::Int(rel_addr))
                                     .downcast_ty(),
                             ),
-                            Self::encode_scalar(deps, bytes, inner_ty, context)?.upcast_ty(),
+                            Self::encode_const_val_tree(
+                                deps,
+                                ecx.deref_pointer(&val).unwrap(),
+                                inner_ty,
+                                context,
+                                ecx,
+                            )?
+                            .upcast_ty(),
                         )
                     }
-                    GlobalAlloc::TypeId { .. } => todo!(),
+                }
+                super::ty::TySpecifics::MutRef(mutref) => {
+                    let inner_ty = ty.builtin_deref(true).unwrap();
+                    let addr_to_ref = deps.require_dep::<RefDataEnc>(())?.addr_to_ref;
+
+                    if ty.peel_refs().is_str() || ty.peel_refs().is_slice() {
+                        let sl_ty = ty.peel_refs();
+                        let sl_ty_task = RustTyDecomposition::from_ty(sl_ty, context);
+                        let sl_snap = deps.require_dep::<TyUsePureEnc>(sl_ty_task)?;
+                        let sl_snap = sl_snap.expect_opaque();
+                        // first, we create a slice snapshot
+                        let snap = (sl_snap.arbitrary)().upcast_ty();
+                        // wrap it in a ref
+                        vir::with_vcx(|vcx| mutref.prim_to_snap(vcx.mk_null(), snap))
+                    } else {
+                        let ptr = ecx.read_pointer(&val).expect("Expected a pointer");
+
+                        let rel_addr = match ptr.into_pointer_or_addr() {
+                            Ok(ptr) => {
+                                ((ptr.provenance.alloc_id().0.get() as u128) << 64)
+                                    | ptr.prov_and_relative_offset().1.bytes() as u128
+                            }
+                            Err(addr) => addr.bytes() as u128,
+                        };
+
+                        mutref.prim_to_snap(
+                            addr_to_ref(
+                                vcx.mk_const_expr(vir::ConstData::Int(rel_addr))
+                                    .downcast_ty(),
+                            ),
+                            Self::encode_const_val_tree(
+                                deps,
+                                ecx.deref_pointer(&val).unwrap(),
+                                inner_ty,
+                                context,
+                                ecx,
+                            )?
+                            .upcast_ty(),
+                        )
+                    }
+                }
+                super::ty::TySpecifics::StructLike(struct_data) => match ty.kind() {
+                    TyKind::Tuple(tys) => struct_data.field_snaps_to_snap(
+                        (0..struct_data.fields.len())
+                            .map(|idx| {
+                                Self::encode_const_val_tree(
+                                    deps,
+                                    ecx.project_field(&val, idx.into()).unwrap(),
+                                    tys[idx],
+                                    context,
+                                    ecx,
+                                )
+                                .unwrap()
+                                .upcast_ty()
+                            })
+                            .collect_vec(),
+                    ),
+                    TyKind::Adt(def, args) => {
+                        let fields = def.all_fields().collect_vec();
+                        struct_data.field_snaps_to_snap(
+                            (0..struct_data.fields.len())
+                                .map(|idx| {
+                                    Self::encode_const_val_tree(
+                                        deps,
+                                        ecx.project_field(&val, idx.into()).unwrap(),
+                                        fields[idx].ty(vcx.tcx(), args),
+                                        context,
+                                        ecx,
+                                    )
+                                    .unwrap()
+                                    .upcast_ty()
+                                })
+                                .collect_vec(),
+                        )
+                    }
+                    _ => unreachable!(),
                 },
+                super::ty::TySpecifics::EnumLike(enum_data) => match ty.kind() {
+                    TyKind::Adt(def, args) => {
+                        let fields = def.all_fields().collect_vec();
+                        let variant_idx = ecx.read_discriminant(&val).unwrap();
+                        let struct_data = &enum_data.variants[variant_idx.as_usize()].inner;
+                        struct_data.field_snaps_to_snap(
+                            (0..struct_data.fields.len())
+                                .map(|idx| {
+                                    Self::encode_const_val_tree(
+                                        deps,
+                                        ecx.project_field(&val, idx.into()).unwrap(),
+                                        fields[idx].ty(vcx.tcx(), args),
+                                        context,
+                                        ecx,
+                                    )
+                                    .unwrap()
+                                    .upcast_ty()
+                                })
+                                .collect_vec(),
+                        )
+                    }
+                    _ => unreachable!(),
+                },
+                super::ty::TySpecifics::Builtin(_) => unreachable!(),
             })
         })
     }
@@ -138,33 +247,14 @@ impl ConstEnc {
         val: ConstValue,
         ty: ty::Ty<'vir>,
         context: GParams<'vir>,
-        _span: Option<Span>,
+        span: Option<Span>,
     ) -> Result<vir::ExprCSnap<'vir>, EncodeFullError<'vir, Self>> {
-        let ty_task = RustTyDecomposition::from_ty(ty, context);
-        let kind = deps.require_dep::<TyUsePureEnc>(ty_task)?;
-        Ok(match val {
-            ConstValue::Scalar(scalar) => Self::encode_scalar(deps, scalar, ty, context)?,
-            ConstValue::ZeroSized => {
-                let s = kind.expect_structlike();
-                s.field_snaps_to_snap(Vec::new())
-            }
-            // Encode `&str` constants to an opaque domain. If we ever want to perform string reasoning
-            // we will need to revisit this encoding, but for the moment this allows assertions to avoid
-            // crashing Prusti.
-            ConstValue::Slice { .. } if ty.peel_refs().is_str() => {
-                let ref_ty = kind.expect_immref();
-                let str_ty = ty.peel_refs();
-                let str_ty_task = RustTyDecomposition::from_ty(str_ty, context);
-                let str_snap = deps.require_dep::<TyUsePureEnc>(str_ty_task)?;
-                let str_snap = str_snap.expect_opaque();
-                // first, we create a string snapshot
-                let snap = (str_snap.arbitrary)().upcast_ty();
-                // wrap it in a ref
-                vir::with_vcx(|vcx| ref_ty.prim_to_snap(vcx.mk_null(), snap))
-            }
-            ConstValue::Slice { .. } => todo!("ConstValue::Slice: {ty:?}"),
-            ConstValue::Indirect { .. } => todo!("ConstValue::Indirect"),
-        })
+        let ty_ctxt_at = vir::with_vcx(|vcx| vcx.tcx().at(span.unwrap()));
+        let (ecx, v) =
+            mk_eval_cx_for_const_val(ty_ctxt_at, TypingEnv::fully_monomorphized(), val, ty)
+                .unwrap();
+
+        Self::encode_const_val_tree(deps, v, ty, context, &ecx)
     }
 }
 

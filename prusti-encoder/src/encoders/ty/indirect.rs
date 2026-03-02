@@ -1,6 +1,5 @@
 use pcg::borrow_pcg::region_projection::{LifetimeProjection, PcgRegion};
-use task_encoder::{EncodeFullResult, EncodeFullError, TaskEncoder, TaskEncoderDependencies};
-use prusti_rustc_interface::type_ir::TypeVisitableExt;
+use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 use vir::{CastType, Reify};
 
 use crate::encoders::{TyUseImpureEnc, ty::RustTyDecomposition};
@@ -142,24 +141,7 @@ impl TaskEncoder for IndirectPredicatesEnc {
                                         .map(project),
                                 );
                             }
-                            None => {
-                                println!("skipping field with unsupported type for indirect predicates: {field_ty:?}");
-                                // The region is not a direct arg of this field type.
-                                // Check if it could be nested inside a type arg (e.g. Box<&'r mut i32>),
-                                // which we don't support. If so, return an encoding error rather than
-                                // silently producing an incomplete contract.
-                                if field_ty
-                                    .args
-                                    .args()
-                                    .iter()
-                                    .filter_map(|arg| arg.as_type())
-                                    .any(|ty| ty.has_free_regions())
-                                {
-                                    return Err(EncodeFullError::EncodingError((), None));
-                                }
-                                // No free regions in any type arg means the field genuinely has no
-                                // resources through this lifetime (e.g. Box<i32>) → safe to skip.
-                            }
+                            None => {}
                         }
                     }
                 }

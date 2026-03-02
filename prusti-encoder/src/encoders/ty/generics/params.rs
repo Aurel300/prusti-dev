@@ -11,7 +11,7 @@ use crate::encoders::{
     ty::{
         RustTyDecomposition,
         data::TySpecifics,
-        generics::{GArgs, GArgsTyEnc, GParamVariant, traits::TraitEnc},
+        generics::{GArgs, GArgsTyEnc, GParamVariant, r#trait::TraitEnc},
         lifted::TyConstructorEnc,
     },
 };

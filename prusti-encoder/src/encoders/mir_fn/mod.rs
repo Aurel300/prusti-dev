@@ -7,9 +7,7 @@ pub use method::*;
 pub use signature::*;
 
 use crate::encoders::ty::generics::{
-    GArgs, GParams,
-    trait_impls::TraitImplEnc,
-    traits::{TraitAssocFnData, TraitEnc},
+    GArgs, GParams, r#trait::TraitEnc, trait_fn::{TraitFnEncOutputRef, TraitFnEnc}, trait_impls::TraitImplEnc
 };
 
 use prusti_interface::specs::specifications::SpecQuery;
@@ -46,14 +44,13 @@ impl<'tcx> CallTaskDescription<'tcx> {
     fn trait_call<'vir, E: TaskEncoder>(
         &self,
         deps: &mut TaskEncoderDependencies<'vir, E>,
-    ) -> Result<(DefId, Option<TraitAssocFnData<'vir>>), EncodeFullError<'vir, E>> {
+    ) -> Result<(DefId, Option<TraitFnEncOutputRef<'vir>>), EncodeFullError<'vir, E>> {
         let tcx = vir::with_vcx(|vcx| vcx.tcx());
         if self.resolve_trait_calls
             && let Some(assoc_item) = tcx.opt_associated_item(self.callee)
-            && let Some(trait_def_id) = assoc_item.trait_container(tcx)
+            && assoc_item.trait_container(tcx).is_some()
         {
-            let trait_enc = deps.require_ref::<TraitEnc>(trait_def_id)?;
-            let assoc_enc = trait_enc.assoc_funcs[&assoc_item.def_id];
+            let assoc_enc = deps.require_ref::<TraitFnEnc>(assoc_item.def_id)?;
             Ok((assoc_item.def_id, Some(assoc_enc)))
         } else {
             Ok((self.callee, None))

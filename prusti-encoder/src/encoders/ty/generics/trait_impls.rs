@@ -14,7 +14,7 @@ use crate::{
         ty::{
             RustTyDecomposition,
             generics::{
-                GArgs, GArgsCastEnc, GArgsTyEnc, GParams, GenericParamsEnc, traits::TraitEnc,
+                GArgs, GArgsCastEnc, GArgsTyEnc, GParams, GenericParamsEnc, r#trait::TraitEnc, trait_fn::TraitFnEnc,
             },
         },
     },
@@ -145,16 +145,13 @@ impl TaskEncoder for TraitImplEnc {
                         ));
                     }
                     ty::AssocKind::Fn { .. } => {
-                        let trait_data_dep = deps.require_ref::<TraitEnc>(trait_did)?;
-                        let assoc_fn = trait_data_dep.assoc_funcs[&trait_item_def_id];
+                        let assoc_fn = deps.require_ref::<TraitFnEnc>(trait_item_def_id)?;
                         let local_defs =
                             deps.require_dep::<MirLocalDefEnc>(MirLocalDefEncTask::Local {
                                 def_id: impl_item_def_id,
                                 all_locals: false,
                             })?;
                         let arg_count = local_defs.arg_count + 1;
-                        //let arg_types = vcx.alloc_slice(&local_defs.snap_ty_args().collect::<Vec<_>>());
-                        //let return_type = local_defs.snap_ty_return();
                         let func_args = local_defs.local_decl_args().collect::<Vec<_>>();
                         let ref_args = vcx.alloc_slice(&vec![vir::TYPE_REF; arg_count]);
                         let func_ret = local_defs.local_decl_ret();
@@ -180,7 +177,6 @@ impl TaskEncoder for TraitImplEnc {
                             is_function_with_body(vcx.tcx(), trait_item_def_id);
                         let impl_item_has_body = is_function_with_body(vcx.tcx(), impl_item_def_id);
 
-                        //let trait_item_spec = deps.require_dep_spanned::<MirSpecEnc>((trait_item_def_id, impl_item_def_id, MirSpecEncMode::PureWithoutResult), impl_span)?;
                         let impl_item_spec = deps.require_dep_spanned::<MirSpecEnc>(
                             (
                                 impl_item_def_id,
@@ -419,7 +415,7 @@ impl TaskEncoder for TraitImplEnc {
                             ])),
                         ));
                     }
-                    ty::AssocKind::Const { .. } => (), // noop?
+                    ty::AssocKind::Const { .. } => (),
                 }
             }
 

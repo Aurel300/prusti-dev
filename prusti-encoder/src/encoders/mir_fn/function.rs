@@ -115,7 +115,7 @@ impl TaskEncoder for FunctionCallEnc {
 struct FunctionEnc;
 
 #[derive(Debug, Clone)]
-pub struct FunctionEncOutputRef<'vir> {
+struct FunctionEncOutputRef<'vir> {
     caller_ref: FunctionIdn<'vir, (vir::ManySnap, vir::ManyTyVal, vir::ManyCSnap), vir::Snap>,
     function_ref: FunctionIdn<'vir, (vir::ManySnap, vir::ManyTyVal, vir::ManyCSnap), vir::Snap>,
 }

@@ -176,8 +176,8 @@ impl TaskEncoder for MirSpecEnc {
             let all_args = vcx.alloc_slice(&all_args);
             let pre_args = match enc_mode {
                 MirSpecEncMode::Impure => all_args,
-                MirSpecEncMode::PureWithResult => &all_args[..all_args.len() - 1],
-                MirSpecEncMode::PureWithoutResult => &all_args[..all_args.len() - 1],
+                MirSpecEncMode::PureWithResult
+                | MirSpecEncMode::PureWithoutResult => &all_args[..all_args.len() - 1],
             };
 
             let to_bool = deps

@@ -508,15 +508,17 @@ impl<'tcx> TySpecifics<'tcx, RustTyDatas> {
             ty::TyKind::Alias(..) | ty::TyKind::Param(_) => TySpecifics::mk_param(()),
             ty::TyKind::Closure(_, args) => {
                 let captured = args.as_closure().upvar_tys();
-                let fields = captured
-                    .iter()
-                    .enumerate()
-                    .map(|(i, ty)| RustFieldData {
-                        name: symbol::Symbol::intern(&format!("c{i}")),
-                        fid: abi::FieldIdx::from_usize(i),
-                        ty: LazyRustTy(ty),
-                    })
-                    .collect::<Vec<_>>();
+                let fields = vir::with_vcx(|vcx| {
+                    captured
+                        .iter()
+                        .enumerate()
+                        .map(|(i, ty)| RustFieldData {
+                            name: symbol::Symbol::intern(&format!("c{i}")),
+                            fid: abi::FieldIdx::from_usize(i),
+                            ty: LazyRustTy(vcx.tcx().erase_regions(ty)),
+                        })
+                        .collect::<Vec<_>>()
+                });
                 TySpecifics::mk_structlike((), fields)
             }
             ty::TyKind::Never => {

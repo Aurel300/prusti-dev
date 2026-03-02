@@ -415,7 +415,7 @@ impl<'vir> TyPureBuilder<'vir> {
             vcx.mk_function(
                 self.unreachable_to_snap,
                 (self.params.ty_decls(),),
-                false_,
+                &[],
                 false_,
                 None,
                 None,

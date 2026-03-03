@@ -943,7 +943,11 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         // Temporary workaround until https://github.com/prusti/pcg/issues/137
         // is resolved.
         if for_storage_dead {
-            comment!(self, "Weaken(E, W) for {:?} (skipped exhale: StorageDead)", place);
+            comment!(
+                self,
+                "Weaken(E, W) for {:?} (skipped exhale: StorageDead)",
+                place
+            );
             return;
         }
 

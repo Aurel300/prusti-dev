@@ -8,7 +8,10 @@ use vir::{FunctionIdn, MethodIdn, vir_format_identifier};
 
 use crate::{
     encoders::{
-        FunctionCallEnc, MirLocalDefEnc, MirLocalDefEncTask, MirSpecEnc, mir_fn::CallTaskDescription, pure::spec::MirSpecEncMode, ty::generics::{GParams, GenericParamsEnc}
+        FunctionCallEnc, MirLocalDefEnc, MirLocalDefEncTask, MirSpecEnc,
+        mir_fn::CallTaskDescription,
+        pure::spec::MirSpecEncMode,
+        ty::generics::{GParams, GenericParamsEnc},
     },
     trait_support::is_function_with_body,
 };
@@ -64,7 +67,8 @@ impl TaskEncoder for TraitFnEnc {
         vir::with_vcx(|vcx| {
             let tcx = vcx.tcx();
 
-            let assoc_item = tcx.opt_associated_item(*task_key)
+            let assoc_item = tcx
+                .opt_associated_item(*task_key)
                 .expect("task key should be the associated item of a trait");
             let def_id = assoc_item.def_id;
             let span = vcx.tcx().def_span(def_id);
@@ -77,7 +81,8 @@ impl TaskEncoder for TraitFnEnc {
             // Rust typing is concerned.
             assert!(!is_spec_fn(tcx, def_id));
 
-            let trait_def_id = assoc_item.trait_container(tcx)
+            let trait_def_id = assoc_item
+                .trait_container(tcx)
                 .expect("task key should be the associated item of a trait");
 
             let trait_name = vcx.alloc_str(tcx.item_name(trait_def_id).as_str());
@@ -92,22 +97,17 @@ impl TaskEncoder for TraitFnEnc {
             let item_generics = deps.require_dep::<GenericParamsEnc>(item_params)?;
             let item_name = tcx.item_name(def_id);
 
-            let local_defs =
-                deps.require_dep::<MirLocalDefEnc>(MirLocalDefEncTask::Local {
-                    def_id,
-                    all_locals: false,
-                })?;
+            let local_defs = deps.require_dep::<MirLocalDefEnc>(MirLocalDefEncTask::Local {
+                def_id,
+                all_locals: false,
+            })?;
             let arg_count = local_defs.arg_count + 1;
-            let arg_types =
-                vcx.alloc_slice(&local_defs.snap_ty_args().collect::<Vec<_>>());
+            let arg_types = vcx.alloc_slice(&local_defs.snap_ty_args().collect::<Vec<_>>());
             let return_type = local_defs.snap_ty_return();
             let ref_args = vcx.alloc_slice(&vec![vir::TYPE_REF; arg_count]);
 
             let is_pure = crate::encoders::with_proc_spec(
-                SpecQuery::GetProcKind(
-                    def_id,
-                    item_params.rust_params(),
-                ),
+                SpecQuery::GetProcKind(def_id, item_params.rust_params()),
                 |spec| spec.kind.is_pure().unwrap_or_default(),
             )
             .unwrap_or_default();
@@ -166,13 +166,16 @@ impl TaskEncoder for TraitFnEnc {
                     return_type,
                 )
             });
-            deps.emit_output_ref(*task_key, TraitFnEncOutputRef {
-                pre_func,
-                post_func,
-                call_stub_impure,
-                call_stub_pure_caller,
-                call_stub_pure_function,
-            })?;
+            deps.emit_output_ref(
+                *task_key,
+                TraitFnEncOutputRef {
+                    pre_func,
+                    post_func,
+                    call_stub_impure,
+                    call_stub_pure_caller,
+                    call_stub_pure_function,
+                },
+            )?;
             dom_funcs.push(vcx.mk_domain_function(pre_func, false, None));
             dom_funcs.push(vcx.mk_domain_function(post_func, false, None));
 
@@ -209,12 +212,8 @@ impl TaskEncoder for TraitFnEnc {
             let mut posts = spec.posts;
             if has_body && is_pure {
                 let pure_func = deps.require_dep::<FunctionCallEnc>(
-                    CallTaskDescription::new(
-                        def_id,
-                        item_params.rust_params(),
-                        def_id,
-                    )
-                    .resolve_trait_calls(false),
+                    CallTaskDescription::new(def_id, item_params.rust_params(), def_id)
+                        .resolve_trait_calls(false),
                 )?;
                 let pure_func_app = pure_func.call_pure(
                     func_args

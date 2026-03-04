@@ -138,7 +138,8 @@ impl TaskEncoder for MirPureEnc {
                 }
             };
 
-            let expr_inner = Enc::new(vcx, task_key.0, def_id, caller_def_id, kind, &body, deps).encode_body()?;
+            let expr_inner = Enc::new(vcx, task_key.0, def_id, caller_def_id, kind, &body, deps)
+                .encode_body()?;
 
             // We wrap the expression with an additional lazy that will perform
             // some sanity checks. These requirements cannot be expressed using

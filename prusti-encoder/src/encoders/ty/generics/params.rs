@@ -268,10 +268,7 @@ impl<'vir> GenericParams<'vir> {
                     let trait_data = deps.require_ref::<TraitEnc>(trait_did).unwrap();
                     let args = GArgs::new(ty.args.context, alias.args);
                     let args = deps.require_dep::<GArgsTyEnc>(args).unwrap();
-                    (trait_data.assoc_types[&alias.def_id])(
-                        args.get_ty(),
-                        args.get_const(),
-                    )
+                    (trait_data.assoc_types[&alias.def_id])(args.get_ty(), args.get_const())
                 }),
             };
         }

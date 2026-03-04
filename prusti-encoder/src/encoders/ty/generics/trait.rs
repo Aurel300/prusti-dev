@@ -1,7 +1,4 @@
-use prusti_rustc_interface::{
-    middle::ty,
-    span::def_id::DefId,
-};
+use prusti_rustc_interface::{middle::ty, span::def_id::DefId};
 use rustc_hash::FxHashMap;
 use task_encoder::{EncodeFullResult, OutputRefAny, TaskEncoder, TaskEncoderDependencies};
 use vir::{FunctionIdn, vir_format_identifier};
@@ -78,11 +75,14 @@ impl TaskEncoder for TraitEnc {
                 (trait_generics.ty_args(), trait_generics.const_args()),
                 vir::TYPE_BOOL,
             );
-            deps.emit_output_ref(*task_key, TraitEncOutputRef {
-                trait_name,
-                assoc_types,
-                impl_fun,
-            })?;
+            deps.emit_output_ref(
+                *task_key,
+                TraitEncOutputRef {
+                    trait_name,
+                    assoc_types,
+                    impl_fun,
+                },
+            )?;
 
             dom_funcs.push(vcx.mk_domain_function(impl_fun, false, None));
 

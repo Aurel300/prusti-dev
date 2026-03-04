@@ -137,9 +137,10 @@ impl TaskEncoder for MirSpecEnc {
         vir::with_vcx(|vcx| {
             let base_params = GParams::from(def_id);
             let context_params = GParams::from(context_def_id);
-            let substs = find_trait_method_substs(vcx.tcx(), context_def_id, context_params.rust_params())
-                .map(|s| s.1)
-                .unwrap_or(base_params.rust_params());
+            let substs =
+                find_trait_method_substs(vcx.tcx(), context_def_id, context_params.rust_params())
+                    .map(|s| s.1)
+                    .unwrap_or(base_params.rust_params());
 
             let local_defs = deps.require_dep::<crate::encoders::local_def::MirLocalDefEnc>(
                 MirLocalDefEncTask::LocalSubsts {
@@ -176,8 +177,9 @@ impl TaskEncoder for MirSpecEnc {
             let all_args = vcx.alloc_slice(&all_args);
             let pre_args = match enc_mode {
                 MirSpecEncMode::Impure => all_args,
-                MirSpecEncMode::PureWithResult
-                | MirSpecEncMode::PureWithoutResult => &all_args[..all_args.len() - 1],
+                MirSpecEncMode::PureWithResult | MirSpecEncMode::PureWithoutResult => {
+                    &all_args[..all_args.len() - 1]
+                }
             };
 
             let to_bool = deps

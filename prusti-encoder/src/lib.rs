@@ -23,7 +23,9 @@ use crate::encoders::{
     addr::RefDataEnc,
     custom::PairUseEnc,
     ty::{
-        generics::{GArgsCastEnc, r#trait::TraitEnc, trait_fn::TraitFnEnc, trait_impls::TraitImplEnc},
+        generics::{
+            GArgsCastEnc, r#trait::TraitEnc, trait_fn::TraitFnEnc, trait_impls::TraitImplEnc,
+        },
         interpretation::bitvec::BitVecEnc,
         lifted::{TyConstructorEnc, TypeOfEnc},
     },

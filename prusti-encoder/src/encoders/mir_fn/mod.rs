@@ -7,7 +7,10 @@ pub use method::*;
 pub use signature::*;
 
 use crate::encoders::ty::generics::{
-    GArgs, GParams, r#trait::TraitEnc, trait_fn::{TraitFnEncOutputRef, TraitFnEnc}, trait_impls::TraitImplEnc
+    GArgs, GParams,
+    r#trait::TraitEnc,
+    trait_fn::{TraitFnEnc, TraitFnEncOutputRef},
+    trait_impls::TraitImplEnc,
 };
 
 use prusti_interface::specs::specifications::SpecQuery;

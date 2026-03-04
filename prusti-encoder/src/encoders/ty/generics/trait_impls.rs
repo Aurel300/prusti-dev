@@ -14,7 +14,8 @@ use crate::{
         ty::{
             RustTyDecomposition,
             generics::{
-                GArgs, GArgsCastEnc, GArgsTyEnc, GParams, GenericParamsEnc, r#trait::TraitEnc, trait_fn::TraitFnEnc,
+                GArgs, GArgsCastEnc, GArgsTyEnc, GParams, GenericParamsEnc, r#trait::TraitEnc,
+                trait_fn::TraitFnEnc,
             },
         },
     },
@@ -101,9 +102,15 @@ impl TaskEncoder for TraitImplEnc {
 
                 // The ty and const decls of the trait items are the decls of
                 // the item itself prefixed by the decls of the impl itself.
-                assert_eq!(impl_ty_decls, &impl_item_params.ty_decls()[..impl_ty_decls.len()]);
+                assert_eq!(
+                    impl_ty_decls,
+                    &impl_item_params.ty_decls()[..impl_ty_decls.len()]
+                );
                 let trait_ty_decls = impl_item_params.ty_decls();
-                assert_eq!(impl_const_decls, &impl_item_params.const_decls()[..impl_const_decls.len()]);
+                assert_eq!(
+                    impl_const_decls,
+                    &impl_item_params.const_decls()[..impl_const_decls.len()]
+                );
                 let trait_const_decls = impl_item_params.const_decls();
 
                 // Combine the args to the trait in the impl and the identity
@@ -193,8 +200,12 @@ impl TaskEncoder for TraitImplEnc {
                             .iter()
                             .zip(signature.inputs)
                             .map(|(arg, ty)| {
-                                let normalized = ty.decompose_compare_normalize(trait_item_context, impl_item_args);
-                                let caster = deps.require_dep::<GArgsCastEnc<Pure>>(normalized).unwrap();
+                                let normalized = ty.decompose_compare_normalize(
+                                    trait_item_context,
+                                    impl_item_args,
+                                );
+                                let caster =
+                                    deps.require_dep::<GArgsCastEnc<Pure>>(normalized).unwrap();
                                 caster.cast_to_callee_ctx(vcx.mk_local_ex(arg))
                             })
                             .collect::<Vec<_>>();
@@ -233,8 +244,12 @@ impl TaskEncoder for TraitImplEnc {
                         //   `FunctionCallEncOutput::call_pure`.
                         let post_func_call = assoc_fn.post_func.call()(
                             {
-                                let normalized = signature.output.decompose_compare_normalize(trait_item_context, impl_item_args);
-                                let caster = deps.require_dep::<GArgsCastEnc<Pure>>(normalized).unwrap();
+                                let normalized = signature.output.decompose_compare_normalize(
+                                    trait_item_context,
+                                    impl_item_args,
+                                );
+                                let caster =
+                                    deps.require_dep::<GArgsCastEnc<Pure>>(normalized).unwrap();
                                 caster.cast_to_callee_ctx(vcx.mk_local_ex(func_ret))
                             },
                             vcx.alloc_slice(
@@ -242,8 +257,13 @@ impl TaskEncoder for TraitImplEnc {
                                     .iter()
                                     .zip(signature.inputs)
                                     .map(|(arg, ty)| {
-                                        let normalized = ty.decompose_compare_normalize(trait_item_context, impl_item_args);
-                                        let caster = deps.require_dep::<GArgsCastEnc<Pure>>(normalized).unwrap();
+                                        let normalized = ty.decompose_compare_normalize(
+                                            trait_item_context,
+                                            impl_item_args,
+                                        );
+                                        let caster = deps
+                                            .require_dep::<GArgsCastEnc<Pure>>(normalized)
+                                            .unwrap();
                                         caster.cast_to_callee_ctx(vcx.mk_local_ex(arg))
                                     })
                                     .collect::<Vec<_>>(),

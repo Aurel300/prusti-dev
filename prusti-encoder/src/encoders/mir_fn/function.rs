@@ -214,19 +214,23 @@ impl TaskEncoder for FunctionEnc {
 
             tracing::debug!("finished {def_id:?}");
 
-            let posts = spec.posts.into_iter().map(|post| {
-                // use inhale-exhale expression to prevent viper checking that
-                // the function body expression satisfies the postcondition:
-                // that's checked in the method encoding of this function.
-                vcx.mk_inhale_exhale_expr(post, vcx.mk_bool::<true>())
-            }).collect::<Vec<_>>();
+            let posts = spec
+                .posts
+                .into_iter()
+                .map(|post| {
+                    // use inhale-exhale expression to prevent viper checking that
+                    // the function body expression satisfies the postcondition:
+                    // that's checked in the method encoding of this function.
+                    vcx.mk_inhale_exhale_expr(post, vcx.mk_bool::<true>())
+                })
+                .collect::<Vec<_>>();
             let posts = vcx.alloc_slice(&posts);
 
             let func_args = local_defs.local_decl_args().collect::<Vec<_>>();
             let wrapped_call_args = func_args
-                    .iter()
-                    .map(|arg| vcx.mk_local_ex(arg))
-                    .collect::<Vec<_>>();
+                .iter()
+                .map(|arg| vcx.mk_local_ex(arg))
+                .collect::<Vec<_>>();
             let wrapped_call = function_ref.call()(
                 &wrapped_call_args,
                 generics.ty_exprs(),

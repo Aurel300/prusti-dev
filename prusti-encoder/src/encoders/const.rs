@@ -15,7 +15,7 @@ use prusti_rustc_interface::{
     span::{Span, def_id::DefId},
 };
 use task_encoder::{EncodeFullError, EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
-use vir::CastType;
+use vir::{CastType, FunctionGenData, FunctionIdn};
 
 use crate::encoders::{
     MirPureEnc, MirPureEncTask, PureKind,
@@ -126,7 +126,14 @@ impl ConstEnc {
         ty: ty::Ty<'vir>,
         context: GParams<'vir>,
         ecx: &InterpCx<'vir, CompileTimeMachine<'vir>>,
-    ) -> Result<vir::ExprCSnap<'vir>, EncodeFullError<'vir, Self>>
+        span: Span,
+    ) -> Result<
+        (
+            vir::ExprCSnap<'vir>,
+            Vec<&'vir FunctionGenData<'vir, (), !>>,
+        ),
+        EncodeFullError<'vir, Self>,
+    >
     where
         T: Projectable<'vir, CtfeProvenance>,
     {
@@ -135,7 +142,54 @@ impl ConstEnc {
 
         vir::with_vcx(|vcx| {
             Ok(match &kind.specifics {
-                super::ty::TySpecifics::ArrayLike(_array_data) => todo!(),
+                super::ty::TySpecifics::ArrayLike(array_data) => {
+                    let (elem_ty, elem_len) = match ty.kind() {
+                        TyKind::Array(elem_ty, len) => (
+                            elem_ty,
+                            len.to_value().try_to_target_usize(vcx.tcx()).unwrap(),
+                        ),
+                        _ => unreachable!(),
+                    };
+                    let mut posts = vec![];
+                    let mut funs = vec![];
+                    for idx in 0..elem_len {
+                        let (snap, snap_funs) = Self::encode_const_val_tree(
+                            deps,
+                            ecx.project_index(&val, idx).unwrap(),
+                            *elem_ty,
+                            context,
+                            ecx,
+                            span,
+                        )
+                        .unwrap();
+                        posts.push(
+                            vcx.mk_eq_expr(
+                                snap.upcast_ty(),
+                                array_data.index(
+                                    vcx.mk_result(kind.snapshot.downcast_ty()),
+                                    vcx.mk_const_expr(vir::ConstData::Int(idx as u128))
+                                        .downcast_ty(),
+                                ),
+                            ),
+                        );
+                        funs.extend(snap_funs);
+                    }
+                    let span_pos = vcx.tcx().sess.source_map().lookup_char_pos(span.lo());
+                    let gen_snap_func_idn: FunctionIdn<'_, (), vir::CSnap> = FunctionIdn::new(
+                        vir::vir_format_identifier!(
+                            vcx,
+                            "const_{}:{}",
+                            span_pos.line,
+                            span_pos.col_display
+                        ),
+                        (),
+                        kind.snapshot.downcast_ty(),
+                    );
+                    let gen_snap_func =
+                        vcx.mk_function(gen_snap_func_idn, (), &[], vcx.alloc(posts), None, None);
+                    funs.push(gen_snap_func);
+                    ((gen_snap_func_idn)(), funs)
+                }
                 super::ty::TySpecifics::Param(_) => todo!(),
                 super::ty::TySpecifics::Opaque(_) => todo!(),
                 super::ty::TySpecifics::Primitive(prim) => {
@@ -146,7 +200,7 @@ impl ConstEnc {
                         .expect("Expected an integer");
                     let val = int.to_bits(int.size());
                     let val = prim.expr_from_bits(ty, val);
-                    (prim.prim_to_snap)(val)
+                    ((prim.prim_to_snap)(val), vec![])
                 }
                 super::ty::TySpecifics::ImmRef(imm_ref) => {
                     let inner_ty = ty.builtin_deref(true).unwrap();
@@ -163,7 +217,10 @@ impl ConstEnc {
                         // first, we create a slice snapshot
                         let snap = (sl_snap.arbitrary)().upcast_ty();
                         // wrap it in a ref
-                        vir::with_vcx(|vcx| imm_ref.prim_to_snap(vcx.mk_null(), snap))
+                        (
+                            vir::with_vcx(|vcx| imm_ref.prim_to_snap(vcx.mk_null(), snap)),
+                            vec![],
+                        )
                     } else {
                         let ptr = ecx.read_pointer(&val).expect("Expected a pointer");
 
@@ -174,19 +231,23 @@ impl ConstEnc {
                             }
                             Err(addr) => addr.bytes() as u128,
                         };
-                        imm_ref.prim_to_snap(
-                            addr_to_ref(
-                                vcx.mk_const_expr(vir::ConstData::Int(rel_addr))
-                                    .downcast_ty(),
+                        let (snap, snap_funs) = Self::encode_const_val_tree(
+                            deps,
+                            ecx.deref_pointer(&val).unwrap(),
+                            inner_ty,
+                            context,
+                            ecx,
+                            span,
+                        )?;
+                        (
+                            imm_ref.prim_to_snap(
+                                addr_to_ref(
+                                    vcx.mk_const_expr(vir::ConstData::Int(rel_addr))
+                                        .downcast_ty(),
+                                ),
+                                snap.upcast_ty(),
                             ),
-                            Self::encode_const_val_tree(
-                                deps,
-                                ecx.deref_pointer(&val).unwrap(),
-                                inner_ty,
-                                context,
-                                ecx,
-                            )?
-                            .upcast_ty(),
+                            snap_funs,
                         )
                     }
                 }
@@ -194,7 +255,10 @@ impl ConstEnc {
                     let inner_ty = ty.builtin_deref(true).unwrap();
                     let addr_to_ref = deps.require_dep::<RefDataEnc>(())?.addr_to_ref;
 
-                    if ty.peel_refs().is_str() || ty.peel_refs().is_slice() {
+                    if ty.builtin_deref(true).is_some()
+                        && (ty.builtin_deref(true).unwrap().is_str()
+                            || ty.builtin_deref(true).unwrap().is_slice())
+                    {
                         let sl_ty = ty.peel_refs();
                         let sl_ty_task = RustTyDecomposition::from_ty(sl_ty, context);
                         let sl_snap = deps.require_dep::<TyUsePureEnc>(sl_ty_task)?;
@@ -202,7 +266,10 @@ impl ConstEnc {
                         // first, we create a slice snapshot
                         let snap = (sl_snap.arbitrary)().upcast_ty();
                         // wrap it in a ref
-                        vir::with_vcx(|vcx| mutref.prim_to_snap(vcx.mk_null(), snap))
+                        (
+                            vir::with_vcx(|vcx| mutref.prim_to_snap(vcx.mk_null(), snap)),
+                            vec![],
+                        )
                     } else {
                         let ptr = ecx.read_pointer(&val).expect("Expected a pointer");
 
@@ -214,19 +281,23 @@ impl ConstEnc {
                             Err(addr) => addr.bytes() as u128,
                         };
 
-                        mutref.prim_to_snap(
-                            addr_to_ref(
-                                vcx.mk_const_expr(vir::ConstData::Int(rel_addr))
-                                    .downcast_ty(),
+                        let (snap, snap_funs) = Self::encode_const_val_tree(
+                            deps,
+                            ecx.deref_pointer(&val).unwrap(),
+                            inner_ty,
+                            context,
+                            ecx,
+                            span,
+                        )?;
+                        (
+                            mutref.prim_to_snap(
+                                addr_to_ref(
+                                    vcx.mk_const_expr(vir::ConstData::Int(rel_addr))
+                                        .downcast_ty(),
+                                ),
+                                snap.upcast_ty(),
                             ),
-                            Self::encode_const_val_tree(
-                                deps,
-                                ecx.deref_pointer(&val).unwrap(),
-                                inner_ty,
-                                context,
-                                ecx,
-                            )?
-                            .upcast_ty(),
+                            snap_funs,
                         )
                     }
                 }
@@ -239,21 +310,22 @@ impl ConstEnc {
                             .collect_vec(),
                         _ => unreachable!(),
                     };
-                    kind.expect_structlike().field_snaps_to_snap(
-                        (0..struct_data.fields.len())
-                            .map(|idx| {
-                                Self::encode_const_val_tree(
-                                    deps,
-                                    ecx.project_field(&val, idx.into()).unwrap(),
-                                    tys[idx],
-                                    context,
-                                    ecx,
-                                )
-                                .unwrap()
-                                .upcast_ty()
-                            })
-                            .collect_vec(),
-                    )
+                    let mut snaps = vec![];
+                    let mut funs = vec![];
+                    for (idx, ty) in tys.iter().enumerate().take(struct_data.fields.len()) {
+                        let (snap, snap_funs) = Self::encode_const_val_tree(
+                            deps,
+                            ecx.project_field(&val, idx.into()).unwrap(),
+                            *ty,
+                            context,
+                            ecx,
+                            span,
+                        )
+                        .unwrap();
+                        snaps.push(snap.upcast_ty());
+                        funs.extend(snap_funs);
+                    }
+                    (kind.expect_structlike().field_snaps_to_snap(snaps), funs)
                 }
 
                 super::ty::TySpecifics::EnumLike(enum_data) => {
@@ -263,23 +335,27 @@ impl ConstEnc {
                     };
                     let variant_idx = ecx.read_discriminant(&val).unwrap();
                     let fields = enum_ty.all_fields().collect_vec();
-                    enum_data.variants[variant_idx.as_usize()]
-                        .inner
-                        .field_snaps_to_snap(
-                            (0..fields.len())
-                                .map(|idx| {
-                                    Self::encode_const_val_tree(
-                                        deps,
-                                        ecx.project_field(&val, idx.into()).unwrap(),
-                                        fields[idx].ty(vcx.tcx(), args),
-                                        context,
-                                        ecx,
-                                    )
-                                    .unwrap()
-                                    .upcast_ty()
-                                })
-                                .collect_vec(),
+                    let mut snaps = vec![];
+                    let mut funs = vec![];
+                    for (idx, field) in fields.iter().enumerate() {
+                        let (snap, snap_funs) = Self::encode_const_val_tree(
+                            deps,
+                            ecx.project_field(&val, idx.into()).unwrap(),
+                            field.ty(vcx.tcx(), args),
+                            context,
+                            ecx,
+                            span,
                         )
+                        .unwrap();
+                        snaps.push(snap.upcast_ty());
+                        funs.extend(snap_funs);
+                    }
+                    (
+                        enum_data.variants[variant_idx.as_usize()]
+                            .inner
+                            .field_snaps_to_snap(snaps),
+                        funs,
+                    )
                 }
                 _ => unreachable!(),
             })
@@ -292,13 +368,19 @@ impl ConstEnc {
         ty: ty::Ty<'vir>,
         context: GParams<'vir>,
         span: Span,
-    ) -> Result<vir::ExprCSnap<'vir>, EncodeFullError<'vir, Self>> {
+    ) -> Result<
+        (
+            vir::ExprCSnap<'vir>,
+            Vec<&'vir FunctionGenData<'vir, (), !>>,
+        ),
+        EncodeFullError<'vir, Self>,
+    > {
         let ty_ctxt_at = vir::with_vcx(|vcx| vcx.tcx().at(span));
         let (ecx, v) =
             mk_eval_cx_for_const_val(ty_ctxt_at, TypingEnv::fully_monomorphized(), val, ty)
                 .unwrap();
 
-        Self::encode_const_val_tree(deps, v, ty, context, &ecx)
+        Self::encode_const_val_tree(deps, v, ty, context, &ecx, span)
     }
 }
 
@@ -308,10 +390,19 @@ impl TaskEncoder for ConstEnc {
 
     type TaskDescription<'vir> = ConstEncTask<'vir>;
     type OutputFullDependency<'vir> = vir::ExprCSnap<'vir>;
+    type OutputFullLocal<'vir> = Vec<&'vir FunctionGenData<'vir, (), !>>;
     type EncodingError = ();
 
     fn task_to_key<'vir>(task: &Self::TaskDescription<'vir>) -> Self::TaskKey<'vir> {
         *task
+    }
+
+    fn emit_outputs<'vir>(program: &mut task_encoder::Program<'vir>) {
+        for output in ConstEnc::all_outputs_local_no_errors() {
+            for fun in output {
+                program.add_function(fun);
+            }
+        }
     }
 
     fn do_encode_full<'vir>(
@@ -319,12 +410,12 @@ impl TaskEncoder for ConstEnc {
         deps: &mut TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self> {
         deps.emit_output_ref(*task_key, ())?;
-        let res = match *task_key {
+        let (res, functions) = match *task_key {
             ConstEncTask::Ty {
                 const_,
                 ty,
                 context,
-            } => Self::encode_ty_const(deps, const_, ty, context)?,
+            } => (Self::encode_ty_const(deps, const_, ty, context)?, vec![]),
             ConstEncTask::Mir {
                 const_,
                 encoding_depth,
@@ -353,16 +444,17 @@ impl TaskEncoder for ConstEnc {
                         };
                         let expr = deps.require_dep::<MirPureEnc>(task)?.expr;
                         use vir::Reify;
-                        Ok(expr.reify(vcx, (uneval.def, &[])).downcast_ty())
+                        Ok((expr.reify(vcx, (uneval.def, &[])).downcast_ty(), vec![]))
                     } else {
                         todo!("const too generic")
                     }
                 })?,
-                mir::Const::Ty(ty, const_) => {
-                    Self::encode_ty_const(deps, const_, ty, def_id.into())?
-                }
+                mir::Const::Ty(ty, const_) => (
+                    Self::encode_ty_const(deps, const_, ty, def_id.into())?,
+                    vec![],
+                ),
             },
         };
-        Ok(((), res))
+        Ok((functions, res))
     }
 }

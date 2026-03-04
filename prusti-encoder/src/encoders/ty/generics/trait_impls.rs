@@ -159,7 +159,7 @@ impl TaskEncoder for TraitImplEnc {
                         let trait_item_is_pure = crate::encoders::with_proc_spec(
                             SpecQuery::GetProcKind(
                                 trait_item_def_id,
-                                ty::List::identity_for_item(vcx.tcx(), trait_item_def_id),
+                                trait_item_context.rust_params(),
                             ),
                             |spec| spec.kind.is_pure().unwrap_or_default(),
                         )
@@ -167,7 +167,7 @@ impl TaskEncoder for TraitImplEnc {
                         let impl_item_is_pure = crate::encoders::with_proc_spec(
                             SpecQuery::GetProcKind(
                                 impl_item_def_id,
-                                ty::List::identity_for_item(vcx.tcx(), impl_item_def_id),
+                                impl_item_context.rust_params(),
                             ),
                             |spec| spec.kind.is_pure().unwrap_or_default(),
                         )
@@ -189,18 +189,17 @@ impl TaskEncoder for TraitImplEnc {
 
                         let signature = RustSignature::new(trait_item_def_id);
 
+                        let pre_func_args = func_args
+                            .iter()
+                            .zip(signature.inputs)
+                            .map(|(arg, ty)| {
+                                let normalized = ty.decompose_compare_normalize(trait_item_context, impl_item_args);
+                                let caster = deps.require_dep::<GArgsCastEnc<Pure>>(normalized).unwrap();
+                                caster.cast_to_callee_ctx(vcx.mk_local_ex(arg))
+                            })
+                            .collect::<Vec<_>>();
                         let pre_func_call = assoc_fn.pre_func.call()(
-                            vcx.alloc_slice(
-                                &func_args
-                                    .iter()
-                                    .zip(signature.inputs)
-                                    .map(|(arg, ty)| {
-                                        let normalized = ty.decompose_compare_normalize(trait_item_context, impl_item_args);
-                                        let caster = deps.require_dep::<GArgsCastEnc<Pure>>(normalized).unwrap();
-                                        caster.cast_to_callee_ctx(vcx.mk_local_ex(arg))
-                                    })
-                                    .collect::<Vec<_>>(),
-                            ),
+                            vcx.alloc_slice(&pre_func_args),
                             trait_tys,
                             trait_consts,
                         );
@@ -219,28 +218,19 @@ impl TaskEncoder for TraitImplEnc {
                             let pure_func = deps.require_dep::<FunctionCallEnc>(
                                 CallTaskDescription::new(
                                     impl_item_def_id,
-                                    ty::List::identity_for_item(vcx.tcx(), impl_item_def_id),
+                                    impl_item_context.rust_params(),
                                     impl_item_def_id,
                                 )
                                 .resolve_trait_calls(false),
                             )?;
-                            let pure_func_app = pure_func.call_pure(
-                                func_args
-                                    .iter()
-                                    .zip(signature.inputs)
-                                    .map(|(arg, ty)| {
-                                        // TODO: test if this works
-                                        let normalized = ty.decompose_compare_normalize(trait_item_context, impl_item_args);
-                                        let caster = deps.require_dep::<GArgsCastEnc<Pure>>(normalized).unwrap();
-                                        caster.cast_to_callee_ctx(vcx.mk_local_ex(arg))
-                                    })
-                                    .collect::<Vec<_>>(),
-                            );
+                            let pure_func_app = pure_func.call_pure(pre_func_args);
                             posts.push(vir::expr! {
                                 ([func_ret]) == ([pure_func_app])
                             });
                         }
                         let posts = vcx.mk_conj(&posts);
+                        // TODO: clean up: this kind of casting also happens in
+                        //   `FunctionCallEncOutput::call_pure`.
                         let post_func_call = assoc_fn.post_func.call()(
                             {
                                 let normalized = signature.output.decompose_compare_normalize(trait_item_context, impl_item_args);
@@ -347,7 +337,7 @@ impl TaskEncoder for TraitImplEnc {
                             let pure_func = deps.require_dep::<FunctionCallEnc>(
                                 CallTaskDescription::new(
                                     impl_item_def_id,
-                                    ty::List::identity_for_item(vcx.tcx(), impl_item_def_id),
+                                    impl_item_context.rust_params(),
                                     impl_item_def_id,
                                 )
                                 .resolve_trait_calls(false),

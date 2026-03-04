@@ -53,6 +53,10 @@ impl TaskEncoder for TraitEnc {
             let mut assoc_types = FxHashMap::default();
 
             for item in tcx.associated_items(task_key).in_definition_order() {
+                if !matches!(item.kind, ty::AssocKind::Type { .. }) {
+                    continue;
+                }
+
                 let def_id = item.def_id;
 
                 // item_generics also includes parameters of trait itself
@@ -60,18 +64,13 @@ impl TaskEncoder for TraitEnc {
                 let item_generics = deps.require_dep::<GenericParamsEnc>(item_params)?;
                 let item_name = tcx.item_name(def_id);
 
-                match item.kind {
-                    ty::AssocKind::Type { .. } => {
-                        let type_func = FunctionIdn::new(
-                            vir_format_identifier!(vcx, "{trait_name}_assoc_type_{item_name}"),
-                            (item_generics.ty_args(), item_generics.const_args()),
-                            vir::TYPE_TYVAL,
-                        );
-                        assoc_types.insert(def_id, type_func);
-                        dom_funcs.push(vcx.mk_domain_function(type_func, false, None));
-                    }
-                    _ => (),
-                }
+                let type_func = FunctionIdn::new(
+                    vir_format_identifier!(vcx, "{trait_name}_assoc_type_{item_name}"),
+                    (item_generics.ty_args(), item_generics.const_args()),
+                    vir::TYPE_TYVAL,
+                );
+                assoc_types.insert(def_id, type_func);
+                dom_funcs.push(vcx.mk_domain_function(type_func, false, None));
             }
 
             let impl_fun = FunctionIdn::new(

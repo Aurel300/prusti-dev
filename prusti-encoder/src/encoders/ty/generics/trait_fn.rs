@@ -91,7 +91,6 @@ impl TaskEncoder for TraitFnEnc {
             let item_params = GParams::from(def_id);
             let item_generics = deps.require_dep::<GenericParamsEnc>(item_params)?;
             let item_name = tcx.item_name(def_id);
-            let item_identity_substs = ty::List::identity_for_item(vcx.tcx(), def_id);
 
             let local_defs =
                 deps.require_dep::<MirLocalDefEnc>(MirLocalDefEncTask::Local {
@@ -107,7 +106,7 @@ impl TaskEncoder for TraitFnEnc {
             let is_pure = crate::encoders::with_proc_spec(
                 SpecQuery::GetProcKind(
                     def_id,
-                    item_identity_substs,
+                    item_params.rust_params(),
                 ),
                 |spec| spec.kind.is_pure().unwrap_or_default(),
             )
@@ -212,7 +211,7 @@ impl TaskEncoder for TraitFnEnc {
                 let pure_func = deps.require_dep::<FunctionCallEnc>(
                     CallTaskDescription::new(
                         def_id,
-                        item_identity_substs,
+                        item_params.rust_params(),
                         def_id,
                     )
                     .resolve_trait_calls(false),

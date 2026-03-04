@@ -5,7 +5,7 @@ use prusti_interface::{
     specs::{specifications::find_trait_method_substs, typed::Pledge},
 };
 use prusti_rustc_interface::{
-    middle::{mir, ty},
+    middle::mir,
     span::{Span, def_id::DefId},
 };
 
@@ -15,7 +15,7 @@ use vir::{CastType, HasType, Reify};
 use crate::encoders::{
     MirLocalDefEncTask, MirPureEnc,
     mir_pure::{ExprInput, PureKind},
-    ty::{RustTyDecomposition, use_pure::TyUsePureEnc},
+    ty::{RustTyDecomposition, generics::GParams, use_pure::TyUsePureEnc},
 };
 pub struct MirSpecEnc;
 
@@ -135,18 +135,18 @@ impl TaskEncoder for MirSpecEnc {
         deps.emit_output_ref(*task_key, ())?;
 
         vir::with_vcx(|vcx| {
-            let base_substs = ty::GenericArgs::identity_for_item(vcx.tcx(), def_id);
-            let context_substs = ty::GenericArgs::identity_for_item(vcx.tcx(), context_def_id);
-            let substs = find_trait_method_substs(vcx.tcx(), context_def_id, context_substs)
+            let base_params = GParams::from(def_id);
+            let context_params = GParams::from(context_def_id);
+            let substs = find_trait_method_substs(vcx.tcx(), context_def_id, context_params.rust_params())
                 .map(|s| s.1)
-                .unwrap_or(base_substs);
+                .unwrap_or(base_params.rust_params());
 
             let local_defs = deps.require_dep::<crate::encoders::local_def::MirLocalDefEnc>(
                 MirLocalDefEncTask::LocalSubsts {
                     def_id,
                     context_def_id,
                     substs: if def_id == context_def_id {
-                        context_substs
+                        context_params.rust_params()
                     } else {
                         substs
                     },

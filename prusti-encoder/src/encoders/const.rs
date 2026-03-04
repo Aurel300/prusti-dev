@@ -230,8 +230,16 @@ impl ConstEnc {
                         )
                     }
                 }
-                super::ty::TySpecifics::StructLike(struct_data) => match ty.kind() {
-                    TyKind::Tuple(tys) => struct_data.field_snaps_to_snap(
+                super::ty::TySpecifics::StructLike(struct_data) => {
+                    let tys = match ty.kind() {
+                        TyKind::Tuple(tys) => tys.as_slice(),
+                        TyKind::Adt(adt_def, args) if adt_def.is_struct() => &adt_def
+                            .all_fields()
+                            .map(|f| f.ty(vcx.tcx(), args))
+                            .collect_vec(),
+                        _ => unreachable!(),
+                    };
+                    kind.expect_structlike().field_snaps_to_snap(
                         (0..struct_data.fields.len())
                             .map(|idx| {
                                 Self::encode_const_val_tree(
@@ -245,11 +253,20 @@ impl ConstEnc {
                                 .upcast_ty()
                             })
                             .collect_vec(),
-                    ),
-                    TyKind::Adt(def, args) => {
-                        let fields = def.all_fields().collect_vec();
-                        struct_data.field_snaps_to_snap(
-                            (0..struct_data.fields.len())
+                    )
+                }
+
+                super::ty::TySpecifics::EnumLike(enum_data) => {
+                    let (enum_ty, args) = match ty.kind() {
+                        TyKind::Adt(adt_def, args) if adt_def.is_enum() => (adt_def, args),
+                        _ => unreachable!(),
+                    };
+                    let variant_idx = ecx.read_discriminant(&val).unwrap();
+                    let fields = enum_ty.all_fields().collect_vec();
+                    enum_data.variants[variant_idx.as_usize()]
+                        .inner
+                        .field_snaps_to_snap(
+                            (0..fields.len())
                                 .map(|idx| {
                                     Self::encode_const_val_tree(
                                         deps,
@@ -263,33 +280,8 @@ impl ConstEnc {
                                 })
                                 .collect_vec(),
                         )
-                    }
-                    _ => unreachable!(),
-                },
-                super::ty::TySpecifics::EnumLike(enum_data) => match ty.kind() {
-                    TyKind::Adt(def, args) => {
-                        let fields = def.all_fields().collect_vec();
-                        let variant_idx = ecx.read_discriminant(&val).unwrap();
-                        let struct_data = &enum_data.variants[variant_idx.as_usize()].inner;
-                        struct_data.field_snaps_to_snap(
-                            (0..struct_data.fields.len())
-                                .map(|idx| {
-                                    Self::encode_const_val_tree(
-                                        deps,
-                                        ecx.project_field(&val, idx.into()).unwrap(),
-                                        fields[idx].ty(vcx.tcx(), args),
-                                        context,
-                                        ecx,
-                                    )
-                                    .unwrap()
-                                    .upcast_ty()
-                                })
-                                .collect_vec(),
-                        )
-                    }
-                    _ => unreachable!(),
-                },
-                super::ty::TySpecifics::Builtin(_) => unreachable!(),
+                }
+                _ => unreachable!(),
             })
         })
     }

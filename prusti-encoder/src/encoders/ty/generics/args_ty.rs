@@ -57,7 +57,7 @@ impl TaskEncoder for GArgsTyEnc {
             .args
             .iter()
             .copied()
-            .filter_map(|a| ty::GenericArg::as_const(a))
+            .filter_map(ty::GenericArg::as_const)
             .map(|const_| {
                 // If the constant is a value, we already know its type.
                 // Otherwise, we will look it up in the param environment.

@@ -308,6 +308,11 @@ impl ConstEnc {
                             .all_fields()
                             .map(|f| f.ty(vcx.tcx(), args))
                             .collect_vec(),
+                        TyKind::Closure(_closure_def, args) => &args
+                            .as_slice()
+                            .iter()
+                            .map(|arg| arg.expect_ty())
+                            .collect_vec(),
                         _ => unreachable!(),
                     };
                     let mut snaps = vec![];

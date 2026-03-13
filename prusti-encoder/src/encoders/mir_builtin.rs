@@ -228,6 +228,33 @@ impl MirBuiltinEnc {
         let snap_src = src_ref_impure.ref_to_snap(ref_src_ex);
         let snap_dst = dst_ref_impure.ref_to_snap(ref_dst_ex);
 
+        let src_value = match &src_ref_pure.specifics {
+            TySpecifics::ImmRef(data) => data.value_access(snap_src.downcast_ty()),
+            TySpecifics::MutRef(data) => data.value_access(snap_src.downcast_ty()),
+            _ => unreachable!(),
+        }
+        .downcast_ty();
+        let dst_value = match &dst_ref_pure.specifics {
+            TySpecifics::ImmRef(data) => data.value_access(snap_dst.downcast_ty()),
+            TySpecifics::MutRef(data) => data.value_access(snap_dst.downcast_ty()),
+            _ => unreachable!(),
+        }
+        .downcast_ty();
+
+        let src_len = match src_ty_inner.kind() {
+            ty::TyKind::Array(_, len) => {
+                let const_enc = deps.require_dep::<ConstEnc>(ConstEncTask::Ty {
+                    const_: *len,
+                    ty: vcx.tcx().types.usize,
+                    context: params,
+                })?;
+                let ty_task = RustTyDecomposition::from_prim_ty(vcx.tcx().types.usize);
+                let usize_out = deps.require_dep::<TyUsePureEnc>(ty_task)?.expect_native();
+                (usize_out.snap_to_prim)(const_enc).downcast_ty()
+            }
+            _ => src_array_pure.len(src_value),
+        };
+
         let mut pres = vec![src_ref_impure.ref_to_pred(vcx, ref_src_ex, None)];
         let mut posts = vec![dst_ref_impure.ref_to_pred(vcx, ref_dst_ex, None)];
         let mut pres_undo = vec![dst_ref_impure.ref_to_pred(vcx, ref_dst_ex, None)];
@@ -275,6 +302,10 @@ impl MirBuiltinEnc {
         }
 
         match dst_ty_inner.kind() {
+            ty::TyKind::Dynamic(_, _, _) => {
+                // dyn is opaque; predicate transfer in pres/posts is sufficient
+                // no content postconditions can be stated
+            },
             ty::TyKind::Slice(elem_ty) => {
                 let src_value = match &src_ref_pure.specifics {
                     TySpecifics::ImmRef(data) => data.value_access(snap_src.downcast_ty()),
@@ -372,7 +403,6 @@ impl MirBuiltinEnc {
                 ));
             }
         }
-
         Ok((
             vcx.mk_method(
                 method,

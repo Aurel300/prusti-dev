@@ -440,9 +440,10 @@ impl<'tcx> TyData<'tcx, RustTyDatas> {
                     args,
                 )
             }),
-            ty::TyKind::Never | ty::TyKind::Str | ty::TyKind::FnPtr(..) | ty::TyKind::Dynamic(..) => {
-                (GParams::empty(), ty::GenericArgs::empty())
-            }
+            ty::TyKind::Never
+            | ty::TyKind::Str
+            | ty::TyKind::FnPtr(..)
+            | ty::TyKind::Dynamic(..) => (GParams::empty(), ty::GenericArgs::empty()),
             _ => todo!("instantiate_identity_for_type for {:?}", ty),
         };
         params.check(args);

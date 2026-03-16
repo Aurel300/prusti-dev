@@ -531,7 +531,8 @@ impl<'tcx> TySpecifics<'tcx, RustTyDatas> {
             }
             // TODO: add str support
             ty::TyKind::Str => TySpecifics::mk_opaque(()),
-            // TODO: add dyn support
+            // TODO: give dyn Trait a type witness parameter (the concrete type behind the
+            // pointer), enabling virtual dispatch and distinguishing dyn TraitA from dyn TraitB.
             ty::TyKind::Dynamic(..) => TySpecifics::mk_param(()),
             _ => TySpecifics::mk_opaque(()),
         }

@@ -1,7 +1,7 @@
 use task_encoder::{EncodeFullResult, OutputRefAny, TaskEncoder};
 use vir::{CallableIdn, CastType, FunctionIdn, HasType};
 
-use crate::encoders::ty::{RustTy, generics::GenericParamsEnc};
+use crate::encoders::ty::{RustParamData, RustTy, TySpecifics, generics::GenericParamsEnc};
 
 use super::r#typeof::{TypeOfEnc, TypeOfEncOutputRef};
 
@@ -72,10 +72,10 @@ impl TaskEncoder for TyConstructorEnc {
         task_key: &Self::TaskKey<'vir>,
         deps: &mut task_encoder::TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self> {
-        // Valid for dyn Trait (TySpecifics::Param with no type params of its own).
-        // Real generic params (T, Alias) always have one synthetic param and are
-        // short-circuited in ty_expr before reaching TyConstructorEnc.
-        assert!(!task_key.specifics.is_param() || task_key.params.rust_params().is_empty());
+        assert!(
+            !task_key.specifics.is_param()
+                || matches!(&task_key.specifics, TySpecifics::Param(RustParamData::Dyn))
+        );
         vir::with_vcx(|vcx| {
             let base_name = task_key.name();
             let params = deps.require_dep::<GenericParamsEnc>(task_key.params)?;

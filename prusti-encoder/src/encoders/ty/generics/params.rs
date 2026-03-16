@@ -9,7 +9,7 @@ use vir::{CastType, HasType};
 use crate::encoders::{
     TyUsePureEnc,
     ty::{
-        RustTyDecomposition,
+        RustParamData, RustTyDecomposition,
         data::TySpecifics,
         generics::{GArgs, GArgsTyEnc, GParamVariant, r#trait::TraitEnc},
         lifted::TyConstructorEnc,
@@ -258,26 +258,19 @@ impl<'vir> GenericParams<'vir> {
         deps: &mut TaskEncoderDependencies<'vir, E>,
         ty: RustTyDecomposition<'vir>,
     ) -> vir::ExprTyVal<'vir> {
-        if let TySpecifics::Param(()) = &ty.ty.specifics {
-            if ty.args.args().is_empty() {
-                // dyn Trait: the only TySpecifics::Param type with no synthetic type params.
-                // Real generic T and Alias always have exactly one.
-                assert!(ty.ty.params.rust_params().is_empty());
-                // fall through to TyConstructorEnc
-            } else {
-                let param = ty.args.expect_param();
-                return match param {
-                    GParamVariant::Param(p) => self.ty_exprs[self.map_idx(p.index).unwrap()],
-                    GParamVariant::Alias(alias) => vir::with_vcx(|vcx| {
-                        let tcx = vcx.tcx();
-                        let trait_did = tcx.associated_item(alias.def_id).container_id(tcx);
-                        let trait_data = deps.require_ref::<TraitEnc>(trait_did).unwrap();
-                        let args = GArgs::new(ty.args.context, alias.args);
-                        let args = deps.require_dep::<GArgsTyEnc>(args).unwrap();
-                        (trait_data.assoc_types[&alias.def_id])(args.get_ty(), args.get_const())
-                    }),
-                };
-            }
+        if let TySpecifics::Param(RustParamData::Generic) = &ty.ty.specifics {
+            let param = ty.args.expect_param();
+            return match param {
+                GParamVariant::Param(p) => self.ty_exprs[self.map_idx(p.index).unwrap()],
+                GParamVariant::Alias(alias) => vir::with_vcx(|vcx| {
+                    let tcx = vcx.tcx();
+                    let trait_did = tcx.associated_item(alias.def_id).container_id(tcx);
+                    let trait_data = deps.require_ref::<TraitEnc>(trait_did).unwrap();
+                    let args = GArgs::new(ty.args.context, alias.args);
+                    let args = deps.require_dep::<GArgsTyEnc>(args).unwrap();
+                    (trait_data.assoc_types[&alias.def_id])(args.get_ty(), args.get_const())
+                }),
+            };
         }
         let ty_constructor = deps
             .require_ref::<TyConstructorEnc>(ty.ty)

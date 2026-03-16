@@ -211,7 +211,7 @@ pub struct RustTyDatas;
 impl<'tcx> TyDatas<'tcx> for RustTyDatas {
     type TyData = RustTyData<'tcx>;
     type PrimitiveData = ty::Ty<'tcx>;
-    type ParamData = ();
+    type ParamData = RustParamData;
     type ArrayData = LazyRustTy<'tcx>;
     type ImmRefData = LazyRustTy<'tcx>;
     type MutRefData = LazyRustTy<'tcx>;
@@ -274,6 +274,12 @@ pub struct RustVariantData {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct RustEnumData<'tcx> {
     pub discr: ty::Ty<'tcx>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum RustParamData {
+    Generic,
+    Dyn,
 }
 
 // Internal methods
@@ -507,7 +513,9 @@ impl<'tcx> TySpecifics<'tcx, RustTyDatas> {
             },
             // TODO: add raw pointer support
             ty::TyKind::RawPtr(..) => TySpecifics::mk_opaque(()),
-            ty::TyKind::Alias(..) | ty::TyKind::Param(_) => TySpecifics::mk_param(()),
+            ty::TyKind::Alias(..) | ty::TyKind::Param(_) => {
+                TySpecifics::mk_param(RustParamData::Generic)
+            }
             ty::TyKind::Closure(_, args) => {
                 let captured = args.as_closure().upvar_tys();
                 let fields = vir::with_vcx(|vcx| {
@@ -533,7 +541,7 @@ impl<'tcx> TySpecifics<'tcx, RustTyDatas> {
             ty::TyKind::Str => TySpecifics::mk_opaque(()),
             // TODO: give dyn Trait a type witness parameter (the concrete type behind the
             // pointer), enabling virtual dispatch and distinguishing dyn TraitA from dyn TraitB.
-            ty::TyKind::Dynamic(..) => TySpecifics::mk_param(()),
+            ty::TyKind::Dynamic(..) => TySpecifics::mk_param(RustParamData::Dyn),
             _ => TySpecifics::mk_opaque(()),
         }
     }

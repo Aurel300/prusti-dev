@@ -270,7 +270,10 @@ impl<'vir> GenericParams<'vir> {
                     let args = deps.require_dep::<GArgsTyEnc>(args).unwrap();
                     (trait_data.assoc_types[&alias.def_id])(args.get_ty(), args.get_const())
                 }),
-                GParamVariant::Dyn => {}
+                GParamVariant::Dyn => {
+                    // Only dyn Trait (TySpecifics::Param with no type params) falls through.
+                    assert!(ty.ty.params.rust_params().is_empty());
+                }
             };
         }
         let ty_constructor = deps

@@ -360,7 +360,7 @@ impl<'tcx> TyData<'tcx, RustTyDatas> {
             ty::TyKind::FnPtr(..) => String::from("FnPtr"),
             ty::TyKind::Array(..) => String::from("Array"),
             ty::TyKind::Slice(..) => String::from("Slice"),
-            ty::TyKind::Dynamic(_, _, _) => String::from("Dyn"),
+            ty::TyKind::Dynamic(..) => String::from("Dyn"),
             other => unimplemented!("ty_name for {:?}", other),
         }
     }
@@ -532,7 +532,7 @@ impl<'tcx> TySpecifics<'tcx, RustTyDatas> {
             // TODO: add str support
             ty::TyKind::Str => TySpecifics::mk_opaque(()),
             // TODO: add dyn support
-            ty::TyKind::Dynamic(_, _, _) => TySpecifics::mk_param(()),
+            ty::TyKind::Dynamic(..) => TySpecifics::mk_param(()),
             _ => TySpecifics::mk_opaque(()),
         }
     }

@@ -72,6 +72,10 @@ impl TaskEncoder for TyConstructorEnc {
         task_key: &Self::TaskKey<'vir>,
         deps: &mut task_encoder::TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self> {
+        // Valid for dyn Trait (TySpecifics::Param with no type params of its own).
+        // Real generic params (T, Alias) always have one synthetic param and are
+        // short-circuited in ty_expr before reaching TyConstructorEnc.
+        assert!(!task_key.specifics.is_param() || task_key.params.rust_params().is_empty());
         vir::with_vcx(|vcx| {
             let base_name = task_key.name();
             let params = deps.require_dep::<GenericParamsEnc>(task_key.params)?;

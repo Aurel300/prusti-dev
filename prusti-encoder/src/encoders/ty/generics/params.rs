@@ -260,9 +260,9 @@ impl<'vir> GenericParams<'vir> {
     ) -> vir::ExprTyVal<'vir> {
         if let TySpecifics::Param(()) = &ty.ty.specifics {
             let param = ty.args.expect_param();
-            return match param {
-                GParamVariant::Param(p) => self.ty_exprs[self.map_idx(p.index).unwrap()],
-                GParamVariant::Alias(alias) => vir::with_vcx(|vcx| {
+            match param {
+                GParamVariant::Param(p) => return self.ty_exprs[self.map_idx(p.index).unwrap()],
+                GParamVariant::Alias(alias) => return vir::with_vcx(|vcx| {
                     let tcx = vcx.tcx();
                     let trait_did = tcx.associated_item(alias.def_id).container_id(tcx);
                     let trait_data = deps.require_ref::<TraitEnc>(trait_did).unwrap();
@@ -270,6 +270,7 @@ impl<'vir> GenericParams<'vir> {
                     let args = deps.require_dep::<GArgsTyEnc>(args).unwrap();
                     (trait_data.assoc_types[&alias.def_id])(args.get_ty(), args.get_const())
                 }),
+                GParamVariant::Dyn => {}
             };
         }
         let ty_constructor = deps

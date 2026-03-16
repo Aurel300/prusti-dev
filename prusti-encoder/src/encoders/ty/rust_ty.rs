@@ -532,7 +532,7 @@ impl<'tcx> TySpecifics<'tcx, RustTyDatas> {
             // TODO: add str support
             ty::TyKind::Str => TySpecifics::mk_opaque(()),
             // TODO: add dyn support
-            ty::TyKind::Dynamic(_, _, _) => TySpecifics::mk_opaque(()),
+            ty::TyKind::Dynamic(_, _, _) => TySpecifics::mk_param(()),
             _ => TySpecifics::mk_opaque(()),
         }
     }

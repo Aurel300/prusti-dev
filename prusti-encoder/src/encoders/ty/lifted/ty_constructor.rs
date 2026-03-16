@@ -72,7 +72,6 @@ impl TaskEncoder for TyConstructorEnc {
         task_key: &Self::TaskKey<'vir>,
         deps: &mut task_encoder::TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self> {
-        assert!(!task_key.specifics.is_param());
         vir::with_vcx(|vcx| {
             let base_name = task_key.name();
             let params = deps.require_dep::<GenericParamsEnc>(task_key.params)?;

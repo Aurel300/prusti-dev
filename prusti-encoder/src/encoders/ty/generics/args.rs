@@ -13,7 +13,6 @@ pub struct GArgs<'tcx> {
 pub enum GParamVariant<'tcx> {
     Param(ty::ParamTy),
     Alias(ty::AliasTy<'tcx>),
-    Dyn,
 }
 
 impl<'tcx> GArgs<'tcx> {
@@ -41,9 +40,6 @@ impl<'tcx> GArgs<'tcx> {
     }
 
     pub fn expect_param(self) -> GParamVariant<'tcx> {
-        if self.args.is_empty() {
-            return GParamVariant::Dyn;
-        }
         assert_eq!(self.args.len(), 1);
         match self.args[0].expect_ty().kind() {
             ty::TyKind::Param(p) => GParamVariant::Param(*p),

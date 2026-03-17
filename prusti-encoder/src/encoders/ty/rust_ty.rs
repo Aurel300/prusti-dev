@@ -429,20 +429,10 @@ impl<'tcx> TyData<'tcx, RustTyDatas> {
                     args,
                 )
             }),
-<<<<<<< HEAD
             ty::TyKind::Never
             | ty::TyKind::Str
             | ty::TyKind::FnPtr(..)
             | ty::TyKind::Dynamic(..) => (GParams::empty(), ty::GenericArgs::empty()),
-||||||| parent of 00a36d397 (Encode trait objects as opaque to keep the verifier from crashing)
-            ty::TyKind::Never | ty::TyKind::Str | ty::TyKind::FnPtr(..) => {
-                (GParams::empty(), ty::GenericArgs::empty())
-            }
-=======
-            ty::TyKind::Never | ty::TyKind::Str | ty::TyKind::FnPtr(..) | ty::TyKind::Dynamic(..) => {
-                (GParams::empty(), ty::GenericArgs::empty())
-            }
->>>>>>> 00a36d397 (Encode trait objects as opaque to keep the verifier from crashing)
             _ => todo!("instantiate_identity_for_type for {:?}", ty),
         };
         params.check(args);
@@ -532,15 +522,9 @@ impl<'tcx> TySpecifics<'tcx, RustTyDatas> {
             }
             // TODO: add str support
             ty::TyKind::Str => TySpecifics::mk_opaque(()),
-<<<<<<< HEAD
             // TODO: give dyn Trait a type witness parameter (the concrete type behind the
             // pointer), enabling virtual dispatch and distinguishing dyn TraitA from dyn TraitB.
             ty::TyKind::Dynamic(..) => TySpecifics::mk_param(RustParamData::Dyn),
-||||||| parent of 00a36d397 (Encode trait objects as opaque to keep the verifier from crashing)
-=======
-            // TODO: add dyn support
-            ty::TyKind::Dynamic(_, _, _) => TySpecifics::mk_opaque(()),
->>>>>>> 00a36d397 (Encode trait objects as opaque to keep the verifier from crashing)
             _ => TySpecifics::mk_opaque(()),
         }
     }

@@ -278,7 +278,9 @@ pub struct RustEnumData<'tcx> {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum RustParamData {
+    /// Represents actual type parameters.
     Generic,
+    /// Represents a trait object (`dyn Trait`).
     Dyn,
 }
 

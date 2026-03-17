@@ -5,6 +5,7 @@ struct S { x: i32 }
 impl MyTrait for S {}
 
 fn consume(_v: &dyn MyTrait) {}
+<<<<<<< HEAD
 
 fn consume2(_v: &mut dyn MyTrait) {}
 
@@ -17,9 +18,23 @@ fn consume3(_v: &dyn Foo<i32>) {}
 fn consume4(_v: &mut dyn Foo<u32>) {}
 
 fn main() {
-    let s = S { x: 2 };
+    let s = S { x: 42 };
     consume(&s);
     consume2(&s);
     consume3(&s);
     consume4(&s);
+}
+
+#[ensures(result == 42)] 
+fn function1() -> i32 {
+    let s = S { x: 42 };
+    consume(&s);
+    s.x
+}
+
+#[ensures(result == 42)] 
+fn function2() -> i32 {
+    let s = S { x: 42 };
+    consume3(&s);
+    s.x
 }

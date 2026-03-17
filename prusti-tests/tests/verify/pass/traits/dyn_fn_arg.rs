@@ -14,5 +14,12 @@ impl<X> Foo<X> for S {}
 
 fn consume3(_v: &dyn Foo<i32>) {}
 
-fn consume4(_v: &dyn Foo<u32>) {}
+fn consume4(_v: &mut dyn Foo<u32>) {}
 
+fn main() {
+    let s = S { x: 2 };
+    consume(&s);
+    consume2(&s);
+    consume3(&s);
+    consume4(&s);
+}

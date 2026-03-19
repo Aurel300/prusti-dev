@@ -7,7 +7,7 @@ use prusti_rustc_interface::{
     abi, hir,
     index::{self, IndexVec},
     middle::ty,
-    span::symbol,
+    span::{def_id::DefId, symbol},
 };
 
 use super::{
@@ -327,12 +327,39 @@ impl<'tcx> TyData<'tcx, RustTyDatas> {
         }
     }
 
+    fn full_item_name(tcx: ty::TyCtxt, did: DefId) -> String {
+        let def_path = tcx.def_path(did);
+        let path_segments = std::iter::chain(
+            std::iter::once(format!("{}", def_path.krate)),
+            def_path.data.iter().map(|elem|
+                // Adapted from https://doc.rust-lang.org/stable/nightly-rustc/src/rustc_hir/definitions.rs.html#186-203
+                match elem.data.name() {
+                hir::definitions::DefPathDataName::Named(name) => {
+                    if elem.disambiguator != 0 {
+                        format!("{}${}", name, elem.disambiguator)
+                    } else {
+                        name.to_ident_string()
+                    }
+                }
+                hir::definitions::DefPathDataName::Anon { namespace } => {
+                    if let hir::definitions::DefPathData::AnonAssocTy(method) = elem.data {
+                        format!("{}${}${}", method, namespace, elem.disambiguator)
+                    } else {
+                        format!("{}${}", namespace, elem.disambiguator)
+                    }
+                }
+            }),
+        )
+        .collect::<Vec<_>>();
+        path_segments.join("$$")
+    }
+
     fn ty_name(ty: ty::Ty<'tcx>) -> String {
         match ty.kind() {
             _ if ty.is_primitive() => Self::prim_ty_name(ty),
             ty::TyKind::Str => String::from("Str"),
             ty::TyKind::Adt(adt, _) => {
-                vir::with_vcx(|vcx| vcx.tcx().item_name(adt.did()).to_ident_string())
+                vir::with_vcx(|vcx| Self::full_item_name(vcx.tcx(), adt.did()))
             }
             ty::TyKind::Tuple(params) => format!("{}_Tuple", params.len()),
             ty::TyKind::Never => String::from("Never"),

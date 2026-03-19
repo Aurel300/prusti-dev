@@ -1,4 +1,4 @@
-use std::ops::Deref;
+use std::{fmt::Write, ops::Deref};
 
 use itertools::Itertools;
 use pcg::borrow_pcg::region_projection::{HasRegions, PcgRegion, RegionIdx};
@@ -329,29 +329,31 @@ impl<'tcx> TyData<'tcx, RustTyDatas> {
 
     fn full_item_name(tcx: ty::TyCtxt, did: DefId) -> String {
         let def_path = tcx.def_path(did);
-        let path_segments = std::iter::chain(
-            std::iter::once(format!("{}", def_path.krate)),
-            def_path.data.iter().map(|elem|
-                // Adapted from https://doc.rust-lang.org/stable/nightly-rustc/src/rustc_hir/definitions.rs.html#186-203
-                match elem.data.name() {
+
+        let mut result = String::with_capacity(64);
+        let _ = write!(result, "{}", def_path.krate);
+
+        for elem in &def_path.data {
+            result.push_str("$$");
+            // Adapted from https://doc.rust-lang.org/stable/nightly-rustc/src/rustc_hir/definitions.rs.html#186-203
+            match elem.data.name() {
                 hir::definitions::DefPathDataName::Named(name) => {
                     if elem.disambiguator != 0 {
-                        format!("{}${}", name, elem.disambiguator)
+                        let _ = write!(result, "{}${}", name, elem.disambiguator);
                     } else {
-                        name.to_ident_string()
+                        result.push_str(name.as_str());
                     }
                 }
                 hir::definitions::DefPathDataName::Anon { namespace } => {
                     if let hir::definitions::DefPathData::AnonAssocTy(method) = elem.data {
-                        format!("{}${}${}", method, namespace, elem.disambiguator)
+                        let _ = write!(result, "{}${}${}", method, namespace, elem.disambiguator);
                     } else {
-                        format!("{}${}", namespace, elem.disambiguator)
+                        let _ = write!(result, "{}${}", namespace, elem.disambiguator);
                     }
                 }
-            }),
-        )
-        .collect::<Vec<_>>();
-        path_segments.join("$$")
+            }
+        }
+        result
     }
 
     fn ty_name(ty: ty::Ty<'tcx>) -> String {

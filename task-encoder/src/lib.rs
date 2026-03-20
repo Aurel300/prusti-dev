@@ -1,9 +1,9 @@
 #![feature(rustc_private)]
 #![feature(associated_type_defaults)]
 
+use core::panic;
 use hashlink::LinkedHashMap;
 use prusti_rustc_interface::span::Span;
-use core::panic;
 use std::cell::RefCell;
 
 mod cache;
@@ -272,16 +272,15 @@ pub trait TaskEncoder {
         }
 
         let value = task_key.clone();
-        let catch_result =
-            std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
-                let mut deps = TaskEncoderDependencies::new();
-                let encode_result = Self::do_encode_full(&value, &mut deps);
-                (encode_result, deps)
-            }));
+        let catch_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+            let mut deps = TaskEncoderDependencies::new();
+            let encode_result = Self::do_encode_full(&value, &mut deps);
+            (encode_result, deps)
+        }));
 
         let (encode_result, deps) = match catch_result {
             Ok(result) => result,
-            // there was a panic within the encoder. We want to report it and return an error to the caller. 
+            // there was a panic within the encoder. We want to report it and return an error to the caller.
             Err(panic_payload) => {
                 let msg = if let Some(s) = panic_payload.downcast_ref::<&str>() {
                     s.to_string()
@@ -296,24 +295,29 @@ pub trait TaskEncoder {
                     match cache.get(&task_key) {
                         Some(TaskEncoderCacheState::Started { output_ref }) => {
                             let output_ref = output_ref.clone();
-                            cache.insert(task_key.clone(), TaskEncoderCacheState::ErrorEncode {
-                                output_ref,
-                                deps: TaskEncoderDependencies::new(),
-                                error: error.clone(),
-                                output_dep: None,
-                            });
+                            cache.insert(
+                                task_key.clone(),
+                                TaskEncoderCacheState::ErrorEncode {
+                                    output_ref,
+                                    deps: TaskEncoderDependencies::new(),
+                                    error: error.clone(),
+                                    output_dep: None,
+                                },
+                            );
                         }
                         _ => {
-                            cache.insert(task_key.clone(), TaskEncoderCacheState::ErrorEnqueue {
-                                error: error.clone(),
-                            });
+                            cache.insert(
+                                task_key.clone(),
+                                TaskEncoderCacheState::ErrorEnqueue {
+                                    error: error.clone(),
+                                },
+                            );
                         }
                     }
                 });
                 return Err(error);
             }
         };
-
 
         let output_ref = Self::with_cache(|cache| match cache.borrow().get(&task_key) {
             Some(
@@ -531,7 +535,9 @@ pub trait TaskEncoder {
         deps: &mut TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self>;
 
-    fn all_outputs_local_no_errors<'vir>(program: &mut Program<'vir>) -> Vec<Self::OutputFullLocal<'vir>>
+    fn all_outputs_local_no_errors<'vir>(
+        program: &mut Program<'vir>,
+    ) -> Vec<Self::OutputFullLocal<'vir>>
     where
         Self: 'vir,
     {

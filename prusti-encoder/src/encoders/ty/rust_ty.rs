@@ -327,8 +327,8 @@ impl<'tcx> TyData<'tcx, RustTyDatas> {
         }
     }
 
-    fn full_item_name(tcx: ty::TyCtxt, did: DefId) -> String {
-        let def_path = tcx.def_path(did);
+    fn full_item_name(did: DefId) -> String {
+        let def_path = vir::with_vcx(|vcx| vcx.tcx().def_path(did));
 
         let mut result = String::with_capacity(64);
         let _ = write!(result, "{}", def_path.krate);
@@ -360,9 +360,7 @@ impl<'tcx> TyData<'tcx, RustTyDatas> {
         match ty.kind() {
             _ if ty.is_primitive() => Self::prim_ty_name(ty),
             ty::TyKind::Str => String::from("Str"),
-            ty::TyKind::Adt(adt, _) => {
-                vir::with_vcx(|vcx| Self::full_item_name(vcx.tcx(), adt.did()))
-            }
+            ty::TyKind::Adt(adt, _) => Self::full_item_name(adt.did()),
             ty::TyKind::Tuple(params) => format!("{}_Tuple", params.len()),
             ty::TyKind::Never => String::from("Never"),
             ty::TyKind::Ref(_, _, ty::Mutability::Not) => String::from("Ref_immutable"),
@@ -370,22 +368,7 @@ impl<'tcx> TyData<'tcx, RustTyDatas> {
             ty::TyKind::RawPtr(_, ty::Mutability::Not) => String::from("RawPtr_immutable"),
             ty::TyKind::RawPtr(_, ty::Mutability::Mut) => String::from("RawPtr_mutable"),
             ty::TyKind::Param(_) | ty::TyKind::Alias(..) => String::from("Param"),
-            ty::TyKind::Closure(def_id, _) => vir::with_vcx(|vcx| {
-                let def_key = vcx.tcx().def_key(def_id);
-                match def_key.disambiguated_data.data {
-                    // Asking for the item_name of a closure triggers an ICE in
-                    // the compiler, so we give it a name based on its parent.
-                    hir::definitions::DefPathData::Closure => format!(
-                        "{}_Closure_{}",
-                        vcx.tcx().item_name(hir::def_id::DefId {
-                            krate: def_id.krate,
-                            index: def_key.parent.unwrap()
-                        }),
-                        def_key.disambiguated_data.disambiguator,
-                    ),
-                    _ => vcx.tcx().item_name(*def_id).to_ident_string(),
-                }
-            }),
+            ty::TyKind::Closure(def_id, _) => Self::full_item_name(*def_id),
             ty::TyKind::FnPtr(..) => String::from("FnPtr"),
             ty::TyKind::Array(..) => String::from("Array"),
             ty::TyKind::Slice(..) => String::from("Slice"),

@@ -553,6 +553,7 @@ pub trait TaskEncoder {
         outputs
     }
 
+    #[allow(clippy::type_complexity)]
     fn all_outputs_local<'vir>() -> (
         Vec<Self::OutputFullLocal<'vir>>,
         Vec<(Self::TaskKey<'vir>, TaskEncoderError<Self>)>,

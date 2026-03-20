@@ -174,6 +174,7 @@ pub enum TyPureEncLocalKind<'vir> {
     Adt {
         adt: vir::Adt<'vir>,
         discr_fn: Option<vir::Function<'vir>>,
+        valid_fn: vir::Function<'vir>,
     },
 }
 
@@ -258,11 +259,12 @@ impl TaskEncoder for TyPureEnc {
             program.add_function(output.unreachable_to_snap);
             match output.kind {
                 TyPureEncLocalKind::Domain { domain } => program.add_domain(domain),
-                TyPureEncLocalKind::Adt { adt, discr_fn } => {
+                TyPureEncLocalKind::Adt { adt, discr_fn, valid_fn} => {
                     program.add_adt(adt);
                     if let Some(discr_fn) = discr_fn {
                         program.add_function(discr_fn);
                     }
+                    program.add_function(valid_fn);
                 }
             }
         }
@@ -427,7 +429,7 @@ impl<'vir> TyPureBuilder<'vir> {
             kind,
         }
     }
-
+    
     fn build_kind(self) -> TyPureEncLocalKind<'vir> {
         match self.data {
             BuilderData::Domain(data) => {
@@ -440,7 +442,7 @@ impl<'vir> TyPureBuilder<'vir> {
                 );
                 TyPureEncLocalKind::Domain { domain }
             }
-            BuilderData::Adt(data) => {
+            BuilderData::Adt(ref data) => {
                 let adt = self.vcx.mk_adt(
                     self.domain_ident.name(),
                     &[],
@@ -452,7 +454,26 @@ impl<'vir> TyPureBuilder<'vir> {
                     };
                     df
                 });
-                TyPureEncLocalKind::Adt { adt, discr_fn }
+
+                let valid_fn = {
+                    let self_ty = self.self_type();
+                    let param = self.vcx.mk_local_decl("self", self_ty);
+                    let ident: FunctionIdn<'vir, vir::CSnap, vir::Bool> = FunctionIdn::new(
+                        vir::ViperIdent::new(vir::vir_format!(self.vcx, "{}_valid", self.name)),
+                        param.ty,
+                        self.vcx.alloc(vir::TypeData::new(vir::TypeKind::Bool)),
+                    );
+                    self.vcx.mk_function(
+                        ident,
+                        (param,),
+                        &[],
+                        &[],
+                        None,
+                        None
+                    )
+                };
+                
+                TyPureEncLocalKind::Adt { adt, discr_fn, valid_fn }
             }
             BuilderData::None => unreachable!("no builder data"),
         }

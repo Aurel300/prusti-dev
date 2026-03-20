@@ -8,6 +8,7 @@
 #![feature(f128)]
 #![feature(f16)]
 #![feature(panic_internals)]
+#![feature(fn_traits)]
 
 // Even alloc can be disabled for consistency with std, and in preparation for future specs for other, possibly no_std, crates.
 #[cfg(feature = "alloc")]
@@ -449,6 +450,63 @@ mod private {
 
         fn ge(&self, _: &Self) -> bool {
             panic!()
+        }
+    }
+
+    pub struct PrustiClosure<F, T>(pub F, pub PhantomData<T>);
+
+    pub trait ClosureSpec<Args> {
+        type Output;
+        #[pure]
+        fn requires(args: Args) -> bool;
+        #[pure]
+        fn ensures(args: Args, result: Self::Output) -> bool;
+    }
+
+    impl<Args, F, T> ClosureSpec<Args> for PrustiClosure<F, T>
+    where
+        Args: core::marker::Tuple,
+        T: ClosureSpec<Args>,
+    {
+        type Output = T::Output;
+        #[pure]
+        fn requires(args: Args) -> bool {
+            T::requires(args)
+        }
+        #[pure]
+        fn ensures(args: Args, result: Self::Output) -> bool {
+            T::ensures(args, result)
+        }
+    }
+
+    impl<Args, F, T> FnOnce<Args> for PrustiClosure<F, T>
+    where
+        Args: core::marker::Tuple,
+        F: FnOnce<Args>,
+    {
+        type Output = F::Output;
+        extern "rust-call" fn call_once(self, args: Args) -> Self::Output {
+            self.0.call_once(args)
+        }
+    }
+
+    impl<Args, F, T> FnMut<Args> for PrustiClosure<F, T>
+    where
+        Args: core::marker::Tuple,
+        F: FnMut<Args>,
+    {
+        extern "rust-call" fn call_mut(&mut self, args: Args) -> Self::Output {
+            self.0.call_mut(args)
+        }
+    }
+
+    impl<Args, F, T> Fn<Args> for PrustiClosure<F, T>
+    where
+        Args: core::marker::Tuple,
+        F: Fn<Args>,
+    {
+        extern "rust-call" fn call(&self, args: Args) -> Self::Output {
+            self.0.call(args)
         }
     }
 }

@@ -567,6 +567,7 @@ impl<'tcx> TySpecifics<'tcx, RustTyDatas> {
             match adt.non_enum_variant().name.to_string().as_str() {
                 "Real" => Self::Builtin(RustBuiltinData::BuiltinReal),
                 "Ghost" => Self::Builtin(RustBuiltinData::BuiltinGhost),
+                "PrustiClosure" => Self::StructLike(Self::from_struct(adt.non_enum_variant())),
                 s => panic!("Found unrecognized builtin {s}"),
             }
         } else {

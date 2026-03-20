@@ -455,88 +455,73 @@ fn generate_expression_closure(
 }
 
 pub fn closure(tokens: TokenStream) -> TokenStream {
-    let cl_spec: ClosureWithSpec = handle_result!(syn::parse(tokens.into()));
+    let ClosureWithSpec { cl, pres, posts } = handle_result!(syn::parse(tokens.into()));
     let callsite_span = Span::call_site();
 
-    let mut rewriter = rewriter::AstRewriter::new();
-
-    let mut preconds: Vec<(SpecificationId, syn::Expr)> = vec![];
-    let mut postconds: Vec<(SpecificationId, syn::Expr)> = vec![];
-
-    let mut cl_annotations = TokenStream::new();
-
-    for r in cl_spec.pres {
-        let spec_id = rewriter.generate_spec_id();
-        let precond =
-            handle_result!(rewriter.process_closure_assertion(spec_id, r.to_token_stream(),));
-        preconds.push((spec_id, precond));
-        let spec_id_str = spec_id.to_string();
-        cl_annotations.extend(quote_spanned! {callsite_span=>
-            #[prusti::pre_spec_id_ref = #spec_id_str]
-        });
-    }
-
-    for e in cl_spec.posts {
-        let spec_id = rewriter.generate_spec_id();
-        let postcond =
-            handle_result!(rewriter.process_closure_assertion(spec_id, e.to_token_stream(),));
-        postconds.push((spec_id, postcond));
-        let spec_id_str = spec_id.to_string();
-        cl_annotations.extend(quote_spanned! {callsite_span=>
-            #[prusti::post_spec_id_ref = #spec_id_str]
-        });
-    }
-
-    let syn::ExprClosure {
-        attrs,
-        asyncness,
-        movability,
-        capture,
-        or1_token,
-        inputs,
-        or2_token,
-        output,
-        body,
-    } = cl_spec.cl;
-
-    let output_type: syn::Type = match output {
+    let output_type: syn::Type = match cl.output {
         syn::ReturnType::Default => {
-            return syn::Error::new(output.span(), "closure must specify return type")
+            return syn::Error::new(cl.output.span(), "closure must specify return type")
                 .to_compile_error();
         }
         syn::ReturnType::Type(_, ref ty) => (**ty).clone(),
     };
 
-    let (spec_toks_pre, spec_toks_post) =
-        handle_result!(rewriter.process_closure(inputs.clone(), output_type, preconds, postconds,));
+    let mut input_names = Vec::new();
+    let mut input_types = Vec::new();
 
-    let mut attrs_ts = TokenStream::new();
-    for a in attrs {
-        attrs_ts.extend(a.into_token_stream());
+    for arg in &cl.inputs {
+        if let syn::Pat::Type(pt) = arg {
+            input_names.push((*pt.pat).clone());
+            input_types.push((*pt.ty).clone());
+        } else {
+            return syn::Error::new(
+                arg.span(),
+                "closure parameters must be typed patterns (e.g., |x: i32|)",
+            )
+            .to_compile_error();
+        }
     }
+
+    let spec_struct_name = quote::format_ident!("PrustiClosureSpec");
+    let input_types_tuple = quote! { (#(#input_types, )* ) };
+    let input_names_tuple = quote! { (#(#input_names, )* ) };
+
+    let conjoin_specs = |items: Vec<syn::Expr>| {
+        if items.is_empty() {
+            quote! {true}
+        } else {
+            let mut iter = items.iter();
+            let first = iter.next().unwrap();
+            iter.fold(quote! {#first}, |acc, item| quote! {#acc && #item})
+        }
+    };
+    let pres = conjoin_specs(pres);
+    let posts = conjoin_specs(posts);
 
     quote_spanned! {callsite_span=>
         {
-            #[allow(unused_variables, unused_braces, unused_parens)]
-            #[prusti::closure]
-            #[prusti::specs_version = #SPECS_VERSION]
-            #cl_annotations #attrs_ts
-            let _prusti_closure =
-                #asyncness #movability #capture
-                #or1_token #inputs #or2_token #output
-                {
-                    #[allow(unused_must_use, unused_braces, unused_parens)]
-                    if false {
-                        #spec_toks_pre
-                    }
-                    let result = #body ;
-                    #[allow(unused_must_use, unused_braces, unused_parens)]
-                    if false {
-                        #spec_toks_post
-                    }
-                    result
-                };
-            _prusti_closure
+            struct #spec_struct_name;
+
+            impl ::prusti_contracts::ClosureSpec<#input_types_tuple> for #spec_struct_name {
+                type Output = #output_type;
+
+                #[allow(unused_variables, unused_braces, unused_parens, unused_must_use)]
+                #[pure]
+                fn requires(#input_names_tuple: #input_types_tuple) -> bool {
+                    #pres
+                }
+
+                #[allow(unused_variables, unused_braces, unused_parens, unused_must_use)]
+                #[pure]
+                fn ensures(#input_names_tuple: #input_types_tuple, result: #output_type) -> bool {
+                    #posts
+                }
+            }
+
+            ::prusti_contracts::PrustiClosure(
+                #cl,
+                ::core::marker::PhantomData::<#spec_struct_name>
+            )
         }
     }
 }

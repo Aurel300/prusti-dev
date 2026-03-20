@@ -30,7 +30,7 @@ impl TaskEncoder for TraitEnc {
     type OutputFullLocal<'vir> = vir::Domain<'vir>;
 
     fn emit_outputs<'vir>(program: &mut task_encoder::Program<'vir>) {
-        for dom in Self::all_outputs_local_no_errors() {
+        for dom in Self::all_outputs_local_no_errors(program) {
             program.add_domain(dom);
         }
     }

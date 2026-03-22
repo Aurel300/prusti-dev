@@ -455,26 +455,24 @@ mod private {
 
     pub struct PrustiClosure<F, T>(pub F, pub PhantomData<T>);
 
-    pub trait ClosureSpec<Args> {
-        type Output;
+    pub trait ClosureSpec<Args, Output> {
         #[pure]
         fn requires(args: Args) -> bool;
         #[pure]
-        fn ensures(args: Args, result: Self::Output) -> bool;
+        fn ensures(args: Args, result: Output) -> bool;
     }
 
-    impl<Args, F, T> ClosureSpec<Args> for PrustiClosure<F, T>
+    impl<Args, Output, F, T> ClosureSpec<Args, Output> for PrustiClosure<F, T>
     where
         Args: core::marker::Tuple,
-        T: ClosureSpec<Args>,
+        T: ClosureSpec<Args, Output>,
     {
-        type Output = T::Output;
         #[pure]
         fn requires(args: Args) -> bool {
             T::requires(args)
         }
         #[pure]
-        fn ensures(args: Args, result: Self::Output) -> bool {
+        fn ensures(args: Args, result: Output) -> bool {
             T::ensures(args, result)
         }
     }

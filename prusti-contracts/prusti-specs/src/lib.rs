@@ -502,8 +502,7 @@ pub fn closure(tokens: TokenStream) -> TokenStream {
         {
             struct #spec_struct_name;
 
-            impl ::prusti_contracts::ClosureSpec<#input_types_tuple> for #spec_struct_name {
-                type Output = #output_type;
+            impl ::prusti_contracts::ClosureSpec<#input_types_tuple, #output_type> for #spec_struct_name {
 
                 #[allow(unused_variables, unused_braces, unused_parens, unused_must_use)]
                 #[pure]

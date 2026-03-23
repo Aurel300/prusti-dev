@@ -1396,6 +1396,9 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                             let method_assign_app =
                                 dest_ty_out.apply_method_assign(self.vcx, proj_enc, rval_enc.expr);
                             self.stmt(method_assign_app);
+                            let valid_inhale =
+                                self.ty_use_pure(dest_ty.ty).inhale_valid(self.vcx, rval_enc.expr);
+                            self.stmt(valid_inhale);
                             self.stmts(rval_enc.post_fold_stmts(proj_enc));
                         }
                         Err(_) => {

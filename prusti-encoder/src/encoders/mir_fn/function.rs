@@ -205,24 +205,29 @@ impl TaskEncoder for FunctionEnc {
 
             tracing::debug!("finished {def_id:?}");
 
-            let limited_fn = vcx.mk_domain_function(limited_fn_ref, false, None);
-
-            let unlimited_fn_app = unlimited_fn_ref(
-                &local_defs
+            let local_args =
+                local_defs
                     .local_decl_args()
                     .map(|decl| vcx.mk_local_ex(decl))
-                    .collect::<Vec<_>>(),
-                &generics
+                    .collect::<Vec<_>>();
+
+            let generic_args =
+                generics
                     .ty_decls()
                     .iter()
                     .map(|decl| vcx.mk_local_ex(decl))
-                    .collect::<Vec<_>>(),
-                &generics
+                    .collect::<Vec<_>>();
+
+            let const_args =
+                generics
                     .const_decls()
                     .iter()
                     .map(|decl| vcx.mk_local_ex(decl))
-                    .collect::<Vec<_>>(),
-            );
+                    .collect::<Vec<_>>();
+
+            let limited_fn = vcx.mk_domain_function(limited_fn_ref, false, None);
+
+            let unlimited_fn_app = unlimited_fn_ref(&local_args, &generic_args, &const_args);
 
             let limited_axiom = {
                 let axiom_body = {
@@ -233,22 +238,7 @@ impl TaskEncoder for FunctionEnc {
                     qvars.extend(generics.ty_decls().iter().map(|decl| decl.as_dyn()));
                     qvars.extend(generics.const_decls().iter().map(|decl| decl.as_dyn()));
 
-                    let limited_fn_app = limited_fn_ref(
-                        &local_defs
-                            .local_decl_args()
-                            .map(|decl| vcx.mk_local_ex(decl))
-                            .collect::<Vec<_>>(),
-                        &generics
-                            .ty_decls()
-                            .iter()
-                            .map(|decl| vcx.mk_local_ex(decl))
-                            .collect::<Vec<_>>(),
-                        &generics
-                            .const_decls()
-                            .iter()
-                            .map(|decl| vcx.mk_local_ex(decl))
-                            .collect::<Vec<_>>(),
-                    );
+                    let limited_fn_app = limited_fn_ref(&local_args, &generic_args, &const_args);
 
                     vcx.mk_forall_expr(
                         vcx.alloc_slice(&qvars),
@@ -288,6 +278,12 @@ impl TaskEncoder for FunctionEnc {
                     return_type,
                     fn_body.ty()
                 );
+                
+                // TODO I think we should be able to query a type for its valid
+                // predicate (if it exists), with ImmRef making a recursive call
+                // with its type argument
+                // Should the this be in the 'ref' of TyUse or TyUsePure?
+                // we need to get the functionidn of valid from somewhere -
 
                 let axiom_body = {
                     let mut qvars = local_defs

@@ -1,3 +1,5 @@
+use std::fmt::Pointer;
+
 use task_encoder::{EncodeFullResult, TaskEncoder};
 use vir::CastType;
 
@@ -261,6 +263,16 @@ impl<'a, 'vir> TyUsePureWalker<'a, 'vir> {
 impl<'vir> TyUsePureRef<'vir> {
     pub fn unreachable_to_snap<Curr, Next>(&self) -> vir::ExprGenSnap<'vir, Curr, Next> {
         self.ty_pure_ref.unreachable_to_snap.call()(self.args.get_ty())
+    }
+
+    pub fn inhale_valid<'tcx>(
+        &self,
+        vcx: &'vir vir::VirCtxt<'tcx>,
+        snap: vir::ExprSnap<'vir>,
+    ) -> vir::Stmt<'vir> {
+        vcx.mk_inhale_stmt(
+            (self.ty_pure_ref.valid_fn.call())(snap)
+        )
     }
 }
 

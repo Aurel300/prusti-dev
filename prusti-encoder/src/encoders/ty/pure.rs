@@ -155,6 +155,7 @@ pub(super) type TyPureEnc = super::TyEnc<Pure>;
 pub struct TyPureRef<'vir> {
     pub domain: vir::DomainIdnSnap<'vir>,
     pub unreachable_to_snap: FunctionIdn<'vir, vir::ManyTyVal, vir::Snap>,
+    pub valid_fn: FunctionIdn<'vir, vir::Snap, vir::Bool>,
 }
 
 impl<'vir> task_encoder::OutputRefAny for TyPureRef<'vir> {}
@@ -163,6 +164,7 @@ impl<'vir> task_encoder::OutputRefAny for TyPureRef<'vir> {}
 pub struct TyPureEncLocal<'vir> {
     pub unreachable_to_snap: vir::Function<'vir>,
     pub kind: TyPureEncLocalKind<'vir>,
+    pub valid_fn: vir::Function<'vir>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -174,7 +176,6 @@ pub enum TyPureEncLocalKind<'vir> {
     Adt {
         adt: vir::Adt<'vir>,
         discr_fn: Option<vir::Function<'vir>>,
-        valid_fn: vir::Function<'vir>,
     },
 }
 
@@ -257,14 +258,14 @@ impl TaskEncoder for TyPureEnc {
     fn emit_outputs<'vir>(program: &mut task_encoder::Program<'vir>) {
         for output in TyPureEnc::all_outputs_local_no_errors() {
             program.add_function(output.unreachable_to_snap);
+            program.add_function(output.valid_fn);
             match output.kind {
                 TyPureEncLocalKind::Domain { domain } => program.add_domain(domain),
-                TyPureEncLocalKind::Adt { adt, discr_fn, valid_fn} => {
+                TyPureEncLocalKind::Adt { adt, discr_fn } => {
                     program.add_adt(adt);
                     if let Some(discr_fn) = discr_fn {
                         program.add_function(discr_fn);
                     }
-                    program.add_function(valid_fn);
                 }
             }
         }
@@ -317,6 +318,9 @@ pub(crate) struct TyPureBuilder<'vir> {
     unreachable_to_snap: FunctionIdn<'vir, vir::ManyTyVal, vir::Snap>,
     pub(super) params: GenericParams<'vir>,
     data: BuilderData<'vir>,
+    // For now, we generate a valid function for every type.
+    // Valid functions for domains should never be called.
+    valid_fn: FunctionIdn<'vir, vir::Snap, vir::Bool>,
 }
 
 pub enum BuilderData<'vir> {
@@ -363,6 +367,11 @@ impl<'vir> TyPureBuilder<'vir> {
             params.ty_args(),
             self_type,
         );
+        let valid_fn: FunctionIdn<'vir, vir::Snap, vir::Bool> = FunctionIdn::new(
+            vir::ViperIdent::new(vir::vir_format!(vcx, "{}_valid", name)),
+            self_type,
+            vcx.alloc(vir::TypeData::new(vir::TypeKind::Bool)),
+        );
         TyPureBuilder {
             vcx,
             name,
@@ -371,6 +380,7 @@ impl<'vir> TyPureBuilder<'vir> {
             unreachable_to_snap,
             params,
             data: BuilderData::None,
+            valid_fn,
         }
     }
 
@@ -382,6 +392,7 @@ impl<'vir> TyPureBuilder<'vir> {
         TyPureRef {
             domain: self.domain_ident.cast_ty(),
             unreachable_to_snap: self.unreachable_to_snap,
+            valid_fn: self.valid_fn,
         }
     }
 
@@ -423,10 +434,23 @@ impl<'vir> TyPureBuilder<'vir> {
                 None,
             )
         });
+        let valid_fn = {
+            let domain_ident = self.domain_ident;
+            let param = self.vcx.mk_local_decl("self", domain_ident());
+            self.vcx.mk_function(
+                self.valid_fn,
+                (param,),
+                &[],
+                &[],
+                None,
+                None
+            )
+        };
         let kind = self.build_kind();
         TyPureEncLocal {
             unreachable_to_snap,
             kind,
+            valid_fn,
         }
     }
     
@@ -454,26 +478,7 @@ impl<'vir> TyPureBuilder<'vir> {
                     };
                     df
                 });
-
-                let valid_fn = {
-                    let self_ty = self.self_type();
-                    let param = self.vcx.mk_local_decl("self", self_ty);
-                    let ident: FunctionIdn<'vir, vir::CSnap, vir::Bool> = FunctionIdn::new(
-                        vir::ViperIdent::new(vir::vir_format!(self.vcx, "{}_valid", self.name)),
-                        param.ty,
-                        self.vcx.alloc(vir::TypeData::new(vir::TypeKind::Bool)),
-                    );
-                    self.vcx.mk_function(
-                        ident,
-                        (param,),
-                        &[],
-                        &[],
-                        None,
-                        None
-                    )
-                };
-                
-                TyPureEncLocalKind::Adt { adt, discr_fn, valid_fn }
+                TyPureEncLocalKind::Adt { adt, discr_fn }
             }
             BuilderData::None => unreachable!("no builder data"),
         }

@@ -278,46 +278,44 @@ pub trait TaskEncoder {
             (encode_result, deps)
         }));
 
-        let (encode_result, deps) = match catch_result {
-            Ok(result) => result,
-            // there was a panic within the encoder. We want to report it and return an error to the caller.
-            Err(panic_payload) => {
-                let msg = if let Some(s) = panic_payload.downcast_ref::<&str>() {
-                    s.to_string()
-                } else if let Some(s) = panic_payload.downcast_ref::<String>() {
-                    s.clone()
-                } else {
-                    "<unknown panic>".to_string()
-                };
-                let error = TaskEncoderError::PanicError(msg);
-                Self::with_cache(|cache| {
-                    let mut cache = cache.borrow_mut();
-                    match cache.get(&task_key) {
-                        Some(TaskEncoderCacheState::Started { output_ref }) => {
-                            let output_ref = output_ref.clone();
-                            cache.insert(
-                                task_key.clone(),
-                                TaskEncoderCacheState::ErrorEncode {
-                                    output_ref,
-                                    deps: TaskEncoderDependencies::new(),
-                                    error: error.clone(),
-                                    output_dep: None,
-                                },
-                            );
-                        }
-                        _ => {
-                            cache.insert(
-                                task_key.clone(),
-                                TaskEncoderCacheState::ErrorEnqueue {
-                                    error: error.clone(),
-                                },
-                            );
-                        }
+        let (encode_result, deps) = catch_result.map_err(|panic_payload| {
+            // There was a panic within the encoder. We want to report it
+            // and return an error to the caller.
+            let msg = if let Some(s) = panic_payload.downcast_ref::<&str>() {
+                s.to_string()
+            } else if let Some(s) = panic_payload.downcast_ref::<String>() {
+                s.clone()
+            } else {
+                "<unknown panic>".to_string()
+            };
+            let error = TaskEncoderError::PanicError(msg);
+            Self::with_cache(|cache| {
+                let mut cache = cache.borrow_mut();
+                match cache.get(&task_key) {
+                    Some(TaskEncoderCacheState::Started { output_ref }) => {
+                        let output_ref = output_ref.clone();
+                        cache.insert(
+                            task_key.clone(),
+                            TaskEncoderCacheState::ErrorEncode {
+                                output_ref,
+                                deps: TaskEncoderDependencies::new(),
+                                error: error.clone(),
+                                output_dep: None,
+                            },
+                        );
                     }
-                });
-                return Err(error);
-            }
-        };
+                    _ => {
+                        cache.insert(
+                            task_key.clone(),
+                            TaskEncoderCacheState::ErrorEnqueue {
+                                error: error.clone(),
+                            },
+                        );
+                    }
+                }
+            });
+            error
+        })?;
 
         let output_ref = Self::with_cache(|cache| match cache.borrow().get(&task_key) {
             Some(

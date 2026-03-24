@@ -2,6 +2,7 @@ use std::collections::VecDeque;
 
 use prusti_interface::{PrustiError, specs::specifications::SpecQuery};
 use prusti_rustc_interface::{
+    data_structures::fx::FxIndexMap,
     index::bit_set::DenseBitSet,
     middle::{mir, ty},
     span::def_id::DefId,
@@ -519,13 +520,13 @@ impl TraitImplEnc {
 
     fn discover_bind_points<'vir, E: TaskEncoder + 'vir + ?Sized>(
         deps: &mut TaskEncoderDependencies<'vir, E>,
-        generic_map: &mut GenericsMap<'vir>,
+        generic_map: &mut FxIndexMap<u32, vir::ExprDyn<'vir>>,
         ctx: GParams<'vir>,
         expr: vir::ExprTyVal<'vir>,
         ty: ty::Ty<'vir>,
     ) -> Result<(), EncodeFullError<'vir, E>> {
         if let ty::TyKind::Param(p) = ty.kind() {
-            generic_map.try_insert(p.index, expr.upcast_ty());
+            generic_map.entry(p.index).or_insert(expr.upcast_ty());
             return Ok(());
         }
 
@@ -547,7 +548,7 @@ impl TraitImplEnc {
             let inner_expr = accessor.call()(expr);
 
             if let ty::ConstKind::Param(p) = inner_const.kind() {
-                generic_map.try_insert(p.index, inner_expr.upcast_ty());
+                generic_map.entry(p.index).or_insert(inner_expr.upcast_ty());
             }
         }
         Ok(())
@@ -571,7 +572,7 @@ impl TraitImplEnc {
         let generics_count = impl_ctx.rust_params().len();
 
         // Collect the bindings for the generics of this impl block
-        let mut generics_map = GenericsMap::new(generics_count);
+        let mut generics_map = FxIndexMap::default();
 
         // Walk the trait type generic arguments
         let impl_rust_tys = trait_ref.args.iter().filter_map(|arg| arg.as_type());
@@ -584,7 +585,7 @@ impl TraitImplEnc {
         for (const_arg, rust_const) in std::iter::zip(trait_params.const_exprs(), impl_rust_consts)
         {
             if let ty::ConstKind::Param(p) = rust_const.kind() {
-                generics_map.try_insert(p.index, const_arg.upcast_ty());
+                generics_map.entry(p.index).or_insert(const_arg.upcast_ty());
             }
         }
 
@@ -622,7 +623,8 @@ impl TraitImplEnc {
             .iter()
             .filter_map(ty::Clause::as_projection_clause)
             .map(ty::Binder::skip_binder);
-        let proj_preds = Self::order_projections(generics_map.keys(), proj_preds, generics_count);
+        let proj_preds =
+            Self::order_projections(generics_map.keys().copied(), proj_preds, generics_count);
         for proj_pred in proj_preds {
             let trait_did = proj_pred.trait_def_id(tcx);
             let trait_ = deps.require_ref::<TraitEnc>(trait_did)?;
@@ -649,7 +651,9 @@ impl TraitImplEnc {
                     };
                     let const_expr = deps.require_dep::<ConstEnc>(const_task)?;
                     if let ty::ConstKind::Param(p) = const_.kind() {
-                        generics_map.try_insert(p.index, const_expr.upcast_ty());
+                        generics_map
+                            .entry(p.index)
+                            .or_insert(const_expr.upcast_ty());
                     }
                     (projection.upcast_ty(), const_expr.upcast_ty())
                 }
@@ -661,64 +665,13 @@ impl TraitImplEnc {
 
         let checks = vcx.mk_conj(&checks);
 
-        Ok(generics_map
-            .insertion_ordered()
-            .rfold(checks, |acc, (idx, expr)| {
-                let idx = impl_params.map_idx(idx);
-                let decl = match idx {
-                    Result::Ok(idx) => impl_params.ty_decls()[idx].upcast_ty(),
-                    Result::Err(idx) => impl_params.const_decls()[idx].upcast_ty(),
-                };
-                vcx.mk_let_expr(decl, expr, acc)
-            }))
-    }
-}
-
-/// Collects bindings for generics in the order they are discovered.
-#[derive(Clone, Debug)]
-struct GenericsMap<'vir> {
-    order: usize,
-    map: Vec<Option<(usize, vir::ExprDyn<'vir>)>>,
-}
-
-impl<'vir> GenericsMap<'vir> {
-    fn new(size: usize) -> Self {
-        GenericsMap {
-            order: 0,
-            map: vec![None; size],
-        }
-    }
-
-    /// Insert the given expression as the binding for the `idx`-th generic, while recording the
-    /// insertion order. Returns `false` if the generic already has a binding, and `true`
-    /// otherwise.
-    fn try_insert(&mut self, idx: u32, expr: vir::ExprDyn<'vir>) -> bool {
-        let idx = idx as usize;
-        if self.map[idx].is_some() {
-            return false;
-        }
-        self.map[idx] = Some((self.order, expr));
-        self.order += 1;
-        true
-    }
-
-    /// Collect the bindings in their insertion order.
-    fn insertion_ordered(&self) -> impl DoubleEndedIterator<Item = (u32, vir::ExprDyn<'vir>)> {
-        let mut ordered = self
-            .map
-            .iter()
-            .enumerate()
-            .filter_map(|(idx, opt)| opt.map(|(order, expr)| (order, (idx as u32, expr))))
-            .collect::<Vec<_>>();
-        ordered.sort_by_key(|(order, _)| *order);
-        ordered.into_iter().map(|(_, (idx, expr))| (idx, expr))
-    }
-
-    /// Already present generics.
-    fn keys(&self) -> impl Iterator<Item = u32> {
-        self.map
-            .iter()
-            .enumerate()
-            .filter_map(|(idx, opt)| opt.as_ref().map(|_| idx as u32))
+        Ok(generics_map.iter().rfold(checks, |acc, (&idx, expr)| {
+            let idx = impl_params.map_idx(idx);
+            let decl = match idx {
+                Ok(idx) => impl_params.ty_decls()[idx].upcast_ty(),
+                Err(idx) => impl_params.const_decls()[idx].upcast_ty(),
+            };
+            vcx.mk_let_expr(decl, expr, acc)
+        }))
     }
 }

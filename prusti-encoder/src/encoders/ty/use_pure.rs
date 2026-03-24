@@ -1,5 +1,3 @@
-use std::fmt::Pointer;
-
 use task_encoder::{EncodeFullResult, TaskEncoder};
 use vir::CastType;
 
@@ -13,10 +11,7 @@ use crate::encoders::{
 };
 
 use super::{
-    TyUseEnc, UseTyDatas,
-    data::*,
-    generics::{GArgCaster, GArgsTy},
-    pure::{PureTyDatas, TyPureEnc, TyPureRef},
+    data::*, generics::{GArgCaster, GArgsTy}, pure::{PureTyDatas, TyPure, TyPureEnc, TyPureRef}, TyUseEnc, UseTyDatas
 };
 
 pub(super) type UsePureTyDatas = UseTyDatas<Pure>;
@@ -46,6 +41,7 @@ pub type TyUsePureEnum<'vir> = EnumData<'vir, UsePureTyDatas>;
 pub struct TyUsePureImmRef<'vir> {
     caster: FieldCaster<'vir>,
     pure: <PureTyDatas as TyDatas<'vir>>::ImmRefData,
+    inner: TyUsePure<'vir>,
 }
 
 #[derive(Debug, Clone)]
@@ -165,9 +161,11 @@ impl<'a, 'vir> TyUsePureWalker<'a, 'vir> {
             TySpecifics::Primitive(data) => TySpecifics::mk_primitive(*data.1),
             TySpecifics::ImmRef(data) => {
                 let caster = self.encode_normalized(*data.0, ty.0.params);
+                let inner_ty = data.0.decompose(ty.0.params);
                 TySpecifics::mk_immref(TyUsePureImmRef {
                     caster,
                     pure: *data.1,
+                    inner: self.deps.require_dep::<TyUsePureEnc>(inner_ty).unwrap(),
                 })
             }
             TySpecifics::MutRef((data, ref_domain)) => {
@@ -265,13 +263,17 @@ impl<'vir> TyUsePureRef<'vir> {
         self.ty_pure_ref.unreachable_to_snap.call()(self.args.get_ty())
     }
 
+    pub fn valid_fn<'tcx>(&self) -> vir::FunctionIdn<'vir, vir::Snap, vir::Bool> {
+        self.ty_pure_ref.valid_fn
+    }
+
     pub fn inhale_valid<'tcx>(
         &self,
         vcx: &'vir vir::VirCtxt<'tcx>,
         snap: vir::ExprSnap<'vir>,
     ) -> vir::Stmt<'vir> {
         vcx.mk_inhale_stmt(
-            (self.ty_pure_ref.valid_fn.call())(snap)
+            (self.valid_fn().call())(snap)
         )
     }
 }
@@ -286,6 +288,10 @@ impl<'vir> TyUsePureImmRef<'vir> {
         self.pure.prim_to_snap.call()(ref_, inner.downcast_ty())
     }
 
+    pub fn inner(&self) -> TyUsePure<'vir> {
+        self.inner
+    }
+    
     pub fn deref_access<Curr, Next>(
         &self,
         snap: vir::ExprGenCSnap<'vir, Curr, Next>,

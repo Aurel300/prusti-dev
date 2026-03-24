@@ -1,11 +1,20 @@
-use prusti_rustc_interface::{middle::ty, span::def_id::DefId};
+use prusti_rustc_interface::{
+    middle::{
+        mir,
+        ty::{self, TyKind},
+    },
+    span::def_id::DefId,
+};
 use task_encoder::{EncodeFullResult, OutputRefAny, TaskEncoder, TaskEncoderDependencies};
-use vir::{CastType, FunctionIdn, Reify};
+use vir::{CastType, ExprGenData, FunctionIdn, Reify};
 
 use crate::encoders::{
     MirLocalDefEnc, MirLocalDefEncTask, MirPureEnc, MirPureEncTask, MirSpecEnc, Pure, PureKind,
     mir_fn::{CallTaskDescription, RustSignature},
-    ty::generics::{GArgCaster, GArgsCastEnc, GArgsTy, GArgsTyEnc, GParams, GenericParamsEnc},
+    ty::{
+        RustTyDecomposition,
+        generics::{GArgCaster, GArgsCastEnc, GArgsTy, GArgsTyEnc, GParams, GenericParamsEnc},
+    },
 };
 
 // Function wrapper
@@ -40,13 +49,9 @@ impl<'vir> FunctionCallEncOutput<'vir> {
         let caller_ref = match calling_ctxt {
             CallingCtxt::Pure => self.function.unlimited_fn_ref,
             CallingCtxt::Impure => self.function.caller_fn_ref,
-            CallingCtxt::PureRec => self.function.limited_fn_ref
+            CallingCtxt::PureRec => self.function.limited_fn_ref,
         };
-        let call = caller_ref.call()(
-            &args,
-            self.ty_args.get_ty(),
-            self.ty_args.get_const(),
-        );
+        let call = caller_ref.call()(&args, self.ty_args.get_ty(), self.ty_args.get_const());
         self.output.cast_to_caller_ctx(call)
     }
 }
@@ -104,7 +109,7 @@ struct FunctionEnc;
 struct FunctionEncOutputRef<'vir> {
     unlimited_fn_ref: FunctionIdn<'vir, (vir::ManySnap, vir::ManyTyVal, vir::ManyCSnap), vir::Snap>,
     caller_fn_ref: FunctionIdn<'vir, (vir::ManySnap, vir::ManyTyVal, vir::ManyCSnap), vir::Snap>,
-    limited_fn_ref: FunctionIdn<'vir, (vir::ManySnap, vir::ManyTyVal, vir::ManyCSnap), vir::Snap>
+    limited_fn_ref: FunctionIdn<'vir, (vir::ManySnap, vir::ManyTyVal, vir::ManyCSnap), vir::Snap>,
 }
 
 impl<'vir> OutputRefAny for FunctionEncOutputRef<'vir> {}
@@ -154,8 +159,11 @@ impl TaskEncoder for FunctionEnc {
             let generics = deps.require_dep::<GenericParamsEnc>(params)?;
 
             let unlimited_fn_ref = {
-                let ident =
-                    vir::vir_format_identifier!(vcx, "unlimited_{}", vcx.tcx().def_path_str(def_id));
+                let ident = vir::vir_format_identifier!(
+                    vcx,
+                    "unlimited_{}",
+                    vcx.tcx().def_path_str(def_id)
+                );
                 FunctionIdn::new(
                     ident,
                     (arg_types, generics.ty_args(), generics.const_args()),
@@ -188,12 +196,9 @@ impl TaskEncoder for FunctionEnc {
                 FunctionEncOutputRef {
                     unlimited_fn_ref,
                     caller_fn_ref,
-                    limited_fn_ref
+                    limited_fn_ref,
                 },
             )?;
-
-            let substs = ty::GenericArgs::identity_for_item(vcx.tcx(), def_id);
-            let spec = deps.require_dep::<MirSpecEnc>((def_id, true))?;
 
             // TODO: type preconditions do not currently work
             /*
@@ -205,25 +210,22 @@ impl TaskEncoder for FunctionEnc {
 
             tracing::debug!("finished {def_id:?}");
 
-            let local_args =
-                local_defs
-                    .local_decl_args()
-                    .map(|decl| vcx.mk_local_ex(decl))
-                    .collect::<Vec<_>>();
+            let local_args = local_defs
+                .local_decl_args()
+                .map(|decl| vcx.mk_local_ex(decl))
+                .collect::<Vec<_>>();
 
-            let generic_args =
-                generics
-                    .ty_decls()
-                    .iter()
-                    .map(|decl| vcx.mk_local_ex(decl))
-                    .collect::<Vec<_>>();
+            let generic_args = generics
+                .ty_decls()
+                .iter()
+                .map(|decl| vcx.mk_local_ex(decl))
+                .collect::<Vec<_>>();
 
-            let const_args =
-                generics
-                    .const_decls()
-                    .iter()
-                    .map(|decl| vcx.mk_local_ex(decl))
-                    .collect::<Vec<_>>();
+            let const_args = generics
+                .const_decls()
+                .iter()
+                .map(|decl| vcx.mk_local_ex(decl))
+                .collect::<Vec<_>>();
 
             let limited_fn = vcx.mk_domain_function(limited_fn_ref, false, None);
 
@@ -240,9 +242,18 @@ impl TaskEncoder for FunctionEnc {
 
                     let limited_fn_app = limited_fn_ref(&local_args, &generic_args, &const_args);
 
+                    let mut triggers = local_defs
+                        .args()
+                        .filter_map(|local_def| {
+                            let valid = local_def.local_valid?;
+                            Some(vcx.mk_trigger(&[valid]))
+                        })
+                        .collect::<Vec<_>>();
+                    triggers.push(vcx.mk_trigger(&[unlimited_fn_app]));
+
                     vcx.mk_forall_expr(
                         vcx.alloc_slice(&qvars),
-                        vcx.alloc_slice(&[vcx.mk_trigger(&[unlimited_fn_app])]),
+                        vcx.alloc_slice(&triggers[..]),
                         vcx.mk_eq_expr(unlimited_fn_app, limited_fn_app),
                     )
                 };
@@ -278,12 +289,6 @@ impl TaskEncoder for FunctionEnc {
                     return_type,
                     fn_body.ty()
                 );
-                
-                // TODO I think we should be able to query a type for its valid
-                // predicate (if it exists), with ImmRef making a recursive call
-                // with its type argument
-                // Should the this be in the 'ref' of TyUse or TyUsePure?
-                // we need to get the functionidn of valid from somewhere -
 
                 let axiom_body = {
                     let mut qvars = local_defs
@@ -292,6 +297,10 @@ impl TaskEncoder for FunctionEnc {
                         .collect::<Vec<_>>();
                     qvars.extend(generics.ty_decls().iter().map(|decl| decl.as_dyn()));
                     qvars.extend(generics.const_decls().iter().map(|decl| decl.as_dyn()));
+
+                    let triggers = local_defs
+                        .args()
+                        .filter_map(|local_def| local_def.local_valid);
 
                     vcx.mk_forall_expr(
                         vcx.alloc_slice(&qvars),
@@ -325,12 +334,11 @@ impl TaskEncoder for FunctionEnc {
                 vcx.alloc_slice(&pres),
                 vcx.alloc_slice(&posts),
                 None,
-                Some(
-                    vcx.mk_let_expr(
-                        vcx.mk_local_decl("tmp", return_type),
-                        unlimited_fn_app,
-                        unlimited_fn_app)
-                    ),
+                Some(vcx.mk_let_expr(
+                    vcx.mk_local_decl("tmp", return_type),
+                    unlimited_fn_app,
+                    unlimited_fn_app,
+                )),
             );
 
             Ok((

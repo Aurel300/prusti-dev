@@ -97,7 +97,6 @@ impl TaskEncoder for TyConstructorEnc {
                     )
                 })
                 .collect::<Vec<_>>();
-
             let const_accessor_functions = params
                 .const_decls()
                 .iter()
@@ -132,7 +131,6 @@ impl TaskEncoder for TyConstructorEnc {
                 .collect::<Vec<vir::LocalDecl<vir::Dyn>>>();
             let variant =
                 vcx.mk_adt_constructor(type_function_ident.name().to_str(), vcx.alloc_slice(&args));
-
             Ok((variant, ()))
         })
     }
@@ -141,7 +139,8 @@ impl TaskEncoder for TyConstructorEnc {
         let mut constructors = Self::all_outputs_local_no_errors(program);
         vir::with_vcx(|vcx| {
             let args = vcx.alloc_array(&[vcx.mk_local_decl(Self::UNKNOWN_TYPE_ID, vir::TYPE_INT)]);
-            constructors.push(vcx.mk_adt_constructor(Self::UNKNOWN_TYPE_NAME, args));
+            let unknown = vcx.mk_adt_constructor(Self::UNKNOWN_TYPE_NAME, args);
+            constructors.push(unknown);
             let adt = vcx.mk_adt(
                 vir::ViperIdent::new("Type"),
                 &[],

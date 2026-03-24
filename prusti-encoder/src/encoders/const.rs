@@ -9,7 +9,7 @@ use prusti_rustc_interface::{
             interpret::{GlobalAlloc, Scalar},
         },
         ty,
-        ty::{TyKind, TypingEnv},
+        ty::TypingEnv,
     },
     span::{Span, def_id::DefId},
 };
@@ -127,7 +127,7 @@ impl ConstEnc {
         rec_data: &'vir EncodeConstValData<'vir>,
         deps: &mut TaskEncoderDependencies<'vir, Self>,
         val: T,
-        ty: ty::Ty<'vir>,
+        ty: RustTyDecomposition<'vir>,
         vcx: &'vir VirCtxt,
         prim_to_snap: fn(
             &'vir Ref,
@@ -138,76 +138,69 @@ impl ConstEnc {
     where
         T: Projectable<'vir, CtfeProvenance>,
     {
-        let inner_ty = ty.builtin_deref(true).unwrap();
+        let inner_ty = ty.args.args()[1].expect_ty();
         let addr_to_ref = deps.require_dep::<RefDataEnc>(())?.addr_to_ref;
 
-        Ok(
-            if ty.builtin_deref(true).is_some()
-                && (ty.builtin_deref(true).unwrap().is_str()
-                    || ty.builtin_deref(true).unwrap().is_slice())
-            {
-                let sl_ty = ty.peel_refs();
-                let sl_ty_task = RustTyDecomposition::from_ty(sl_ty, rec_data.context);
-                let sl_snap = deps.require_dep::<TyUsePureEnc>(sl_ty_task)?;
-                let sl_snap = sl_snap.expect_opaque();
-                // first, we create a slice snapshot
-                let snap = (sl_snap.arbitrary)().upcast_ty();
-                // wrap it in a ref
-                (vec![], prim_to_snap(ref_val, vcx.mk_null(), snap))
-            } else {
-                let ptr = rec_data.ecx.read_pointer(&val).expect("Expected a pointer");
+        Ok(if inner_ty.is_str() || inner_ty.is_slice() {
+            let sl_ty = inner_ty.peel_refs();
+            let sl_ty_task = RustTyDecomposition::from_ty(sl_ty, rec_data.context);
+            let sl_snap = deps.require_dep::<TyUsePureEnc>(sl_ty_task)?;
+            let sl_snap = sl_snap.expect_opaque();
+            // first, we create a slice snapshot
+            let snap = (sl_snap.arbitrary)().upcast_ty();
+            // wrap it in a ref
+            (vec![], prim_to_snap(ref_val, vcx.mk_null(), snap))
+        } else {
+            let ptr = rec_data.ecx.read_pointer(&val).expect("Expected a pointer");
 
-                let rel_addr = match ptr.into_pointer_or_addr() {
-                    Ok(ptr) => {
-                        ((ptr.provenance.alloc_id().0.get() as u128) << 64)
-                            | ptr.prov_and_relative_offset().1.bytes() as u128
-                    }
-                    Err(addr) => addr.bytes() as u128,
-                };
-                let ecx = rec_data.ecx;
-                let (snap_funs, snap) = Self::encode_const_val_tree(
-                    rec_data,
-                    deps,
-                    ecx.deref_pointer(&val).unwrap(),
-                    inner_ty,
-                )?;
-                (
-                    snap_funs,
-                    prim_to_snap(
-                        ref_val,
-                        addr_to_ref(
-                            vcx.mk_const_expr(vir::ConstData::Int(rel_addr))
-                                .downcast_ty(),
-                        ),
-                        snap.upcast_ty(),
+            let rel_addr = match ptr.into_pointer_or_addr() {
+                Ok(ptr) => {
+                    ((ptr.provenance.alloc_id().0.get() as u128) << 64)
+                        | ptr.prov_and_relative_offset().1.bytes() as u128
+                }
+                Err(addr) => addr.bytes() as u128,
+            };
+            let ecx = rec_data.ecx;
+            let (snap_funs, snap) = Self::encode_const_val_tree(
+                rec_data,
+                deps,
+                ecx.deref_pointer(&val).unwrap(),
+                RustTyDecomposition::from_ty(inner_ty, rec_data.context),
+            )?;
+            (
+                snap_funs,
+                prim_to_snap(
+                    ref_val,
+                    addr_to_ref(
+                        vcx.mk_const_expr(vir::ConstData::Int(rel_addr))
+                            .downcast_ty(),
                     ),
-                )
-            },
-        )
+                    snap.upcast_ty(),
+                ),
+            )
+        })
     }
 
     fn encode_const_val_tree<'vir, T>(
         rec_data: &'vir EncodeConstValData<'vir>,
         deps: &mut TaskEncoderDependencies<'vir, Self>,
         val: T,
-        ty: ty::Ty<'vir>,
+        ty: RustTyDecomposition<'vir>,
     ) -> Result<(Vec<vir::Function<'vir>>, vir::ExprCSnap<'vir>), EncodeFullError<'vir, Self>>
     where
         T: Projectable<'vir, CtfeProvenance>,
     {
-        let ty_task = RustTyDecomposition::from_ty(ty, rec_data.context);
-        let kind = deps.require_dep::<TyUsePureEnc>(ty_task)?;
+        let kind = deps.require_dep::<TyUsePureEnc>(ty)?;
 
         vir::with_vcx(|vcx| {
             Ok(match &kind.specifics {
                 super::ty::TySpecifics::ArrayLike(array_data) => {
-                    let (elem_ty, elem_len) = match ty.kind() {
-                        TyKind::Array(elem_ty, len) => (
-                            elem_ty,
-                            len.to_value().try_to_target_usize(vcx.tcx()).unwrap(),
-                        ),
-                        _ => unreachable!(),
-                    };
+                    assert!(!array_data.slice);
+                    let elem_ty = ty.args.args()[1].expect_ty();
+                    let elem_len = ty.args.args()[0]
+                        .expect_const()
+                        .try_to_target_usize(vcx.tcx())
+                        .unwrap();
                     let mut posts = vec![];
                     let mut funs = vec![];
                     let ecx = rec_data.ecx;
@@ -216,7 +209,7 @@ impl ConstEnc {
                             rec_data,
                             deps,
                             ecx.project_index(&val, idx).unwrap(),
-                            *elem_ty,
+                            RustTyDecomposition::from_ty(elem_ty, rec_data.context),
                         )
                         .unwrap();
                         posts.push(
@@ -251,7 +244,6 @@ impl ConstEnc {
                     funs.push(gen_snap_func);
                     (funs, (gen_snap_func_idn)())
                 }
-                super::ty::TySpecifics::Param(_) => todo!(),
                 super::ty::TySpecifics::Opaque(_) => todo!(),
                 super::ty::TySpecifics::Primitive(prim) => {
                     let int = rec_data
@@ -261,7 +253,7 @@ impl ConstEnc {
                         .try_to_scalar_int()
                         .expect("scalar should be an integer");
                     let val = int.to_bits(int.size());
-                    let val = prim.expr_from_bits(ty, val);
+                    let val = prim.expr_from_bits(*ty.ty.expect_primitive(), val);
                     (vec![], (prim.prim_to_snap)(val))
                 }
                 super::ty::TySpecifics::ImmRef(imm_ref) => Self::encode_ref(
@@ -283,52 +275,39 @@ impl ConstEnc {
                     TyUsePureMutRef::prim_to_snap,
                 )?,
                 super::ty::TySpecifics::StructLike(struct_data) => {
-                    let tys = match ty.kind() {
-                        TyKind::Tuple(tys) => tys.as_slice(),
-                        TyKind::Adt(adt_def, args) if adt_def.is_struct() => &adt_def
-                            .all_fields()
-                            .map(|f| f.ty(vcx.tcx(), args))
-                            .collect::<Vec<_>>(),
-                        TyKind::Closure(_closure_def, args) => &args
-                            .as_slice()
-                            .iter()
-                            .map(|arg| arg.expect_ty())
-                            .collect::<Vec<_>>(),
-                        _ => unreachable!(),
-                    };
                     let mut snaps = vec![];
                     let mut funs = vec![];
                     let ecx = rec_data.ecx;
-                    for (idx, ty) in tys.iter().enumerate().take(struct_data.fields.len()) {
+                    for (idx, field) in ty.ty.expect_structlike().fields.iter().enumerate() {
                         let (snap_funs, snap) = Self::encode_const_val_tree(
                             rec_data,
                             deps,
                             ecx.project_field(&val, idx.into()).unwrap(),
-                            *ty,
+                            field.decompose_normalize(ty.args),
                         )
                         .unwrap();
                         snaps.push(snap.upcast_ty());
                         funs.extend(snap_funs);
                     }
-                    (funs, kind.expect_structlike().field_snaps_to_snap(snaps))
+                    (funs, struct_data.field_snaps_to_snap(snaps))
                 }
 
                 super::ty::TySpecifics::EnumLike(enum_data) => {
-                    let (enum_ty, args) = match ty.kind() {
-                        TyKind::Adt(adt_def, args) if adt_def.is_enum() => (adt_def, args),
-                        _ => unreachable!(),
-                    };
                     let variant_idx = rec_data.ecx.read_discriminant(&val).unwrap();
-                    let fields = enum_ty.all_fields().collect::<Vec<_>>();
                     let mut snaps = vec![];
                     let mut funs = vec![];
                     let ecx = rec_data.ecx;
-                    for (idx, field) in fields.iter().enumerate() {
+                    for (idx, field) in ty.ty.expect_enumlike().variants[variant_idx.as_usize()]
+                        .inner
+                        .fields
+                        .iter()
+                        .enumerate()
+                    {
                         let (snap_funs, snap) = Self::encode_const_val_tree(
                             rec_data,
                             deps,
                             ecx.project_field(&val, idx.into()).unwrap(),
-                            field.ty(vcx.tcx(), args),
+                            field.decompose_normalize(ty.args),
                         )
                         .unwrap();
                         snaps.push(snap.upcast_ty());
@@ -369,7 +348,12 @@ impl ConstEnc {
                 context,
                 span,
             };
-            Self::encode_const_val_tree(vcx.alloc(rec_data), deps, v, ty)
+            Self::encode_const_val_tree(
+                vcx.alloc(rec_data),
+                deps,
+                v,
+                RustTyDecomposition::from_ty(ty, context),
+            )
         })
     }
 }

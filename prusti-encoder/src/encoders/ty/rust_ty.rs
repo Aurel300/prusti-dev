@@ -73,7 +73,6 @@ impl<'tcx> RustTyDecomposition<'tcx> {
         let data = RustTyData {
             name: symbol::Symbol::intern("Real"),
             params: GParams::empty(),
-            erased_ty: None,
         };
         let specifics = TySpecifics::Builtin(RustBuiltinData::BuiltinReal);
         Self {
@@ -243,20 +242,12 @@ pub type RustBuiltin<'tcx> = <RustTyDatas as TyDatas<'tcx>>::BuiltinData;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct RustTyData<'tcx> {
     pub name: symbol::Symbol,
-    erased_ty: Option<ty::Ty<'tcx>>,
     pub params: GParams<'tcx>,
 }
 
 impl<'tcx> RustTyData<'tcx> {
     pub fn name(&self) -> &str {
         self.name.as_str()
-    }
-
-    /// NOTE: a hack to get the `ty::Ty` to the encoders for special traits like `Sized` or `Tuple`.
-    /// Should not be used for other purposes
-    pub(super) fn erased_ty_for_special_traits(&self) -> ty::Ty<'tcx> {
-        self.erased_ty
-            .expect("should be `Some` when called in special trait encoders")
     }
 }
 
@@ -312,14 +303,13 @@ impl<'tcx> TyData<'tcx, RustTyDatas> {
         let ty = context.normalize(ty);
 
         let name = Self::ty_name(ty);
-        let (erased_ty, params, args) = Self::identity_for_ty(ty, context.is_trait_extern_spec());
+        let (params, args) = Self::identity_for_ty(ty, context.is_trait_extern_spec());
         let args = GArgs::new(context, args);
         let data = RustTyData {
             name: symbol::Symbol::intern(&name),
-            erased_ty: erased_ty.into(),
             params,
         };
-        let specifics = TySpecifics::from_ty(erased_ty);
+        let specifics = TySpecifics::from_ty(ty);
         let maybe_inhabited =
             vir::with_vcx(|vcx| !ty.is_privately_uninhabited(vcx.tcx(), context.typing_env()));
         RustTyDecomposition {
@@ -331,11 +321,10 @@ impl<'tcx> TyData<'tcx, RustTyDatas> {
 
     fn from_prim_ty(ty: ty::Ty<'tcx>) -> RustTyDecomposition<'tcx> {
         let name = Self::prim_ty_name(ty);
-        let (erased_ty, params, args) = Self::identity_for_prim_ty(ty);
+        let (params, args) = Self::identity_for_prim_ty(ty);
         let args = GArgs::new(params, args);
         let data = RustTyData {
             name: symbol::Symbol::intern(&name),
-            erased_ty: erased_ty.into(),
             params,
         };
         let specifics = TySpecifics::from_prim_ty(ty);
@@ -398,103 +387,80 @@ impl<'tcx> TyData<'tcx, RustTyDatas> {
 
     /// For the ty `MyStruct<i32>` (with defn
     /// `struct MyStruct<T: Iterator<Item = i32>> { ... }`), returns
-    /// `(MyStruct<T>, [<T: Iterator<Item = i32>>], [i32])`.
+    /// `([<T: Iterator<Item = i32>>], [i32])`.
     pub(super) fn identity_for_ty(
         ty: ty::Ty<'tcx>,
         is_trait_extern_spec: bool,
-    ) -> (ty::Ty<'tcx>, GParams<'tcx>, ty::GenericArgsRef<'tcx>) {
-        let tcx = vir::with_vcx(|vcx| vcx.tcx());
-        let (new_ty, params, args) = match *ty.kind() {
+    ) -> (GParams<'tcx>, ty::GenericArgsRef<'tcx>) {
+        let (params, args) = match *ty.kind() {
             _ if ty.is_primitive() => return Self::identity_for_prim_ty(ty),
-            ty::TyKind::Adt(adt, args) => {
-                let params = GParams::from(adt.did());
-                let new_ty = ty::Ty::new_adt(tcx, adt, params.rust_params());
-                (new_ty, params, args)
-            }
+            ty::TyKind::Adt(adt, args) => (GParams::from(adt.did()), args),
             ty::TyKind::Tuple(tys) => {
                 let gtys = (0..tys.len()).map(|idx| TySpecifics::new_param_ty(idx as u32));
                 (
-                    ty::Ty::new_tup_from_iter(tcx, gtys.clone()),
                     GParams::empty_env(Self::args_from_tys(gtys)),
                     Self::args_from_tys(tys),
                 )
             }
-            ty::TyKind::Array(ty, cst) => {
-                let gcst = TySpecifics::new_param_const(0);
-                let gty = TySpecifics::new_param_ty(1);
-                let gargs = Self::args_from_generics([gcst.into(), gty.into()]);
-                let predicate = tcx.mk_predicate(ty::Binder::dummy(ty::PredicateKind::Clause(
-                    ty::ClauseKind::ConstArgHasType(gcst, tcx.types.usize),
-                )));
-                let param_env = ty::ParamEnv::new(tcx.mk_clauses(&[predicate.expect_clause()]));
+            ty::TyKind::Array(ty, cst) => vir::with_vcx(|vcx| {
+                let gcst = TySpecifics::new_param_const(0).into();
+                let gty = TySpecifics::new_param_ty(1).into();
+                let gparams = Self::args_from_generics([gcst, gty]);
+                let predicate =
+                    vcx.tcx()
+                        .mk_predicate(ty::Binder::dummy(ty::PredicateKind::Clause(
+                            ty::ClauseKind::ConstArgHasType(
+                                gcst.expect_const(),
+                                vcx.tcx().types.usize,
+                            ),
+                        )));
+                let param_env =
+                    ty::ParamEnv::new(vcx.tcx().mk_clauses(&[predicate.expect_clause()]));
                 (
-                    ty::Ty::new_array_with_const_len(tcx, gty, gcst),
-                    GParams::new(gargs, param_env, false),
+                    GParams::new(gparams, param_env, false),
                     Self::args_from_generics([cst.into(), ty.into()]),
                 )
+            }),
+            ty::TyKind::Slice(ty) | ty::TyKind::RawPtr(ty, _) => {
+                let gty = Self::args_from_tys([TySpecifics::new_param_ty(0)]);
+                (GParams::empty_env(gty), Self::args_from_tys([ty]))
             }
-            ty::TyKind::Slice(ty) => {
-                let gty = TySpecifics::new_param_ty(0);
-                let params = GParams::empty_env(Self::args_from_tys([gty]));
-                let new_ty = ty::Ty::new_slice(tcx, gty);
-                (new_ty, params, Self::args_from_tys([ty]))
-            }
-            ty::TyKind::RawPtr(ty, mutbl) => {
-                let gty = TySpecifics::new_param_ty(0);
-                let params = GParams::empty_env(Self::args_from_tys([gty]));
-                let new_ty = ty::Ty::new_ptr(tcx, gty, mutbl);
-                (new_ty, params, Self::args_from_tys([ty]))
-            }
-            ty::TyKind::Ref(region, ty, mutbl) => {
+            ty::TyKind::Ref(region, ty, _) => {
                 // TODO: what lifetime should we use here?
-                let param_region = tcx.lifetimes.re_erased;
-                let gty = TySpecifics::new_param_ty(1);
+                let param_region = vir::with_vcx(|vcx| vcx.tcx().lifetimes.re_erased.into());
+                let param_ty = TySpecifics::new_param_ty(1).into();
+                let gty = Self::args_from_generics([param_region, param_ty]);
                 (
-                    ty::Ty::new_ref(tcx, param_region, gty, mutbl),
-                    GParams::empty_env(Self::args_from_generics([param_region.into(), gty.into()])),
+                    GParams::empty_env(gty),
                     Self::args_from_generics([region.into(), ty.into()]),
                 )
             }
-            ty::TyKind::Alias(_, _) | ty::TyKind::Param(_) | ty::TyKind::Dynamic(..) => {
-                let gty = TySpecifics::new_param_ty(0);
-                let gargs = Self::args_from_tys([gty]);
-                // Note: an `Alias` is turned into a `Param` here with the alias
-                // itself as the type argument.
-                (gty, GParams::empty_env(gargs), Self::args_from_tys([ty]))
+            ty::TyKind::Alias(..) | ty::TyKind::Param(_) => {
+                let gty = Self::args_from_tys([TySpecifics::new_param_ty(0)]);
+                (GParams::empty_env(gty), Self::args_from_tys([ty]))
             }
-            ty::TyKind::Closure(did, args) => {
-                let identity = ty::List::identity_for_item(tcx, did);
-                // We only want to fully erase the parent information
-                let parts = ty::ClosureArgsParts {
-                    parent_args: identity.as_closure().parent_args(),
-                    closure_kind_ty: tcx.erase_regions(args.as_closure().kind_ty()),
-                    closure_sig_as_fn_ptr_ty: tcx
-                        .erase_regions(args.as_closure().sig_as_fn_ptr_ty()),
-                    tupled_upvars_ty: tcx.erase_regions(args.as_closure().tupled_upvars_ty()),
-                };
-                let erased = ty::ClosureArgs::new(tcx, parts);
-                let gargs = tcx.mk_args(identity.as_closure().parent_args());
-                let args = tcx.mk_args(args.as_closure().parent_args());
+            ty::TyKind::Closure(did, args) => vir::with_vcx(|vcx| {
+                let identity = ty::List::identity_for_item(vcx.tcx(), did);
+                let gargs = vcx.tcx().mk_args(identity.as_closure().parent_args());
+                let args = vcx.tcx().mk_args(args.as_closure().parent_args());
                 (
-                    ty::Ty::new_closure(tcx, did, erased.args),
-                    GParams::new(gargs, tcx.param_env(did), is_trait_extern_spec),
+                    GParams::new(gargs, vcx.tcx().param_env(did), is_trait_extern_spec),
                     args,
                 )
-            }
-            ty::TyKind::Never | ty::TyKind::Str | ty::TyKind::FnPtr(..) => {
-                (ty, GParams::empty(), ty::GenericArgs::empty())
-            }
+            }),
+            ty::TyKind::Never
+            | ty::TyKind::Str
+            | ty::TyKind::FnPtr(..)
+            | ty::TyKind::Dynamic(..) => (GParams::empty(), ty::GenericArgs::empty()),
             _ => todo!("instantiate_identity_for_type for {:?}", ty),
         };
         params.check(args);
-        (new_ty, params, args)
+        (params, args)
     }
 
-    fn identity_for_prim_ty(
-        ty: ty::Ty<'tcx>,
-    ) -> (ty::Ty<'tcx>, GParams<'tcx>, ty::GenericArgsRef<'tcx>) {
+    fn identity_for_prim_ty(ty: ty::Ty<'tcx>) -> (GParams<'tcx>, ty::GenericArgsRef<'tcx>) {
         assert!(ty.is_primitive());
-        (ty, GParams::empty(), ty::GenericArgs::empty())
+        (GParams::empty(), ty::GenericArgs::empty())
     }
 
     fn args_from_tys(tys: impl IntoIterator<Item = ty::Ty<'tcx>>) -> ty::GenericArgsRef<'tcx> {
@@ -523,25 +489,29 @@ impl<'tcx> TySpecifics<'tcx, RustTyDatas> {
                 let fields = args
                     .iter()
                     .enumerate()
-                    .map(|(i, inner)| RustFieldData {
+                    .map(|(i, _)| RustFieldData {
                         name: symbol::Symbol::intern(&format!("_{i}")),
                         fid: abi::FieldIdx::from_usize(i),
-                        ty: LazyRustTy(inner),
+                        ty: LazyRustTy(Self::new_param_ty(i as u32)),
                     })
                     .collect::<Vec<_>>();
                 TySpecifics::mk_structlike((), fields)
             }
-            ty::TyKind::Array(inner, _) => TySpecifics::ArrayLike(ArrayData {
+            ty::TyKind::Array(_, _) => TySpecifics::ArrayLike(ArrayData {
                 slice: false,
-                data: LazyRustTy(*inner),
+                data: LazyRustTy(Self::new_param_ty(1)),
             }),
-            ty::TyKind::Slice(inner) => TySpecifics::ArrayLike(ArrayData {
+            ty::TyKind::Slice(_) => TySpecifics::ArrayLike(ArrayData {
                 slice: true,
-                data: LazyRustTy(*inner),
+                data: LazyRustTy(Self::new_param_ty(0)),
             }),
-            ty::TyKind::Ref(_, inner, mutability) => match mutability {
-                ty::Mutability::Mut => TySpecifics::mk_mutref(LazyRustTy(*inner)),
-                ty::Mutability::Not => TySpecifics::mk_immref(LazyRustTy(*inner)),
+            ty::TyKind::Ref(_, _, mutability) => match mutability {
+                ty::Mutability::Mut => {
+                    TySpecifics::mk_mutref(LazyRustTy(TySpecifics::new_param_ty(1)))
+                }
+                ty::Mutability::Not => {
+                    TySpecifics::mk_immref(LazyRustTy(TySpecifics::new_param_ty(1)))
+                }
             },
             // TODO: add raw pointer support
             ty::TyKind::RawPtr(..) => TySpecifics::mk_opaque(()),
@@ -601,8 +571,14 @@ impl<'tcx> TySpecifics<'tcx, RustTyDatas> {
             }
         } else {
             match adt.adt_kind() {
-                ty::AdtKind::Struct => Self::StructLike(Self::from_struct(adt.non_enum_variant())),
-                ty::AdtKind::Enum => Self::EnumLike(Self::from_enum(adt)),
+                ty::AdtKind::Struct => {
+                    let data = Self::from_struct(adt.non_enum_variant());
+                    Self::StructLike(data)
+                }
+                ty::AdtKind::Enum => {
+                    let data = Self::from_enum(adt);
+                    Self::EnumLike(data)
+                }
                 ty::AdtKind::Union => {
                     // TODO: add union support
                     Self::mk_opaque(())

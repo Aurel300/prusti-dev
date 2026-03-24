@@ -20,8 +20,6 @@ pub struct TraitEncOutputRef<'vir> {
     pub assoc_consts:
         FxHashMap<DefId, FunctionIdn<'vir, (vir::ManyTyVal, vir::ManyCSnap), vir::Snap>>,
     pub impl_fun: FunctionIdn<'vir, (vir::ManyTyVal, vir::ManyCSnap), vir::Bool>,
-    pub impl_for_unknown_fun:
-        FunctionIdn<'vir, (vir::Int, vir::ManyTyVal, vir::ManyCSnap), vir::Bool>,
 }
 
 #[derive(Debug, Clone)]
@@ -42,11 +40,10 @@ impl TaskEncoder for TraitEnc {
     type TaskDescription<'vir> = DefId;
 
     type OutputRef<'vir> = TraitEncOutputRef<'vir>;
-    type OutputFullLocal<'vir> = Option<TraitEncOutput<'vir>>;
+    type OutputFullLocal<'vir> = TraitEncOutput<'vir>;
 
     fn emit_outputs<'vir>(program: &mut task_encoder::Program<'vir>) {
         for output in TraitEnc::all_outputs_local_no_errors() {
-            let Some(output) = output else { continue };
             program.add_domain(output.trait_domain);
             program.add_function(output.impl_fun);
         }
@@ -110,7 +107,11 @@ impl TaskEncoder for TraitEnc {
                 trait_args,
                 vir::TYPE_BOOL,
             );
-            let impl_for_unknown_fun = {
+            let impl_for_unknown_fun: FunctionIdn<
+                '_,
+                (vir::Int, vir::ManyTyVal, vir::ManyCSnap),
+                vir::Bool,
+            > = {
                 // Omit the `Self` type as it is known to be the unknown type
                 let ty_args = &trait_args.0[1..];
                 let const_args = trait_args.1;
@@ -130,14 +131,8 @@ impl TaskEncoder for TraitEnc {
                     assoc_types,
                     assoc_consts,
                     impl_fun,
-                    impl_for_unknown_fun,
                 },
             )?;
-
-            // When encoding `Sized`, emitting of the impl function is handled by `SizedTraitEnc`
-            if tcx.lang_items().sized_trait() == Some(*task_key) {
-                return Ok((None, ()));
-            }
 
             let impl_fun_body = {
                 let mut trait_impl_checks: Vec<_> = tcx
@@ -196,10 +191,10 @@ impl TaskEncoder for TraitEnc {
             );
 
             Ok((
-                Some(TraitEncOutput {
+                TraitEncOutput {
                     trait_domain,
                     impl_fun,
-                }),
+                },
                 (),
             ))
         })

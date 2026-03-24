@@ -56,6 +56,7 @@ pub struct TyConstructorEnc;
 
 impl TaskEncoder for TyConstructorEnc {
     task_encoder::encoder_cache!(TyConstructorEnc);
+    const ENCODER_NAME: &'static str = "type constructor encoder";
     type TaskDescription<'tcx> = RustTy<'tcx>;
 
     type OutputRef<'vir> = TyConstructorEncOutputRef<'vir>;
@@ -137,7 +138,7 @@ impl TaskEncoder for TyConstructorEnc {
     }
 
     fn emit_outputs<'vir>(program: &mut task_encoder::Program<'vir>) {
-        let mut constructors = Self::all_outputs_local_no_errors();
+        let mut constructors = Self::all_outputs_local_no_errors(program);
         vir::with_vcx(|vcx| {
             let args = vcx.alloc_array(&[vcx.mk_local_decl(Self::UNKNOWN_TYPE_ID, vir::TYPE_INT)]);
             constructors.push(vcx.mk_adt_constructor(Self::UNKNOWN_TYPE_NAME, args));

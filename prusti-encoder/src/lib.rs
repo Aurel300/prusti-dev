@@ -105,10 +105,12 @@ pub fn test_entrypoint<'tcx>(
     TyConstructorEnc::emit_outputs(&mut program);
     TypeOfEnc::emit_outputs(&mut program);
 
+    program.header("constants");
+    ConstEnc::emit_outputs(&mut program);
+
     program.header("custom");
     PairUseEnc::emit_outputs(&mut program);
     RefDataEnc::emit_outputs(&mut program);
-    ConstEnc::emit_outputs(&mut program);
 
     program.header("traits");
     TraitEnc::emit_outputs(&mut program);

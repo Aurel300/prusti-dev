@@ -321,8 +321,8 @@ impl MirBuiltinEnc {
             _ => {
                 return Err(EncodeFullError::EncodingError(
                     MirBuiltinEncError::UnsupportedUnsize {
-                        src: format!("{src_ty_inner}"),
-                        dst: format!("{dst_ty_inner}"),
+                        src: src_ty_inner.to_string(),
+                        dst: dst_ty_inner.to_string(),
                     },
                     None,
                 ));

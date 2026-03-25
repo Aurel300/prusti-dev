@@ -21,7 +21,7 @@ pub struct MirBuiltinEnc;
 
 #[derive(Clone, Debug)]
 pub enum MirBuiltinEncError {
-    Unsupported,
+    UnsupportedUnsize { src: String, dst: String },
 }
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
@@ -97,6 +97,13 @@ impl TaskEncoder for MirBuiltinEnc {
 
     fn task_to_key<'vir>(task: &Self::TaskDescription<'vir>) -> Self::TaskKey<'vir> {
         *task
+    }
+
+    fn describe_error(error: Self::EncodingError) -> String {
+        match error {
+            MirBuiltinEncError::UnsupportedUnsize { src, dst } =>
+                format!("unsizing from `{src}` to `{dst}` is not yet supported in Prusti"),
+        }
     }
 
     fn do_encode_full<'vir>(
@@ -310,7 +317,13 @@ impl MirBuiltinEnc {
                         == (old([dst_array_pure.index(dst_value, idx)]))
                 });
             }
-            _ => return Err(EncodeFullError::EncodingError(MirBuiltinEncError::Unsupported, None)),
+            _ => return Err(EncodeFullError::EncodingError(
+                MirBuiltinEncError::UnsupportedUnsize {
+                    src: format!("{src_ty_inner}"),
+                    dst: format!("{dst_ty_inner}"),
+                },
+                None,
+            )),
         }
 
 

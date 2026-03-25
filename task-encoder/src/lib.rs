@@ -551,15 +551,16 @@ pub trait TaskEncoder {
                 .into_iter()
                 .next()
                 .unwrap_or(prusti_rustc_interface::span::DUMMY_SP);
-            program.encoder_errors.push((
-                format!(
+            let msg = match error {
+                TaskEncoderError::EncodingError(err) => Self::describe_error(err),
+                other => format!(
                     "encoder '{}' failed to encode {:?}:\n {:?}",
                     Self::ENCODER_NAME,
                     key,
-                    error
+                    other
                 ),
-                span,
-            ));
+            };
+            program.encoder_errors.push((msg, span));
         }
         outputs
     }

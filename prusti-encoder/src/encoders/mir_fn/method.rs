@@ -293,35 +293,38 @@ impl TaskEncoder for MethodEnc {
                     current_terminator: None,
                     encoded_blocks,
 
-                    encoding_error: None,
+                    skip_body: false,
                 };
                 visitor.visit_body(body);
-                if let Some(err) = visitor.encoding_error.take() {
-                    return Err(err);
+                if visitor.skip_body {
+                    // A statement failed to encode; the dependency encoder already
+                    // reported the error, so skip verification of this body.
+                    None
+                } else {
+                    start_stmts.extend(
+                        visitor
+                            .from_to_vars
+                            .decls()
+                            .map(|v| vcx.mk_local_decl_stmt(v, Some(vcx.mk_bool::<false>()))),
+                    );
+                    visitor.encoded_blocks[0] = vcx.mk_cfg_block(
+                        &vir::CfgBlockLabelData::Start,
+                        &[],
+                        vcx.alloc_slice(&start_stmts),
+                        vcx.mk_goto_stmt(&vir::CfgBlockLabelData::BasicBlock(0)),
+                    );
+
+                    visitor.encoded_blocks.push(vcx.mk_cfg_block(
+                        vcx.alloc(vir::CfgBlockLabelData::End),
+                        &[],
+                        &[],
+                        vcx.alloc(vir::TerminatorStmtData::Exit),
+                    ));
+
+                    visitor.deps.check_cycle()?;
+
+                    Some(visitor.encoded_blocks)
                 }
-                start_stmts.extend(
-                    visitor
-                        .from_to_vars
-                        .decls()
-                        .map(|v| vcx.mk_local_decl_stmt(v, Some(vcx.mk_bool::<false>()))),
-                );
-                visitor.encoded_blocks[0] = vcx.mk_cfg_block(
-                    &vir::CfgBlockLabelData::Start,
-                    &[],
-                    vcx.alloc_slice(&start_stmts),
-                    vcx.mk_goto_stmt(&vir::CfgBlockLabelData::BasicBlock(0)),
-                );
-
-                visitor.encoded_blocks.push(vcx.mk_cfg_block(
-                    vcx.alloc(vir::CfgBlockLabelData::End),
-                    &[],
-                    &[],
-                    vcx.alloc(vir::TerminatorStmtData::Exit),
-                ));
-
-                visitor.deps.check_cycle()?;
-
-                Some(visitor.encoded_blocks)
             } else {
                 None
             };

@@ -173,7 +173,10 @@ where
 
     pub encoded_blocks: Vec<vir::CfgBlock<'vir>>, // TODO: use IndexVec ?
 
-    pub encoding_error: Option<EncodeFullError<'vir, E>>,
+    /// Set to true when a statement fails to encode because a dependency
+    /// encoder reported its own error. The body is then skipped (treated as
+    /// abstract) rather than producing a redundant error here.
+    pub skip_body: bool,
 }
 
 /// Represents the translation of a MIR place. If the place crosses a shared
@@ -1357,7 +1360,7 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
 
     fn visit_statement(&mut self, statement: &mir::Statement<'vir>, location: mir::Location) {
         self.vcx.with_span(statement.source_info.span, |_vcx| {
-            if self.deps.check_cycle().is_err() || self.encoding_error.is_some() {
+            if self.deps.check_cycle().is_err() || self.skip_body {
                 return;
             }
 
@@ -1403,7 +1406,7 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                     let def_id = self.def_id();
                     let unsize = match self.deps().require_ref_spanned::<MirBuiltinEnc>(MirBuiltinEncTask::Unsize(src_ty, *ty, def_id), span) {
                         Ok(r) => r.unsize().unwrap(),
-                        Err(e) => { self.encoding_error = Some(e); return; }
+                        Err(_) => { self.skip_body = true; return; }
                     };
                     let params = GParams::from(def_id);
                     let generics = self.deps().require_dep::<GenericParamsEnc>(params).unwrap();

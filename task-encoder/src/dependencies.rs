@@ -36,12 +36,23 @@ impl<'vir, E: TaskEncoder + 'vir + ?Sized> TaskEncoderDependencies<'vir, E> {
         Ok(())
     }
 
-    fn require_common<T, EOther: TaskEncoder>(
+    fn require_common<T, EOther: TaskEncoder + 'vir>(
         &mut self,
         task: <EOther as TaskEncoder>::TaskDescription<'vir>,
         span: Option<Span>,
         res: Result<T, TaskEncoderError<EOther>>,
     ) -> Result<T, EncodeFullError<'vir, E>> {
+        if let (Some(span), Err(_)) = (span, &res) {
+            let task_key = EOther::task_to_key(&task);
+            EOther::with_cache(|cache| {
+                let mut cache = cache.borrow_mut();
+                match cache.get_mut(&task_key) {
+                    Some(TaskEncoderCacheState::ErrorEncode { spans, .. }) => spans.push(span),
+                    Some(TaskEncoderCacheState::ErrorEnqueue { spans, .. }) => spans.push(span),
+                    _ => {}
+                }
+            });
+        }
         res.map_err(|err| {
             EncodeFullError::DependencyError(vec![
                 (
@@ -70,11 +81,11 @@ impl<'vir, E: TaskEncoder + 'vir + ?Sized> TaskEncoderDependencies<'vir, E> {
         })
     }
 
-    pub fn require_ref<EOther: TaskEncoder>(
+    pub fn require_ref<EOther: TaskEncoder + 'vir>(
         &mut self,
         task: <EOther as TaskEncoder>::TaskDescription<'vir>,
     ) -> Result<<EOther as TaskEncoder>::OutputRef<'vir>, EncodeFullError<'vir, E>> {
-        self.require_common(task.clone(), None, EOther::encode_ref(task))
+        self.require_common(task.clone(), None, EOther::encode_ref(task, Span::default()))
     }
 
     pub fn require_local<EOther: TaskEncoder + 'vir>(
@@ -84,7 +95,7 @@ impl<'vir, E: TaskEncoder + 'vir + ?Sized> TaskEncoderDependencies<'vir, E> {
         self.require_common(
             task.clone(),
             None,
-            EOther::encode(task, true)
+            EOther::encode(task, true, Span::default())
                 .map(Option::unwrap)
                 .map(|(_output_ref, output_local, _output_dep)| output_local),
         )
@@ -97,18 +108,18 @@ impl<'vir, E: TaskEncoder + 'vir + ?Sized> TaskEncoderDependencies<'vir, E> {
         self.require_common(
             task.clone(),
             None,
-            EOther::encode(task, true)
+            EOther::encode(task, true, Span::default())
                 .map(Option::unwrap)
                 .map(|(_output_ref, _output_local, output_dep)| output_dep),
         )
     }
 
-    pub fn require_ref_spanned<EOther: TaskEncoder>(
+    pub fn require_ref_spanned<EOther: TaskEncoder + 'vir>(
         &mut self,
         task: <EOther as TaskEncoder>::TaskDescription<'vir>,
         span: Span,
     ) -> Result<<EOther as TaskEncoder>::OutputRef<'vir>, EncodeFullError<'vir, E>> {
-        self.require_common(task.clone(), Some(span), EOther::encode_ref(task))
+        self.require_common(task.clone(), Some(span), EOther::encode_ref(task, span))
     }
 
     pub fn require_local_spanned<EOther: TaskEncoder + 'vir>(
@@ -119,7 +130,7 @@ impl<'vir, E: TaskEncoder + 'vir + ?Sized> TaskEncoderDependencies<'vir, E> {
         self.require_common(
             task.clone(),
             Some(span),
-            EOther::encode(task, true)
+            EOther::encode(task, true, span)
                 .map(Option::unwrap)
                 .map(|(_output_ref, output_local, _output_dep)| output_local),
         )
@@ -133,7 +144,7 @@ impl<'vir, E: TaskEncoder + 'vir + ?Sized> TaskEncoderDependencies<'vir, E> {
         self.require_common(
             task.clone(),
             Some(span),
-            EOther::encode(task, true)
+            EOther::encode(task, true, span)
                 .map(Option::unwrap)
                 .map(|(_output_ref, _output_local, output_dep)| output_dep),
         )

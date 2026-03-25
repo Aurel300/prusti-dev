@@ -14,7 +14,7 @@ use prusti_rustc_interface::{
     span::{Span, def_id::DefId},
 };
 use task_encoder::{EncodeFullError, EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
-use vir::{CastType, FunctionGenData, FunctionIdn, VirCtxt};
+use vir::{CastType, FunctionIdn, VirCtxt};
 
 use crate::encoders::{
     MirPureEnc, MirPureEncTask, PureKind,
@@ -134,7 +134,7 @@ impl ConstEnc {
             vir::ExprRef<'vir>,
             vir::ExprSnap<'vir>,
         ) -> vir::ExprCSnap<'vir>,
-    ) -> Result<(Vec<vir::Function<'vir>>, vir::ExprCSnap<'vir>), EncodeFullError<'vir, Self>>
+    ) -> EncodeFullResult<'vir, Self>
     where
         T: Projectable<'vir, CtfeProvenance>,
     {
@@ -149,7 +149,7 @@ impl ConstEnc {
             // first, we create a slice snapshot
             let snap = (sl_snap.arbitrary)().upcast_ty();
             // wrap it in a ref
-            (vec![], prim_to_snap(ref_val, vcx.mk_null(), snap))
+            (Vec::new(), prim_to_snap(ref_val, vcx.mk_null(), snap))
         } else {
             let ptr = rec_data.ecx.read_pointer(&val).expect("Expected a pointer");
 
@@ -186,7 +186,7 @@ impl ConstEnc {
         deps: &mut TaskEncoderDependencies<'vir, Self>,
         val: T,
         ty: RustTyDecomposition<'vir>,
-    ) -> Result<(Vec<vir::Function<'vir>>, vir::ExprCSnap<'vir>), EncodeFullError<'vir, Self>>
+    ) -> EncodeFullResult<'vir, Self>
     where
         T: Projectable<'vir, CtfeProvenance>,
     {
@@ -201,8 +201,8 @@ impl ConstEnc {
                         .expect_const()
                         .try_to_target_usize(vcx.tcx())
                         .unwrap();
-                    let mut posts = vec![];
-                    let mut funs = vec![];
+                    let mut posts = Vec::new();
+                    let mut funs = Vec::new();
                     let ecx = rec_data.ecx;
                     for idx in 0..elem_len {
                         let (snap_funs, snap) = Self::encode_const_val_tree(
@@ -254,7 +254,7 @@ impl ConstEnc {
                         .expect("scalar should be an integer");
                     let val = int.to_bits(int.size());
                     let val = prim.expr_from_bits(*ty.ty.expect_primitive(), val);
-                    (vec![], (prim.prim_to_snap)(val))
+                    (Vec::new(), (prim.prim_to_snap)(val))
                 }
                 super::ty::TySpecifics::ImmRef(imm_ref) => Self::encode_ref(
                     imm_ref,
@@ -275,8 +275,8 @@ impl ConstEnc {
                     TyUsePureMutRef::prim_to_snap,
                 )?,
                 super::ty::TySpecifics::StructLike(struct_data) => {
-                    let mut snaps = vec![];
-                    let mut funs = vec![];
+                    let mut snaps = Vec::new();
+                    let mut funs = Vec::new();
                     let ecx = rec_data.ecx;
                     for (idx, field) in ty.ty.expect_structlike().fields.iter().enumerate() {
                         let (snap_funs, snap) = Self::encode_const_val_tree(
@@ -294,8 +294,8 @@ impl ConstEnc {
 
                 super::ty::TySpecifics::EnumLike(enum_data) => {
                     let variant_idx = rec_data.ecx.read_discriminant(&val).unwrap();
-                    let mut snaps = vec![];
-                    let mut funs = vec![];
+                    let mut snaps = Vec::new();
+                    let mut funs = Vec::new();
                     let ecx = rec_data.ecx;
                     for (idx, field) in ty.ty.expect_enumlike().variants[variant_idx.as_usize()]
                         .inner
@@ -331,13 +331,7 @@ impl ConstEnc {
         ty: ty::Ty<'vir>,
         context: GParams<'vir>,
         span: Span,
-    ) -> Result<
-        (
-            Vec<&'vir FunctionGenData<'vir, (), !>>,
-            vir::ExprCSnap<'vir>,
-        ),
-        EncodeFullError<'vir, Self>,
-    > {
+    ) -> EncodeFullResult<'vir, Self> {
         let ty_ctxt_at = vir::with_vcx(|vcx| vcx.tcx().at(span));
         let (ecx, v) =
             mk_eval_cx_for_const_val(ty_ctxt_at, TypingEnv::fully_monomorphized(), val, ty)
@@ -390,7 +384,10 @@ impl TaskEncoder for ConstEnc {
                 const_,
                 ty,
                 context,
-            } => (vec![], Self::encode_ty_const(deps, const_, ty, context)?),
+            } => (
+                Vec::new(),
+                Self::encode_ty_const(deps, const_, ty, context)?,
+            ),
             ConstEncTask::Mir {
                 const_,
                 encoding_depth,
@@ -419,13 +416,13 @@ impl TaskEncoder for ConstEnc {
                         };
                         let expr = deps.require_dep::<MirPureEnc>(task)?.expr;
                         use vir::Reify;
-                        Ok((vec![], expr.reify(vcx, (uneval.def, &[])).downcast_ty()))
+                        Ok((Vec::new(), expr.reify(vcx, (uneval.def, &[])).downcast_ty()))
                     } else {
                         todo!("const too generic")
                     }
                 })?,
                 mir::Const::Ty(ty, const_) => (
-                    vec![],
+                    Vec::new(),
                     Self::encode_ty_const(deps, const_, ty, def_id.into())?,
                 ),
             },

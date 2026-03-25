@@ -85,7 +85,11 @@ impl<'vir, E: TaskEncoder + 'vir + ?Sized> TaskEncoderDependencies<'vir, E> {
         &mut self,
         task: <EOther as TaskEncoder>::TaskDescription<'vir>,
     ) -> Result<<EOther as TaskEncoder>::OutputRef<'vir>, EncodeFullError<'vir, E>> {
-        self.require_common(task.clone(), None, EOther::encode_ref(task, Span::default()))
+        self.require_common(
+            task.clone(),
+            None,
+            EOther::encode_ref(task, Span::default()),
+        )
     }
 
     pub fn require_local<EOther: TaskEncoder + 'vir>(

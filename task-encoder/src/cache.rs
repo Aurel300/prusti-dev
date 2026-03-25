@@ -22,7 +22,10 @@ pub enum TaskEncoderCacheState<'vir, E: TaskEncoder + 'vir + ?Sized> {
     },
 
     /// An error occurred when enqueing the task.
-    ErrorEnqueue { error: TaskEncoderError<E>, spans: Vec<Span> },
+    ErrorEnqueue {
+        error: TaskEncoderError<E>,
+        spans: Vec<Span>,
+    },
 
     /// An error occurred when encoding the task. The full "local" encoding is
     /// not available. However, tasks which depend on this task may still

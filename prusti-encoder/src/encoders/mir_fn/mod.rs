@@ -14,7 +14,11 @@ use crate::encoders::ty::generics::{
 };
 
 use prusti_interface::specs::specifications::SpecQuery;
-use prusti_rustc_interface::{hir, middle::ty, span::{DUMMY_SP, def_id::DefId}};
+use prusti_rustc_interface::{
+    hir,
+    middle::ty,
+    span::{DUMMY_SP, def_id::DefId},
+};
 use task_encoder::{EncodeFullError, TaskEncoder, TaskEncoderDependencies};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

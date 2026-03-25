@@ -122,8 +122,7 @@ pub fn test_entrypoint<'tcx>(
     }
 
     for (error_msg, span) in program.encoder_errors().drain(..) {
-        PrustiError::internal(error_msg, span.into())
-            .emit(env_diagnostic);
+        PrustiError::internal(error_msg, span.into()).emit(env_diagnostic);
     }
 
     let program = program.mk_program();

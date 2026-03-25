@@ -101,8 +101,9 @@ impl TaskEncoder for MirBuiltinEnc {
 
     fn describe_error(error: Self::EncodingError) -> String {
         match error {
-            MirBuiltinEncError::UnsupportedUnsize { src, dst } =>
-                format!("unsizing from `{src}` to `{dst}` is not yet supported in Prusti"),
+            MirBuiltinEncError::UnsupportedUnsize { src, dst } => {
+                format!("unsizing from `{src}` to `{dst}` is not yet supported in Prusti")
+            }
         }
     }
 
@@ -275,7 +276,7 @@ impl MirBuiltinEnc {
 
         match dst_ty_inner.kind() {
             ty::TyKind::Slice(_) => {
-            let src_value = match &src_ref_pure.specifics {
+                let src_value = match &src_ref_pure.specifics {
                     TySpecifics::ImmRef(data) => data.value_access(snap_src.downcast_ty()),
                     TySpecifics::MutRef(data) => data.value_access(snap_src.downcast_ty()),
                     _ => unreachable!(),
@@ -317,16 +318,16 @@ impl MirBuiltinEnc {
                         == (old([dst_array_pure.index(dst_value, idx)]))
                 });
             }
-            _ => return Err(EncodeFullError::EncodingError(
-                MirBuiltinEncError::UnsupportedUnsize {
-                    src: format!("{src_ty_inner}"),
-                    dst: format!("{dst_ty_inner}"),
-                },
-                None,
-            )),
+            _ => {
+                return Err(EncodeFullError::EncodingError(
+                    MirBuiltinEncError::UnsupportedUnsize {
+                        src: format!("{src_ty_inner}"),
+                        dst: format!("{dst_ty_inner}"),
+                    },
+                    None,
+                ));
+            }
         }
-
-
 
         Ok((
             vcx.mk_method(

@@ -229,7 +229,7 @@ pub trait TaskEncoder {
     fn encode<'vir>(
         task: Self::TaskDescription<'vir>,
         need_output: bool,
-        span: Span
+        span: Span,
     ) -> EncodeResult<'vir, Self>
     where
         Self: 'vir,

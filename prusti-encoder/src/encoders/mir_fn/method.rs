@@ -292,8 +292,13 @@ impl TaskEncoder for MethodEnc {
                     current_stmts: None,
                     current_terminator: None,
                     encoded_blocks,
+
+                    encoding_error: None,
                 };
                 visitor.visit_body(body);
+                if let Some(err) = visitor.encoding_error.take() {
+                    return Err(err);
+                }
                 start_stmts.extend(
                     visitor
                         .from_to_vars

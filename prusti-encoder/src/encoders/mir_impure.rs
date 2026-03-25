@@ -172,6 +172,8 @@ where
     pub current_terminator: Option<vir::TerminatorStmt<'vir>>,
 
     pub encoded_blocks: Vec<vir::CfgBlock<'vir>>, // TODO: use IndexVec ?
+
+    pub encoding_error: Option<EncodeFullError<'vir, E>>,
 }
 
 /// Represents the translation of a MIR place. If the place crosses a shared
@@ -1355,7 +1357,7 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
 
     fn visit_statement(&mut self, statement: &mir::Statement<'vir>, location: mir::Location) {
         self.vcx.with_span(statement.source_info.span, |_vcx| {
-            if self.deps.check_cycle().is_err() {
+            if self.deps.check_cycle().is_err() || self.encoding_error.is_some() {
                 return;
             }
 
@@ -1399,7 +1401,10 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                         .expect_predicate();
                     let src_ty = src.ty(self.body(), self.vcx.tcx());
                     let def_id = self.def_id();
-                    let unsize = self.deps().require_ref::<MirBuiltinEnc>(MirBuiltinEncTask::Unsize(src_ty, *ty, def_id)).unwrap().unsize().unwrap();
+                    let unsize = match self.deps().require_ref_spanned::<MirBuiltinEnc>(MirBuiltinEncTask::Unsize(src_ty, *ty, def_id), span) {
+                        Ok(r) => r.unsize().unwrap(),
+                        Err(e) => { self.encoding_error = Some(e); return; }
+                    };
                     let params = GParams::from(def_id);
                     let generics = self.deps().require_dep::<GenericParamsEnc>(params).unwrap();
                     self.stmt(self.vcx.alloc(vir::StmtData::new(self.vcx.alloc((unsize.unsize)(

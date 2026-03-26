@@ -11,7 +11,7 @@ use crate::encoders::{
 };
 
 use super::{
-    data::*, generics::{GArgCaster, GArgsTy}, pure::{PureTyDatas, TyPure, TyPureEnc, TyPureRef}, TyUseEnc, UseTyDatas
+    data::*, generics::{GArgCaster, GArgsTy}, pure::{PureTyDatas, TyPureEnc, TyPureRef}, TyUseEnc, UseTyDatas
 };
 
 pub(super) type UsePureTyDatas = UseTyDatas<Pure>;
@@ -41,7 +41,6 @@ pub type TyUsePureEnum<'vir> = EnumData<'vir, UsePureTyDatas>;
 pub struct TyUsePureImmRef<'vir> {
     caster: FieldCaster<'vir>,
     pure: <PureTyDatas as TyDatas<'vir>>::ImmRefData,
-    inner: TyUsePure<'vir>,
 }
 
 #[derive(Debug, Clone)]
@@ -161,11 +160,9 @@ impl<'a, 'vir> TyUsePureWalker<'a, 'vir> {
             TySpecifics::Primitive(data) => TySpecifics::mk_primitive(*data.1),
             TySpecifics::ImmRef(data) => {
                 let caster = self.encode_normalized(*data.0, ty.0.params);
-                let inner_ty = data.0.decompose(ty.0.params);
                 TySpecifics::mk_immref(TyUsePureImmRef {
                     caster,
                     pure: *data.1,
-                    inner: self.deps.require_dep::<TyUsePureEnc>(inner_ty).unwrap(),
                 })
             }
             TySpecifics::MutRef((data, ref_domain)) => {
@@ -286,10 +283,6 @@ impl<'vir> TyUsePureImmRef<'vir> {
     ) -> vir::ExprGenCSnap<'vir, Curr, Next> {
         let inner = self.caster.cast_to_callee_ctx(inner);
         self.pure.prim_to_snap.call()(ref_, inner.downcast_ty())
-    }
-
-    pub fn inner(&self) -> TyUsePure<'vir> {
-        self.inner
     }
     
     pub fn deref_access<Curr, Next>(

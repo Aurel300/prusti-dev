@@ -1,18 +1,14 @@
 use prusti_rustc_interface::{
-    middle::{
-        mir,
-        ty::{self, TyKind},
-    },
+    middle::ty,
     span::def_id::DefId,
 };
 use task_encoder::{EncodeFullResult, OutputRefAny, TaskEncoder, TaskEncoderDependencies};
-use vir::{CastType, ExprGenData, FunctionIdn, Reify};
+use vir::{CastType, FunctionIdn, Reify};
 
 use crate::encoders::{
     MirLocalDefEnc, MirLocalDefEncTask, MirPureEnc, MirPureEncTask, MirSpecEnc, Pure, PureKind,
     mir_fn::{CallTaskDescription, RustSignature},
     ty::{
-        RustTyDecomposition,
         generics::{GArgCaster, GArgsCastEnc, GArgsTy, GArgsTyEnc, GParams, GenericParamsEnc},
     },
 };
@@ -242,18 +238,9 @@ impl TaskEncoder for FunctionEnc {
 
                     let limited_fn_app = limited_fn_ref(&local_args, &generic_args, &const_args);
 
-                    let mut triggers = local_defs
-                        .args()
-                        .filter_map(|local_def| {
-                            let valid = local_def.local_valid?;
-                            Some(vcx.mk_trigger(&[valid]))
-                        })
-                        .collect::<Vec<_>>();
-                    triggers.push(vcx.mk_trigger(&[unlimited_fn_app]));
-
                     vcx.mk_forall_expr(
                         vcx.alloc_slice(&qvars),
-                        vcx.alloc_slice(&triggers[..]),
+                        vcx.alloc_slice(&[vcx.mk_trigger(&[unlimited_fn_app])]),
                         vcx.mk_eq_expr(unlimited_fn_app, limited_fn_app),
                     )
                 };
@@ -298,13 +285,18 @@ impl TaskEncoder for FunctionEnc {
                     qvars.extend(generics.ty_decls().iter().map(|decl| decl.as_dyn()));
                     qvars.extend(generics.const_decls().iter().map(|decl| decl.as_dyn()));
 
-                    let triggers = local_defs
+                    let mut triggers = local_defs
                         .args()
-                        .filter_map(|local_def| local_def.local_valid);
+                        .filter_map(|local_def| {
+                            let valid = local_def.local_valid?;
+                            Some(vcx.mk_trigger(&[valid]))
+                        })
+                        .collect::<Vec<_>>();
+                    triggers.push(&vcx.mk_trigger(&[unlimited_fn_app]));
 
                     vcx.mk_forall_expr(
                         vcx.alloc_slice(&qvars),
-                        vcx.alloc_slice(&[vcx.mk_trigger(&[unlimited_fn_app])]),
+                        vcx.alloc_slice(&triggers[..]),
                         vcx.mk_eq_expr(unlimited_fn_app, fn_body),
                     )
                 };

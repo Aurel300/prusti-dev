@@ -158,10 +158,16 @@ impl TaskEncoder for MirLocalDefEnc {
     ) -> EncodeFullResult<'vir, Self> {
         fn mk_local_def<'vir>(
             vcx: &'vir vir::VirCtxt<'vir>,
+            deps: &mut TaskEncoderDependencies<'vir, MirLocalDefEnc>,
+            def_id: DefId,
             local: mir::Local,
-            ty_impure: TyUseImpure<'vir>,
-            ty_pure: TyUsePure<'vir>,
+            rust_ty: ty::Ty<'vir>, // ty_impure: TyUseImpure<'vir>,
+                                   // ty_pure: TyUsePure<'vir>,
         ) -> LocalDef<'vir> {
+            let rust_ty_task = RustTyDecomposition::from_ty(rust_ty, vcx.tcx(), def_id);
+            let ty_impure = deps.require_dep::<TyUseImpureEnc>(rust_ty_task).unwrap();
+            let ty_pure = deps.require_dep::<TyUsePureEnc>(rust_ty_task).unwrap();
+
             let ref_local = vir::vir_format!(vcx, "_{}p", local.index());
             let snap_local = vir::vir_format!(vcx, "_{}s", local.index());
             let local = vcx.mk_local_decl(ref_local, vir::TYPE_REF);
@@ -172,23 +178,30 @@ impl TaskEncoder for MirLocalDefEnc {
 
             fn mk_local_valid<'vir>(
                 vcx: &'vir vir::VirCtxt<'vir>,
+                def_id: DefId,
+                deps: &mut TaskEncoderDependencies<'vir, MirLocalDefEnc>,
+                rust_ty: ty::Ty<'vir>,
                 local_snap: &'vir vir::LocalDeclData<'vir, vir::Snap>,
                 ty_pure: TyUsePure<'vir>,
             ) -> Option<vir::ExprBool<'vir>> {
                 let local_arg = vcx.mk_local_ex(local_snap);
-                match ty_pure.specifics {
-                    TySpecifics::ImmRef(data) => {
-                        let val_expr = data.value_access(local_arg.downcast_ty());
-                        Some(data.inner().valid_fn().call()(val_expr))
+                match rust_ty.kind() {
+                    ty::TyKind::Ref(_, referent_ty, _) => {
+                        let referent_ty_task =
+                            RustTyDecomposition::from_ty(*referent_ty, vcx.tcx(), def_id);
+                        let referent_ty_pure =
+                            deps.require_dep::<TyUsePureEnc>(referent_ty_task).unwrap();
+                        let val_expr = ty_pure
+                            .expect_immref()
+                            .value_access(local_arg.downcast_ty());
+                        Some(referent_ty_pure.valid_fn().call()(val_expr))
                     }
-                    TySpecifics::EnumLike(..) | TySpecifics::StructLike(..) => {
-                        Some(ty_pure.valid_fn().call()(local_arg))
-                    }
+                    ty::TyKind::Adt(..) => Some(ty_pure.valid_fn().call()(local_arg)),
                     _ => None,
                 }
             }
 
-            let local_valid = mk_local_valid(vcx, local_snap, ty_pure);
+            let local_valid = mk_local_valid(vcx, def_id, deps, rust_ty, local_snap, ty_pure);
 
             LocalDef {
                 local,
@@ -213,11 +226,13 @@ impl TaskEncoder for MirLocalDefEnc {
                 let locals = IndexVec::from_fn_n(
                     |local: mir::Local| {
                         let rust_ty = body.local_decls[local].ty;
-                        let rust_ty_task =
-                            RustTyDecomposition::from_ty(rust_ty, vcx.tcx(), task_key.def_id());
-                        let ty_impure = deps.require_dep::<TyUseImpureEnc>(rust_ty_task).unwrap();
-                        let ty_pure = deps.require_dep::<TyUsePureEnc>(rust_ty_task).unwrap();
-                        mk_local_def(vcx, local, ty_impure, ty_pure)
+                        // let rust_ty_task =
+                        //     RustTyDecomposition::from_ty(rust_ty, vcx.tcx(), task_key.def_id());
+                        // let ty_impure = deps.require_dep::<TyUseImpureEnc>(rust_ty_task).unwrap();
+                        // let ty_pure = deps.require_dep::<TyUsePureEnc>(rust_ty_task).unwrap();
+                        mk_local_def(
+                            vcx, deps, task_key.def_id(), local, rust_ty, /*ty_impure, ty_pure*/
+                        )
                     },
                     if task_key.all_locals() {
                         body.local_decls.len()
@@ -257,7 +272,7 @@ impl TaskEncoder for MirLocalDefEnc {
                             RustTyDecomposition::from_ty(rust_ty, vcx.tcx(), task_key.def_id());
                         let ty_impure = deps.require_dep::<TyUseImpureEnc>(rust_ty_task)?;
                         let ty_pure = deps.require_dep::<TyUsePureEnc>(rust_ty_task)?;
-                        Ok(mk_local_def(vcx, local, ty_impure, ty_pure))
+                        Ok(mk_local_def(vcx, deps, task_key.def_id(), local, rust_ty))
                     })
                     .collect::<Result<IndexVec<_, _>, _>>()?;
 

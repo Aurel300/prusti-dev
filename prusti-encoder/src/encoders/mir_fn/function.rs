@@ -1,5 +1,5 @@
 use prusti_rustc_interface::{
-    middle::ty,
+    middle::{mir, ty},
     span::def_id::DefId,
 };
 use task_encoder::{EncodeFullResult, OutputRefAny, TaskEncoder, TaskEncoderDependencies};
@@ -8,9 +8,7 @@ use vir::{CastType, FunctionIdn, Reify};
 use crate::encoders::{
     MirLocalDefEnc, MirLocalDefEncTask, MirPureEnc, MirPureEncTask, MirSpecEnc, Pure, PureKind,
     mir_fn::{CallTaskDescription, RustSignature},
-    ty::{
-        generics::{GArgCaster, GArgsCastEnc, GArgsTy, GArgsTyEnc, GParams, GenericParamsEnc},
-    },
+    ty::generics::{GArgCaster, GArgsCastEnc, GArgsTy, GArgsTyEnc, GParams, GenericParamsEnc},
 };
 
 // Function wrapper
@@ -113,6 +111,7 @@ impl<'vir> OutputRefAny for FunctionEncOutputRef<'vir> {}
 #[derive(Debug, Clone, Copy)]
 struct FunctionEncOutput<'vir> {
     defn_axiom: Option<vir::DomainAxiom<'vir>>,
+    spec_axiom: vir::DomainAxiom<'vir>,
     unlimited_fn: vir::DomainFunction<'vir>,
     limited_axiom: vir::DomainAxiom<'vir>,
     limited_fn: vir::DomainFunction<'vir>,
@@ -227,19 +226,19 @@ impl TaskEncoder for FunctionEnc {
 
             let unlimited_fn_app = unlimited_fn_ref(&local_args, &generic_args, &const_args);
 
+            let arg_qvars = local_defs
+                .local_decl_args()
+                .map(|decl| decl.as_dyn())
+                .chain(generics.ty_decls().iter().map(|decl| decl.as_dyn()))
+                .chain(generics.const_decls().iter().map(|decl| decl.as_dyn()))
+                .collect::<Vec<_>>();
+
             let limited_axiom = {
                 let axiom_body = {
-                    let mut qvars = local_defs
-                        .local_decl_args()
-                        .map(|decl| decl.as_dyn())
-                        .collect::<Vec<_>>();
-                    qvars.extend(generics.ty_decls().iter().map(|decl| decl.as_dyn()));
-                    qvars.extend(generics.const_decls().iter().map(|decl| decl.as_dyn()));
-
                     let limited_fn_app = limited_fn_ref(&local_args, &generic_args, &const_args);
 
                     vcx.mk_forall_expr(
-                        vcx.alloc_slice(&qvars),
+                        vcx.alloc_slice(&arg_qvars),
                         vcx.alloc_slice(&[vcx.mk_trigger(&[unlimited_fn_app])]),
                         vcx.mk_eq_expr(unlimited_fn_app, limited_fn_app),
                     )
@@ -278,24 +277,19 @@ impl TaskEncoder for FunctionEnc {
                 );
 
                 let axiom_body = {
-                    let mut qvars = local_defs
-                        .local_decl_args()
-                        .map(|decl| decl.as_dyn())
-                        .collect::<Vec<_>>();
-                    qvars.extend(generics.ty_decls().iter().map(|decl| decl.as_dyn()));
-                    qvars.extend(generics.const_decls().iter().map(|decl| decl.as_dyn()));
-
+                    let limited_fn_app =
+                        limited_fn_ref(&local_args, &generic_args, &const_args).as_dyn();
                     let mut triggers = local_defs
                         .args()
                         .filter_map(|local_def| {
-                            let trig = local_def.local_trig?;
-                            Some(vcx.mk_trigger(&[trig]))
+                            let trig = local_def.local_trig?.as_dyn();
+                            Some(vcx.mk_trigger(&[trig, &limited_fn_app]))
                         })
                         .collect::<Vec<_>>();
                     triggers.push(vcx.mk_trigger(&[unlimited_fn_app]));
 
                     vcx.mk_forall_expr(
-                        vcx.alloc_slice(&qvars),
+                        vcx.alloc_slice(&arg_qvars),
                         vcx.alloc_slice(&triggers[..]),
                         vcx.mk_eq_expr(unlimited_fn_app, fn_body),
                     )
@@ -305,6 +299,30 @@ impl TaskEncoder for FunctionEnc {
                     vir::vir_format_identifier!(vcx, "Defn_{}", vcx.tcx().def_path_str(def_id));
 
                 Some(vcx.mk_domain_axiom(axiom_ident, axiom_body))
+            };
+
+            // TODO do the let RETURN_PLACE trick
+            let spec_axiom = {
+                let (posts, result_var) = spec.posts_with_local.unwrap();
+                let pre = vcx.mk_conj(&spec.pres);
+                let post = vcx.mk_conj(&posts);
+
+                let axiom_body = {
+                    let trigger = vcx.mk_trigger(&[unlimited_fn_app]);
+                    vcx.mk_forall_expr(
+                        vcx.alloc_slice(&arg_qvars),
+                        vcx.alloc_slice(&[trigger]),
+                        vcx.mk_let_expr(
+                            result_var,
+                            unlimited_fn_app,
+                            vcx.mk_ternary_expr(pre, post, vcx.mk_bool::<true>()),
+                        ),
+                    )
+                };
+
+                let axiom_ident =
+                    vir::vir_format_identifier!(vcx, "Spec_{}", vcx.tcx().def_path_str(def_id));
+                vcx.mk_domain_axiom(axiom_ident, axiom_body)
             };
 
             let mut pres = Vec::new(); // arg_type_assertions;
@@ -336,6 +354,7 @@ impl TaskEncoder for FunctionEnc {
             Ok((
                 FunctionEncOutput {
                     defn_axiom,
+                    spec_axiom,
                     unlimited_fn,
                     limited_axiom,
                     limited_fn,
@@ -355,6 +374,7 @@ impl TaskEncoder for FunctionEnc {
             };
             domain_fns.push(output.unlimited_fn);
             domain_axioms.push(output.limited_axiom);
+            domain_axioms.push(output.spec_axiom);
             domain_fns.push(output.limited_fn);
             program.add_function(output.caller_fn);
         }

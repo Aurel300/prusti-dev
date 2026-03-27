@@ -70,6 +70,7 @@ pub struct MirSpecEncOutput<'vir> {
     pub pre_args: &'vir [vir::ExprSnap<'vir>],
     #[allow(dead_code)]
     pub post_args: &'vir [vir::ExprSnap<'vir>],
+    pub posts_with_local: Option<(Vec<vir::ExprBool<'vir>>, vir::LocalDecl<'vir, vir::Snap>)>,
 }
 
 impl TaskEncoder for MirSpecEnc {
@@ -107,6 +108,7 @@ impl TaskEncoder for MirSpecEnc {
         vir::with_vcx(|vcx| {
             let substs = ty::GenericArgs::identity_for_item(vcx.tcx(), def_id);
             let local_iter = (1..=local_defs.arg_count).map(mir::Local::from);
+
             let all_args: Vec<vir::ExprSnap<'vir>> = if pure {
                 let result_ty = local_defs[mir::RETURN_PLACE].local_snap.ty();
                 local_iter
@@ -202,6 +204,45 @@ impl TaskEncoder for MirSpecEnc {
                     })
                 })
                 .collect::<Result<Vec<vir::ExprBool<'_>>, _>>()?;
+
+            let posts_with_local = if pure {
+                let result_ty = local_defs[mir::RETURN_PLACE].local_snap.ty();
+                let result_var = vcx.mk_local_decl("ret", result_ty);
+                let post_args = {
+                    let local_iter = (1..=local_defs.arg_count).map(mir::Local::from);
+                    let post_args = local_iter
+                        .map(|local| vcx.mk_local_ex(local_defs[local].local_snap))
+                        .chain([vcx.mk_local_ex(result_var)])
+                        .collect::<Vec<_>>();
+                    vcx.alloc_slice(&post_args)
+                };
+                let posts = specs
+                    .posts
+                    .iter()
+                    .map(|spec_def_id| {
+                        let expr = deps
+                            .require_dep::<crate::encoders::MirPureEnc>(
+                                crate::encoders::MirPureEncTask {
+                                    encoding_depth: 0,
+                                    kind: PureKind::Spec(specs.extern_spec),
+                                    parent_def_id: *spec_def_id,
+                                    param_env: vcx.tcx().param_env(spec_def_id),
+                                    substs,
+                                    // TODO: should this be `def_id` or `caller_def_id`
+                                    caller_def_id: Some(def_id),
+                                },
+                            )?
+                            .expr
+                            .downcast_ty();
+                        let expr = expr.reify(vcx, (*spec_def_id, post_args));
+                        Ok(to_bool(expr).downcast_ty())
+                    })
+                    .collect::<Result<Vec<vir::ExprBool<'_>>, _>>()?;
+                Some((posts, result_var))
+            } else {
+                None
+            };
+
             let pledge_args = vcx.alloc_slice(
                 &pre_args
                     .iter()
@@ -283,6 +324,7 @@ impl TaskEncoder for MirSpecEnc {
                 pledges,
                 pre_args,
                 post_args,
+                posts_with_local,
             };
             Ok(((), data))
         })

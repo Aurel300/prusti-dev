@@ -357,7 +357,6 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 box kind @ mir::AggregateKind::Adt(..),
                 fields,
             ) => {
-                // TODO this calls into mir_shared, so we won't collect trigs
                 let aggregate_snap = self
                     .encode_aggregate_snap(rvalue_ty, kind, fields, &())
                     .map_err(EncodeRvalueError::from)?;

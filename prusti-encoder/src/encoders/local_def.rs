@@ -74,7 +74,7 @@ pub struct LocalDef<'vir> {
     pub local: vir::LocalDeclRef<'vir>,
     pub local_snap: vir::LocalDeclSnap<'vir>,
     pub local_ex: vir::ExprRef<'vir>,
-    pub local_valid: Option<vir::ExprBool<'vir>>,
+    pub local_trig: Option<vir::ExprBool<'vir>>,
     pub impure_snap: vir::ExprSnap<'vir>,
     pub impure_pred: vir::ExprBool<'vir>,
 }
@@ -175,7 +175,7 @@ impl TaskEncoder for MirLocalDefEnc {
             let impure_snap = ty_impure.ref_to_snap(local_ex);
             let impure_pred = ty_impure.ref_to_pred(vcx, local_ex, None);
 
-            fn mk_local_valid<'vir>(
+            fn mk_local_trig<'vir>(
                 vcx: &'vir vir::VirCtxt<'vir>,
                 def_id: DefId,
                 deps: &mut TaskEncoderDependencies<'vir, MirLocalDefEnc>,
@@ -193,20 +193,20 @@ impl TaskEncoder for MirLocalDefEnc {
                         let val_expr = ty_pure
                             .expect_immref()
                             .value_access(local_arg.downcast_ty());
-                        Some(referent_ty_pure.valid_fn().call()(val_expr))
+                        Some(referent_ty_pure.trig_fn().call()(val_expr))
                     }
-                    ty::TyKind::Adt(..) => Some(ty_pure.valid_fn().call()(local_arg)),
+                    ty::TyKind::Adt(..) => Some(ty_pure.trig_fn().call()(local_arg)),
                     _ => None,
                 }
             }
 
-            let local_valid = mk_local_valid(vcx, def_id, deps, rust_ty, local_snap, ty_pure);
+            let local_trig = mk_local_trig(vcx, def_id, deps, rust_ty, local_snap, ty_pure);
 
             LocalDef {
                 local,
                 local_snap,
                 local_ex,
-                local_valid,
+                local_trig,
                 impure_snap,
                 impure_pred,
             }

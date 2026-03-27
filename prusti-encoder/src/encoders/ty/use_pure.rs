@@ -260,17 +260,17 @@ impl<'vir> TyUsePureRef<'vir> {
         self.ty_pure_ref.unreachable_to_snap.call()(self.args.get_ty())
     }
 
-    pub fn valid_fn<'tcx>(&self) -> vir::FunctionIdn<'vir, vir::Snap, vir::Bool> {
-        self.ty_pure_ref.valid_fn
+    pub fn trig_fn<'tcx>(&self) -> vir::FunctionIdn<'vir, vir::Snap, vir::Bool> {
+        self.ty_pure_ref.trig_fn
     }
 
-    pub fn inhale_valid<'tcx>(
+    pub fn inhale_trig<'tcx>(
         &self,
         vcx: &'vir vir::VirCtxt<'tcx>,
         snap: vir::ExprSnap<'vir>,
     ) -> vir::Stmt<'vir> {
         vcx.mk_inhale_stmt(
-            (self.valid_fn().call())(snap)
+            (self.trig_fn().call())(snap)
         )
     }
 }

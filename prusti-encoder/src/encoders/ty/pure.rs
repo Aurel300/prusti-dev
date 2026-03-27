@@ -155,7 +155,8 @@ pub(super) type TyPureEnc = super::TyEnc<Pure>;
 pub struct TyPureRef<'vir> {
     pub domain: vir::DomainIdnSnap<'vir>,
     pub unreachable_to_snap: FunctionIdn<'vir, vir::ManyTyVal, vir::Snap>,
-    pub valid_fn: FunctionIdn<'vir, vir::Snap, vir::Bool>,
+    // TODO only generate trig fns for ADTs
+    pub trig_fn: FunctionIdn<'vir, vir::Snap, vir::Bool>,
 }
 
 impl<'vir> task_encoder::OutputRefAny for TyPureRef<'vir> {}
@@ -164,7 +165,7 @@ impl<'vir> task_encoder::OutputRefAny for TyPureRef<'vir> {}
 pub struct TyPureEncLocal<'vir> {
     pub unreachable_to_snap: vir::Function<'vir>,
     pub kind: TyPureEncLocalKind<'vir>,
-    pub valid_fn: vir::Function<'vir>,
+    pub trig_fn: vir::Function<'vir>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -258,7 +259,7 @@ impl TaskEncoder for TyPureEnc {
     fn emit_outputs<'vir>(program: &mut task_encoder::Program<'vir>) {
         for output in TyPureEnc::all_outputs_local_no_errors() {
             program.add_function(output.unreachable_to_snap);
-            program.add_function(output.valid_fn);
+            program.add_function(output.trig_fn);
             match output.kind {
                 TyPureEncLocalKind::Domain { domain } => program.add_domain(domain),
                 TyPureEncLocalKind::Adt { adt, discr_fn } => {
@@ -318,9 +319,9 @@ pub(crate) struct TyPureBuilder<'vir> {
     unreachable_to_snap: FunctionIdn<'vir, vir::ManyTyVal, vir::Snap>,
     pub(super) params: GenericParams<'vir>,
     data: BuilderData<'vir>,
-    // For now, we generate a valid function for every type.
-    // Valid functions for domains should never be called.
-    valid_fn: FunctionIdn<'vir, vir::Snap, vir::Bool>,
+    // TODO For now, we generate a trig function for every type.
+    // Trig functions for domains should never be called.
+    trig_fn: FunctionIdn<'vir, vir::Snap, vir::Bool>,
 }
 
 pub enum BuilderData<'vir> {
@@ -367,8 +368,8 @@ impl<'vir> TyPureBuilder<'vir> {
             params.ty_args(),
             self_type,
         );
-        let valid_fn: FunctionIdn<'vir, vir::Snap, vir::Bool> = FunctionIdn::new(
-            vir::ViperIdent::new(vir::vir_format!(vcx, "{}_valid", name)),
+        let trig_fn: FunctionIdn<'vir, vir::Snap, vir::Bool> = FunctionIdn::new(
+            vir::ViperIdent::new(vir::vir_format!(vcx, "{}_trig", name)),
             self_type,
             vcx.alloc(vir::TypeData::new(vir::TypeKind::Bool)),
         );
@@ -380,7 +381,7 @@ impl<'vir> TyPureBuilder<'vir> {
             unreachable_to_snap,
             params,
             data: BuilderData::None,
-            valid_fn,
+            trig_fn,
         }
     }
 
@@ -392,7 +393,7 @@ impl<'vir> TyPureBuilder<'vir> {
         TyPureRef {
             domain: self.domain_ident.cast_ty(),
             unreachable_to_snap: self.unreachable_to_snap,
-            valid_fn: self.valid_fn,
+            trig_fn: self.trig_fn,
         }
     }
 
@@ -434,11 +435,11 @@ impl<'vir> TyPureBuilder<'vir> {
                 None,
             )
         });
-        let valid_fn = {
+        let trig_fn = {
             let domain_ident = self.domain_ident;
             let param = self.vcx.mk_local_decl("self", domain_ident());
             self.vcx.mk_function(
-                self.valid_fn,
+                self.trig_fn,
                 (param,),
                 &[],
                 &[],
@@ -450,7 +451,7 @@ impl<'vir> TyPureBuilder<'vir> {
         TyPureEncLocal {
             unreachable_to_snap,
             kind,
-            valid_fn,
+            trig_fn,
         }
     }
     

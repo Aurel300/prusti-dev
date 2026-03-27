@@ -40,7 +40,7 @@ use vir::{CastType, CompType, LocalDeclData};
 
 use crate::encoders::{
     self, FunctionCallEnc, MirBuiltinEnc, MirBuiltinEncTask, TyUseImpureEnc, WandEnc, WandEncTask,
-    mir_fn::{CallingCtxt, CallTaskDescription, RustSignature},
+    mir_fn::{CallTaskDescription, CallingCtxt, RustSignature},
     mir_shared::PureRvalueEnc,
     ty::{
         RustTyDecomposition,
@@ -354,7 +354,24 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             }
 
             mir::Rvalue::Aggregate(
-                box kind @ (mir::AggregateKind::Adt(..) | mir::AggregateKind::Tuple),
+                box kind @ mir::AggregateKind::Adt(..),
+                fields,
+            ) => {
+                // TODO this calls into mir_shared, so we won't collect trigs
+                let aggregate_snap = self
+                    .encode_aggregate_snap(rvalue_ty, kind, fields, &())
+                    .map_err(EncodeRvalueError::from)?;
+
+                // We inhale a 'trig' when an ADT is is constructed
+                let e_rvalue_ty = self.ty_use_pure(rvalue_ty);
+                let fold_trig = e_rvalue_ty.inhale_trig(self.vcx(), aggregate_snap);
+                self.stmt(fold_trig);
+
+                Ok(aggregate_snap.into())
+            },
+
+            mir::Rvalue::Aggregate(
+                box kind @ mir::AggregateKind::Tuple,
                 fields,
             ) => Ok(self
                 .encode_aggregate_snap(rvalue_ty, kind, fields, &())
@@ -1023,6 +1040,12 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         for (place, elem) in place.iter_projections() {
             result = self.encode_place_element(place.into(), elem, result);
             place_ty = place_ty.projection_ty(self.vcx.tcx(), elem);
+            if let ty::TyKind::Adt(..) = place_ty.ty.kind() {
+                if let Some(snap) = result.snap {
+                    let inhale_trig = self.ty_use_pure(place_ty.ty).inhale_trig(self.vcx(), snap);
+                    self.stmt(inhale_trig);
+                }
+            }
         }
         EncodePlaceResult {
             expr: result,
@@ -1396,9 +1419,6 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                             let method_assign_app =
                                 dest_ty_out.apply_method_assign(self.vcx, proj_enc, rval_enc.expr);
                             self.stmt(method_assign_app);
-                            let valid_inhale =
-                                self.ty_use_pure(dest_ty.ty).inhale_valid(self.vcx, rval_enc.expr);
-                            self.stmt(valid_inhale);
                             self.stmts(rval_enc.post_fold_stmts(proj_enc));
                         }
                         Err(_) => {

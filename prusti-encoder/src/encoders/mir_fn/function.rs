@@ -288,11 +288,11 @@ impl TaskEncoder for FunctionEnc {
                     let mut triggers = local_defs
                         .args()
                         .filter_map(|local_def| {
-                            let valid = local_def.local_valid?;
-                            Some(vcx.mk_trigger(&[valid]))
+                            let trig = local_def.local_trig?;
+                            Some(vcx.mk_trigger(&[trig]))
                         })
                         .collect::<Vec<_>>();
-                    triggers.push(&vcx.mk_trigger(&[unlimited_fn_app]));
+                    triggers.push(vcx.mk_trigger(&[unlimited_fn_app]));
 
                     vcx.mk_forall_expr(
                         vcx.alloc_slice(&qvars),

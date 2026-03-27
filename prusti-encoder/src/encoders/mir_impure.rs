@@ -681,11 +681,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                     .expect_mutref()
                     .prim_to_snap_assign(deref)
                     .upcast_ty();
-                let assign_stmt = dst_ty_impure.apply_method_assign(
-                    self.vcx,
-                    dst_enc,
-                    assigned,
-                );
+                let assign_stmt = dst_ty_impure.apply_method_assign(self.vcx, dst_enc, assigned);
                 self.stmt(assign_stmt);
 
                 let def_id = self.def_id();

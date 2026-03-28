@@ -1,5 +1,5 @@
 use prusti_rustc_interface::{
-    middle::{mir, ty},
+    middle::ty,
     span::def_id::DefId,
 };
 use task_encoder::{EncodeFullResult, OutputRefAny, TaskEncoder, TaskEncoderDependencies};
@@ -301,9 +301,8 @@ impl TaskEncoder for FunctionEnc {
                 Some(vcx.mk_domain_axiom(axiom_ident, axiom_body))
             };
 
-            // TODO do the let RETURN_PLACE trick
             let spec_axiom = {
-                let (posts, result_var) = spec.posts_with_local.unwrap();
+                let (posts, result_var) = spec.posts_with_local_result.unwrap();
                 let pre = vcx.mk_conj(&spec.pres);
                 let post = vcx.mk_conj(&posts);
 

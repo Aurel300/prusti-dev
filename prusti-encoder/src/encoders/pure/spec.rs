@@ -70,7 +70,10 @@ pub struct MirSpecEncOutput<'vir> {
     pub pre_args: &'vir [vir::ExprSnap<'vir>],
     #[allow(dead_code)]
     pub post_args: &'vir [vir::ExprSnap<'vir>],
-    pub posts_with_local: Option<(Vec<vir::ExprBool<'vir>>, vir::LocalDecl<'vir, vir::Snap>)>,
+    /// In a pure encoding, an encoding of postconditions
+    /// in which the return place is encoded as a local variable
+    /// rather than a result. Used for specification axioms.
+    pub posts_with_local_result: Option<(Vec<vir::ExprBool<'vir>>, vir::LocalDecl<'vir, vir::Snap>)>,
 }
 
 impl TaskEncoder for MirSpecEnc {
@@ -205,7 +208,7 @@ impl TaskEncoder for MirSpecEnc {
                 })
                 .collect::<Result<Vec<vir::ExprBool<'_>>, _>>()?;
 
-            let posts_with_local = if pure {
+            let posts_with_local_result = if pure {
                 let result_ty = local_defs[mir::RETURN_PLACE].local_snap.ty();
                 let result_var = vcx.mk_local_decl("ret", result_ty);
                 let post_args = {
@@ -324,7 +327,7 @@ impl TaskEncoder for MirSpecEnc {
                 pledges,
                 pre_args,
                 post_args,
-                posts_with_local,
+                posts_with_local_result,
             };
             Ok(((), data))
         })

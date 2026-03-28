@@ -37,7 +37,7 @@ pub(crate) trait PureRvalueEnc<'vir> {
     /// Encodes the snapshot of an operand. In an impure context this may
     /// produce side-effects. First, encoding a `Move` operand will generate a
     /// statement that exhales a predicate. Second, `trig` function applications
-    /// will be inhaled for sub-places with ADT type.
+    /// will be inhaled for places with ADT type.
     fn encode_operand_snap(
         &mut self,
         operand: &mir::Operand<'vir>,

@@ -19,20 +19,20 @@ fn len(head: &List) -> usize {
     }
 }
 
-// #[pure]
-// #[requires(0 <= index && index < len(head))]
-// fn lookup(head: &List, index: usize) -> u32 {
-//     if index == 0 {
-//         head.value
-//     } else {
-//         match head.next {
-//             Some(box ref tail) => lookup(tail, index - 1),
-//             None => unreachable!()
-//         }
-//     }
-// }
+#[pure]
+#[requires(0 <= index && index < len(head))]
+fn lookup(head: &List, index: usize) -> u32 {
+    if index == 0 {
+        head.value
+    } else {
+        match head.next {
+            Some(box ref tail) => lookup(tail, index - 1),
+            None => unreachable!()
+        }
+    }
+}
 
-// #[ensures(len(&result) > 0)]
-// fn identity(list: List) -> List { list }
+#[ensures(len(&result) > 0)]
+fn identity(list: List) -> List { list }
 
-// fn main() {}
+fn main() {}

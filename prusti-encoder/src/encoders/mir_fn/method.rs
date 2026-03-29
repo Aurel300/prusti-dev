@@ -7,7 +7,7 @@ use crate::{
     encoders::{
         Impure, ImpureEncVisitor, MirLocalDefEnc, MirLocalDefEncTask, MirSpecEnc, WandEnc,
         WandEncTask,
-        mir_fn::{CallTaskDescription, RustSignature},
+        mir_fn::{CallTaskDescription, RustSignature, SpecBlocks},
         pure::spec::MirSpecEncMode,
         ty::generics::{GArgCaster, GArgsCastEnc, GArgsTy, GArgsTyEnc, GParams, GenericParamsEnc},
     },
@@ -269,6 +269,8 @@ impl TaskEncoder for MethodEnc {
                     vcx.mk_goto_stmt(&vir::CfgBlockLabelData::BasicBlock(0)),
                 ));
 
+                let spec_blocks = SpecBlocks::new(&body, fpcs_analysis.analysis().loop_analysis());
+
                 deps.check_cycle()?;
                 let mut visitor = ImpureEncVisitor {
                     vcx,
@@ -277,6 +279,7 @@ impl TaskEncoder for MethodEnc {
                     local_decls: &body.local_decls,
                     fpcs_analysis,
                     local_defs,
+                    spec_blocks,
                     body,
 
                     wands,

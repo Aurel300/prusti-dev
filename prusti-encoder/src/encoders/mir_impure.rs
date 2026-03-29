@@ -40,7 +40,7 @@ use vir::{CastType, CompType, LocalDeclData};
 
 use crate::encoders::{
     self, FunctionCallEnc, MirBuiltinEnc, MirBuiltinEncTask, TyUseImpureEnc, WandEnc, WandEncTask,
-    mir_fn::{CallTaskDescription, RustSignature},
+    mir_fn::{CallTaskDescription, RustSignature, SpecBlocks},
     mir_shared::PureRvalueEnc,
     ty::{
         RustTyDecomposition,
@@ -155,6 +155,7 @@ where
     pub local_decls: &'enc mir::LocalDecls<'vir>,
     pub fpcs_analysis: PcgOutput<'enc, 'vir>,
     pub local_defs: crate::encoders::MirLocalDefEncOutput<'vir>,
+    pub spec_blocks: SpecBlocks,
     pub body: &'enc mir::Body<'vir>,
 
     pub wands: WandEncOutput<'vir>,
@@ -1275,6 +1276,24 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
             );
             return;
         }
+
+        // Blocks resulting from our embedding of loop invariants etc into the
+        // program should not be emitted. Loop invariants are handled separately
+        // at the loop head instead.
+        if self.spec_blocks.spec_blocks.contains(&block) {
+            self.encoded_blocks.push(
+                self.vcx.mk_cfg_block(
+                    self.vcx
+                        .alloc(vir::CfgBlockLabelData::BasicBlock(block.as_usize())),
+                    &[],
+                    &[],
+                    self.vcx
+                        .mk_dummy_stmt(vir::vir_format!(self.vcx, "spec-only block")),
+                ),
+            );
+            return;
+        }
+
         if self.deps.check_cycle().is_err() {
             return;
         }

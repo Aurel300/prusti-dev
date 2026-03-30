@@ -17,7 +17,7 @@ use prusti_interface::{
 };
 use prusti_rustc_interface::{
     abi,
-    data_structures::graph,
+    data_structures::{graph, graph::Successors},
     index::IndexVec,
     middle::{
         mir,
@@ -64,6 +64,7 @@ pub enum PureKind {
     Spec(Option<ExternSpecKind>),
     Pure,
     Constant(mir::Promoted),
+    SpecBlock(mir::BasicBlock),
 }
 
 impl PureKind {
@@ -137,10 +138,17 @@ impl TaskEncoder for MirPureEnc {
                 PureKind::Constant(promoted) => {
                     vcx.body_mut().get_promoted_constant_body(def_id, promoted)
                 }
+                PureKind::SpecBlock(_) => vcx
+                    .body_mut()
+                    .get_impure_fn_body_identity(def_id.expect_local()),
             };
 
-            let expr_inner = Enc::new(vcx, task_key.0, def_id, caller_def_id, kind, &body, deps)
-                .encode_body()?;
+            let enc = Enc::new(vcx, task_key.0, def_id, caller_def_id, kind, &body, deps);
+            let expr_inner = if let PureKind::SpecBlock(block) = kind {
+                enc.encode_spec_block(block)?
+            } else {
+                enc.encode_body()?
+            };
 
             // We wrap the expression with an additional lazy that will perform
             // some sanity checks. These requirements cannot be expressed using
@@ -155,7 +163,11 @@ impl TaskEncoder for MirPureEnc {
                     assert_eq!(lctx.0, def_id);
 
                     // check: are we providing the expected number of arguments?
-                    assert_eq!(lctx.1.len(), body.arg_count);
+                    assert_eq!(lctx.1.len(), if let PureKind::SpecBlock(_) = kind {
+                        body.local_decls.len() - 1
+                    } else {
+                        body.arg_count
+                    });
 
                     use vir::Reify;
                     expr_inner.kind.reify(vcx, lctx)
@@ -475,7 +487,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
             .unwrap_or_else(|| tuple_ref.mk_unreachable(self.vcx))
     }
 
-    fn encode_body(&mut self) -> Result<ExprRet<'vir>, EncodeFullError<'vir, MirPureEnc>> {
+    fn encode_body(mut self) -> Result<ExprRet<'vir>, EncodeFullError<'vir, MirPureEnc>> {
         let mut init = Update::new();
         let v0 = Version::default();
         // TODO: what about locals which never have StorageLive (i.e. always_live)?
@@ -499,6 +511,52 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
         let ret_version = res.versions.get(&mir::RETURN_PLACE).copied().unwrap_or(v0);
 
         let ex = self.mk_local_ex(mir::RETURN_PLACE, ret_version);
+        Ok(self.reify_binds(res, ex))
+    }
+
+    // TODO:
+    // * duplication with encode_body
+    // * which variables need to be input into the exprret? probably some non-argument locals in general
+    //   -> maybe the interface is -> ExprRet + a list of locals? then the caller encodes those locals (only)?
+    // * what is the output? the encoding assigns a closure to *a* local (we can keep track of which in SpecBlocks)
+    //   but that closure is not invoked
+    //   -> change the encoding to invoke it? (this prevents us from adding attributes to it...)
+    //   -> inline it and use that as the result; but then it is not the state of a local variable
+    //    > "execute" the full block including the closure assignment, then invoke the closure out of the local, then return not based on a local at the ret version...
+    fn encode_spec_block(mut self, block: mir::BasicBlock) -> Result<ExprRet<'vir>, EncodeFullError<'vir, MirPureEnc>> {
+        let mut init = Update::new();
+        let v0 = Version::default();
+        // TODO: what about locals which never have StorageLive (i.e. always_live)?
+        init.versions.insert(mir::RETURN_PLACE, v0);
+        for local in 1..self.body.local_decls.len() {
+            println!("  - {local}");
+            let local_ex = self.vcx.mk_lazy_expr(
+                vir::vir_format!(self.vcx, "pure in _{local}"),
+                self.get_ty_for_local(local.into()),
+                Box::new(move |_vcx, lctx: ExprInput<'vir>| lctx.1[local - 1].kind),
+            );
+            // check that `local` and `expr` type correspond
+            self.bump_version(&mut init, local.into(), local_ex, v0.location);
+        }
+
+        let update = self.encode_cfg(&init.versions, block, self.body.basic_blocks.successors(block).next().unwrap())?;
+
+        // do we ever panic here? if yes, return the `unreachable_to_snap` expr.
+        let res = init
+            .merge(update)
+            .expect("function unconditionally terminates with unreachable");
+        //let ret_version = res.versions.get(&mir::RETURN_PLACE).copied().unwrap_or(v0);
+        let ret_version = res.versions.get(&3usize.into()).copied().unwrap_or(v0);
+
+        println!("state of closure: {:?}", self.mk_local_ex(3usize.into(), ret_version));
+
+        //Ok(self.vcx.mk_lazy_expr(
+        //    "todo",
+        //    self.get_ty_for_local(0usize.into()),
+        //    Box::new(move |vcx, lctx: ExprInput<'vir>| vcx.mk_bool::<true>().kind),
+        //))
+
+        let ex = self.mk_local_ex(3usize.into(), ret_version);
         Ok(self.reify_binds(res, ex))
     }
 
@@ -1119,6 +1177,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
         enum PrustiBuiltin {
             Forall,
             Exists,
+            SpecBlock,
             SnapshotEquality,
             SliceLen,
             ModeStart(Mode),
@@ -1151,6 +1210,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
         ) {
             (None, "forall") => PrustiBuiltin::Forall,
             (None, "exists") => PrustiBuiltin::Exists,
+            (None, "spec_block") => PrustiBuiltin::SpecBlock,
             (None, "snapshot_equality") => PrustiBuiltin::SnapshotEquality,
             (None, "old_start") => PrustiBuiltin::ModeStart(Mode::Old),
             (None, "old_end") => PrustiBuiltin::ModeEnd(Mode::Old),
@@ -1313,6 +1373,9 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                     self.vcx.mk_exists_expr(qvars, &[], body)
                 };
                 mk_bool(res)
+            }
+            PrustiBuiltin::SpecBlock => {
+                todo!()
             }
             PrustiBuiltin::SliceLen => {
                 assert_eq!(args.len(), 1);

@@ -6,6 +6,9 @@ use prusti_rustc_interface::{
     span::def_id::DefId,
 };
 
+use crate::encoders::mir_fn::RustSignature;
+
+#[derive(Clone, Debug)]
 pub enum SpecBlockKind {
     LoopInvariant(DefId),
     GhostStart,
@@ -24,6 +27,7 @@ pub struct LoopSpec {
     pub invariants: Vec<DefId>,
 }
 
+#[derive(Clone, Debug)]
 pub struct SpecBlock {
     pub attached_to: BasicBlock,
     pub block: BasicBlock,
@@ -100,6 +104,8 @@ impl SpecBlocks {
             }
         }
 
+        println!("specs? {:?}", visitor.specs_for);
+
         let loop_specs = loop_specs.into_iter()
             .map(|(_loop_id, spec)| (spec.head_block, spec))
             .collect();
@@ -118,13 +124,40 @@ struct SpecVisitor<'enc, 'vir: 'enc> {
 }
 
 impl<'enc, 'vir: 'enc> mir::visit::Visitor<'vir> for SpecVisitor<'enc, 'vir> {
-    fn visit_basic_block_data(&mut self, block: BasicBlock, block_data: &mir::BasicBlockData) {
+    fn visit_terminator(&mut self, terminator: &mir::Terminator<'vir>, location:mir::Location) {
         let mut spec_kind = None;
-        let mut nonspec = false;
+        vir::with_vcx(|vcx| {
+            let env_query = EnvQuery::new(vcx.tcx());
+            match &terminator.kind {
+                mir::TerminatorKind::Call { func, args, destination, target, unwind, call_source, fn_span } => {
+                    let func_ty = func.ty(self.body, vcx.tcx());
+                    let (def_id, arg_tys) = RustSignature::get_def_id_and_caller_substs(func_ty);
+                    if !env_query.is_function_in_crate(def_id, arg_tys, "prusti_contracts") {
+                        return;
+                    }
+
+                    let item_name = vcx.tcx().item_name(def_id);
+                    if item_name.as_str() != "spec_block" {
+                        return;
+                    }
+
+                    
+
+                    /*
+                        let sig = self.vcx.tcx().fn_sig(def_id);
+                        let sig = sig.instantiate_identity();
+                        let actual_impl = env_query.find_impl_of_trait_method_call(def_id, arg_tys);
+                    */
+
+                }
+                _ => (),
+            }
+        });
+        /*
         for stmt in &block_data.statements {
             match &stmt.kind {
+                // TODO: look for a call to spec_block instead
                 mir::StatementKind::Assign(box (_dst, mir::Rvalue::Aggregate(box mir::AggregateKind::Closure(def_id, _), _))) => vir::with_vcx(|vcx| {
-                    // TODO: this is a bit hacky, move things out of Environment?
                     let attrs = EnvQuery::new(vcx.tcx()).get_attributes(def_id);
                     if !has_spec_only_attr(attrs) {
                         nonspec = true;
@@ -156,8 +189,75 @@ impl<'enc, 'vir: 'enc> mir::visit::Visitor<'vir> for SpecVisitor<'enc, 'vir> {
                 },
             }
         }
+        */
         if let Some(kind) = spec_kind {
-            assert!(!nonspec, "malformed spec-only block: contains non-spec statements");
+            let nonspec_predecessor = get_single_predecessor(&self.body.basic_blocks.predecessors()[location.block]);
+            self.specs_for
+                .entry(nonspec_predecessor)
+                .or_default()
+                .push(SpecBlock {
+                    attached_to: nonspec_predecessor,
+                    block: location.block,
+                    kind,
+                });
+            self.spec_blocks.insert(location.block);
+        }
+    }
+
+    /*
+    fn visit_basic_block_data(&mut self, block: BasicBlock, block_data: &mir::BasicBlockData) {
+        let mut spec_kind = None;
+        vir::with_vcx(|vcx| {
+            let env_query = EnvQuery::new(vcx.tcx());
+            let term = block_data.terminator.as_ref().unwrap();
+            match &term.kind {
+                mir::TerminatorKind::Call { func, args, destination, target, unwind, call_source, fn_span } => {
+                    let func_ty = func.ty(self.body, vcx.tcx());
+                    //let (def_id, arg_tys) = RustSignature::get_def_id_and_caller_substs(func_ty);
+                    //if env_query.is_function_in_crate(def_id, arg_tys, "prusti_contracts") {
+                    //}
+                }
+                _ => (),
+            }
+        });
+        /*
+        for stmt in &block_data.statements {
+            match &stmt.kind {
+                // TODO: look for a call to spec_block instead
+                mir::StatementKind::Assign(box (_dst, mir::Rvalue::Aggregate(box mir::AggregateKind::Closure(def_id, _), _))) => vir::with_vcx(|vcx| {
+                    let attrs = EnvQuery::new(vcx.tcx()).get_attributes(def_id);
+                    if !has_spec_only_attr(attrs) {
+                        nonspec = true;
+                    } else {
+                        assert!(spec_kind.is_none(), "malformed spec-only block: more than one spec in block");
+                        spec_kind = Some(if has_prusti_attr(attrs, "loop_body_invariant_spec") {
+                            SpecBlockKind::LoopInvariant(*def_id)
+                        } else if has_prusti_attr(attrs, "ghost_begin") {
+                            SpecBlockKind::GhostStart
+                        } else if has_prusti_attr(attrs, "ghost_end") {
+                            SpecBlockKind::GhostEnd
+                        } else if has_prusti_attr(attrs, "prusti_assertion") {
+                            SpecBlockKind::Assert(*def_id)
+                        } else if has_prusti_attr(attrs, "prusti_assumption") {
+                            SpecBlockKind::Assume(*def_id)
+                        } else if has_prusti_attr(attrs, "prusti_refutation") {
+                            SpecBlockKind::Refute(*def_id)
+                        } else {
+                            unreachable!("malformed spec-only block: unknown spec kind");
+                        });
+                    }
+                }),
+                _ => {
+                    // TODO: in theory we should only see *some* statements here,
+                    //   namely the ones that would set up the captured vars for
+                    //   the closure, plus the usual StorageLive/Dead; however,
+                    //   blocklisting these seems fragile
+                    //nonspec = true;
+                },
+            }
+        }
+        */
+        if let Some(kind) = spec_kind {
             let nonspec_predecessor = get_single_predecessor(&self.body.basic_blocks.predecessors()[block]);
             self.specs_for
                 .entry(nonspec_predecessor)
@@ -170,6 +270,7 @@ impl<'enc, 'vir: 'enc> mir::visit::Visitor<'vir> for SpecVisitor<'enc, 'vir> {
             self.spec_blocks.insert(block);
         }
     }
+    */
 }
 
 fn get_single_predecessor(predecessors: &[BasicBlock]) -> BasicBlock {

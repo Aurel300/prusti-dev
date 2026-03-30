@@ -1,3 +1,5 @@
+use std::collections::VecDeque;
+
 use pcg::{
     PcgOutput,
     action::{BorrowPcgAction, PcgAction, PcgActions},
@@ -27,7 +29,7 @@ use pcg::{
 use prusti_interface::{PrustiError, specs::specifications::SpecQuery};
 use prusti_rustc_interface::{
     abi,
-    data_structures::fx::FxHashMap,
+    data_structures::{fx::{FxHashMap, FxHashSet}, graph::Successors},
     middle::{
         mir,
         ty::{self, TyKind},
@@ -39,15 +41,12 @@ use task_encoder::{EncodeFullError, TaskEncoder, TaskEncoderDependencies};
 use vir::{CastType, CompType, LocalDeclData};
 
 use crate::encoders::{
-    self, FunctionCallEnc, MirBuiltinEnc, MirBuiltinEncTask, TyUseImpureEnc, WandEnc, WandEncTask,
-    mir_fn::{CallTaskDescription, RustSignature, SpecBlocks},
-    mir_shared::PureRvalueEnc,
-    ty::{
+    self, FunctionCallEnc, MirBuiltinEnc, MirBuiltinEncTask, MirPureEnc, MirPureEncTask, PureKind, TyUseImpureEnc, WandEnc, WandEncTask, mir_fn::{CallTaskDescription, RustSignature, SpecBlockKind, SpecBlocks}, mir_shared::PureRvalueEnc, ty::{
         RustTyDecomposition,
         generics::{GParams, GenericParamsEnc},
         use_impure::TyUseImpure,
         use_pure::{TyUsePure, TyUsePureEnc},
-    },
+    }
 };
 
 use super::WandEncOutput;
@@ -1260,6 +1259,25 @@ impl<'vir, 'enc, E: TaskEncoder> PureRvalueEnc<'vir> for ImpureEncVisitor<'vir, 
 }
 
 impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<'vir, 'enc, E> {
+    fn visit_body(&mut self, body: &mir::Body<'vir>) {
+        let mut queue = VecDeque::new();
+        let mut visited = FxHashSet::default();
+
+        queue.push_back(mir::START_BLOCK);
+        while let Some(block) = queue.pop_front() {
+            if !visited.insert(block) {
+                continue;
+            }
+            self.visit_basic_block_data(block, &body[block]);
+            for successor in body.basic_blocks.successors(block) {
+                if !visited.contains(&successor) {
+                    queue.push_back(successor);
+                }
+            }
+        }
+        // for (block, data) in body.basic_blocks.iter_enumerated() {}
+    }
+
     fn visit_basic_block_data(&mut self, block: mir::BasicBlock, data: &mir::BasicBlockData<'vir>) {
         // We are verifying the absence of panics, so cleanup block should never
         // be reached, or even referenced.
@@ -1280,6 +1298,7 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
         // Blocks resulting from our embedding of loop invariants etc into the
         // program should not be emitted. Loop invariants are handled separately
         // at the loop head instead.
+        /*
         if self.spec_blocks.spec_blocks.contains(&block) {
             self.encoded_blocks.push(
                 self.vcx.mk_cfg_block(
@@ -1293,6 +1312,7 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
             );
             return;
         }
+        */
 
         if self.deps.check_cycle().is_err() {
             return;
@@ -1307,11 +1327,30 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
         );
         let cfpcs = self.fpcs_analysis.get_all_for_bb(block).unwrap().unwrap();
 
-        // Calculate invariant at loop head
+        // Calculate invariant at the body invariant, if specified, or at the
+        // loop head by default
+        let mut invariant = None;
+        if let Some(loop_spec) = self.spec_blocks.loop_specs.get(&block) {
+            let loop_place_usages = self.fpcs_analysis
+                .analysis()
+                .loop_place_usages(loop_spec.original_head_block)
+                .unwrap()
+                .clone();
+            invariant = Some(self.get_loop_inv(&cfpcs, &loop_place_usages, self.pcg_ctxt()));
+        }
+        /*
+        if block == 7usize.into() || block == 1usize.into() {
+            let loop_place_usages_at_bb1 =
+                self.fpcs_analysis.analysis().loop_place_usages(1usize.into()).unwrap();
+            let loop_invariant_place_capabilities =
+                cfpcs.loop_invariant_place_capabilities(loop_place_usages_at_bb1, self.pcg_ctxt());
+            println!("can we do this? at {block:?}: {loop_invariant_place_capabilities:?}");
+        }
         let invariant = self
             .loop_place_usages(block)
             .map(|place_usages| self.get_loop_inv(&cfpcs, &place_usages, self.pcg_ctxt()))
             .unwrap_or_default();
+        */
 
         self.current_fpcs = Some(cfpcs);
 
@@ -1342,13 +1381,46 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
         }
         */
 
+        if let Some(specs) = self.spec_blocks.specs_for.get(&block).cloned() {
+            for spec in specs {
+                match spec.kind {
+                    SpecBlockKind::Assert(_) => {
+                        let task = MirPureEncTask {
+                            encoding_depth: 0,
+                            parent_def_id: self.def_id,
+                            param_env: self.vcx.tcx().param_env(self.def_id),
+                            substs: ty::List::identity_for_item(self.vcx.tcx(), self.def_id),
+                            kind: PureKind::SpecBlock(spec.block),
+                            caller_def_id: Some(self.def_id),
+                        };
+                        let expr = self.deps.require_dep::<MirPureEnc>(task).unwrap().expr;
+                        use vir::Reify;
+                        let locals = self.vcx.alloc_slice(&self.local_defs.locals.iter()
+                            .skip(1)
+                            .map(|local| local.impure_snap)
+                            .collect::<Vec<_>>());
+                        let expr = expr.reify(self.vcx, (self.def_id, locals)).downcast_ty();
+                        let to_bool = self.deps
+                            .require_dep::<TyUsePureEnc>(RustTyDecomposition::from_prim_ty(
+                                self.vcx.tcx().types.bool,
+                            ))
+                            .unwrap()
+                            .expect_native()
+                            .snap_to_prim;
+                        self.stmt(self.vcx.mk_exhale_stmt(to_bool(expr).downcast_ty()));
+                    }
+                    _ => (), // TODO
+                }
+            }
+        }
+
         assert!(self.current_terminator.is_none());
         self.super_basic_block_data(block, data);
         let stmts = self.current_stmts.take().unwrap();
         let terminator = self.current_terminator.take().unwrap();
         self.encoded_blocks.push(self.vcx.mk_cfg_block(
             self.current_block_label.take().unwrap(),
-            invariant,
+            invariant.unwrap_or_default(),
             self.vcx.alloc_slice(&stmts),
             terminator,
         ));

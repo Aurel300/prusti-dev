@@ -290,6 +290,7 @@ impl TaskEncoder for MethodEnc {
                     current_stmts: None,
                     current_terminator: None,
                     encoded_blocks,
+                    processed_unsize_pairs: Default::default(),
                 };
                 // if we encountered an error/cycle during encoding, we don't emit a method body
                 if visitor.visit_body(body).is_ok() {

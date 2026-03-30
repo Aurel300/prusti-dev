@@ -388,9 +388,19 @@ impl TaskEncoder for WandEnc {
             }
             let wands: Vec<WandData<'vir>> = coupled_edges
                 .into_iter()
-                .map(|hyper_edge| {
-                    let (sources, targets) = hyper_edge.into_tuple();
-                    WandData::new(targets, sources, pledges.clone())
+                .filter_map(|hyper_edge| {
+                    let (sources, mut targets) = hyper_edge.into_tuple();
+                    // we don't want to emit an identity wand, like P --* P
+                    // this can happen when PCG returns self-edges, like for fn(x: &'a mut &'b i32)
+                    // where 'b is in invariant position and we therefore have an edge x|'b -> x|'b.
+                    let mut sources_as_nodes: Vec<FunctionShapeNode> =
+                    sources.iter().map(|&s| s.into()).collect();
+                    sources_as_nodes.sort();
+                    targets.sort();
+                    if sources_as_nodes == targets {
+                        return None;
+                    }
+                    Some(WandData::new(targets, sources, pledges.clone()))
                 })
                 .collect();
             let output: WandEncOutput<'vir> = WandEncOutput {

@@ -394,7 +394,7 @@ impl TaskEncoder for WandEnc {
                     // this can happen when PCG returns self-edges, like for fn(x: &'a mut &'b i32)
                     // where 'b is in invariant position and we therefore have an edge x|'b -> x|'b.
                     let mut sources_as_nodes: Vec<FunctionShapeNode> =
-                    sources.iter().map(|&s| s.into()).collect();
+                        sources.iter().map(|&s| s.into()).collect();
                     sources_as_nodes.sort();
                     targets.sort();
                     if sources_as_nodes == targets {

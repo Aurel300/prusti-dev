@@ -353,10 +353,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 Ok(tmp_exp.upcast_ty().into())
             }
 
-            mir::Rvalue::Aggregate(
-                box kind @ mir::AggregateKind::Adt(..),
-                fields,
-            ) => {
+            mir::Rvalue::Aggregate(box kind @ mir::AggregateKind::Adt(..), fields) => {
                 let aggregate_snap = self
                     .encode_aggregate_snap(rvalue_ty, kind, fields, &())
                     .map_err(EncodeRvalueError::from)?;
@@ -367,12 +364,9 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 self.stmt(fold_trig);
 
                 Ok(aggregate_snap.into())
-            },
+            }
 
-            mir::Rvalue::Aggregate(
-                box kind @ mir::AggregateKind::Tuple,
-                fields,
-            ) => Ok(self
+            mir::Rvalue::Aggregate(box kind @ mir::AggregateKind::Tuple, fields) => Ok(self
                 .encode_aggregate_snap(rvalue_ty, kind, fields, &())
                 .map_err(EncodeRvalueError::from)?
                 .into()),
@@ -1052,11 +1046,11 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         for (place, elem) in place.iter_projections() {
             result = self.encode_place_element(place.into(), elem, result);
             place_ty = place_ty.projection_ty(self.vcx.tcx(), elem);
-            if let ty::TyKind::Adt(..) = place_ty.ty.kind() {
-                if let Some(snap) = result.snap {
-                    let inhale_trig = self.ty_use_pure(place_ty.ty).inhale_trig(self.vcx(), snap);
-                    self.stmt(inhale_trig);
-                }
+            if let ty::TyKind::Adt(..) = place_ty.ty.kind()
+                && let Some(snap) = result.snap
+            {
+                let inhale_trig = self.ty_use_pure(place_ty.ty).inhale_trig(self.vcx(), snap);
+                self.stmt(inhale_trig);
             }
         }
         EncodePlaceResult {

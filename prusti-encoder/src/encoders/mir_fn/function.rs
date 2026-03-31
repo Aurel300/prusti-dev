@@ -1,7 +1,4 @@
-use prusti_rustc_interface::{
-    middle::ty,
-    span::def_id::DefId,
-};
+use prusti_rustc_interface::{middle::ty, span::def_id::DefId};
 use task_encoder::{EncodeFullResult, OutputRefAny, TaskEncoder, TaskEncoderDependencies};
 use vir::{CastType, FunctionIdn, Reify};
 
@@ -38,12 +35,11 @@ impl<'vir> FunctionCallEncOutput<'vir> {
         for (arg, caster) in a {
             *arg = caster.cast_to_callee_ctx(*arg);
         }
-        let caller_ref =
-            if recursive {
-                self.function.limited_fn_ref
-            } else {
-                self.function.unlimited_fn_ref
-            };
+        let caller_ref = if recursive {
+            self.function.limited_fn_ref
+        } else {
+            self.function.unlimited_fn_ref
+        };
         let call = caller_ref.call()(&args, self.ty_args.get_ty(), self.ty_args.get_const());
         self.output.cast_to_caller_ctx(call)
     }
@@ -57,8 +53,11 @@ impl<'vir> FunctionCallEncOutput<'vir> {
         for (arg, caster) in a {
             *arg = caster.cast_to_callee_ctx(*arg);
         }
-        let call =
-            self.function.caller_fn_ref.call()(&args, self.ty_args.get_ty(), self.ty_args.get_const());
+        let call = self.function.caller_fn_ref.call()(
+            &args,
+            self.ty_args.get_ty(),
+            self.ty_args.get_const(),
+        );
         self.output.cast_to_caller_ctx(call)
     }
 }
@@ -252,11 +251,8 @@ impl TaskEncoder for FunctionEnc {
 
             let limited_fn = vcx.mk_domain_function(limited_fn_ref, false, None);
 
-            let unlimited_fn_app = unlimited_fn_ref(
-                &local_args,
-                generics.ty_exprs(),
-                generics.const_exprs(),
-            );
+            let unlimited_fn_app =
+                unlimited_fn_ref(&local_args, generics.ty_exprs(), generics.const_exprs());
 
             let arg_qvars = local_defs
                 .local_decl_args()
@@ -285,7 +281,8 @@ impl TaskEncoder for FunctionEnc {
             let unlimited_fn = vcx.mk_domain_function(unlimited_fn_ref, false, None);
 
             let substs = ty::GenericArgs::identity_for_item(vcx.tcx(), def_id);
-            let spec = deps.require_dep::<MirSpecEnc>((def_id, def_id, MirSpecEncMode::PureWithResult))?;
+            let spec =
+                deps.require_dep::<MirSpecEnc>((def_id, def_id, MirSpecEncMode::PureWithResult))?;
 
             let defn_axiom = if trusted || !is_function_with_body(vcx.tcx(), def_id) {
                 None
@@ -315,7 +312,7 @@ impl TaskEncoder for FunctionEnc {
                         .args()
                         .filter_map(|local_def| {
                             let trig = local_def.local_trig?.as_dyn();
-                            Some(vcx.mk_trigger(&[trig, &limited_fn_app]))
+                            Some(vcx.mk_trigger(&[trig, limited_fn_app]))
                         })
                         .collect::<Vec<_>>();
                     triggers.push(vcx.mk_trigger(&[unlimited_fn_app]));

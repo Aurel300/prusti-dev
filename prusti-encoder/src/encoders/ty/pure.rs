@@ -473,14 +473,8 @@ impl<'vir> TyPureBuilder<'vir> {
         let trig_fn = {
             let domain_ident = self.domain_ident;
             let param = self.vcx.mk_local_decl("self", domain_ident());
-            self.vcx.mk_function(
-                self.trig_fn,
-                (param,),
-                &[],
-                &[],
-                None,
-                None
-            )
+            self.vcx
+                .mk_function(self.trig_fn, (param,), &[], &[], None, None)
         };
         let functions = match &self.data {
             BuilderData::Adt(data) => data.functions.as_slice(),
@@ -495,7 +489,7 @@ impl<'vir> TyPureBuilder<'vir> {
             trig_fn,
         }
     }
-    
+
     fn build_kind(self) -> TyPureEncLocalKind<'vir> {
         match self.data {
             BuilderData::Domain(data) => {

@@ -10,7 +10,10 @@ use crate::encoders::{
 };
 
 use super::{
-    data::*, generics::{GArgCaster, GArgsTy}, pure::{PureTyDatas, TyPureEnc, TyPureRef}, TyUseEnc, UseTyDatas
+    TyUseEnc, UseTyDatas,
+    data::*,
+    generics::{GArgCaster, GArgsTy},
+    pure::{PureTyDatas, TyPureEnc, TyPureRef},
 };
 
 pub(super) type UsePureTyDatas = UseTyDatas<Pure>;
@@ -256,7 +259,7 @@ impl<'vir> TyUsePureRef<'vir> {
         self.ty_pure_ref.unreachable_to_snap.call()(self.args.get_ty(), self.args.get_const())
     }
 
-    pub fn trig_fn<'tcx>(&self) -> vir::FunctionIdn<'vir, vir::Snap, vir::Bool> {
+    pub fn trig_fn(&self) -> vir::FunctionIdn<'vir, vir::Snap, vir::Bool> {
         self.ty_pure_ref.trig_fn
     }
 
@@ -265,9 +268,7 @@ impl<'vir> TyUsePureRef<'vir> {
         vcx: &'vir vir::VirCtxt<'tcx>,
         snap: vir::ExprSnap<'vir>,
     ) -> vir::Stmt<'vir> {
-        vcx.mk_inhale_stmt(
-            (self.trig_fn().call())(snap)
-        )
+        vcx.mk_inhale_stmt((self.trig_fn().call())(snap))
     }
 }
 
@@ -280,7 +281,7 @@ impl<'vir> TyUsePureImmRef<'vir> {
         let inner = self.caster.cast_to_callee_ctx(inner);
         self.pure.prim_to_snap.call()(ref_, inner.downcast_ty())
     }
-    
+
     pub fn deref_access<Curr, Next>(
         &self,
         snap: vir::ExprGenCSnap<'vir, Curr, Next>,

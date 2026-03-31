@@ -230,8 +230,7 @@ impl TaskEncoder for MirLocalDefEnc {
                 let local_arg = vcx.mk_local_ex(local_snap);
                 match rust_ty.kind() {
                     ty::TyKind::Ref(_, referent_ty, _) => {
-                        let referent_ty_task =
-                            RustTyDecomposition::from_ty(*referent_ty, def_id);
+                        let referent_ty_task = RustTyDecomposition::from_ty(*referent_ty, def_id);
                         let referent_ty_pure =
                             deps.require_dep::<TyUsePureEnc>(referent_ty_task).unwrap();
                         let val_expr = ty_pure
@@ -305,7 +304,13 @@ impl TaskEncoder for MirLocalDefEnc {
                         } else {
                             sig.inputs()[local.index() - 1]
                         };
-                        Ok(mk_local_def(vcx, deps, task_key.context_def_id(), local, rust_ty))
+                        Ok(mk_local_def(
+                            vcx,
+                            deps,
+                            task_key.context_def_id(),
+                            local,
+                            rust_ty,
+                        ))
                     })
                     .collect::<Result<IndexVec<_, _>, _>>()?;
 

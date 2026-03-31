@@ -19,12 +19,6 @@ use crate::{
 
 pub struct FunctionCallEnc;
 
-pub enum CallingCtxt {
-    Pure,
-    PureRec,
-    Impure,
-}
-
 #[derive(Debug, Clone)]
 pub struct FunctionCallEncOutput<'vir> {
     function: FunctionEncOutputRef<'vir>,
@@ -64,7 +58,7 @@ impl<'vir> FunctionCallEncOutput<'vir> {
             *arg = caster.cast_to_callee_ctx(*arg);
         }
         let call =
-            self.function.unlimited_fn_ref.call()(&args, self.ty_args.get_ty(), self.ty_args.get_const());
+            self.function.caller_fn_ref.call()(&args, self.ty_args.get_ty(), self.ty_args.get_const());
         self.output.cast_to_caller_ctx(call)
     }
 }
@@ -133,9 +127,6 @@ struct FunctionEncOutputRef<'vir> {
     unlimited_fn_ref: FunctionIdn<'vir, (vir::ManySnap, vir::ManyTyVal, vir::ManyCSnap), vir::Snap>,
     caller_fn_ref: FunctionIdn<'vir, (vir::ManySnap, vir::ManyTyVal, vir::ManyCSnap), vir::Snap>,
     limited_fn_ref: FunctionIdn<'vir, (vir::ManySnap, vir::ManyTyVal, vir::ManyCSnap), vir::Snap>,
-    // TODO remove
-    // caller_ref: FunctionIdn<'vir, (vir::ManySnap, vir::ManyTyVal, vir::ManyCSnap), vir::Snap>,
-    // function_ref: FunctionIdn<'vir, (vir::ManySnap, vir::ManyTyVal, vir::ManyCSnap), vir::Snap>,
 }
 
 impl<'vir> OutputRefAny for FunctionEncOutputRef<'vir> {}
@@ -147,9 +138,6 @@ struct FunctionEncOutput<'vir> {
     limited_axiom: vir::DomainAxiom<'vir>,
     limited_fn: vir::DomainFunction<'vir>,
     caller_fn: vir::Function<'vir>,
-    // TODO remove
-    // caller: vir::Function<'vir>,
-    // function: vir::Function<'vir>,
 }
 
 #[derive(Clone, Debug)]

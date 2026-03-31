@@ -179,7 +179,6 @@ pub(super) type TyPureEnc = super::TyEnc<Pure>;
 pub struct TyPureRef<'vir> {
     pub domain: vir::DomainIdnSnap<'vir>,
     pub unreachable_to_snap: FunctionIdn<'vir, (vir::ManyTyVal, vir::ManyCSnap), vir::Snap>,
-    // TODO only generate trig fns for ADTs
     pub trig_fn: FunctionIdn<'vir, vir::Snap, vir::Bool>,
 }
 
@@ -354,7 +353,7 @@ pub(crate) struct TyPureBuilder<'vir> {
     pub(super) params: GenericParams<'vir>,
     data: BuilderData<'vir>,
     // TODO For now, we generate a trig function for every type.
-    // Trig functions for domains should never be called.
+    // Trig functions for domains will never by called.
     trig_fn: FunctionIdn<'vir, vir::Snap, vir::Bool>,
 }
 

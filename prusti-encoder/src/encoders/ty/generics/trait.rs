@@ -19,6 +19,7 @@ impl<'vir> OutputRefAny for TraitEncOutputRef<'vir> {}
 
 impl TaskEncoder for TraitEnc {
     task_encoder::encoder_cache!(TraitEnc);
+    const ENCODER_NAME: &'static str = "trait encoder";
 
     fn task_to_key<'vir>(task: &Self::TaskDescription<'vir>) -> Self::TaskKey<'vir> {
         *task
@@ -30,7 +31,7 @@ impl TaskEncoder for TraitEnc {
     type OutputFullLocal<'vir> = vir::Domain<'vir>;
 
     fn emit_outputs<'vir>(program: &mut task_encoder::Program<'vir>) {
-        for dom in Self::all_outputs_local_no_errors() {
+        for dom in Self::all_outputs_local_no_errors(program) {
             program.add_domain(dom);
         }
     }

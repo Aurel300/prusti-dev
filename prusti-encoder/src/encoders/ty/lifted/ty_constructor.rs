@@ -1,7 +1,7 @@
 use task_encoder::{EncodeFullResult, OutputRefAny, TaskEncoder};
 use vir::{CallableIdn, CastType, FunctionIdn, HasType};
 
-use crate::encoders::ty::{RustTy, generics::GenericParamsEnc};
+use crate::encoders::ty::{RustParamData, RustTy, TySpecifics, generics::GenericParamsEnc};
 
 use super::r#typeof::{TypeOfEnc, TypeOfEncOutputRef};
 
@@ -56,6 +56,7 @@ pub struct TyConstructorEnc;
 
 impl TaskEncoder for TyConstructorEnc {
     task_encoder::encoder_cache!(TyConstructorEnc);
+    const ENCODER_NAME: &'static str = "type constructor encoder";
     type TaskDescription<'tcx> = RustTy<'tcx>;
 
     type OutputRef<'vir> = TyConstructorEncOutputRef<'vir>;
@@ -72,7 +73,10 @@ impl TaskEncoder for TyConstructorEnc {
         task_key: &Self::TaskKey<'vir>,
         deps: &mut task_encoder::TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self> {
-        assert!(!task_key.specifics.is_param());
+        assert!(!matches!(
+            &task_key.specifics,
+            TySpecifics::Param(RustParamData::Generic)
+        ));
         vir::with_vcx(|vcx| {
             let base_name = task_key.name();
             let params = deps.require_dep::<GenericParamsEnc>(task_key.params)?;
@@ -132,7 +136,7 @@ impl TaskEncoder for TyConstructorEnc {
     }
 
     fn emit_outputs<'vir>(program: &mut task_encoder::Program<'vir>) {
-        let mut constructors = Self::all_outputs_local_no_errors();
+        let mut constructors = Self::all_outputs_local_no_errors(program);
         vir::with_vcx(|vcx| {
             let args = vcx.alloc_array(&[vcx.mk_local_decl("non_unit", vir::TYPE_INT)]);
             let unknown = vcx.mk_adt_constructor("Unknown_type", args);

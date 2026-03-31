@@ -9,7 +9,7 @@ use vir::{CastType, HasType};
 use crate::encoders::{
     TyUsePureEnc,
     ty::{
-        RustTyDecomposition,
+        RustParamData, RustTyDecomposition,
         data::TySpecifics,
         generics::{GArgs, GArgsTyEnc, GParamVariant, r#trait::TraitEnc},
         lifted::TyConstructorEnc,
@@ -258,7 +258,7 @@ impl<'vir> GenericParams<'vir> {
         deps: &mut TaskEncoderDependencies<'vir, E>,
         ty: RustTyDecomposition<'vir>,
     ) -> vir::ExprTyVal<'vir> {
-        if let TySpecifics::Param(()) = &ty.ty.specifics {
+        if let TySpecifics::Param(RustParamData::Generic) = &ty.ty.specifics {
             let param = ty.args.expect_param();
             return match param {
                 GParamVariant::Param(p) => self.ty_exprs[self.map_idx(p.index).unwrap()],
@@ -283,6 +283,7 @@ impl<'vir> GenericParams<'vir> {
 
 impl TaskEncoder for GenericParamsEnc {
     task_encoder::encoder_cache!(GenericParamsEnc);
+    const ENCODER_NAME: &'static str = "generic params encoder";
     type TaskDescription<'tcx> = GParams<'tcx>;
     type OutputFullDependency<'vir> = GenericParams<'vir>;
 

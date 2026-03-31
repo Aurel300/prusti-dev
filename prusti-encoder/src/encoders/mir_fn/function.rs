@@ -65,6 +65,7 @@ impl<'vir> FunctionCallEncOutput<'vir> {
 
 impl TaskEncoder for FunctionCallEnc {
     task_encoder::encoder_cache!(FunctionCallEnc);
+    const ENCODER_NAME: &'static str = "function call encoder";
     type TaskDescription<'tcx> = CallTaskDescription<'tcx>;
     type OutputFullDependency<'vir> = FunctionCallEncOutput<'vir>;
 
@@ -145,6 +146,7 @@ pub enum FunctionEncError {}
 
 impl TaskEncoder for FunctionEnc {
     task_encoder::encoder_cache!(FunctionEnc);
+    const ENCODER_NAME: &'static str = "function encoder";
     type TaskDescription<'tcx> = DefId;
 
     type OutputRef<'vir> = FunctionEncOutputRef<'vir>; // TODO should be different for pure & impure ctxt
@@ -377,7 +379,7 @@ impl TaskEncoder for FunctionEnc {
     fn emit_outputs<'vir>(program: &mut task_encoder::Program<'vir>) {
         let mut domain_axioms = Vec::new();
         let mut domain_fns = Vec::new();
-        for output in Self::all_outputs_local_no_errors() {
+        for output in Self::all_outputs_local_no_errors(program) {
             if let Some(axiom) = output.defn_axiom {
                 domain_axioms.push(axiom)
             };

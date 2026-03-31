@@ -19,7 +19,7 @@ use prusti_utils::config;
 use task_encoder::TaskEncoder;
 
 use crate::encoders::{
-    Impure, Pure,
+    ConstEnc, Impure, Pure,
     addr::RefDataEnc,
     custom::PairUseEnc,
     ty::{
@@ -105,6 +105,9 @@ pub fn test_entrypoint<'tcx>(
     TyConstructorEnc::emit_outputs(&mut program);
     TypeOfEnc::emit_outputs(&mut program);
 
+    program.header("constants");
+    ConstEnc::emit_outputs(&mut program);
+
     program.header("custom");
     PairUseEnc::emit_outputs(&mut program);
     RefDataEnc::emit_outputs(&mut program);
@@ -116,6 +119,11 @@ pub fn test_entrypoint<'tcx>(
 
     if std::env::var("LOCAL_TESTING").is_ok() {
         std::fs::write("local-testing/simple.vpr", program.code()).unwrap();
+    }
+
+    for error_msg in program.encoder_errors().drain(..) {
+        PrustiError::internal(error_msg, prusti_rustc_interface::span::DUMMY_SP.into())
+            .emit(env_diagnostic);
     }
 
     let program = program.mk_program();

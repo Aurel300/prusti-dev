@@ -64,7 +64,7 @@ impl<'vir> FunctionCallEncOutput<'vir> {
             *arg = caster.cast_to_callee_ctx(*arg);
         }
         let call =
-            self.function.caller_ref.call()(&args, self.ty_args.get_ty(), self.ty_args.get_const());
+            self.function.unlimited_fn_ref.call()(&args, self.ty_args.get_ty(), self.ty_args.get_const());
         self.output.cast_to_caller_ctx(call)
     }
 }
@@ -295,7 +295,7 @@ impl TaskEncoder for FunctionEnc {
             let unlimited_fn = vcx.mk_domain_function(unlimited_fn_ref, false, None);
 
             let substs = ty::GenericArgs::identity_for_item(vcx.tcx(), def_id);
-            let spec = deps.require_dep::<MirSpecEnc>((def_id, true))?;
+            let spec = deps.require_dep::<MirSpecEnc>((def_id, def_id, MirSpecEncMode::PureWithResult))?;
 
             let defn_axiom = if trusted || !is_function_with_body(vcx.tcx(), def_id) {
                 None

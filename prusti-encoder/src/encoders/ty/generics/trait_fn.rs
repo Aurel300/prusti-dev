@@ -216,6 +216,7 @@ impl TaskEncoder for TraitFnEnc {
                         .resolve_trait_calls(false),
                 )?;
                 let pure_func_app = pure_func.call_pure(
+                    false,
                     func_args
                         .iter()
                         .map(|arg| vcx.mk_local_ex(arg))

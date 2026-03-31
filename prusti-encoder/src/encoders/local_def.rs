@@ -206,7 +206,7 @@ impl TaskEncoder for MirLocalDefEnc {
             local: mir::Local,
             rust_ty: ty::Ty<'vir>,
         ) -> LocalDef<'vir> {
-            let rust_ty_task = RustTyDecomposition::from_ty(rust_ty, vcx.tcx(), def_id);
+            let rust_ty_task = RustTyDecomposition::from_ty(rust_ty, def_id);
             let ty_impure = deps.require_dep::<TyUseImpureEnc>(rust_ty_task).unwrap();
             let ty_pure = deps.require_dep::<TyUsePureEnc>(rust_ty_task).unwrap();
 
@@ -230,7 +230,7 @@ impl TaskEncoder for MirLocalDefEnc {
                 match rust_ty.kind() {
                     ty::TyKind::Ref(_, referent_ty, _) => {
                         let referent_ty_task =
-                            RustTyDecomposition::from_ty(*referent_ty, vcx.tcx(), def_id);
+                            RustTyDecomposition::from_ty(*referent_ty, def_id);
                         let referent_ty_pure =
                             deps.require_dep::<TyUsePureEnc>(referent_ty_task).unwrap();
                         let val_expr = ty_pure
@@ -268,9 +268,7 @@ impl TaskEncoder for MirLocalDefEnc {
                 let locals = IndexVec::from_fn_n(
                     |local: mir::Local| {
                         let rust_ty = body.local_decls[local].ty;
-                        let rust_ty_task = RustTyDecomposition::from_ty(rust_ty, task_key.def_id());
-                        let ty = deps.require_dep::<TyUseImpureEnc>(rust_ty_task).unwrap();
-                        mk_local_def(vcx, local, ty)
+                        mk_local_def(vcx, deps, task_key.def_id(), local, rust_ty)
                     },
                     if task_key.all_locals() {
                         body.local_decls.len()
@@ -306,10 +304,7 @@ impl TaskEncoder for MirLocalDefEnc {
                         } else {
                             sig.inputs()[local.index() - 1]
                         };
-                        let rust_ty_task =
-                            RustTyDecomposition::from_ty(rust_ty, task_key.context_def_id());
-                        let ty = deps.require_dep::<TyUseImpureEnc>(rust_ty_task)?;
-                        Ok(mk_local_def(vcx, local, ty))
+                        Ok(mk_local_def(vcx, deps, task_key.context_def_id(), local, rust_ty))
                     })
                     .collect::<Result<IndexVec<_, _>, _>>()?;
 

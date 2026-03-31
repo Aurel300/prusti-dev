@@ -49,9 +49,7 @@ impl TaskEncoder for GArgsTyEnc {
             .copied()
             .filter_map(ty::GenericArg::as_type)
             .map(|arg| {
-                let decomp = vir::with_vcx(|vcx| {
-                    RustTyDecomposition::from_ty(arg, vcx.tcx(), task_key.context)
-                });
+                let decomp = RustTyDecomposition::from_ty(arg, task_key.context);
                 params.ty_expr(deps, decomp)
             })
             .collect::<Vec<_>>();
@@ -59,15 +57,15 @@ impl TaskEncoder for GArgsTyEnc {
             .args
             .iter()
             .copied()
-            .enumerate()
-            .filter_map(|(i, a)| ty::GenericArg::as_const(a).map(|a| (i, a)))
-            .map(|(i, const_)| {
+            .filter_map(ty::GenericArg::as_const)
+            .map(|const_| {
                 // If the constant is a value, we already know its type.
                 // Otherwise, we will look it up in the param environment.
                 // TODO: what about the other ConstKind variants?
                 let ty = match const_.kind() {
                     ty::ConstKind::Value(v) => v.ty,
-                    _ => task_key.context.expect_const(i).1,
+                    ty::ConstKind::Param(p) => task_key.context.expect_const(p.index as usize).1,
+                    other => unreachable!("unexpected ConstKind: {other:?}"),
                 };
                 let task = ConstEncTask::Ty {
                     const_,

@@ -65,6 +65,10 @@ impl<'vir> MirLocalDefEncOutput<'vir> {
     pub fn local_decl_args(&self) -> impl Iterator<Item = vir::LocalDeclSnap<'vir>> + '_ {
         self.args().map(|arg| arg.local_snap)
     }
+
+    pub fn local_decl_ret(&self) -> vir::LocalDeclSnap<'vir> {
+        self.ret().local_snap
+    }
 }
 
 pub type MirLocalDefEncError = ();
@@ -96,20 +100,39 @@ fn should_encode_locals<'vir>(vcx: &vir::VirCtxt<'vir>, def_id: DefId) -> bool {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-pub enum MirLocalDefEncTask {
+pub enum MirLocalDefEncTask<'vir> {
     ExternSpec(DefId),
-    Local { def_id: DefId, all_locals: bool },
+    Local {
+        def_id: DefId,
+        all_locals: bool,
+    },
+    LocalSubsts {
+        def_id: DefId,
+        context_def_id: DefId,
+        substs: ty::GenericArgsRef<'vir>,
+        all_locals: bool,
+    },
 }
 
-impl MirLocalDefEncTask {
+impl<'vir> MirLocalDefEncTask<'vir> {
     fn all_locals(self) -> bool {
         match self {
             MirLocalDefEncTask::ExternSpec(_) => true,
             MirLocalDefEncTask::Local { all_locals, .. } => all_locals,
+            MirLocalDefEncTask::LocalSubsts { all_locals, .. } => all_locals,
         }
     }
 
-    fn body<'tcx>(self, vcx: &vir::VirCtxt<'tcx>) -> Option<MirBody<'tcx>> {
+    fn substs(self, vcx: &vir::VirCtxt<'vir>) -> ty::GenericArgsRef<'vir> {
+        match self {
+            MirLocalDefEncTask::ExternSpec(def_id) | MirLocalDefEncTask::Local { def_id, .. } => {
+                ty::GenericArgs::identity_for_item(vcx.tcx(), def_id)
+            }
+            MirLocalDefEncTask::LocalSubsts { substs, .. } => substs,
+        }
+    }
+
+    fn body(self, vcx: &vir::VirCtxt<'vir>) -> Option<MirBody<'vir>> {
         match self {
             MirLocalDefEncTask::ExternSpec(def_id) => {
                 let substs = ty::GenericArgs::identity_for_item(vcx.tcx(), def_id);
@@ -127,6 +150,17 @@ impl MirLocalDefEncTask {
                     None
                 }
             }
+            MirLocalDefEncTask::LocalSubsts { def_id, substs, .. } => {
+                if should_encode_locals(vcx, def_id) {
+                    Some(vcx.body_mut().get_impure_fn_body(
+                        def_id.as_local().unwrap(),
+                        substs,
+                        None,
+                    ))
+                } else {
+                    None
+                }
+            }
         }
     }
 
@@ -134,6 +168,15 @@ impl MirLocalDefEncTask {
         match self {
             MirLocalDefEncTask::ExternSpec(def_id) => def_id,
             MirLocalDefEncTask::Local { def_id, .. } => def_id,
+            MirLocalDefEncTask::LocalSubsts { def_id, .. } => def_id,
+        }
+    }
+
+    fn context_def_id(self) -> DefId {
+        match self {
+            MirLocalDefEncTask::ExternSpec(def_id) => def_id,
+            MirLocalDefEncTask::Local { def_id, .. } => def_id,
+            MirLocalDefEncTask::LocalSubsts { context_def_id, .. } => context_def_id,
         }
     }
 }
@@ -141,7 +184,7 @@ impl MirLocalDefEncTask {
 impl TaskEncoder for MirLocalDefEnc {
     task_encoder::encoder_cache!(MirLocalDefEnc);
 
-    type TaskDescription<'vir> = MirLocalDefEncTask;
+    type TaskDescription<'vir> = MirLocalDefEncTask<'vir>;
 
     type OutputRef<'vir> = MirLocalDefEncOutputRef;
     type OutputFullDependency<'vir> = MirLocalDefEncOutput<'vir>;
@@ -225,7 +268,9 @@ impl TaskEncoder for MirLocalDefEnc {
                 let locals = IndexVec::from_fn_n(
                     |local: mir::Local| {
                         let rust_ty = body.local_decls[local].ty;
-                        mk_local_def(vcx, deps, task_key.def_id(), local, rust_ty)
+                        let rust_ty_task = RustTyDecomposition::from_ty(rust_ty, task_key.def_id());
+                        let ty = deps.require_dep::<TyUseImpureEnc>(rust_ty_task).unwrap();
+                        mk_local_def(vcx, local, ty)
                     },
                     if task_key.all_locals() {
                         body.local_decls.len()
@@ -239,9 +284,9 @@ impl TaskEncoder for MirLocalDefEnc {
                     arg_count: body.arg_count,
                 }
             } else {
-                let typing_env = ty::TypingEnv::post_analysis(vcx.tcx(), task_key.def_id());
+                let typing_env = ty::TypingEnv::post_analysis(vcx.tcx(), task_key.context_def_id());
                 let sig = vcx.tcx().instantiate_and_normalize_erasing_regions(
-                    ty::GenericArgs::identity_for_item(vcx.tcx(), task_key.def_id()),
+                    task_key.substs(vcx),
                     typing_env,
                     vcx.tcx().fn_sig(task_key.def_id()),
                 );
@@ -261,7 +306,10 @@ impl TaskEncoder for MirLocalDefEnc {
                         } else {
                             sig.inputs()[local.index() - 1]
                         };
-                        Ok(mk_local_def(vcx, deps, task_key.def_id(), local, rust_ty))
+                        let rust_ty_task =
+                            RustTyDecomposition::from_ty(rust_ty, task_key.context_def_id());
+                        let ty = deps.require_dep::<TyUseImpureEnc>(rust_ty_task)?;
+                        Ok(mk_local_def(vcx, local, ty))
                     })
                     .collect::<Result<IndexVec<_, _>, _>>()?;
 

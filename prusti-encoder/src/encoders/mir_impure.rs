@@ -7,8 +7,8 @@ use pcg::{
         borrow_pcg_expansion::BorrowPcgExpansion,
         edge::{
             abstraction::{AbstractionEdge, FunctionCallOrLoop},
+            borrow_flow::BorrowFlowEdgeKind,
             kind::BorrowPcgEdgeKind,
-            outlives::BorrowFlowEdgeKind,
         },
         region_projection::PlaceOrConst,
         state::BorrowsState,
@@ -280,7 +280,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
     }
 
     fn ty_use_impure(&mut self, ty: ty::Ty<'vir>) -> TyUseImpure<'vir> {
-        let ty_task = RustTyDecomposition::from_ty(ty, self.vcx.tcx(), self.def_id);
+        let ty_task = RustTyDecomposition::from_ty(ty, self.def_id);
         self.deps.require_dep::<TyUseImpureEnc>(ty_task).unwrap()
     }
 
@@ -434,14 +434,13 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                         .into()
                 }
                 TyKind::Ref(.., ty::Mutability::Mut) => {
-                    let e_rvalue_ty = self.ty_use_pure(rvalue_ty);
                     let p_rvalue_ty = self.ty_use_impure(rvalue_ty);
                     let (place_expr, _, _, _) = self.encode_place_with_snap(Place::from(*place));
 
-                    let inner = e_rvalue_ty.expect_mutref();
+                    let inner = p_rvalue_ty.expect_mutref();
                     let place_ref = place_expr.expr.expect_predicate();
                     EncodedRvalue {
-                        expr: inner.prim_to_snap(place_ref).upcast_ty(),
+                        expr: inner.prim_to_snap_assign(place_ref).upcast_ty(),
                         post_assign_folds: Some(Box::new(move |lhs_place| {
                             p_rvalue_ty.fold(None, lhs_place, None, None, None)
                         })),
@@ -852,7 +851,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 if matches!(weaken.from_cap(), CapabilityKind::Exclusive)
                     && matches!(weaken.to_cap(), None | Some(CapabilityKind::Write)) =>
             {
-                self.pcg_weaken(weaken.place());
+                self.pcg_weaken(weaken.place(), weaken.is_for_storage_dead());
                 Ok(())
             }
             //RenamePlace {
@@ -875,6 +874,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 RepackOp::Weaken(weaken) => {
                     weaken.from_cap().is_exclusive() && weaken.to_cap().is_read()
                 }
+                RepackOp::StorageDead(..) => true,
                 _ => false,
             }
         }
@@ -931,7 +931,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             RepackOp::Weaken(weaken)
                 if weaken.from_cap().is_exclusive() && weaken.to_cap().is_write() =>
             {
-                self.pcg_weaken(weaken.place())
+                self.pcg_weaken(weaken.place(), weaken.is_for_storage_dead())
             }
             other => {
                 if should_ignore(other) {
@@ -950,9 +950,22 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         }
     }
 
-    fn pcg_weaken(&mut self, place: Place<'vir>) {
+    fn pcg_weaken(&mut self, place: Place<'vir>, for_storage_dead: bool) {
         let place_ty = place.ty(self.pcg_ctxt());
         assert!(place_ty.variant_index.is_none());
+
+        // Skip the exhale for StorageDead-triggered weakens, since the place may
+        // have already been moved/consumed and no longer hold permissions.
+        // Temporary workaround until https://github.com/prusti/pcg/issues/137
+        // is resolved.
+        if for_storage_dead {
+            comment!(
+                self,
+                "Weaken(E, W) for {:?} (skipped exhale: StorageDead)",
+                place
+            );
+            return;
+        }
 
         let place_ty_out = self.ty_use_impure(place_ty.ty);
 
@@ -1228,7 +1241,7 @@ impl<'vir, 'enc, E: TaskEncoder> PureRvalueEnc<'vir> for ImpureEncVisitor<'vir, 
     }
 
     fn ty_use_pure(&mut self, ty: ty::Ty<'vir>) -> TyUsePure<'vir> {
-        let ty_task = RustTyDecomposition::from_ty(ty, self.vcx.tcx(), self.def_id);
+        let ty_task = RustTyDecomposition::from_ty(ty, self.def_id);
         self.deps.require_dep::<TyUsePureEnc>(ty_task).unwrap()
     }
 
@@ -1635,77 +1648,91 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                     .encode_place(Place::from(*destination))
                     .expr
                     .expect_predicate();
-                if is_pure {
-                    let pure_func = self
-                        .deps
-                        .require_dep::<FunctionCallEnc>(CallTaskDescription::new(
-                            self.def_id,
-                            caller_substs,
-                            func_def_id,
-                        ))
-                        .unwrap();
-                    let snap_args = args
-                        .iter()
-                        .map(|arg| {
-                            self.vcx.with_span(arg.span, |_| {
-                                self.encode_operand_snap(&arg.node, &()).unwrap()
+                self.vcx.with_span(terminator.source_info.span, |vcx| {
+                    if is_pure {
+                        let pure_func = self
+                            .deps
+                            .require_dep::<FunctionCallEnc>(CallTaskDescription::new(
+                                self.def_id,
+                                caller_substs,
+                                func_def_id,
+                            ))
+                            .unwrap();
+                        let snap_args = args
+                            .iter()
+                            .map(|arg| {
+                                self.vcx.with_span(arg.span, |_| {
+                                    self.encode_operand_snap(&arg.node, &()).unwrap()
+                                })
                             })
-                        })
-                        .collect::<Vec<_>>();
-                    let pure_func_app = pure_func.call(CallingCtxt::Impure, snap_args);
+                            .collect::<Vec<_>>();
+                        let pure_func_app = pure_func.call_impure(snap_args);
 
-                    let return_ty = destination.ty(self.local_decls, self.vcx.tcx()).ty;
-                    let assign_stmt = self.ty_use_impure(return_ty).apply_method_assign(
-                        self.vcx,
-                        dest,
-                        pure_func_app,
-                    );
+                        let return_ty = destination.ty(self.local_decls, self.vcx.tcx()).ty;
+                        let assign_stmt = self.ty_use_impure(return_ty).apply_method_assign(
+                            self.vcx,
+                            dest,
+                            pure_func_app,
+                        );
 
-                    self.stmt(assign_stmt);
-                } else {
-                    vir::with_vcx(|vcx| {
-                        vcx.with_span(terminator.source_info.span, |vcx| {
-                            let Ok(func_out) = self.deps.require_dep::<encoders::MethodCallEnc>(
-                                CallTaskDescription::new(self.def_id, caller_substs, func_def_id),
-                            ) else {
-                                self.current_terminator = Some(
-                                    self.vcx
-                                        .mk_dummy_stmt(vir::vir_format!(self.vcx, "recursion",)),
+                        vcx.handle_error(
+                            "application.precondition:assertion.false",
+                            move |reason_span_opt| {
+                                let mut error = PrustiError::verification(
+                                    "precondition might not hold",
+                                    span.into(),
                                 );
-                                return;
-                            };
-
-                            let method_in = args
-                                .iter()
-                                .map(|arg| self.encode_operand(&arg.node).unwrap())
-                                .collect::<Vec<_>>();
-
-                            let call = func_out.call(method_in, dest);
-
-                            let label_pre = self.new_label("pre");
-                            vcx.handle_error(
-                                "call.precondition:assertion.false",
-                                move |reason_span_opt| {
-                                    let mut error = PrustiError::verification(
-                                        "precondition might not hold",
-                                        span.into(),
+                                if let Some(reason_span) = reason_span_opt {
+                                    error.add_note_mut(
+                                        "the failing precondition is here",
+                                        Some(reason_span.into()),
                                     );
-                                    if let Some(reason_span) = reason_span_opt {
-                                        error.add_note_mut(
-                                            "the failing precondition is here",
-                                            Some(reason_span.into()),
-                                        );
-                                    }
-                                    Some(vec![error])
-                                },
+                                }
+                                Some(vec![error])
+                            },
+                        );
+                        self.stmt(assign_stmt);
+                    } else {
+                        let Ok(func_out) = self.deps.require_dep::<encoders::MethodCallEnc>(
+                            CallTaskDescription::new(self.def_id, caller_substs, func_def_id),
+                        ) else {
+                            self.current_terminator = Some(
+                                self.vcx
+                                    .mk_dummy_stmt(vir::vir_format!(self.vcx, "recursion",)),
                             );
-                            self.stmts(call);
-                            let label_post = self.new_label("post");
-                            self.call_labels
-                                .insert(location.block, (label_pre, label_post));
-                        })
-                    });
-                }
+                            return;
+                        };
+
+                        let method_in = args
+                            .iter()
+                            .map(|arg| self.encode_operand(&arg.node).unwrap())
+                            .collect::<Vec<_>>();
+
+                        let call = func_out.call(method_in, dest);
+
+                        let label_pre = self.new_label("pre");
+                        vcx.handle_error(
+                            "call.precondition:assertion.false",
+                            move |reason_span_opt| {
+                                let mut error = PrustiError::verification(
+                                    "precondition might not hold",
+                                    span.into(),
+                                );
+                                if let Some(reason_span) = reason_span_opt {
+                                    error.add_note_mut(
+                                        "the failing precondition is here",
+                                        Some(reason_span.into()),
+                                    );
+                                }
+                                Some(vec![error])
+                            },
+                        );
+                        self.stmts(call);
+                        let label_post = self.new_label("post");
+                        self.call_labels
+                            .insert(location.block, (label_pre, label_post));
+                    }
+                });
 
                 target
                     .map(|target| {
@@ -1748,37 +1775,6 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                         })
                     })
             }
-            // If we are not checking for overflows, encode an overflow-checking
-            // assertion as a goto.
-            mir::TerminatorKind::Assert { msg, target, .. }
-                if !config::check_overflows()
-                    && matches!(
-                        **msg,
-                        mir::AssertMessage::Overflow(..) | mir::AssertMessage::OverflowNeg(..)
-                    ) =>
-            {
-                const REAL_TARGET_SUCC_IDX: usize = 0;
-                // Ensure that the terminator succ that we use for the repacks is the correct one
-                assert_eq!(
-                    &self.current_fpcs.as_ref().unwrap().terminator.succs[REAL_TARGET_SUCC_IDX]
-                        .block(),
-                    target
-                );
-                let current_fpcs = self.current_fpcs.take().unwrap();
-                let borrows =
-                    current_fpcs.statements.last().unwrap().states[EvalStmtPhase::PostMain].clone();
-                self.pcs_succ(
-                    &borrows,
-                    &current_fpcs.terminator.succs[REAL_TARGET_SUCC_IDX],
-                );
-                self.current_fpcs = Some(current_fpcs);
-                let set_flag = self.set_from_to_flag(location.block, *target);
-                self.stmt(set_flag);
-                self.vcx.mk_goto_stmt(
-                    self.vcx
-                        .alloc(vir::CfgBlockLabelData::BasicBlock(target.as_usize())),
-                )
-            }
             mir::TerminatorKind::Assert {
                 cond,
                 expected,
@@ -1808,33 +1804,48 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                 let expected = self.vcx.mk_const_expr(vir::ConstData::Bool(*expected));
                 let assert = self.vcx.mk_eq_expr(enc, expected);
                 let error_msg = match **msg {
-                    mir::AssertMessage::BoundsCheck { .. } => "bounds check may fail",
+                    mir::AssertMessage::BoundsCheck { .. } => Some("bounds check may fail"),
+                    mir::AssertMessage::Overflow(..) | mir::AssertMessage::OverflowNeg(..)
+                        if !config::check_overflows() =>
+                    {
+                        // If we are not checking for overflows, encode an overflow-checking
+                        // assertion as an assume instead.
+                        None
+                    }
                     mir::AssertMessage::Overflow(..) | mir::AssertMessage::OverflowNeg(..) => {
-                        "operation may overflow"
+                        Some("operation may overflow")
                     }
                     mir::AssertMessage::DivisionByZero(..)
-                    | mir::AssertMessage::RemainderByZero(..) => "division by zero may occur",
+                    | mir::AssertMessage::RemainderByZero(..) => Some("division by zero may occur"),
                     mir::AssertMessage::ResumedAfterReturn(..) => {
-                        "execution may continue after return"
+                        Some("execution may continue after return")
                     }
                     mir::AssertMessage::ResumedAfterPanic(..) => {
-                        "execution may continue after panic"
+                        Some("execution may continue after panic")
                     }
                     mir::AssertMessage::MisalignedPointerDereference { .. } => {
-                        "misaligned pointer may be dereferenced"
+                        Some("misaligned pointer may be dereferenced")
                     }
-                    mir::AssertKind::ResumedAfterDrop(..) => "execution may continue after drop",
-                    mir::AssertKind::NullPointerDereference => "null pointer may be dereferenced",
+                    mir::AssertKind::ResumedAfterDrop(..) => {
+                        Some("execution may continue after drop")
+                    }
+                    mir::AssertKind::NullPointerDereference => {
+                        Some("null pointer may be dereferenced")
+                    }
                     mir::AssertKind::InvalidEnumConstruction(..) => {
-                        "invalid enum construction may occur"
+                        Some("invalid enum construction may occur")
                     }
                 };
-                self.vcx.with_span(span, |vcx| {
-                    vcx.handle_error("exhale.failed:assertion.false", move |_| {
-                        Some(vec![PrustiError::verification(error_msg, span.into())])
+                if let Some(error_msg) = error_msg {
+                    self.vcx.with_span(span, |vcx| {
+                        vcx.handle_error("exhale.failed:assertion.false", move |_| {
+                            Some(vec![PrustiError::verification(error_msg, span.into())])
+                        });
+                        self.stmt(self.vcx.mk_exhale_stmt(assert));
                     });
-                    self.stmt(self.vcx.mk_exhale_stmt(assert));
-                });
+                } else {
+                    self.stmt(self.vcx.mk_inhale_stmt(assert));
+                }
                 let set_flag = self.set_from_to_flag(location.block, *target);
                 self.stmt(set_flag);
                 let target_bb = self

@@ -1,4 +1,5 @@
 #![no_std]
+#![allow(internal_features)]
 #![cfg_attr(feature = "prusti", feature(unboxed_closures, tuple_trait))]
 #![feature(auto_traits)]
 #![feature(negative_impls)]
@@ -142,6 +143,8 @@ mod private {
     /// it should not be constructed from running rust code, hence the private unit inside
     pub struct Int(());
 
+    pub struct Real(());
+
     #[non_exhaustive]
     #[derive(PartialEq, Eq, Copy, Clone)]
     pub struct Ghost<T> {
@@ -152,6 +155,7 @@ mod private {
 #[cfg(feature = "prusti")]
 mod private {
     use core::{marker::PhantomData, ops::*};
+    use std::cmp::Ordering;
 
     /// A macro for defining a closure with a specification.
     pub use prusti_contracts_proc_macros::{closure, pure};
@@ -350,6 +354,103 @@ mod private {
             panic!()
         }
     }
+
+    /// a mathematical real type
+    /// it should not be constructed from running rust code, hence the private unit inside
+    #[derive(Eq, Copy, Clone)]
+    pub struct Real(());
+
+    impl From<f16> for Real {
+        fn from(_: f16) -> Self {
+            panic!();
+        }
+    }
+
+    impl From<f32> for Real {
+        fn from(_: f32) -> Self {
+            panic!();
+        }
+    }
+
+    impl From<f64> for Real {
+        fn from(_: f64) -> Self {
+            panic!();
+        }
+    }
+
+    impl From<f128> for Real {
+        fn from(_: f128) -> Self {
+            panic!();
+        }
+    }
+
+    impl Sub for Real {
+        type Output = Real;
+
+        fn sub(self, _: Self) -> Self {
+            panic!()
+        }
+    }
+
+    impl PartialEq for Real {
+        fn eq(&self, _: &Self) -> bool {
+            panic!()
+        }
+    }
+
+    impl Mul for Real {
+        type Output = Real;
+
+        fn mul(self, _: Self) -> Self {
+            panic!()
+        }
+    }
+
+    impl Add for Real {
+        type Output = Real;
+
+        fn add(self, _: Self) -> Self {
+            panic!()
+        }
+    }
+
+    impl Div for Real {
+        type Output = Real;
+
+        fn div(self, _: Self) -> Self {
+            panic!()
+        }
+    }
+
+    impl Neg for Real {
+        type Output = Real;
+
+        fn neg(self) -> Self {
+            panic!()
+        }
+    }
+
+    impl PartialOrd for Real {
+        fn partial_cmp(&self, _: &Self) -> Option<Ordering> {
+            panic!()
+        }
+
+        fn lt(&self, _: &Self) -> bool {
+            panic!()
+        }
+
+        fn le(&self, _: &Self) -> bool {
+            panic!()
+        }
+
+        fn gt(&self, _: &Self) -> bool {
+            panic!()
+        }
+
+        fn ge(&self, _: &Self) -> bool {
+            panic!()
+        }
+    }
 }
 
 /// This function is used to mark the beginning of evaluation of expressions
@@ -407,36 +508,36 @@ pub fn snapshot_equality<T>(_l: T, _r: T) -> bool {
 }
 
 /// Checks if a float is NaN
-pub fn f16_is_nan(fl: f16) -> bool {
+pub fn f16_is_nan(_: f16) -> bool {
     true
 }
 
-pub fn f32_is_nan(fl: f32) -> bool {
+pub fn f32_is_nan(_: f32) -> bool {
     true
 }
 
-pub fn f64_is_nan(fl: f64) -> bool {
+pub fn f64_is_nan(_: f64) -> bool {
     true
 }
 
-pub fn f128_is_nan(fl: f128) -> bool {
+pub fn f128_is_nan(_: f128) -> bool {
     true
 }
 
 /// Checks if a float is infinite
-pub fn f16_is_infinite(fl: f16) -> bool {
+pub fn f16_is_infinite(_: f16) -> bool {
     true
 }
 
-pub fn f32_is_infinite(fl: f32) -> bool {
+pub fn f32_is_infinite(_: f32) -> bool {
     true
 }
 
-pub fn f64_is_infinite(fl: f64) -> bool {
+pub fn f64_is_infinite(_: f64) -> bool {
     true
 }
 
-pub fn f128_is_infinite(fl: f128) -> bool {
+pub fn f128_is_infinite(_: f128) -> bool {
     true
 }
 
@@ -457,7 +558,7 @@ pub fn f128_abs(fl: f128) -> f128 {
     fl
 }
 
-pub fn slice_len<T>(_slice: &[T]) -> usize {
+pub fn slice_len<T>(_: &[T]) -> usize {
     0
 }
 

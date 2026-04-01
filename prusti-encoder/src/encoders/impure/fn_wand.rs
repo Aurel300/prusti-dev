@@ -1,5 +1,6 @@
 use crate::encoders::{
     ImpureEncVisitor, MirLocalDefEncOutput, MirSpecEnc,
+    mir_shared::PureRvalueEnc,
     pure::spec::{EncodedPledge, MirSpecEncMode, PledgeArgs, PledgeExpr},
     ty::{RustTyDecomposition, generics::GParams, indirect::IndirectPredicatesEnc},
 };
@@ -40,7 +41,10 @@ impl<'vir, E: TaskEncoder> ImpureEncVisitor<'vir, '_, E> {
         let args = PledgeExpr::pledge_args(result, args);
 
         for wand_data in self.wands.viper_wands() {
-            let Some(wand) = self.wands.mk_wand(&wand_data, args, self.vcx, self.deps) else {
+            let Some(wand) = self
+                .wands
+                .mk_wand(&wand_data, args, self.vcx, self.deps_or_skip.deps)
+            else {
                 continue;
             };
             let mut package_script = Vec::new();
@@ -231,7 +235,7 @@ impl<'vir> WandEncOutput<'vir> {
         });
         let args = PledgeExpr::pledge_args(result, args);
         for wand_data in self.viper_wands() {
-            let Some(wand) = self.mk_wand(&wand_data, args, visitor.vcx, visitor.deps) else {
+            let Some(wand) = self.mk_wand(&wand_data, args, visitor.vcx, visitor.deps()) else {
                 continue;
             };
             visitor.stmt(visitor.vcx.mk_apply_stmt(wand));

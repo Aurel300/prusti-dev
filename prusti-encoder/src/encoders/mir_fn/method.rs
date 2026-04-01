@@ -8,6 +8,8 @@ use crate::{
         Impure, ImpureEncVisitor, MirLocalDefEnc, MirLocalDefEncTask, MirSpecEnc, WandEnc,
         WandEncTask,
         mir_fn::{CallTaskDescription, RustSignature},
+        mir_impure::ImpureEncDepsOrSkip,
+        mir_shared::PureRvalueEnc,
         pure::spec::MirSpecEncMode,
         ty::generics::{GArgCaster, GArgsCastEnc, GArgsTy, GArgsTyEnc, GParams, GenericParamsEnc},
     },
@@ -272,7 +274,10 @@ impl TaskEncoder for MethodEnc {
                 deps.check_cycle()?;
                 let mut visitor = ImpureEncVisitor {
                     vcx,
-                    deps,
+                    deps_or_skip: ImpureEncDepsOrSkip {
+                        deps,
+                        skip_body: false,
+                    },
                     def_id,
                     local_decls: &body.local_decls,
                     fpcs_analysis,
@@ -292,11 +297,9 @@ impl TaskEncoder for MethodEnc {
                     current_stmts: None,
                     current_terminator: None,
                     encoded_blocks,
-
-                    skip_body: false,
                 };
                 visitor.visit_body(body);
-                if visitor.skip_body {
+                if visitor.deps_or_skip.skip_body {
                     // A statement failed to encode; the dependency encoder already
                     // reported the error, so skip verification of this body.
                     None
@@ -321,7 +324,7 @@ impl TaskEncoder for MethodEnc {
                         vcx.alloc(vir::TerminatorStmtData::Exit),
                     ));
 
-                    visitor.deps.check_cycle()?;
+                    visitor.deps().check_cycle()?;
 
                     Some(visitor.encoded_blocks)
                 }

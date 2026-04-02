@@ -1263,68 +1263,6 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
     }
 }
 
-impl<'vir, 'enc, E: TaskEncoder> PureRvalueEnc<'vir> for ImpureEncVisitor<'vir, 'enc, E> {
-    type Encoder = E;
-    type EncodePlaceCtxt = ();
-    type ExprCurr = ();
-    type ExprNext = !;
-    fn def_id(&self) -> DefId {
-        self.def_id
-    }
-
-    fn deps(&mut self) -> &mut TaskEncoderDependencies<'vir, Self::Encoder> {
-        self.deps_or_skip.deps
-    }
-
-    fn vcx(&self) -> &'vir vir::VirCtxt<'vir> {
-        self.vcx
-    }
-
-    fn body(&self) -> &mir::Body<'vir> {
-        self.body
-    }
-
-    fn ty_use_pure(&mut self, ty: ty::Ty<'vir>) -> TyUsePure<'vir> {
-        let ty_task = RustTyDecomposition::from_ty(ty, self.def_id);
-        self.deps_or_skip
-            .require_dep::<TyUsePureEnc>(ty_task)
-            .unwrap()
-    }
-
-    fn encode_operand_snap(
-        &mut self,
-        operand: &mir::Operand<'vir>,
-        _ctxt: &Self::EncodePlaceCtxt,
-    ) -> Result<vir::ExprSnap<'vir>, EncodeFullError<'vir, E>> {
-        match operand {
-            &mir::Operand::Move(source) => {
-                let (result, snap_val, _, ty_out) =
-                    self.encode_place_with_snap(Place::from(source));
-
-                let tmp_exp = self.new_tmp(ty_out.snapshot());
-                self.stmt(self.vcx.mk_pure_assign_stmt(tmp_exp, snap_val));
-                self.stmt(self.vcx.mk_exhale_stmt(ty_out.ref_to_pred(
-                    self.vcx,
-                    result.expr.expect_predicate(),
-                    None,
-                )));
-                Ok(tmp_exp)
-            }
-            &mir::Operand::Copy(place) => Ok(self.encode_place_with_snap(place.into()).1),
-            mir::Operand::Constant(box constant) => {
-                Ok(self.encode_constant_snap(constant)?.upcast_ty())
-            }
-        }
-    }
-
-    fn encode_place_snap(
-        &mut self,
-        place: Place<'vir>,
-        _ctxt: &Self::EncodePlaceCtxt,
-    ) -> vir::ExprGenSnap<'vir, Self::ExprCurr, Self::ExprNext> {
-        self.encode_place_with_snap(place).1
-    }
-}
 
 impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<'vir, 'enc, E> {
     fn visit_basic_block_data(&mut self, block: mir::BasicBlock, data: &mir::BasicBlockData<'vir>) {
@@ -1982,5 +1920,68 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
             }),
         };
         assert!(self.current_terminator.replace(terminator).is_none());
+    }
+}
+
+impl<'vir, 'enc, E: TaskEncoder> PureRvalueEnc<'vir> for ImpureEncVisitor<'vir, 'enc, E> {
+    type Encoder = E;
+    type EncodePlaceCtxt = ();
+    type ExprCurr = ();
+    type ExprNext = !;
+    fn def_id(&self) -> DefId {
+        self.def_id
+    }
+
+    fn deps(&mut self) -> &mut TaskEncoderDependencies<'vir, Self::Encoder> {
+        self.deps_or_skip.deps
+    }
+
+    fn vcx(&self) -> &'vir vir::VirCtxt<'vir> {
+        self.vcx
+    }
+
+    fn body(&self) -> &mir::Body<'vir> {
+        self.body
+    }
+
+    fn ty_use_pure(&mut self, ty: ty::Ty<'vir>) -> TyUsePure<'vir> {
+        let ty_task = RustTyDecomposition::from_ty(ty, self.def_id);
+        self.deps_or_skip
+            .require_dep::<TyUsePureEnc>(ty_task)
+            .unwrap()
+    }
+
+    fn encode_operand_snap(
+        &mut self,
+        operand: &mir::Operand<'vir>,
+        _ctxt: &Self::EncodePlaceCtxt,
+    ) -> Result<vir::ExprSnap<'vir>, EncodeFullError<'vir, E>> {
+        match operand {
+            &mir::Operand::Move(source) => {
+                let (result, snap_val, _, ty_out) =
+                    self.encode_place_with_snap(Place::from(source));
+
+                let tmp_exp = self.new_tmp(ty_out.snapshot());
+                self.stmt(self.vcx.mk_pure_assign_stmt(tmp_exp, snap_val));
+                self.stmt(self.vcx.mk_exhale_stmt(ty_out.ref_to_pred(
+                    self.vcx,
+                    result.expr.expect_predicate(),
+                    None,
+                )));
+                Ok(tmp_exp)
+            }
+            &mir::Operand::Copy(place) => Ok(self.encode_place_with_snap(place.into()).1),
+            mir::Operand::Constant(box constant) => {
+                Ok(self.encode_constant_snap(constant)?.upcast_ty())
+            }
+        }
+    }
+
+    fn encode_place_snap(
+        &mut self,
+        place: Place<'vir>,
+        _ctxt: &Self::EncodePlaceCtxt,
+    ) -> vir::ExprGenSnap<'vir, Self::ExprCurr, Self::ExprNext> {
+        self.encode_place_with_snap(place).1
     }
 }

@@ -41,10 +41,7 @@ impl<'vir, E: TaskEncoder> ImpureEncVisitor<'vir, '_, E> {
         let args = PledgeExpr::pledge_args(result, args);
 
         for wand_data in self.wands.viper_wands() {
-            let Some(wand) = self
-                .wands
-                .mk_wand(&wand_data, args, self.vcx, self.deps)
-            else {
+            let Some(wand) = self.wands.mk_wand(&wand_data, args, self.vcx, self.deps) else {
                 continue;
             };
             let mut package_script = Vec::new();

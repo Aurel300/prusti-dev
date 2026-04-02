@@ -46,10 +46,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             let (place_res, _snap, _, _) = self.encode_place_with_snap(*place);
             let ty = (*place).ty(self.pcg_ctxt());
             let task = RustTyDecomposition::from_ty(ty.ty, self.def_id);
-            let ty_out = self
-                .deps
-                .require_dep::<TyUseImpureEnc>(task)
-                .unwrap();
+            let ty_out = self.deps.require_dep::<TyUseImpureEnc>(task).unwrap();
             let pred = ty_out.ref_to_pred(self.vcx, place_res.expr.expect_predicate(), None);
             inv.push(pred);
         }
@@ -99,10 +96,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 let p = place.place();
                 let ty = (*p).ty(self.local_decls, self.vcx.tcx());
                 let task = RustTyDecomposition::from_ty(ty.ty, self.def_id);
-                let ty_out = self
-                    .deps
-                    .require_dep::<TyUseImpureEnc>(task)
-                    .unwrap();
+                let ty_out = self.deps.require_dep::<TyUseImpureEnc>(task).unwrap();
                 let p = self.encode_place(p);
                 let p = self.configure_old((*place).into(), p.expr.expect_predicate(), old_outer);
 

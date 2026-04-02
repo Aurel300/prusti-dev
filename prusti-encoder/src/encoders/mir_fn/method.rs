@@ -292,30 +292,34 @@ impl TaskEncoder for MethodEnc {
                     current_terminator: None,
                     encoded_blocks,
                 };
-                visitor.visit_body(body);
-                start_stmts.extend(
-                    visitor
-                        .from_to_vars
-                        .decls()
-                        .map(|v| vcx.mk_local_decl_stmt(v, Some(vcx.mk_bool::<false>()))),
-                );
-                visitor.encoded_blocks[0] = vcx.mk_cfg_block(
-                    &vir::CfgBlockLabelData::Start,
-                    &[],
-                    vcx.alloc_slice(&start_stmts),
-                    vcx.mk_goto_stmt(&vir::CfgBlockLabelData::BasicBlock(0)),
-                );
+                // if we encountered an error/cycle during encoding, we don't emit a method body
+                if visitor.visit_body(body).is_ok() {
+                    start_stmts.extend(
+                        visitor
+                            .from_to_vars
+                            .decls()
+                            .map(|v| vcx.mk_local_decl_stmt(v, Some(vcx.mk_bool::<false>()))),
+                    );
+                    visitor.encoded_blocks[0] = vcx.mk_cfg_block(
+                        &vir::CfgBlockLabelData::Start,
+                        &[],
+                        vcx.alloc_slice(&start_stmts),
+                        vcx.mk_goto_stmt(&vir::CfgBlockLabelData::BasicBlock(0)),
+                    );
 
-                visitor.encoded_blocks.push(vcx.mk_cfg_block(
-                    vcx.alloc(vir::CfgBlockLabelData::End),
-                    &[],
-                    &[],
-                    vcx.alloc(vir::TerminatorStmtData::Exit),
-                ));
+                    visitor.encoded_blocks.push(vcx.mk_cfg_block(
+                        vcx.alloc(vir::CfgBlockLabelData::End),
+                        &[],
+                        &[],
+                        vcx.alloc(vir::TerminatorStmtData::Exit),
+                    ));
 
-                visitor.deps().check_cycle()?;
+                    visitor.deps().check_cycle()?;
 
-                Some(visitor.encoded_blocks)
+                    Some(visitor.encoded_blocks)
+                } else {
+                    None
+                }
             } else {
                 None
             };

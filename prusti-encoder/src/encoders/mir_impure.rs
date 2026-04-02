@@ -281,9 +281,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
 
     fn ty_use_impure(&mut self, ty: ty::Ty<'vir>) -> TyUseImpure<'vir> {
         let ty_task = RustTyDecomposition::from_ty(ty, self.def_id);
-        self.deps
-            .require_dep::<TyUseImpureEnc>(ty_task)
-            .unwrap()
+        self.deps.require_dep::<TyUseImpureEnc>(ty_task).unwrap()
     }
 
     fn encode_rvalue(
@@ -694,10 +692,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                     .unsize()
                     .unwrap();
                 let params = GParams::from(def_id);
-                let generics = self
-                    .deps
-                    .require_dep::<GenericParamsEnc>(params)
-                    .unwrap();
+                let generics = self.deps.require_dep::<GenericParamsEnc>(params).unwrap();
                 self.stmt(
                     self.vcx
                         .alloc(vir::StmtData::new(self.vcx.alloc((unsize.undo)(
@@ -1219,7 +1214,11 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         self.from_to_vars.set_from_to_flag_stmt(self.vcx, from, to)
     }
 
-    fn visit_basic_block_data(&mut self, block: mir::BasicBlock, data: &mir::BasicBlockData<'vir>) {
+    fn visit_basic_block_data(
+        &mut self,
+        block: mir::BasicBlock,
+        data: &mir::BasicBlockData<'vir>,
+    ) -> Result<(), EncodeFullError<'vir, E>> {
         // We are verifying the absence of panics, so cleanup block should never
         // be reached, or even referenced.
         if data.is_cleanup {
@@ -1233,11 +1232,9 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                         .mk_dummy_stmt(vir::vir_format!(self.vcx, "cleanup block")),
                 ),
             );
-            return;
+            return Ok(());
         }
-        if self.deps().check_cycle().is_err() {
-            return;
-        }
+        self.deps().check_cycle()?;
 
         self.current_stmts = Some(Vec::with_capacity(
             data.statements.len(), // TODO: not exact?
@@ -1289,7 +1286,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 block,
                 statement_index: index,
             };
-            self.visit_statement(statement, location);
+            self.visit_statement(statement, location)?;
         }
         let location = mir::Location {
             block,
@@ -1304,13 +1301,16 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             self.vcx.alloc_slice(&stmts),
             terminator,
         ));
+        Ok(())
     }
 
-    fn visit_statement(&mut self, statement: &mir::Statement<'vir>, location: mir::Location) {
+    fn visit_statement(
+        &mut self,
+        statement: &mir::Statement<'vir>,
+        location: mir::Location,
+    ) -> Result<(), EncodeFullError<'vir, E>> {
         self.vcx.with_span(statement.source_info.span, |_vcx| {
-            if self.deps().check_cycle().is_err() {
-                return;
-            }
+            self.deps().check_cycle()?;
 
             self.new_before_label(location);
 
@@ -1332,7 +1332,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             if IGNORE_NOP_STMTS {
                 match &statement.kind {
                     mir::StatementKind::StorageLive(..) | mir::StatementKind::StorageDead(..) => {
-                        return;
+                        return Ok(());
                     }
                     _ => {}
                 }
@@ -1352,10 +1352,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                         .expect_predicate();
                     let src_ty = src.ty(self.body(), self.vcx.tcx());
                     let def_id = self.def_id();
-                    let unsize = match self.deps.require_ref_spanned::<MirBuiltinEnc>(MirBuiltinEncTask::Unsize(src_ty, *ty, def_id), span) {
-                        Ok(r) => r.unsize().unwrap(),
-                        Err(_) => { return; }
-                    };
+                    let unsize = self.deps.require_ref_spanned::<MirBuiltinEnc>(MirBuiltinEncTask::Unsize(src_ty, *ty, def_id), span)?.unsize().unwrap();
                     let params = GParams::from(def_id);
                     let generics = self.deps.require_dep::<GenericParamsEnc>(params).unwrap();
                     self.stmt(self.vcx.alloc(vir::StmtData::new(self.vcx.alloc((unsize.unsize)(
@@ -1428,7 +1425,8 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                     statement.kind
                 ),
             }
-        });
+            Ok(())
+        })
     }
 
     fn visit_terminator(&mut self, terminator: &mir::Terminator<'vir>, location: mir::Location) {
@@ -1645,11 +1643,9 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                         );
                         self.stmt(assign_stmt);
                     } else {
-                        let Ok(func_out) =
-                            self.deps.require_dep::<encoders::MethodCallEnc>(
-                                CallTaskDescription::new(self.def_id, caller_substs, func_def_id),
-                            )
-                        else {
+                        let Ok(func_out) = self.deps.require_dep::<encoders::MethodCallEnc>(
+                            CallTaskDescription::new(self.def_id, caller_substs, func_def_id),
+                        ) else {
                             self.current_terminator = Some(
                                 self.vcx
                                     .mk_dummy_stmt(vir::vir_format!(self.vcx, "recursion",)),
@@ -1884,10 +1880,11 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         assert!(self.current_terminator.replace(terminator).is_none());
     }
 
-    pub fn visit_body(&mut self, body: &mir::Body<'vir>) {
+    pub fn visit_body(&mut self, body: &mir::Body<'vir>) -> Result<(), EncodeFullError<'vir, E>> {
         for (block, data) in body.basic_blocks.iter_enumerated() {
-            self.visit_basic_block_data(block, data);
+            self.visit_basic_block_data(block, data)?;
         }
+        Ok(())
     }
 }
 
@@ -1914,9 +1911,7 @@ impl<'vir, 'enc, E: TaskEncoder> PureRvalueEnc<'vir> for ImpureEncVisitor<'vir, 
 
     fn ty_use_pure(&mut self, ty: ty::Ty<'vir>) -> TyUsePure<'vir> {
         let ty_task = RustTyDecomposition::from_ty(ty, self.def_id);
-        self.deps
-            .require_dep::<TyUsePureEnc>(ty_task)
-            .unwrap()
+        self.deps.require_dep::<TyUsePureEnc>(ty_task).unwrap()
     }
 
     fn encode_operand_snap(

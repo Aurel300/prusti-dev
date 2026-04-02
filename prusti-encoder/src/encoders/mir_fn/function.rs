@@ -24,35 +24,31 @@ pub struct FunctionCallEncOutput<'vir> {
     output: GArgCaster<'vir, Pure>,
 }
 
-pub enum CallingCtxt {
-    PureRec,
-    Pure,
-    Impure,
-}
-
 impl<'vir> FunctionCallEncOutput<'vir> {
-    pub fn call_pure<Curr, Next>(
-        &self,
-        recursive: bool,
-        args: Vec<vir::ExprGenSnap<'vir, Curr, Next>>,
-    ) -> vir::ExprGenSnap<'vir, Curr, Next> {
-        if recursive {
-            self.call(CallingCtxt::PureRec, args)
-        } else {
-            self.call(CallingCtxt::Pure, args)
-        }
-    }
-
-    pub fn call_impure<Curr, Next>(
+    pub fn call_limited<Curr, Next>(
         &self,
         args: Vec<vir::ExprGenSnap<'vir, Curr, Next>>,
     ) -> vir::ExprGenSnap<'vir, Curr, Next> {
-        self.call(CallingCtxt::Impure, args)
+        self.call(self.function.limited_fn_ref, args)
     }
 
-    pub fn call<Curr, Next>(
+    pub fn call_unlimited<Curr, Next>(
         &self,
-        ctxt: CallingCtxt,
+        args: Vec<vir::ExprGenSnap<'vir, Curr, Next>>,
+    ) -> vir::ExprGenSnap<'vir, Curr, Next> {
+        self.call(self.function.unlimited_fn_ref, args)
+    }
+
+    pub fn call_caller<Curr, Next>(
+        &self,
+        args: Vec<vir::ExprGenSnap<'vir, Curr, Next>>,
+    ) -> vir::ExprGenSnap<'vir, Curr, Next> {
+        self.call(self.function.caller_fn_ref, args)
+    }
+
+    fn call<Curr, Next>(
+        &self,
+        fn_ref: FunctionIdn<'vir, (vir::ManySnap, vir::ManyTyVal, vir::ManyCSnap), vir::Snap>,
         mut args: Vec<vir::ExprGenSnap<'vir, Curr, Next>>,
     ) -> vir::ExprGenSnap<'vir, Curr, Next> {
         assert_eq!(self.inputs.len(), args.len());
@@ -60,12 +56,7 @@ impl<'vir> FunctionCallEncOutput<'vir> {
         for (arg, caster) in a {
             *arg = caster.cast_to_callee_ctx(*arg);
         }
-        let caller_ref = match ctxt {
-            CallingCtxt::Pure => self.function.unlimited_fn_ref,
-            CallingCtxt::PureRec => self.function.limited_fn_ref,
-            CallingCtxt::Impure => self.function.caller_fn_ref,
-        };
-        let call = caller_ref.call()(&args, self.ty_args.get_ty(), self.ty_args.get_const());
+        let call = fn_ref.call()(&args, self.ty_args.get_ty(), self.ty_args.get_const());
         self.output.cast_to_caller_ctx(call)
     }
 }

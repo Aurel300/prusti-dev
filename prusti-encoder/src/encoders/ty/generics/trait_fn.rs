@@ -216,8 +216,7 @@ impl TaskEncoder for TraitFnEnc {
                     CallTaskDescription::new(def_id, item_params.rust_params(), def_id)
                         .resolve_trait_calls(false),
                 )?;
-                let pure_func_app = pure_func.call_pure(
-                    false,
+                let pure_func_app = pure_func.call_unlimited(
                     func_args
                         .iter()
                         .map(|arg| vcx.mk_local_ex(arg))

@@ -235,7 +235,7 @@ impl TaskEncoder for TraitImplEnc {
                                 )
                                 .resolve_trait_calls(false),
                             )?;
-                            let pure_func_app = pure_func.call_pure(false, pre_func_args);
+                            let pure_func_app = pure_func.call_unlimited(pre_func_args);
                             posts.push(vir::expr! {
                                 ([func_ret]) == ([pure_func_app])
                             });
@@ -363,8 +363,7 @@ impl TaskEncoder for TraitImplEnc {
                                 )
                                 .resolve_trait_calls(false),
                             )?;
-                            let pure_func_app = pure_func.call_pure(
-                                false,
+                            let pure_func_app = pure_func.call_unlimited(
                                 local_defs
                                     .args()
                                     .map(|arg| arg.impure_snap)
@@ -392,8 +391,7 @@ impl TaskEncoder for TraitImplEnc {
                                 )
                                 .resolve_trait_calls(false),
                             )?;
-                            let pure_func_app = pure_func.call_pure(
-                                false,
+                            let pure_func_app = pure_func.call_unlimited(
                                 local_defs
                                     .args()
                                     .map(|arg| arg.impure_snap)

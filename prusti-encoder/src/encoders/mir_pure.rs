@@ -770,12 +770,12 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                             .iter()
                             .map(|arg| self.encode_operand_snap(&arg.node, &new_curr_ver))
                             .collect::<Result<Vec<_>, _>>()?;
-                        // TODO if we are encoding a spec, we call the caller, otherwise
-                        // we do unlimited or limited
                         Ok(if self.impure_context {
-                            pure_func.call_impure(snap_args)
+                            pure_func.call_caller(snap_args)
+                        } else if self.def_id() == def_id {
+                            pure_func.call_limited(snap_args)
                         } else {
-                            pure_func.call_pure(self.def_id() == def_id, snap_args)
+                            pure_func.call_unlimited(snap_args)
                         })
                     } else {
                         panic!("call to unknown non-pure function in pure code ({def_id:?})");

@@ -686,13 +686,13 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
 
                 let def_id = self.def_id();
                 let unsize = self
-                    .deps
+                    .deps()
                     .require_ref::<MirBuiltinEnc>(MirBuiltinEncTask::Unsize(src_ty, dst_ty, def_id))
                     .unwrap()
                     .unsize()
                     .unwrap();
                 let params = GParams::from(def_id);
-                let generics = self.deps.require_dep::<GenericParamsEnc>(params).unwrap();
+                let generics = self.deps().require_dep::<GenericParamsEnc>(params).unwrap();
                 self.stmt(
                     self.vcx
                         .alloc(vir::StmtData::new(self.vcx.alloc((unsize.undo)(
@@ -1292,7 +1292,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             block,
             statement_index: data.statements.len(),
         };
-        self.visit_terminator(data.terminator(), location);
+        self.visit_terminator(data.terminator(), location)?;
         let stmts = self.current_stmts.take().unwrap();
         let terminator = self.current_terminator.take().unwrap();
         self.encoded_blocks.push(self.vcx.mk_cfg_block(
@@ -1352,9 +1352,9 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                         .expect_predicate();
                     let src_ty = src.ty(self.body(), self.vcx.tcx());
                     let def_id = self.def_id();
-                    let unsize = self.deps.require_ref_spanned::<MirBuiltinEnc>(MirBuiltinEncTask::Unsize(src_ty, *ty, def_id), span)?.unsize().unwrap();
+                    let unsize = self.deps().require_ref_spanned::<MirBuiltinEnc>(MirBuiltinEncTask::Unsize(src_ty, *ty, def_id), span)?.unsize().unwrap();
                     let params = GParams::from(def_id);
-                    let generics = self.deps.require_dep::<GenericParamsEnc>(params).unwrap();
+                    let generics = self.deps().require_dep::<GenericParamsEnc>(params).unwrap();
                     self.stmt(self.vcx.alloc(vir::StmtData::new(self.vcx.alloc((unsize.unsize)(
                         src_enc,
                         dst_enc,
@@ -1429,10 +1429,13 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         })
     }
 
-    fn visit_terminator(&mut self, terminator: &mir::Terminator<'vir>, location: mir::Location) {
-        if self.deps().check_cycle().is_err() {
-            return;
-        }
+    fn visit_terminator(
+        &mut self,
+        terminator: &mir::Terminator<'vir>,
+        location: mir::Location,
+    ) -> Result<(), EncodeFullError<'vir, E>> {
+        self.deps().check_cycle()?;
+
         self.new_before_label(location);
         comment!(self, "[MIR] {location:?}: {:?}", terminator.kind);
         let span = terminator.source_info.span;
@@ -1878,6 +1881,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             }),
         };
         assert!(self.current_terminator.replace(terminator).is_none());
+        Ok(())
     }
 
     pub fn visit_body(&mut self, body: &mir::Body<'vir>) -> Result<(), EncodeFullError<'vir, E>> {

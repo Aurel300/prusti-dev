@@ -8,7 +8,6 @@ use crate::{
         Impure, ImpureEncVisitor, MirLocalDefEnc, MirLocalDefEncTask, MirSpecEnc, WandEnc,
         WandEncTask,
         mir_fn::{CallTaskDescription, RustSignature},
-        mir_shared::PureRvalueEnc,
         pure::spec::MirSpecEncMode,
         ty::generics::{GArgCaster, GArgsCastEnc, GArgsTy, GArgsTyEnc, GParams, GenericParamsEnc},
     },
@@ -314,7 +313,7 @@ impl TaskEncoder for MethodEnc {
                         vcx.alloc(vir::TerminatorStmtData::Exit),
                     ));
 
-                    visitor.deps().check_cycle()?;
+                    visitor.deps.check_cycle()?;
 
                     Some(visitor.encoded_blocks)
                 } else {

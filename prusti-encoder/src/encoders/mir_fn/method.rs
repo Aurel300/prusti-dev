@@ -8,7 +8,6 @@ use crate::{
         Impure, ImpureEncVisitor, MirLocalDefEnc, MirLocalDefEncTask, MirSpecEnc, WandEnc,
         WandEncTask,
         mir_fn::{CallTaskDescription, RustSignature},
-        mir_impure::ImpureEncDepsOrSkip,
         mir_shared::PureRvalueEnc,
         pure::spec::MirSpecEncMode,
         ty::generics::{GArgCaster, GArgsCastEnc, GArgsTy, GArgsTyEnc, GParams, GenericParamsEnc},
@@ -272,10 +271,7 @@ impl TaskEncoder for MethodEnc {
                 deps.check_cycle()?;
                 let mut visitor = ImpureEncVisitor {
                     vcx,
-                    deps_or_skip: ImpureEncDepsOrSkip {
-                        deps,
-                        skip_body: false,
-                    },
+                    deps,
                     def_id,
                     local_decls: &body.local_decls,
                     fpcs_analysis,
@@ -297,35 +293,29 @@ impl TaskEncoder for MethodEnc {
                     encoded_blocks,
                 };
                 visitor.visit_body(body);
-                if visitor.deps_or_skip.skip_body {
-                    // A statement failed to encode; the dependency encoder already
-                    // reported the error, so skip verification of this body.
-                    None
-                } else {
-                    start_stmts.extend(
-                        visitor
-                            .from_to_vars
-                            .decls()
-                            .map(|v| vcx.mk_local_decl_stmt(v, Some(vcx.mk_bool::<false>()))),
-                    );
-                    visitor.encoded_blocks[0] = vcx.mk_cfg_block(
-                        &vir::CfgBlockLabelData::Start,
-                        &[],
-                        vcx.alloc_slice(&start_stmts),
-                        vcx.mk_goto_stmt(&vir::CfgBlockLabelData::BasicBlock(0)),
-                    );
+                start_stmts.extend(
+                    visitor
+                        .from_to_vars
+                        .decls()
+                        .map(|v| vcx.mk_local_decl_stmt(v, Some(vcx.mk_bool::<false>()))),
+                );
+                visitor.encoded_blocks[0] = vcx.mk_cfg_block(
+                    &vir::CfgBlockLabelData::Start,
+                    &[],
+                    vcx.alloc_slice(&start_stmts),
+                    vcx.mk_goto_stmt(&vir::CfgBlockLabelData::BasicBlock(0)),
+                );
 
-                    visitor.encoded_blocks.push(vcx.mk_cfg_block(
-                        vcx.alloc(vir::CfgBlockLabelData::End),
-                        &[],
-                        &[],
-                        vcx.alloc(vir::TerminatorStmtData::Exit),
-                    ));
+                visitor.encoded_blocks.push(vcx.mk_cfg_block(
+                    vcx.alloc(vir::CfgBlockLabelData::End),
+                    &[],
+                    &[],
+                    vcx.alloc(vir::TerminatorStmtData::Exit),
+                ));
 
-                    visitor.deps().check_cycle()?;
+                visitor.deps().check_cycle()?;
 
-                    Some(visitor.encoded_blocks)
-                }
+                Some(visitor.encoded_blocks)
             } else {
                 None
             };

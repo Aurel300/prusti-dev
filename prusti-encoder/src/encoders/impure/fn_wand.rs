@@ -43,7 +43,7 @@ impl<'vir, E: TaskEncoder> ImpureEncVisitor<'vir, '_, E> {
         for wand_data in self.wands.viper_wands() {
             let Some(wand) = self
                 .wands
-                .mk_wand(&wand_data, args, self.vcx, self.deps_or_skip.deps)
+                .mk_wand(&wand_data, args, self.vcx, self.deps)
             else {
                 continue;
             };

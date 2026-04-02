@@ -47,7 +47,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             let ty = (*place).ty(self.pcg_ctxt());
             let task = RustTyDecomposition::from_ty(ty.ty, self.def_id);
             let ty_out = self
-                .deps_or_skip
+                .deps
                 .require_dep::<TyUseImpureEnc>(task)
                 .unwrap();
             let pred = ty_out.ref_to_pred(self.vcx, place_res.expr.expect_predicate(), None);
@@ -100,7 +100,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 let ty = (*p).ty(self.local_decls, self.vcx.tcx());
                 let task = RustTyDecomposition::from_ty(ty.ty, self.def_id);
                 let ty_out = self
-                    .deps_or_skip
+                    .deps
                     .require_dep::<TyUseImpureEnc>(task)
                     .unwrap();
                 let p = self.encode_place(p);
@@ -130,7 +130,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         };
         let ty = RustTyDecomposition::from_ty(ty.ty, self.def_id);
         let indirect = self
-            .deps_or_skip
+            .deps
             .require_dep::<IndirectPredicatesEnc>(r.with_base(ty))
             .unwrap();
         indirect

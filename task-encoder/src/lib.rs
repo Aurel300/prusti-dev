@@ -581,10 +581,8 @@ pub trait TaskEncoder {
                     TaskEncoderCacheState::Encoded { output_local, .. } => {
                         outputs.push(output_local.clone());
                     }
-                    TaskEncoderCacheState::ErrorEncode { error, spans, .. } => {
-                        errored.push((key.clone(), error.clone(), spans.clone()));
-                    }
-                    TaskEncoderCacheState::ErrorEnqueue { error, spans } => {
+                    TaskEncoderCacheState::ErrorEncode { error, spans, .. } 
+                    | TaskEncoderCacheState::ErrorEnqueue { error, spans } => {
                         errored.push((key.clone(), error.clone(), spans.clone()));
                     }
                     _ => panic!("task encoder not completed: {key:?}"),

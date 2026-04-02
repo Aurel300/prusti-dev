@@ -20,7 +20,7 @@ fn len<T>(head: &List<T>) -> usize {
 // encoding of this function will verify. Meanwhile, the
 // pure encoding will fail to verify on its own.
 #[pure]
-#[ensures(false)]
+#[ensures(result == len(head))]
 fn len_2<T>(head: &List<T>) -> usize {
     match head {
         &List::Nil() => 0,

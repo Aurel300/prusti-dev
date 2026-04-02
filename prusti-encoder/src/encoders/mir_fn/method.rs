@@ -146,8 +146,6 @@ impl TaskEncoder for MethodEnc {
     ) -> EncodeFullResult<'vir, Self> {
         let def_id = *task_key;
         vir::with_vcx(|vcx| {
-            use mir::visit::Visitor;
-
             let span = vcx.tcx().def_span(def_id);
             let trusted = crate::encoders::is_function_trusted(def_id);
 

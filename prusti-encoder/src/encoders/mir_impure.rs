@@ -1261,10 +1261,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
     fn set_from_to_flag(&mut self, from: mir::BasicBlock, to: mir::BasicBlock) -> vir::Stmt<'vir> {
         self.from_to_vars.set_from_to_flag_stmt(self.vcx, from, to)
     }
-}
 
-
-impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<'vir, 'enc, E> {
     fn visit_basic_block_data(&mut self, block: mir::BasicBlock, data: &mir::BasicBlockData<'vir>) {
         // We are verifying the absence of panics, so cleanup block should never
         // be reached, or even referenced.
@@ -1330,7 +1327,18 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
         */
 
         assert!(self.current_terminator.is_none());
-        self.super_basic_block_data(block, data);
+        for (index, statement) in data.statements.iter().enumerate() {
+            let location = mir::Location {
+                block,
+                statement_index: index,
+            };
+            self.visit_statement(statement, location);
+        }
+        let location = mir::Location {
+            block,
+            statement_index: data.statements.len(),
+        };
+        self.visit_terminator(data.terminator(), location);
         if self.deps_or_skip.skip_body {
             return;
         }
@@ -1920,6 +1928,12 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
             }),
         };
         assert!(self.current_terminator.replace(terminator).is_none());
+    }
+
+    pub fn visit_body(&mut self, body: &mir::Body<'vir>) {
+        for (block, data) in body.basic_blocks.iter_enumerated() {
+            self.visit_basic_block_data(block, data);
+        }
     }
 }
 

@@ -363,7 +363,7 @@ impl TaskEncoder for TraitImplEnc {
                                 )
                                 .resolve_trait_calls(false),
                             )?;
-                            let pure_func_app = pure_func.call_unlimited(
+                            let pure_func_app = pure_func.call_caller(
                                 local_defs
                                     .args()
                                     .map(|arg| arg.impure_snap)
@@ -391,7 +391,7 @@ impl TaskEncoder for TraitImplEnc {
                                 )
                                 .resolve_trait_calls(false),
                             )?;
-                            let pure_func_app = pure_func.call_unlimited(
+                            let pure_func_app = pure_func.call_caller(
                                 local_defs
                                     .args()
                                     .map(|arg| arg.impure_snap)

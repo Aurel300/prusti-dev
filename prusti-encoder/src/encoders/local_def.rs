@@ -220,30 +220,35 @@ impl TaskEncoder for MirLocalDefEnc {
             let impure_pred = ty_impure.ref_to_pred(vcx, local_ex, None);
 
             fn mk_local_trig<'vir>(
-                vcx: &'vir vir::VirCtxt<'vir>,
                 def_id: DefId,
                 deps: &mut TaskEncoderDependencies<'vir, MirLocalDefEnc>,
                 rust_ty: ty::Ty<'vir>,
-                local_snap: &'vir vir::LocalDeclData<'vir, vir::Snap>,
+                snap_expr: vir::ExprSnap<'vir>,
                 ty_pure: TyUsePure<'vir>,
             ) -> Option<vir::ExprBool<'vir>> {
-                let local_arg = vcx.mk_local_ex(local_snap);
                 match rust_ty.kind() {
                     ty::TyKind::Ref(_, referent_ty, mir::Mutability::Not) => {
                         let referent_ty_task = RustTyDecomposition::from_ty(*referent_ty, def_id);
                         let referent_ty_pure =
                             deps.require_dep::<TyUsePureEnc>(referent_ty_task).unwrap();
-                        let val_expr = ty_pure
+                        let referent_expr = ty_pure
                             .expect_immref()
-                            .value_access(local_arg.downcast_ty());
-                        Some(referent_ty_pure.trig_fn().call()(val_expr))
+                            .value_access(snap_expr.downcast_ty());
+                        mk_local_trig(
+                            def_id,
+                            deps,
+                            *referent_ty,
+                            referent_expr,
+                            referent_ty_pure,
+                        )
                     }
-                    ty::TyKind::Adt(..) => Some(ty_pure.trig_fn().call()(local_arg)),
+                    ty::TyKind::Adt(..) => Some(ty_pure.trig_fn().call()(snap_expr)),
                     _ => None,
                 }
             }
 
-            let local_trig = mk_local_trig(vcx, def_id, deps, rust_ty, local_snap, ty_pure);
+            let snap_expr = vcx.mk_local_ex(local_snap);
+            let local_trig = mk_local_trig(def_id, deps, rust_ty, snap_expr, ty_pure);
 
             LocalDef {
                 local,

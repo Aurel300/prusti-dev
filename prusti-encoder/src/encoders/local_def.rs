@@ -234,13 +234,7 @@ impl TaskEncoder for MirLocalDefEnc {
                         let referent_expr = ty_pure
                             .expect_immref()
                             .value_access(snap_expr.downcast_ty());
-                        mk_local_trig(
-                            def_id,
-                            deps,
-                            *referent_ty,
-                            referent_expr,
-                            referent_ty_pure,
-                        )
+                        mk_local_trig(def_id, deps, *referent_ty, referent_expr, referent_ty_pure)
                     }
                     ty::TyKind::Adt(..) => Some(ty_pure.trig_fn().call()(snap_expr)),
                     _ => None,

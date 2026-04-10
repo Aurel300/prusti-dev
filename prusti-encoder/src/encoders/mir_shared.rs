@@ -26,6 +26,7 @@ pub(crate) struct EncodedCast<'vir, Enc: PureRvalueEnc<'vir> + ?Sized> {
 pub(crate) trait PureRvalueEnc<'vir> {
     type Encoder: TaskEncoder + 'vir;
     type EncodePlaceCtxt;
+    type EncodePlaceSide;
     type ExprCurr;
     type ExprNext;
     fn def_id(&self) -> DefId;
@@ -41,12 +42,14 @@ pub(crate) trait PureRvalueEnc<'vir> {
         &mut self,
         operand: &mir::Operand<'vir>,
         ctxt: &Self::EncodePlaceCtxt,
+        side: &mut Self::EncodePlaceSide,
     ) -> ExprResult<'vir, Self>;
 
     fn encode_place_snap(
         &mut self,
         place: Place<'vir>,
         ctxt: &Self::EncodePlaceCtxt,
+        side: &mut Self::EncodePlaceSide,
     ) -> vir::ExprGenSnap<'vir, Self::ExprCurr, Self::ExprNext>;
 
     fn encode_cast_snap<'slf>(
@@ -55,10 +58,11 @@ pub(crate) trait PureRvalueEnc<'vir> {
         operand: &mir::Operand<'vir>,
         ty: ty::Ty<'vir>,
         ctxt: &Self::EncodePlaceCtxt,
+        side: &mut Self::EncodePlaceSide,
     ) -> Result<EncodedCast<'vir, Self>, EncodeFullError<'vir, Self::Encoder>> {
         match kind {
             mir::CastKind::IntToInt => {
-                let encoded_operand = self.encode_operand_snap(operand, ctxt)?;
+                let encoded_operand = self.encode_operand_snap(operand, ctxt, side)?;
                 let from_ty = operand.ty(self.body(), self.vcx().tcx());
                 let from_vir_ty = self.ty_use_pure(from_ty).expect_primitive().expect_native();
                 let to_vir_ty = self.ty_use_pure(ty).expect_primitive();
@@ -120,9 +124,10 @@ pub(crate) trait PureRvalueEnc<'vir> {
         l: &mir::Operand<'vir>,
         r: &mir::Operand<'vir>,
         ctxt: &Self::EncodePlaceCtxt,
+        side: &mut Self::EncodePlaceSide,
     ) -> ExprResult<'vir, Self> {
-        let encoded_l = self.encode_operand_snap(l, ctxt)?;
-        let encoded_r = self.encode_operand_snap(r, ctxt)?;
+        let encoded_l = self.encode_operand_snap(l, ctxt, side)?;
+        let encoded_r = self.encode_operand_snap(r, ctxt, side)?;
         let l_ty = l.ty(self.body(), self.vcx().tcx());
         let r_ty = r.ty(self.body(), self.vcx().tcx());
         use crate::encoders::MirBuiltinEncTask::{BinOp, CheckedBinOp};
@@ -159,8 +164,9 @@ pub(crate) trait PureRvalueEnc<'vir> {
         op: mir::UnOp,
         operand: &mir::Operand<'vir>,
         ctxt: &Self::EncodePlaceCtxt,
+        side: &mut Self::EncodePlaceSide,
     ) -> ExprResult<'vir, Self> {
-        let encoded_operand = self.encode_operand_snap(operand, ctxt)?;
+        let encoded_operand = self.encode_operand_snap(operand, ctxt, side)?;
         let operand_ty = operand.ty(self.body(), self.vcx().tcx());
         let un_op_function = self
             .deps()
@@ -177,10 +183,11 @@ pub(crate) trait PureRvalueEnc<'vir> {
         kind: &mir::AggregateKind<'vir>,
         fields: &IndexVec<abi::FieldIdx, mir::Operand<'vir>>,
         ctxt: &Self::EncodePlaceCtxt,
+        side: &mut Self::EncodePlaceSide,
     ) -> ExprResult<'vir, Self> {
         let encoded_fields = fields
             .iter()
-            .map(|field| self.encode_operand_snap(field, ctxt))
+            .map(|field| self.encode_operand_snap(field, ctxt, side))
             .collect::<Result<Vec<_>, _>>()?;
         let e_rvalue_ty = self.ty_use_pure(rvalue_ty);
         let sl = match kind {
@@ -194,8 +201,9 @@ pub(crate) trait PureRvalueEnc<'vir> {
         &mut self,
         place: Place<'vir>,
         ctxt: &Self::EncodePlaceCtxt,
+        side: &mut Self::EncodePlaceSide,
     ) -> vir::ExprGenSnap<'vir, Self::ExprCurr, Self::ExprNext> {
-        let encoded_place = self.encode_place_snap(place, ctxt);
+        let encoded_place = self.encode_place_snap(place, ctxt, side);
         let place_ty = (*place).ty(self.body(), self.vcx().tcx());
         let len_function = self
             .deps()

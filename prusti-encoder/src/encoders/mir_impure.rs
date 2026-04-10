@@ -292,7 +292,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         let rvalue_ty = rvalue.ty(self.local_decls, self.vcx.tcx());
         match rvalue {
             mir::Rvalue::Use(op) => Ok(self
-                .encode_operand_snap(op, &())
+                .encode_operand_snap(op, &mut ())
                 .map_err(EncodeRvalueError::from)?
                 .into()),
             mir::Rvalue::Cast(cast_kind, operand, ty) => {
@@ -300,7 +300,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                     cast_kind,
                     mir::CastKind::PointerCoercion(ty::adjustment::PointerCoercion::Unsize, _)
                 ));
-                let encoded_cast = self.encode_cast_snap(*cast_kind, operand, *ty, &())?;
+                let encoded_cast = self.encode_cast_snap(*cast_kind, operand, *ty, &mut ())?;
 
                 self.vcx.with_span(span, |_| {
                     self.vcx
@@ -317,15 +317,15 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
 
                 Ok(encoded_cast.expr.into())
             }
-            mir::Rvalue::Len(place) => Ok(self.encode_len_snap((*place).into(), &()).into()),
+            mir::Rvalue::Len(place) => Ok(self.encode_len_snap((*place).into(), &mut ()).into()),
 
             mir::Rvalue::BinaryOp(op, box (l, r)) => Ok(self
-                .encode_binop_snap(rvalue_ty, *op, l, r, &())
+                .encode_binop_snap(rvalue_ty, *op, l, r, &mut ())
                 .map_err(EncodeRvalueError::from)?
                 .into()),
 
             mir::Rvalue::UnaryOp(unop, operand) => Ok(self
-                .encode_unary_op_snap(rvalue_ty, *unop, operand, &())
+                .encode_unary_op_snap(rvalue_ty, *unop, operand, &mut ())
                 .map_err(EncodeRvalueError::from)?
                 .into()),
 
@@ -335,7 +335,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 let tmp_exp: vir::ExprCSnap<'vir> =
                     self.new_tmp(e_rvalue_ty.snapshot.downcast_ty());
                 for (idx, element) in elements.iter().enumerate() {
-                    let element_snap = self.encode_operand_snap(element, &())?;
+                    let element_snap = self.encode_operand_snap(element, &mut ())?;
                     self.stmt(
                         self.vcx.mk_inhale_stmt(
                             self.vcx.mk_eq_expr(
@@ -357,7 +357,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 box kind @ (mir::AggregateKind::Adt(..) | mir::AggregateKind::Tuple),
                 fields,
             ) => Ok(self
-                .encode_aggregate_snap(rvalue_ty, kind, fields, &())
+                .encode_aggregate_snap(rvalue_ty, kind, fields, &mut ())
                 .map_err(EncodeRvalueError::from)?
                 .into()),
 
@@ -366,7 +366,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 let al = e_rvalue_ty.expect_array();
                 let tmp_exp: vir::ExprCSnap<'vir> =
                     self.new_tmp(e_rvalue_ty.snapshot.downcast_ty());
-                let operand_snap = self.encode_operand_snap(operand, &())?;
+                let operand_snap = self.encode_operand_snap(operand, &mut ())?;
                 self.stmt(self.vcx.mk_inhale_stmt(vir::expr! {
                     forall idx: Int :: {[al.index(tmp_exp, idx)]}
                         ([al.index(tmp_exp, idx)]) == ([operand_snap])
@@ -531,7 +531,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             match expansion.expansion()[0].place().projection.last() {
                 Some(&mir::ProjectionElem::Index(index_local)) => {
                     let index = self
-                        .encode_operand_snap(&mir::Operand::Copy(index_local.into()), &())
+                        .encode_operand_snap(&mir::Operand::Copy(index_local.into()), &mut ())
                         .unwrap();
                     let usize_ty_out = self.ty_use_pure(self.vcx.tcx().types.usize);
                     Some(
@@ -892,7 +892,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 let index = guide.and_then(|guide| match guide {
                     RepackGuide::Index(index_local) => {
                         let index = self
-                            .encode_operand_snap(&mir::Operand::Copy(index_local.into()), &())
+                            .encode_operand_snap(&mir::Operand::Copy(index_local.into()), &mut ())
                             .unwrap();
                         let usize_ty_out = self.ty_use_pure(self.vcx.tcx().types.usize);
                         Some(
@@ -997,7 +997,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             }
             &mir::Operand::Copy(_source) => {
                 let ty_out = self.ty_use_impure(ty);
-                (self.encode_operand_snap(operand, &())?, ty_out)
+                (self.encode_operand_snap(operand, &mut ())?, ty_out)
             }
             mir::Operand::Constant(box constant) => {
                 let ty_out = self.ty_use_impure(ty);
@@ -1226,7 +1226,7 @@ impl<'vir, 'enc, E: TaskEncoder> PureRvalueEnc<'vir> for ImpureEncVisitor<'vir, 
     fn encode_operand_snap(
         &mut self,
         operand: &mir::Operand<'vir>,
-        _ctxt: &Self::EncodePlaceCtxt,
+        _ctxt: &mut Self::EncodePlaceCtxt,
     ) -> Result<vir::ExprSnap<'vir>, EncodeFullError<'vir, E>> {
         match operand {
             &mir::Operand::Move(source) => {
@@ -1252,7 +1252,7 @@ impl<'vir, 'enc, E: TaskEncoder> PureRvalueEnc<'vir> for ImpureEncVisitor<'vir, 
     fn encode_place_snap(
         &mut self,
         place: Place<'vir>,
-        _ctxt: &Self::EncodePlaceCtxt,
+        _ctxt: &mut Self::EncodePlaceCtxt,
     ) -> vir::ExprGenSnap<'vir, Self::ExprCurr, Self::ExprNext> {
         self.encode_place_with_snap(place).1
     }
@@ -1263,16 +1263,47 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
         let mut queue = VecDeque::new();
         let mut visited = FxHashSet::default();
 
-        queue.push_back(mir::START_BLOCK);
-        while let Some(block) = queue.pop_front() {
-            if !visited.insert(block) {
+        // TODO: maintain two sets for each block in the queue:
+        //   - set of loops entered
+        //   - set of loop heads hit
+        //   for blocks where a loop was entered, but the loop head not yet hit,
+        //   the block label will be prefixed -- this will correspond to the
+        //   frozen pre-loop state; blocks before the loop head will be
+        //   duplicated in the CFG; the loop invariant will be emitted as normal
+        //   at the loop head, and the back edges will jump to the loop head;
+
+        // keep track of which loops we have already entered; a LoopId is in
+        // this set as soon as the loop head (or the body invariant for a loop
+        // with one) is entered
+        //let mut in_loops = FxHashSet::default();
+        let start_loops = self.loop_analysis().loops(mir::START_BLOCK)
+            .collect::<FxHashSet<_>>();
+        queue.push_back((mir::START_BLOCK, start_loops));
+
+        while let Some((block, mut in_loops)) = queue.pop_front() {
+            let mut effectively_in_loops = in_loops.iter()
+                .copied()
+                .filter(|l| self.loop_analysis().in_loop(block, *l))
+                .collect::<Vec<_>>();
+            effectively_in_loops.sort();
+
+            if !visited.insert((block, effectively_in_loops.clone())) {
                 continue;
             }
+
+            // is this a loop head?
+            if let Some(loop_spec) = self.spec_blocks.loop_specs.get(&block) {
+                if !in_loops.insert(loop_spec.loop_id) {
+                    // we already walked over this loop
+                    continue;
+                }
+            }
+
             self.visit_basic_block_data(block, &body[block]);
             for successor in body.basic_blocks.successors(block) {
-                if !visited.contains(&successor) {
-                    queue.push_back(successor);
-                }
+                //if !visited.contains(&successor) {
+                queue.push_back((successor, in_loops.clone()));
+                //}
             }
         }
         // for (block, data) in body.basic_blocks.iter_enumerated() {}
@@ -1384,7 +1415,7 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
         if let Some(specs) = self.spec_blocks.specs_for.get(&block).cloned() {
             for spec in specs {
                 match spec.kind {
-                    SpecBlockKind::Assert(_) => {
+                    SpecBlockKind::Assert => {
                         let task = MirPureEncTask {
                             encoding_depth: 0,
                             parent_def_id: self.def_id,
@@ -1648,7 +1679,7 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                 otherwise_stmts.push(self.set_from_to_flag(location.block, targets.otherwise()));
 
                 let discr_ex = (discr_ty.expect_native().snap_to_prim)(
-                    self.encode_operand_snap(discr, &()).unwrap().downcast_ty(),
+                    self.encode_operand_snap(discr, &mut ()).unwrap().downcast_ty(),
                 );
                 self.vcx.mk_goto_if_stmt(
                     discr_ex.as_dyn(), // self.vcx.mk_local_ex(discr_name),
@@ -1731,7 +1762,7 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                             .iter()
                             .map(|arg| {
                                 self.vcx.with_span(arg.span, |_| {
-                                    self.encode_operand_snap(&arg.node, &()).unwrap()
+                                    self.encode_operand_snap(&arg.node, &mut ()).unwrap()
                                 })
                             })
                             .collect::<Vec<_>>();
@@ -1868,7 +1899,7 @@ impl<'vir, 'enc, E: TaskEncoder> mir::visit::Visitor<'vir> for ImpureEncVisitor<
                 self.current_fpcs = Some(current_fpcs);
 
                 let e_bool = self.ty_use_pure(self.vcx.tcx().types.bool);
-                let enc = self.encode_operand_snap(cond, &()).unwrap().downcast_ty();
+                let enc = self.encode_operand_snap(cond, &mut ()).unwrap().downcast_ty();
                 let enc = (e_bool.expect_native().snap_to_prim)(enc);
                 let expected = self.vcx.mk_const_expr(vir::ConstData::Bool(*expected));
                 let assert = self.vcx.mk_eq_expr(enc, expected);

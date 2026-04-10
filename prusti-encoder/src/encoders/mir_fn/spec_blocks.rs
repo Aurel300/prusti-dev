@@ -10,12 +10,12 @@ use crate::encoders::mir_fn::RustSignature;
 
 #[derive(Clone, Debug)]
 pub enum SpecBlockKind {
-    LoopInvariant(DefId),
+    LoopInvariant,
     GhostStart,
     GhostEnd,
-    Assert(DefId),
-    Assume(DefId),
-    Refute(DefId),
+    Assert, // (DefId),
+    Assume, // (DefId),
+    Refute, // (DefId),
 }
 
 #[derive(Debug)]
@@ -24,7 +24,7 @@ pub struct LoopSpec {
     pub loop_id: LoopId,
     pub original_head_block: BasicBlock,
     pub head_block: BasicBlock,
-    pub invariants: Vec<DefId>,
+    pub invariants: Vec<BasicBlock>, // Vec<DefId>,
 }
 
 #[derive(Clone, Debug)]
@@ -84,7 +84,7 @@ impl SpecBlocks {
                 // block until we find a non-spec block.
                 assert!(!visitor.spec_blocks.contains(&spec_block.attached_to));
 
-                let SpecBlockKind::LoopInvariant(def_id) = spec_block.kind else {
+                let SpecBlockKind::LoopInvariant = spec_block.kind else {
                     // TODO: handle other kinds of spec blocks
                     continue;
                 };
@@ -100,7 +100,7 @@ impl SpecBlocks {
                 // It's not the invariant block itself since that block is
                 // spec-only and guarded in `if false`.
                 loop_spec.head_block = spec_block.attached_to;
-                loop_spec.invariants.push(def_id);
+                loop_spec.invariants.push(spec_block.block);
             }
         }
 
@@ -141,7 +141,10 @@ impl<'enc, 'vir: 'enc> mir::visit::Visitor<'vir> for SpecVisitor<'enc, 'vir> {
                         return;
                     }
 
-                    
+                    // TODO: detect spec block kind based on attributes on the closure's defid
+                    //   or easier still based on different prusti_contracts::* items
+                    spec_kind = Some(SpecBlockKind::Assert);
+                    //spec_kind = Some(SpecBlockKind::LoopInvariant);
 
                     /*
                         let sig = self.vcx.tcx().fn_sig(def_id);

@@ -17,10 +17,7 @@ use vir::Reify;
 
 use crate::encoders::{
     ImpureEncVisitor, TyUseImpureEnc,
-    ty::{
-        RustTyDecomposition, indirect::IndirectPredicatesEnc,
-        use_impure::TyUseImpure,
-    },
+    ty::{RustTyDecomposition, indirect::IndirectPredicatesEnc, use_impure::TyUseImpure},
 };
 
 pub(super) enum WandOldOuter<'vir> {

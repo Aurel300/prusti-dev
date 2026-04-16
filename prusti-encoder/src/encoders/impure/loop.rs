@@ -1,6 +1,6 @@
 use pcg::{
     borrow_pcg::region_projection::{
-        LifetimeProjection, PcgLifetimeProjectionBase, PcgLifetimeProjectionBaseLike,
+        HasRegions, LifetimeProjection, PcgLifetimeProjectionBase, PcgLifetimeProjectionBaseLike,
     },
     r#loop::PlaceUsages,
     pcg::{EvalStmtPhase, PcgNode},
@@ -17,7 +17,10 @@ use vir::Reify;
 
 use crate::encoders::{
     ImpureEncVisitor, TyUseImpureEnc,
-    ty::{RustTyDecomposition, indirect::IndirectPredicatesEnc, use_impure::TyUseImpure},
+    ty::{
+        RustTyDecomposition, indirect::IndirectPredicatesEnc,
+        use_impure::TyUseImpure,
+    },
 };
 
 pub(super) enum WandOldOuter<'vir> {
@@ -25,9 +28,9 @@ pub(super) enum WandOldOuter<'vir> {
     Label(Option<&'vir str>),
 }
 
-impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
+impl<'vir: 'a, 'a, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
     /// Calculate invariant at loop head
-    pub(crate) fn get_loop_inv<'a>(
+    pub(crate) fn get_loop_inv(
         &mut self,
         cfpcs: &PcgBasicBlock<'_, 'vir>,
         loop_place_usages: &PlaceUsages<'vir>,
@@ -49,6 +52,27 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             let ty_out = self.deps.require_dep::<TyUseImpureEnc>(task).unwrap();
             let pred = ty_out.ref_to_pred(self.vcx, place_res.expr.expect_predicate(), None);
             inv.push(pred);
+            let projs = place.lifetime_projections(ctxt);
+            for proj in projs {
+                let indirect = self
+                    .deps
+                    .require_dep::<IndirectPredicatesEnc>(proj.with_base(task))
+                    .unwrap();
+                inv.push(
+                    self.vcx.mk_conj(
+                        &indirect
+                            .predicate_applications
+                            .iter()
+                            .map(|p| {
+                                p.reify(
+                                    self.vcx,
+                                    ty_out.ref_to_snap(place_res.expr.expect_predicate()),
+                                )
+                            })
+                            .collect::<Vec<_>>(),
+                    ),
+                );
+            }
         }
 
         for (inputs, outputs) in self.get_abstraction_edges(state.borrow_pcg().graph()) {

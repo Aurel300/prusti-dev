@@ -49,26 +49,21 @@ impl<'vir: 'a, 'a, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             let ty_out = self.deps.require_dep::<TyUseImpureEnc>(task).unwrap();
             let pred = ty_out.ref_to_pred(self.vcx, place_res.expr.expect_predicate(), None);
             inv.push(pred);
+            // gets all the lifetime projections of the place
+            // for example, if we add an invariant for x and x is a reference, then we also want to add
+            // an invariant for *x
             let projs = place.lifetime_projections(ctxt);
             for proj in projs {
                 let indirect = self
                     .deps
                     .require_dep::<IndirectPredicatesEnc>(proj.with_base(task))
                     .unwrap();
-                inv.push(
-                    self.vcx.mk_conj(
-                        &indirect
-                            .predicate_applications
-                            .iter()
-                            .map(|p| {
-                                p.reify(
-                                    self.vcx,
-                                    ty_out.ref_to_snap(place_res.expr.expect_predicate()),
-                                )
-                            })
-                            .collect::<Vec<_>>(),
-                    ),
-                );
+                inv.extend(indirect.predicate_applications.iter().map(|p| {
+                    p.reify(
+                        self.vcx,
+                        ty_out.ref_to_snap(place_res.expr.expect_predicate()),
+                    )
+                }));
             }
         }
 

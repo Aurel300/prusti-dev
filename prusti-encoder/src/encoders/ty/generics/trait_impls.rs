@@ -146,7 +146,7 @@ impl TaskEncoder for TraitImplEnc {
                                 tcx.type_of(impl_item_def_id).instantiate_identity(),
                                 impl_item_context,
                             ),
-                        )?;
+                        );
                         axioms.push(vcx.mk_domain_axiom(
                             vir_format_identifier!(
                                 vcx,
@@ -636,7 +636,7 @@ impl TraitImplEnc {
                     let projection =
                         trait_.assoc_types[&proj_pred.def_id()](gargs.get_ty(), gargs.get_const());
                     let decomp = RustTyDecomposition::from_ty(ty, impl_ctx);
-                    let ty_expr = impl_params.ty_expr(deps, decomp)?;
+                    let ty_expr = impl_params.ty_expr(deps, decomp);
                     Self::discover_bind_points(deps, &mut generics_map, impl_ctx, projection, ty)?;
                     (projection.upcast_ty(), ty_expr.upcast_ty())
                 }

@@ -1,5 +1,5 @@
 use prusti_rustc_interface::abi;
-use task_encoder::{EncodeFullError, EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
+use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 use vir::{CastType, PredicateIdn};
 
 use crate::encoders::{
@@ -120,7 +120,7 @@ impl TaskEncoder for TyUseImpureEnc {
         deps.emit_output_ref(*task_key, ())?;
 
         let ty_impure = deps.require_dep::<TyImpureEnc>(task_key.ty)?;
-        let mut walker = TyUseImpureWalker::new(deps, task_key.args)?;
+        let mut walker = TyUseImpureWalker::new(deps, task_key.args);
         let ty_use_impure = walker.encode_ty(task_key.ty.zip(ty_impure), task_key.maybe_inhabited);
         Ok(((), ty_use_impure.alloc()))
     }
@@ -137,12 +137,9 @@ struct TyUseImpureWalker<'a, 'vir> {
 }
 
 impl<'a, 'vir> TyUseImpureWalker<'a, 'vir> {
-    fn new(
-        deps: &'a mut TaskEncoderDependencies<'vir, TyUseImpureEnc>,
-        args: GArgs<'vir>,
-    ) -> Result<Self, EncodeFullError<'vir, TyUseImpureEnc>> {
-        let args_t = deps.require_dep::<GArgsTyEnc>(args)?;
-        Ok(Self { deps, args_t, args })
+    fn new(deps: &'a mut TaskEncoderDependencies<'vir, TyUseImpureEnc>, args: GArgs<'vir>) -> Self {
+        let args_t = deps.require_dep::<GArgsTyEnc>(args).unwrap();
+        Self { deps, args_t, args }
     }
 
     fn encode_ty(

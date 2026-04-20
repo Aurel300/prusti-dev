@@ -1,7 +1,10 @@
 use task_encoder::{EncodeFullResult, OutputRefAny, TaskEncoder};
 use vir::{CallableIdn, CastType, FunctionIdn, HasType};
 
-use crate::encoders::ty::{RustParamData, RustTy, TySpecifics, generics::GenericParamsEnc};
+use crate::encoders::ty::{
+    RustParamData, RustTy, TySpecifics,
+    generics::{BuiltinTraitEncTask, GenericParamsEnc, SizedTraitEnc, TupleTraitEnc},
+};
 
 use super::r#typeof::{TypeOfEnc, TypeOfEncOutputRef};
 
@@ -97,6 +100,7 @@ impl TaskEncoder for TyConstructorEnc {
                     )
                 })
                 .collect::<Vec<_>>();
+
             let const_accessor_functions = params
                 .const_decls()
                 .iter()
@@ -131,6 +135,12 @@ impl TaskEncoder for TyConstructorEnc {
                 .collect::<Vec<vir::LocalDecl<vir::Dyn>>>();
             let variant =
                 vcx.mk_adt_constructor(type_function_ident.name().to_str(), vcx.alloc_slice(&args));
+
+            // NOTE: These calls depend on the ref output of this encoder
+            let builtin_trait_task = BuiltinTraitEncTask::Encode(task_key);
+            deps.require_dep::<SizedTraitEnc>(builtin_trait_task)?;
+            deps.require_dep::<TupleTraitEnc>(builtin_trait_task)?;
+
             Ok((variant, ()))
         })
     }
@@ -138,9 +148,8 @@ impl TaskEncoder for TyConstructorEnc {
     fn emit_outputs<'vir>(program: &mut task_encoder::Program<'vir>) {
         let mut constructors = Self::all_outputs_local_no_errors(program);
         vir::with_vcx(|vcx| {
-            let args = vcx.alloc_array(&[vcx.mk_local_decl("non_unit", vir::TYPE_INT)]);
-            let unknown = vcx.mk_adt_constructor("Unknown_type", args);
-            constructors.push(unknown);
+            let args = vcx.alloc_array(&[vcx.mk_local_decl(Self::UNKNOWN_TYPE_ID, vir::TYPE_INT)]);
+            constructors.push(vcx.mk_adt_constructor(Self::UNKNOWN_TYPE_NAME, args));
             let adt = vcx.mk_adt(
                 vir::ViperIdent::new("Type"),
                 &[],
@@ -148,5 +157,17 @@ impl TaskEncoder for TyConstructorEnc {
             );
             program.add_adt(adt);
         })
+    }
+}
+
+impl TyConstructorEnc {
+    /// The name of the constructor for the unknown type variant in the `Type` ADT.
+    pub const UNKNOWN_TYPE_NAME: &str = "Unknown_type";
+    const UNKNOWN_TYPE_ID: &str = "id";
+
+    pub fn unknown_type_id_accessor<'vir>(
+        vcx: &'vir vir::VirCtxt<'vir>,
+    ) -> vir::AdtDestructor<'vir, vir::TyVal, vir::Int> {
+        vcx.mk_adt_destructor(Self::UNKNOWN_TYPE_ID, vir::TYPE_TYVAL, vir::TYPE_INT)
     }
 }

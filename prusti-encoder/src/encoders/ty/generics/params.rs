@@ -3,7 +3,7 @@ use prusti_rustc_interface::{
     middle::ty,
     span::{def_id::DefId, symbol},
 };
-use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
+use task_encoder::{EncodeFullError, EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 use vir::{CastType, HasType};
 
 use crate::encoders::{
@@ -27,6 +27,8 @@ pub struct GParams<'tcx> {
     /// This flag indicates whether this is the case, so that we can replace it
     /// with the actual `Self` parameter when needed.
     is_trait_extern_spec: bool,
+    /// A suffix to disambiguate generic parameters of different contexts
+    suffix: Option<&'static str>,
 }
 
 impl<'tcx> GParams<'tcx> {
@@ -39,6 +41,7 @@ impl<'tcx> GParams<'tcx> {
             params,
             env,
             is_trait_extern_spec,
+            suffix: None,
         }
     }
 
@@ -87,6 +90,13 @@ impl<'tcx> GParams<'tcx> {
             args.len(),
             "generic args length mismatch, context {self:?}, args {args:?}"
         );
+    }
+
+    pub fn with_suffix(self, suffix: &'static str) -> Self {
+        Self {
+            suffix: Some(suffix),
+            ..self
+        }
     }
 
     /// Tries to normalize associated types of the corresponding type. Returns
@@ -230,7 +240,7 @@ impl<'vir> GenericParams<'vir> {
         self.const_exprs()[self.map_idx(param.index).unwrap_err()]
     }
 
-    fn map_idx(&self, index: u32) -> Result<usize, usize> {
+    pub(super) fn map_idx(&self, index: u32) -> Result<usize, usize> {
         let result = self.indices[index as usize];
         assert!(
             result.ok().is_none_or(|i| i != usize::MAX),
@@ -257,27 +267,27 @@ impl<'vir> GenericParams<'vir> {
         &self,
         deps: &mut TaskEncoderDependencies<'vir, E>,
         ty: RustTyDecomposition<'vir>,
-    ) -> vir::ExprTyVal<'vir> {
+    ) -> Result<vir::ExprTyVal<'vir>, EncodeFullError<'vir, E>> {
         if let TySpecifics::Param(RustParamData::Generic) = &ty.ty.specifics {
             let param = ty.args.expect_param();
-            return match param {
+            return Ok(match param {
                 GParamVariant::Param(p) => self.ty_exprs[self.map_idx(p.index).unwrap()],
                 GParamVariant::Alias(alias) => vir::with_vcx(|vcx| {
                     let tcx = vcx.tcx();
                     let trait_did = tcx.associated_item(alias.def_id).container_id(tcx);
-                    let trait_data = deps.require_ref::<TraitEnc>(trait_did).unwrap();
+                    let trait_data = deps.require_ref::<TraitEnc>(trait_did)?;
                     let args = GArgs::new(ty.args.context, alias.args);
-                    let args = deps.require_dep::<GArgsTyEnc>(args).unwrap();
-                    (trait_data.assoc_types[&alias.def_id])(args.get_ty(), args.get_const())
-                }),
-            };
+                    let args = deps.require_dep::<GArgsTyEnc>(args)?;
+                    Ok((trait_data.assoc_types[&alias.def_id])(
+                        args.get_ty(),
+                        args.get_const(),
+                    ))
+                })?,
+            });
         }
-        let ty_constructor = deps
-            .require_ref::<TyConstructorEnc>(ty.ty)
-            .unwrap()
-            .ty_constructor;
-        let args = deps.require_dep::<GArgsTyEnc>(ty.args).unwrap();
-        ty_constructor(args.get_ty(), args.get_const())
+        let ty_constructor = deps.require_ref::<TyConstructorEnc>(ty.ty)?.ty_constructor;
+        let args = deps.require_dep::<GArgsTyEnc>(ty.args)?;
+        Ok(ty_constructor(args.get_ty(), args.get_const()))
     }
 }
 
@@ -298,7 +308,12 @@ impl TaskEncoder for GenericParamsEnc {
         deps.emit_output_ref(*task_key, ())?;
         vir::with_vcx(|vcx| {
             let sanitize = |name: symbol::Symbol, index: u32| {
-                vir::ViperIdent::sanitize(vcx, &format!("{name}${index}")).to_str()
+                let name = if let Some(suffix) = task_key.suffix {
+                    format!("{name}${index}_{suffix}")
+                } else {
+                    format!("{name}${index}")
+                };
+                vir::ViperIdent::sanitize(vcx, &name).to_str()
             };
 
             let mut indices = vec![Ok(usize::MAX); task_key.params.len()];

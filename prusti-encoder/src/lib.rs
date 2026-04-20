@@ -24,7 +24,8 @@ use crate::encoders::{
     custom::PairUseEnc,
     ty::{
         generics::{
-            GArgsCastEnc, r#trait::TraitEnc, trait_fn::TraitFnEnc, trait_impls::TraitImplEnc,
+            GArgsCastEnc, SizedTraitEnc, TupleTraitEnc, r#trait::TraitEnc, trait_fn::TraitFnEnc,
+            trait_impls::TraitImplEnc,
         },
         interpretation::bitvec::BitVecEnc,
         lifted::{TyConstructorEnc, TypeOfEnc},
@@ -116,6 +117,8 @@ pub fn test_entrypoint<'tcx>(
     TraitEnc::emit_outputs(&mut program);
     TraitFnEnc::emit_outputs(&mut program);
     TraitImplEnc::emit_outputs(&mut program);
+    SizedTraitEnc::emit_outputs(&mut program);
+    TupleTraitEnc::emit_outputs(&mut program);
 
     if std::env::var("LOCAL_TESTING").is_ok() {
         std::fs::write("local-testing/simple.vpr", program.code()).unwrap();

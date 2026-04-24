@@ -284,6 +284,13 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         self.deps.require_dep::<TyUseImpureEnc>(ty_task).unwrap()
     }
 
+    fn inhale_trig(&mut self, ty: ty::Ty<'vir>, snap: vir::ExprSnap<'vir>) {
+        if let ty::TyKind::Adt(..) = ty.kind() {
+            let inhale_trig = self.ty_use_pure(ty).inhale_trig(self.vcx(), snap);
+            self.stmt(inhale_trig);
+        }
+    }
+
     fn encode_rvalue(
         &mut self,
         rvalue: &mir::Rvalue<'vir>,
@@ -359,10 +366,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                     .map_err(EncodeRvalueError::from)?;
 
                 // We inhale a 'trig' when an ADT is is constructed
-                let e_rvalue_ty = self.ty_use_pure(rvalue_ty);
-                let fold_trig = e_rvalue_ty.inhale_trig(self.vcx(), aggregate_snap);
-                self.stmt(fold_trig);
-
+                self.inhale_trig(rvalue_ty, aggregate_snap);
                 Ok(aggregate_snap.into())
             }
 
@@ -872,7 +876,6 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 _ => false,
             }
         }
-
         match repack_op {
             RepackOp::Expand(_) | RepackOp::Collapse(_) => {
                 let (place, capability_kind) = match repack_op {
@@ -893,6 +896,11 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 let place_ty = place_enc.ty;
                 let place_enc = place_enc.expr.expect_predicate();
                 let data = self.ty_use_impure(place_ty.ty);
+
+                if place_ty.variant_index.is_none() {
+                    self.inhale_trig(place_ty.ty, data.ref_to_snap(place_enc));
+                }
+
                 // TODO: guide should be implemented on `RepackOp`
                 let guide = match repack_op {
                     pcg::free_pcs::RepackOp::Expand(expand) => expand.guide(),
@@ -1046,11 +1054,9 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         for (place, elem) in place.iter_projections() {
             result = self.encode_place_element(place.into(), elem, result);
             place_ty = place_ty.projection_ty(self.vcx.tcx(), elem);
-            if let ty::TyKind::Adt(..) = place_ty.ty.kind()
-                && let Some(snap) = result.snap
-            {
-                let inhale_trig = self.ty_use_pure(place_ty.ty).inhale_trig(self.vcx(), snap);
-                self.stmt(inhale_trig);
+
+            if let Some(snap) = result.snap {
+                self.inhale_trig(place_ty.ty, snap)
             }
         }
         EncodePlaceResult {

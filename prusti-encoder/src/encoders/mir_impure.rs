@@ -897,10 +897,10 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 let place_enc = place_enc.expr.expect_predicate();
                 let data = self.ty_use_impure(place_ty.ty);
 
-                if let RepackOp::Expand(_) = repack_op {
-                  if place_ty.variant_index.is_none() {
-                      self.inhale_trig(place_ty.ty, data.ref_to_snap(place_enc));
-                  }
+                if let RepackOp::Expand(_) = repack_op
+                    && place_ty.variant_index.is_none()
+                {
+                    self.inhale_trig(place_ty.ty, data.ref_to_snap(place_enc));
                 }
 
                 // TODO: guide should be implemented on `RepackOp`

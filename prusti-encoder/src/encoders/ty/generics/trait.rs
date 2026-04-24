@@ -3,11 +3,13 @@ use rustc_hash::FxHashMap;
 use task_encoder::{EncodeFullResult, OutputRefAny, TaskEncoder, TaskEncoderDependencies};
 use vir::{FunctionIdn, vir_format_identifier};
 
-use crate::encoders::ty::{
-    RustTyDecomposition,
-    generics::{GParams, GenericParamsEnc, trait_impls::TraitImplEnc},
-    lifted::TyConstructorEnc,
-    pure::TyPureEnc,
+use crate::encoders::{
+    TyUsePureEnc,
+    ty::{
+        RustTyDecomposition,
+        generics::{GParams, GenericParamsEnc, trait_impls::TraitImplEnc},
+        lifted::TyConstructorEnc,
+    },
 };
 
 pub struct TraitEnc;
@@ -68,35 +70,32 @@ impl TaskEncoder for TraitEnc {
             let mut assoc_types = FxHashMap::default();
             let mut assoc_consts = FxHashMap::default();
 
-            let mk_identifier = |item_name, item_type| {
-                vir_format_identifier!(vcx, "{trait_name}_assoc_{item_type}_{item_name}")
-            };
-
             for item in tcx.associated_items(task_key).in_definition_order() {
-                let assoc_did = item.def_id;
-                let assoc_name = tcx.item_name(assoc_did);
-                let params = deps
-                    .require_dep::<GenericParamsEnc>(GParams::from(assoc_did))
-                    .unwrap();
-                let args = (params.ty_args(), params.const_args());
+                let item_did = item.def_id;
+
+                // item_generics also includes parameters of trait itself
+                let item_params = GParams::from(item_did);
+                let item_generics = deps.require_dep::<GenericParamsEnc>(item_params)?;
+                let item_name = tcx.item_name(item_did);
+
+                let args = (item_generics.ty_args(), item_generics.const_args());
                 match item.kind {
                     ty::AssocKind::Type { .. } => {
-                        let fun = FunctionIdn::new(
-                            mk_identifier(assoc_name, "type"),
-                            args,
-                            vir::TYPE_TYVAL,
-                        );
-                        assoc_types.insert(assoc_did, fun);
+                        let idn =
+                            vir_format_identifier!(vcx, "{trait_name}_assoc_type_{item_name}");
+                        let fun = FunctionIdn::new(idn, args, vir::TYPE_TYVAL);
+                        assoc_types.insert(item_did, fun);
                         dom_funcs.push(vcx.mk_domain_function(fun, false, None));
                     }
                     ty::AssocKind::Const { .. } => {
-                        let rust_ty = tcx.type_of(assoc_did).skip_binder();
-                        let decomp = RustTyDecomposition::from_ty(rust_ty, assoc_did);
-                        let ret_ty = (deps.require_ref::<TyPureEnc>(decomp.ty).unwrap().domain)();
+                        let rust_ty = tcx.type_of(item_did).skip_binder();
+                        let ty = RustTyDecomposition::from_ty(rust_ty, item_did);
+                        let ret_ty = deps.require_ref::<TyUsePureEnc>(ty).unwrap().snapshot;
 
-                        let fun =
-                            FunctionIdn::new(mk_identifier(assoc_name, "const"), args, ret_ty);
-                        assoc_consts.insert(assoc_did, fun);
+                        let idn =
+                            vir_format_identifier!(vcx, "{trait_name}_assoc_const_{item_name}");
+                        let fun = FunctionIdn::new(idn, args, ret_ty);
+                        assoc_consts.insert(item_did, fun);
                         dom_funcs.push(vcx.mk_domain_function(fun, false, None));
                     }
                     ty::AssocKind::Fn { .. } => {}
@@ -108,20 +107,13 @@ impl TaskEncoder for TraitEnc {
                 trait_args,
                 vir::TYPE_BOOL,
             );
-            let impl_for_unknown_fun: FunctionIdn<
-                '_,
-                (vir::Int, vir::ManyTyVal, vir::ManyCSnap),
-                vir::Bool,
-            > = {
-                // Omit the `Self` type as it is known to be the unknown type
-                let ty_args = &trait_args.0[1..];
-                let const_args = trait_args.1;
-                FunctionIdn::new(
+            // Omit the `Self` type as it is known to be the unknown type
+            let impl_for_unknown_fun =
+                FunctionIdn::<(vir::Int, vir::ManyTyVal, vir::ManyCSnap), _>::new(
                     vir_format_identifier!(vcx, "{trait_name}_impl_for_unknown"),
-                    (vir::TYPE_INT, ty_args, const_args),
+                    (vir::TYPE_INT, &trait_args.0[1..], trait_args.1),
                     vir::TYPE_BOOL,
-                )
-            };
+                );
 
             // Emit the impl function reference early, so that it can be used to encode caller
             // bounds without causing dependency cycles.

@@ -47,6 +47,8 @@ impl<'vir, E: TaskEncoder + 'vir + ?Sized> TaskEncoderDependencies<'vir, E> {
             EOther::with_cache(|cache| {
                 let mut cache = cache.borrow_mut();
                 match cache.get_mut(&task_key) {
+                    // TODO: we might push duplicate spans here.
+                    // It would be nice to reliably have one span per error location here.
                     Some(TaskEncoderCacheState::ErrorEncode { spans, .. }) => spans.push(span),
                     Some(TaskEncoderCacheState::ErrorEnqueue { spans, .. }) => spans.push(span),
                     _ => {}

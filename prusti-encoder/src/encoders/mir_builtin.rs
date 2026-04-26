@@ -102,7 +102,7 @@ impl TaskEncoder for MirBuiltinEnc {
     fn describe_error(error: Self::EncodingError) -> String {
         match error {
             MirBuiltinEncError::UnsupportedUnsize { src, dst } => {
-                format!("unsizing from `{src}` to `{dst}` is not yet supported in Prusti")
+                format!("unsizing from `{src}` to `{dst}` is not yet supported")
             }
         }
     }

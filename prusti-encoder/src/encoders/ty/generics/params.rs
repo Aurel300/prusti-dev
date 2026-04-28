@@ -103,6 +103,9 @@ impl<'tcx> GParams<'tcx> {
             },
         };
         vir::with_vcx(|vcx| {
+            // Erase region inference variables (ReVar) before normalizing,
+            // since we create a fresh InferCtxt that doesn't know about them.
+            let ty = vcx.tcx().erase_regions(ty);
             // Normalize associated types
             let ifctxt: InferCtxt = vcx.tcx().infer_ctxt().build(ty::TypingMode::PostAnalysis);
             let mut fulfill_cx = <dyn TraitEngine<ScrubbedTraitError> as TraitEngineExt<

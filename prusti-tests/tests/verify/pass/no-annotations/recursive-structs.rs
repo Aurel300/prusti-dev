@@ -1,11 +1,10 @@
-struct A<K, V> {
+struct A<K> {
     k: K,
-    v: V,
-    link: Option<*const B<K, V>>,
+    link: Option<Box<B<K>>>,
 }
-struct B<K, V> {
-    data: A<K, V>,
+struct B<K> {
+    data: A<K>,
 }
 fn main() {
-    let _: A<i32, bool> = A { k: 0, v: false, link: None };
+    let _: A<i32> = A { k: 0, link: None };
 }

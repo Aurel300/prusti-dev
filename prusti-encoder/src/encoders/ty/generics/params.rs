@@ -272,9 +272,7 @@ impl<'vir> GenericParams<'vir> {
                 }),
             });
         }
-        let ty_constructor = deps
-            .require_ref::<TyConstructorEnc>(ty.ty)?
-            .ty_constructor;
+        let ty_constructor = deps.require_ref::<TyConstructorEnc>(ty.ty)?.ty_constructor;
         let args = deps.require_dep::<GArgsTyEnc>(ty.args)?;
         Ok(ty_constructor(args.get_ty(), args.get_const()))
     }

@@ -21,9 +21,15 @@ use crate::encoders::{
 /// know about ReVars from the original type-checking context.
 struct EraseReVars<'tcx>(ty::TyCtxt<'tcx>);
 impl<'tcx> ty::TypeFolder<ty::TyCtxt<'tcx>> for EraseReVars<'tcx> {
-    fn cx(&self) -> ty::TyCtxt<'tcx> { self.0 }
+    fn cx(&self) -> ty::TyCtxt<'tcx> {
+        self.0
+    }
     fn fold_region(&mut self, r: ty::Region<'tcx>) -> ty::Region<'tcx> {
-        if r.is_var() { self.0.lifetimes.re_erased } else { r }
+        if r.is_var() {
+            self.0.lifetimes.re_erased
+        } else {
+            r
+        }
     }
 }
 

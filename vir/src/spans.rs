@@ -176,7 +176,13 @@ impl<'tcx> VirCtxt<'tcx> {
             }
             span_opt = span.parent.as_ref();
         }
-        vec![PrustiError::internal(format!("A verification error occurred, but it could not be backtranslated: no handler found for error kind: {error_kind}."), DUMMY_SP.into())]
+        // No handler found for the error, this must be a bug. We'll try to provide a span at least.
+        let span = manager
+            .all
+            .get(offending_pos_id)
+            .map(|vir_span| vir_span.span)
+            .unwrap_or(DUMMY_SP);
+        vec![PrustiError::internal(format!("A verification error occurred, but it could not be backtranslated: no handler found for error kind: {error_kind}."), span.into())]
     }
 
     /// Attempt to backtranslate a position id to a rust span

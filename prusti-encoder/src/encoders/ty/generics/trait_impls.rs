@@ -131,7 +131,8 @@ impl TaskEncoder for TraitImplEnc {
                 // context because the parameter indices must match the
                 // `impl_item_context` used in `GArgs::new` below.
                 let trait_item_context = GParams::from(trait_item_def_id);
-                let item_args = &impl_item_context.rust_params()[impl_context.rust_params().len()..];
+                let item_args =
+                    &impl_item_context.rust_params()[impl_context.rust_params().len()..];
                 let args = trait_ref.args.iter().chain(item_args.iter().copied());
                 let args = tcx.mk_args_from_iter(args);
                 let impl_item_args = GArgs::new(impl_item_context, args);

@@ -16,11 +16,13 @@ fn len<T>(head: &List<T>) -> usize {
     }
 }
 
-// Thanks to the generated `trig` annotations, the impure
-// encoding of this function will verify. Meanwhile, the
-// pure encoding will fail to verify on its own.
+// Even though the postcondition of this function may not
+// hold, we should *not* be getting verification errors in
+// the pure encoding (which will cause Prusti to panic).
+// Instead, the impure encoding should raise the proper
+// verification error.
 #[pure]
-#[ensures(false)]
+#[ensures(result == len(head) + 1)] //~ERROR: postcondition
 fn len_2<T>(head: &List<T>) -> usize {
     match head {
         &List::Nil() => 0,

@@ -3,6 +3,9 @@
 
 use prusti_contracts::*;
 
+// Smoke-test to ensure that the modifications to the impure encoding to support
+// the new pure function encoding don't cause unsoundness.
+
 enum List {
     Cons(u32, Box<List>),
     Nil(),
@@ -30,11 +33,9 @@ fn pick_unpick() {
 
     let xs4 = if let List::Cons(_, cdr) = xs3 { *cdr } else { panic!() };
     let xs5 = if let List::Cons(_, cdr) = xs4 { *cdr } else { panic!() };
-    let xs6 = if let List::Cons(_, cdr) = xs5 { *cdr } else { panic!() };
     
-    let finally = len(&xs6);
-    assert!(finally == before);
-    assert!(false);
+    let finally = len(&xs5);
+    assert!(finally == before); //~ERROR: the asserted expression might not hold
 }
 
 fn main() {}

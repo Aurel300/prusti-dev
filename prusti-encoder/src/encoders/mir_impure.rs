@@ -164,6 +164,8 @@ where
     pub call_labels: FxHashMap<mir::BasicBlock, (&'vir str, &'vir str)>,
     pub from_to_vars: FromToVars<'vir>,
 
+    // TODO: group all the `current_*` fields into a single per-block context
+    // struct.
     // for the current basic block
     pub current_fpcs: Option<PcgBasicBlock<'enc, 'vir>>,
 
@@ -171,14 +173,14 @@ where
     pub current_stmts: Option<Vec<vir::Stmt<'vir>>>,
     pub current_terminator: Option<vir::TerminatorStmt<'vir>>,
 
-    pub encoded_blocks: Vec<vir::CfgBlock<'vir>>, // TODO: use IndexVec ?
-
     /// Tracks (src, dst) place pairs for which `undo_unsize` has already been
     /// emitted in the current statement/terminator. `&mut dyn Trait` has two
     /// lifetime projections ('a and the dyn object lifetime), so two
     /// `BorrowFlow(Unsize)` edges are created for the same place pair. We only
     /// want to call `undo_unsize` once per pair.
-    pub processed_unsize_pairs: FxHashSet<(Place<'vir>, Place<'vir>)>,
+    pub current_processed_unsize_pairs: FxHashSet<(Place<'vir>, Place<'vir>)>,
+
+    pub encoded_blocks: Vec<vir::CfgBlock<'vir>>, // TODO: use IndexVec ?
 }
 
 /// Represents the translation of a MIR place. If the place crosses a shared
@@ -663,7 +665,10 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 // `&mut dyn Trait` has two lifetime projections ('a and the dyn
                 // object lifetime), producing two BorrowFlow(Unsize) edges for
                 // the same place pair. Only emit undo_unsize once per pair.
-                if !self.processed_unsize_pairs.insert((src_place, dst_place)) {
+                if !self
+                    .current_processed_unsize_pairs
+                    .insert((src_place, dst_place))
+                {
                     return Ok(());
                 }
                 let src_label = if let MaybeLabelledPlace::Labelled(snap) = src {
@@ -1332,7 +1337,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
 
             let current_fpcs = self.current_fpcs.take().unwrap();
             let cfpcs = &current_fpcs.statements[location.statement_index];
-            self.processed_unsize_pairs.clear();
+            self.current_processed_unsize_pairs.clear();
             for phase in EvalStmtPhase::phases() {
                 self.pcg_actions(&cfpcs.states[phase], &cfpcs.actions(phase), false).unwrap();
             }
@@ -1457,7 +1462,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
 
         let current_fpcs = self.current_fpcs.take().unwrap();
         let cfpcs = &current_fpcs.statements[location.statement_index];
-        self.processed_unsize_pairs.clear();
+        self.current_processed_unsize_pairs.clear();
         for phase in EvalStmtPhase::phases() {
             comment!(self, "PCG (T) {phase}");
             self.pcg_actions(&cfpcs.states[phase], &cfpcs.actions(phase), false)

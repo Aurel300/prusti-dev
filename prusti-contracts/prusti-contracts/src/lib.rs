@@ -384,6 +384,12 @@ mod private {
         }
     }
 
+    impl Real {
+        pub fn new(nom: i64, denom: i64) -> Self {
+            panic!()
+        }
+    }
+
     impl Sub for Real {
         type Output = Real;
 
@@ -560,6 +566,33 @@ pub fn f128_abs(fl: f128) -> f128 {
 
 pub fn slice_len<T>(_: &[T]) -> usize {
     0
+}
+
+/// Access to raw pointers
+#[cfg(feature = "prusti")]
+pub fn prusti_acc<T>(ptr: *mut T, frac: Real) -> bool {
+    true
+}
+
+#[macro_export]
+macro_rules! acc {
+    (*$access:expr) => {
+        prusti_acc($access, Real::from_f64(1.0));
+    };
+    (*$access:expr, $nom:literal/$denom:literal) => {
+        prusti_acc($access, Real::new($nom, $denom));
+    };
+    (*$access:expr, $frac:expr) => {
+        prusti_acc($access, $frac);
+    };
+}
+
+pub fn mut_ptr_add<T>(ptr: *mut T, count: usize) -> *mut T {
+    panic!()
+}
+
+pub fn mut_ptr_sub<T>(ptr: *mut T, count: usize) -> *mut T {
+    panic!()
 }
 
 pub use private::*;

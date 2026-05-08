@@ -1,6 +1,7 @@
+use itertools::Itertools;
 use prusti_rustc_interface::abi;
 use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
-use vir::{CastType, PredicateIdn};
+use vir::{CallableIdn, CastType, PredicateIdn};
 
 use crate::encoders::{
     Impure,
@@ -31,6 +32,7 @@ impl<'vir> TyDatas<'vir> for UseImpureTyDatas {
     type StructData = TyUseImpureStructData<'vir>;
     type VariantData = ();
     type EnumData = TyUseImpureEnumData<'vir>;
+    type RawPtrData = TyUseImpureRawPtrData<'vir>;
 }
 
 pub type TyUseImpure<'vir> = Ty<'vir, UseImpureTyDatas>;
@@ -94,6 +96,13 @@ pub struct TyUseImpureEnumData<'vir> {
     #[allow(dead_code)]
     args: GArgsTy<'vir>,
     impure: <ImpureTyDatas as TyDatas<'vir>>::EnumData,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct TyUseImpureRawPtrData<'vir> {
+    #[allow(dead_code)]
+    args: GArgsTy<'vir>,
+    impure: <ImpureTyDatas as TyDatas<'vir>>::RawPtrData,
 }
 
 /// Encodes a type into the predicate representation. Takes an arbitrary Rust
@@ -178,6 +187,10 @@ impl<'a, 'vir> TyUseImpureWalker<'a, 'vir> {
                 TySpecifics::EnumLike(self.encode_enumlike(data, ty.0.params))
             }
             TySpecifics::Builtin(..) => TySpecifics::mk_builtin(()),
+            TySpecifics::RawPtr(data) => TySpecifics::mk_rawptr(TyUseImpureRawPtrData {
+                args: self.args_t,
+                impure: *data.1,
+            }),
         };
         let data = TyUseImpureData {
             args: self.args_t,
@@ -279,27 +292,77 @@ impl<'vir> TyUseImpureData<'vir> {
         ))))
     }
 
-    /// Constructs the Viper predicate application expression.
-    pub fn ref_to_pred<'tcx>(
+    pub fn apply_method_block<'tcx>(
         &self,
         vcx: &'vir vir::VirCtxt<'tcx>,
         self_ref: vir::ExprRef<'vir>,
-        perm: Option<vir::ExprPerm<'vir>>,
-    ) -> vir::ExprBool<'vir> {
+        child: &'vir vir::LocalData<'vir, vir::Ref>,
+        frac: vir::ExprPerm<'vir>,
+    ) -> vir::Stmt<'vir> {
+        let mut args: Vec<&vir::ExprGenData<'vir, (), !, vir::Dyn>> = vec![self_ref.upcast_ty()];
+        args.extend_from_slice(
+            &self
+                .args
+                .get_ty()
+                .iter()
+                .map(|t| t.upcast_ty())
+                .collect_vec(),
+        );
+        args.append(
+            &mut self
+                .args
+                .get_const()
+                .iter()
+                .map(|c| c.upcast_ty())
+                .collect_vec(),
+        );
+        args.push(frac.upcast_ty());
+        vcx.alloc(vir::StmtData::new(vcx.alloc(
+            vir::StmtKindGenData::MethodCall(vcx.alloc(vir::MethodCallGenData {
+                targets: vcx.alloc_slice(&[child.upcast_ty()]),
+                method: self.impure.method_block.name().to_str(),
+                args: vcx.alloc_slice(&args),
+            })),
+        )))
+    }
+
+    pub fn apply_method_unblock<'tcx>(
+        &self,
+        vcx: &'vir vir::VirCtxt<'tcx>,
+        self_ref: vir::ExprRef<'vir>,
+        child: vir::ExprRef<'vir>,
+        frac: vir::ExprPerm<'vir>,
+    ) -> vir::Stmt<'vir> {
+        vcx.alloc(vir::StmtData::new(vcx.alloc((self.impure.method_unblock)(
+            self_ref,
+            self.args.get_ty(),
+            self.args.get_const(),
+            child,
+            frac,
+        ))))
+    }
+
+    /// Constructs the Viper predicate application expression.
+    pub fn ref_to_pred<'tcx, Curr, Next>(
+        &self,
+        vcx: &'vir vir::VirCtxt<'tcx>,
+        self_ref: vir::ExprGenRef<'vir, Curr, Next>,
+        perm: Option<vir::ExprGenPerm<'vir, Curr, Next>>,
+    ) -> vir::ExprGenBool<'vir, Curr, Next> {
         if self.maybe_inhabited {
             vcx.mk_predicate_app_expr(self.ref_to_pred_app(self_ref, perm))
         } else {
-            vcx.mk_bool::<false>()
+            vcx.mk_bool::<false>().lazy()
         }
     }
 
     /// Constructs the Viper predicate application.
-    pub fn ref_to_pred_app(
+    pub fn ref_to_pred_app<Curr, Next>(
         &self,
-        self_ref: vir::ExprRef<'vir>,
-        perm: Option<vir::ExprPerm<'vir>>,
-    ) -> vir::PredicateApp<'vir> {
-        (self.impure.ref_to_pred)(self_ref, self.args.get_ty(), self.args.get_const())(perm)
+        self_ref: vir::ExprGenRef<'vir, Curr, Next>,
+        perm: Option<vir::ExprGenPerm<'vir, Curr, Next>>,
+    ) -> vir::PredicateAppGen<'vir, Curr, Next> {
+        self.impure.ref_to_pred.call()(self_ref, self.args.get_ty(), self.args.get_const())(perm)
     }
 
     /// Calls the predicate (heap) dependent snapshot construction function.
@@ -362,6 +425,7 @@ impl<'vir> TyData<'vir, UseImpureTyDatas> {
                 let pred_app = self.ref_to_pred_app(self_ref, perm);
                 vec![vir::with_vcx(|vcx| vcx.mk_fold_stmt(pred_app))]
             }
+            TySpecifics::RawPtr(_) => Vec::new(),
         }
     }
 
@@ -413,6 +477,7 @@ impl<'vir> TyData<'vir, UseImpureTyDatas> {
                 let pred_app = self.ref_to_pred_app(self_ref, perm);
                 vec![vir::with_vcx(|vcx| vcx.mk_unfold_stmt(pred_app))]
             }
+            TySpecifics::RawPtr(_) => Vec::new(),
         }
     }
 }
@@ -515,7 +580,11 @@ impl<'vir> TyUseImpureEnum<'vir> {
     }
 }
 
-impl<'vir> TyUseImpureImmRef<'vir> {}
+impl<'vir> TyUseImpureImmRef<'vir> {
+    pub fn snap(&self, self_ref: vir::ExprRef<'vir>) -> vir::ExprSnap<'vir> {
+        (self.impure.snap)(self_ref, self.args.get_ty(), self.args.get_const())
+    }
+}
 
 impl<'vir> TyUseImpureMutRef<'vir> {
     pub fn deref(
@@ -547,5 +616,11 @@ impl<'vir> TyUseImpureMutRef<'vir> {
         label: Option<vir::OldLabel<'vir>>,
     ) -> Option<vir::Stmt<'vir>> {
         self.caster.cast_to_caller_ctx(self.deref(self_ref, label))
+    }
+}
+
+impl<'vir> TyUseImpureRawPtrData<'vir> {
+    pub fn deref(&self, self_ref: vir::ExprRef<'vir>) -> vir::ExprRef<'vir> {
+        (self.impure.deref_func)(self_ref, self.args.get_ty(), self.args.get_const())
     }
 }

@@ -55,5 +55,7 @@ pub(crate) fn ty_impure<'vir>(
     // Ref-to-snap
     builder.mk_snap_function(Some(vir::expr! { [ref_field](ref_self) }));
 
-    Ok(TyImpureImmRefData {})
+    Ok(TyImpureImmRefData {
+        snap: builder.ref_to_snap,
+    })
 }

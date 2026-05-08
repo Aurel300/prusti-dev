@@ -6,6 +6,7 @@ use std::collections::VecDeque;
 use syn::{
     parse::{Parse, ParseStream},
     spanned::Spanned,
+    Lit,
 };
 
 /// The representation of an argument to a quantifier (for example `a: i32`)
@@ -166,6 +167,9 @@ impl PrustiTokenStream {
                     }
                     (TokenTree::Ident(ident), _, _, _) if ident == "before_expiry" => {
                         PrustiToken::ModeMarker(ident.span(), MarkerKind::BeforeExpiry)
+                    }
+                    (TokenTree::Ident(ident), _, _, _) if ident == "acc" => {
+                        PrustiToken::Acc(ident.span())
                     }
                     (TokenTree::Punct(punct), _, _, _)
                         if punct.as_char() == ',' && punct.spacing() == Alone =>
@@ -354,6 +358,12 @@ impl PrustiTokenStream {
 
             Some(PrustiToken::BinOp(span, _)) => return err(span, "unexpected binary operator"),
             Some(PrustiToken::Token(token)) => token.to_token_stream(),
+            Some(PrustiToken::Acc(span)) => {
+                let expr = self
+                    .pop_group(Delimiter::Parenthesis)
+                    .ok_or_else(|| error(span, "expected parenthesized expression after acc"))?;
+                Self::parse_acc(span, expr)?
+            }
             None => return Ok(TokenStream::new()),
         };
         loop {
@@ -414,7 +424,15 @@ impl PrustiTokenStream {
                     lhs.extend(kind.translate(span, expr).to_token_stream());
                     continue;
                 }
-
+                Some(PrustiToken::Acc(span)) => {
+                    let span = *span;
+                    let expr = self.pop_group(Delimiter::Parenthesis).ok_or_else(|| {
+                        error(span, "expected parenthesized expression after acc")
+                    })?;
+                    let out_expr = Self::parse_acc(span, expr)?;
+                    lhs.extend(out_expr.to_token_stream());
+                    continue;
+                }
                 None => break,
             };
             let (l_bp, r_bp) = op.binding_power();
@@ -436,6 +454,79 @@ impl PrustiTokenStream {
             lhs = op.translate(span, lhs, rhs);
         }
         Ok(lhs)
+    }
+
+    fn parse_acc(span: Span, mut expr: PrustiTokenStream) -> syn::Result<TokenStream> {
+        let len = expr.tokens.len();
+        if len == 6 {
+            if let [PrustiToken::Token(TokenTree::Punct(first_punct)), PrustiToken::Token(TokenTree::Ident(ident)), PrustiToken::BinOp(_, PrustiBinaryOp::Rust(RustOp::Comma)), PrustiToken::Token(TokenTree::Literal(nom)), PrustiToken::Token(TokenTree::Punct(second_punct)), PrustiToken::Token(TokenTree::Literal(denom))] = [
+                &expr.tokens[len - 6],
+                &expr.tokens[len - 5],
+                &expr.tokens[len - 4],
+                &expr.tokens[len - 3],
+                &expr.tokens[len - 2],
+                &expr.tokens[len - 1],
+            ] {
+                if first_punct.as_char() != '*' || second_punct.as_char() != '/' {
+                    return err(span, "Invalid acc expression found");
+                }
+                Acc::translate(
+                    span,
+                    ident.to_token_stream(),
+                    AccFraction::Const(nom.to_token_stream(), denom.to_token_stream()),
+                )
+            } else {
+                err(span, "Invalid acc expression found")
+            }
+        } else if len == 2 {
+            if let [PrustiToken::Token(TokenTree::Punct(first_punct)), PrustiToken::Token(TokenTree::Ident(ident))] =
+                [&expr.tokens[len - 2], &expr.tokens[len - 1]]
+            {
+                if first_punct.as_char() != '*' {
+                    return err(span, "Invalid acc expression found");
+                }
+                Acc::translate(span, ident.to_token_stream(), AccFraction::Full)
+            } else if let Some(PrustiToken::Token(TokenTree::Punct(first_punct))) =
+                expr.tokens.pop_front()
+            {
+                if first_punct.as_char() != '*' {
+                    return err(span, "Invalid acc expression found");
+                }
+                let inner = expr
+                    .pop_group(Delimiter::Parenthesis)
+                    .ok_or_else(|| error(span, "Invalid acc expression found"))?;
+                Acc::translate(span, inner.parse()?, AccFraction::Full)
+            } else {
+                err(span, "Invalid acc expression found")
+            }
+        } else if len == 4 {
+            if let [PrustiToken::Token(TokenTree::Punct(first_punct)), PrustiToken::Token(TokenTree::Ident(ident)), PrustiToken::BinOp(_, PrustiBinaryOp::Rust(RustOp::Comma)), PrustiToken::Token(TokenTree::Ident(ident_frac))] = [
+                &expr.tokens[len - 4],
+                &expr.tokens[len - 3],
+                &expr.tokens[len - 2],
+                &expr.tokens[len - 1],
+            ] {
+                if first_punct.as_char() != '*' {
+                    return err(span, "Invalid acc expression found");
+                }
+                // using already created real for acc fraction
+                Acc::translate(
+                    span,
+                    ident.to_token_stream(),
+                    AccFraction::Ident(ident_frac.to_token_stream()),
+                )
+            } else {
+                err(span, "Invalid acc expression found")
+            }
+        } else {
+            if let PrustiToken::Token(TokenTree::Punct(first_punct)) = &expr.tokens[0] {
+                if first_punct.as_char() == '*' {
+                    expr.tokens.pop_front();
+                    return Acc::translate(span, expr.parse()?, AccFraction::Full);
+                }
+            }
+            err(span, "Invalid acc expression found")
+        }
     }
 
     fn pop_group(&mut self, delimiter: Delimiter) -> Option<Self> {
@@ -696,6 +787,7 @@ enum PrustiToken {
     // TODO: the "once" flag is not used since there is no calldesc translation yet
     CallDesc(Span, bool),
     ModeMarker(Span, MarkerKind),
+    Acc(Span),
 }
 
 fn translate_spec_ent(
@@ -778,6 +870,42 @@ enum MarkerKind {
     Old,
     Rel(usize),
     BeforeExpiry,
+}
+
+enum AccFraction {
+    Const(TokenStream, TokenStream),
+    Ident(TokenStream),
+    Full,
+}
+
+struct Acc {}
+
+impl Acc {
+    fn translate(span: Span, addr: TokenStream, frac: AccFraction) -> syn::Result<TokenStream> {
+        match frac {
+            AccFraction::Const(nom, denom) => {
+                let (nom, denom): (Lit, Lit) =
+                    (syn::parse2(nom).unwrap(), syn::parse2(denom).unwrap());
+                match (nom, denom) {
+                    (Lit::Int(nom_int), Lit::Int(denom_int)) => Ok(quote_spanned! { span => {
+                        prusti_acc( #addr, Real::new(#nom_int, #denom_int) )
+                    } }),
+                    (Lit::Float(nom_float), Lit::Float(denom_float)) => {
+                        Ok(quote_spanned! { span => {
+                            prusti_acc( #addr, Real::from(#nom_float) / Real::from(#denom_float) )
+                        } })
+                    }
+                    _ => err(span, "Found invalid arguments to acc"),
+                }
+            }
+            AccFraction::Full => {
+                Ok(quote_spanned! { span => { prusti_acc( #addr, Real::new(1, 1) ) } })
+            }
+            AccFraction::Ident(ident) => {
+                Ok(quote_spanned! { span => { prusti_acc( #addr, #ident ) } })
+            }
+        }
+    }
 }
 
 impl MarkerKind {
@@ -883,7 +1011,8 @@ impl PrustiToken {
             | Self::Quantifier(span, _)
             | Self::SpecEnt(span, _)
             | Self::CallDesc(span, _)
-            | Self::ModeMarker(span, _) => *span,
+            | Self::ModeMarker(span, _)
+            | Self::Acc(span) => *span,
             Self::Token(tree) => tree.span(),
         }
     }

@@ -224,11 +224,13 @@ impl<'vir, 'v> ToViper<'vir, 'v> for vir::BinOp<'vir> {
             vir::BinOpKind::And => ctx.ast.and_with_pos(lhs, rhs, pos),
             vir::BinOpKind::Or => ctx.ast.or_with_pos(lhs, rhs, pos),
             vir::BinOpKind::Add => ctx.ast.add_with_pos(lhs, rhs, pos),
+            vir::BinOpKind::AddPerm => ctx.ast.add_perm_with_pos(lhs, rhs, pos),
             vir::BinOpKind::Sub => ctx.ast.sub_with_pos(lhs, rhs, pos),
             vir::BinOpKind::Mul => ctx.ast.mul_with_pos(lhs, rhs, pos),
             vir::BinOpKind::Div => ctx.ast.div_with_pos(lhs, rhs, pos),
             vir::BinOpKind::DivRational => ctx.ast.perm_div(lhs, rhs), // TODO: position
             vir::BinOpKind::DivRationalRational => ctx.ast.perm_perm_div(lhs, rhs),
+            vir::BinOpKind::FractionalPerm => ctx.ast.fractional_perm(lhs, rhs),
             vir::BinOpKind::Mod => ctx.ast.mod_with_pos(lhs, rhs, pos),
             vir::BinOpKind::Implies => ctx.ast.implies_with_pos(lhs, rhs, pos),
             vir::BinOpKind::SetUnion => ctx.ast.any_set_union(lhs, rhs),

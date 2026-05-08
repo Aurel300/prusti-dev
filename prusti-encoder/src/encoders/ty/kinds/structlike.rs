@@ -1,9 +1,11 @@
 use crate::encoders::{
     TyUseImpureEnc,
+    addr::RefDataEnc,
     ty::{
         RustTyDatas,
         data::{StructData, TyData},
         impure::{ImpureTyDatas, PredicateBuilder, TyImpureEnc, TyImpureFieldData},
+        lifted::TyConstructorEnc,
         pure::{AdtBuilder, PureTyDatas, TyPureEnc, TyPureFieldData, TyPureStructData},
         use_pure::TyUsePureEnc,
     },
@@ -126,24 +128,103 @@ pub(crate) fn ty_impure_variant<'vir>(
     if !prefix.is_empty() {
         pred_name = format!("{prefix}owned");
     }
-    let pred_expr = builder.vcx.mk_conj(
-        &fields
-            .iter()
-            .zip(&field_accessors)
-            .map(|(field, TyImpureFieldData { ref_to_field_ref })| {
-                field.ref_to_pred(
-                    builder.vcx,
-                    ref_to_field_ref(
-                        ref_self,
-                        builder.params.ty_exprs(),
-                        builder.params.const_exprs(),
-                    ),
-                    None,
-                )
-            })
-            .collect::<Vec<_>>(),
-    );
-    let pred_owned = builder.mk_predicate(&pred_name, Some(pred_expr));
+    let addr_fns = deps.require_dep::<RefDataEnc>(())?;
+    let base_fn = addr_fns.base_ref;
+    let addr_of_fn = addr_fns.ref_to_addr;
+    let ref_of_fn = addr_fns.addr_to_ref;
+    let offset_fn = addr_fns.offset;
+    let usize_bounds = builder
+        .vcx
+        .mk_const_expr(vir::ConstData::Int(usize::MAX.try_into().unwrap()));
+    let type_const =
+        deps.require_ref::<TyConstructorEnc>(builder.vcx.alloc(task_key.clone().unzip().0))?;
+    let zero = builder.vcx.mk_const_expr(vir::ConstData::Int(0));
+    let inv_base = ref_of_fn.call()(addr_of_fn.call()(ref_self), ref_self);
+    let conjuncts = &mut fields
+        .iter()
+        .zip(&field_accessors)
+        .enumerate()
+        .flat_map(|(idx, (field, accessor))| {
+            let TyImpureFieldData { ref_to_field_ref } = accessor;
+            let self_ref = ref_to_field_ref(
+                ref_self,
+                builder.params.ty_exprs(),
+                builder.params.const_exprs(),
+            );
+            let base = base_fn.call()(self_ref);
+            let addr = addr_of_fn.call()(self_ref).upcast_ty();
+            let idx = builder
+                .vcx
+                .mk_const_expr(vir::ConstData::Int(idx.try_into().unwrap()));
+            let offset = offset_fn.call()(
+                type_const.ty_constructor.call()(
+                    builder.params.ty_exprs(),
+                    builder.params.const_exprs(),
+                ),
+                idx.downcast_ty(),
+            )
+            .upcast_ty();
+            let inv = ref_of_fn.call()(addr_of_fn.call()(self_ref), base);
+            let add = builder.vcx.mk_bin_op_expr(
+                vir::BinOpKind::Add,
+                addr_of_fn.call()(ref_self).upcast_ty(),
+                offset,
+            );
+            
+            let frac_field = builder
+                .vcx
+                .mk_field(builder.vcx.alloc_str("p_Param_frac"), vir::TYPE_PERM);
+
+            // TODO: Saying that permissions have to be between 0 and 1 should only be temporary. We should somehow say that the permissions are equal to the unpacked place.
+            let zero_perms = builder.vcx
+                    .mk_bin_op_expr(
+                        vir::BinOpKind::FractionalPerm,
+                        builder.vcx.mk_const_expr(vir::ConstData::Int(0)),
+                        builder.vcx.mk_const_expr(vir::ConstData::Int(1)),
+                    )
+                    .downcast_ty();
+                let full_perms = builder.vcx
+                    .mk_bin_op_expr(
+                        vir::BinOpKind::FractionalPerm,
+                        builder.vcx.mk_const_expr(vir::ConstData::Int(1)),
+                        builder.vcx.mk_const_expr(vir::ConstData::Int(1)),
+                    )
+                    .downcast_ty();
+            let ref_self_frac = builder.vcx.mk_field_expr(self_ref, frac_field);
+                let greater_zero = builder.vcx.mk_bin_op_expr(vir::BinOpKind::CmpLt, zero_perms, ref_self_frac);
+                let at_most_full = builder.vcx.mk_bin_op_expr(vir::BinOpKind::CmpLe, ref_self_frac, full_perms);
+                let ref_self_frac_expr = builder.vcx.mk_bin_op_expr(vir::BinOpKind::And, greater_zero, at_most_full).downcast_ty();
+            [
+                field.ref_to_pred(builder.vcx, self_ref, None),
+                vir::expr! {acc((self_ref).[frac_field])},
+                ref_self_frac_expr,
+                vir::expr! {(base) == (ref_self)},
+                vir::expr! {(zero) <= (addr)},
+                vir::expr! {(addr) <= (usize_bounds)},
+                vir::expr! {(zero) <= (offset)},
+                vir::expr! {(offset) <= (usize_bounds)},
+                vir::expr! {(inv) == (self_ref)},
+                vir::expr! {(addr) == (add)},
+            ]
+        })
+        .collect::<Vec<_>>();
+    conjuncts.push(vir::expr! {(inv_base) == (ref_self)});
+    let pred_owned = builder
+        .inner
+        .predicate::<(vir::Ref, vir::ManyTyVal, vir::ManyCSnap)>(
+            &pred_name,
+            (
+                ref_self_decl.ty(),
+                builder.params.ty_args(),
+                builder.params.const_args(),
+            ),
+            (
+                ref_self_decl,
+                builder.params.ty_decls(),
+                builder.params.const_decls(),
+            ),
+            Some(builder.vcx.mk_conj(conjuncts)),
+        );
 
     // Ref-to-snap
     let snap_args: Vec<&'vir vir::ExprGenData<'vir, (), !, vir::Snap>> = fields

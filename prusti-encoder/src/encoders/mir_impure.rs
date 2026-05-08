@@ -27,10 +27,11 @@ use pcg::{
 use prusti_interface::{PrustiError, specs::specifications::SpecQuery};
 use prusti_rustc_interface::{
     abi,
+    abi::{FieldIdx, VariantIdx},
     data_structures::fx::FxHashMap,
     middle::{
         mir,
-        ty::{self, TyKind},
+        ty::{self, List, TyKind},
     },
     span::{Span, def_id::DefId},
 };
@@ -40,11 +41,13 @@ use vir::{CastType, CompType, LocalDeclData};
 
 use crate::encoders::{
     self, FunctionCallEnc, MirBuiltinEnc, MirBuiltinEncTask, TyUseImpureEnc, WandEnc, WandEncTask,
+    addr::RefDataEnc,
     mir_fn::{CallTaskDescription, RustSignature},
     mir_shared::PureRvalueEnc,
     ty::{
         RustTyDecomposition,
-        generics::{GParams, GenericParamsEnc},
+        generics::{GArgsTyEnc, GParams, GenericParamsEnc},
+        lifted::TyConstructorEnc,
         use_impure::TyUseImpure,
         use_pure::{TyUsePure, TyUsePureEnc},
     },
@@ -204,6 +207,8 @@ macro_rules! comment {
 type EncodeResult<'vir, T, E> = Result<T, EncodeFullError<'vir, E>>;
 
 struct EncodedRvalue<'vir> {
+    pre_assign_stmts: Vec<vir::Stmt<'vir>>,
+
     /// A snapshot of the rvalue. This snapshot is guaranteed to be well-formed
     /// in the state *before* the Rvalue has been assigned to a place. For
     /// example, in the statement `let rx = &mut x`, the snapshot encoding of
@@ -242,6 +247,7 @@ impl<'vir> EncodedRvalue<'vir> {
 impl<'vir> From<vir::ExprSnap<'vir>> for EncodedRvalue<'vir> {
     fn from(expr: vir::ExprSnap<'vir>) -> Self {
         Self {
+            pre_assign_stmts: vec![],
             expr,
             post_assign_folds: None,
         }
@@ -284,6 +290,36 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         self.deps.require_dep::<TyUseImpureEnc>(ty_task).unwrap()
     }
 
+    fn encode_offsetof(
+        &mut self,
+        base_ty: ty::Ty<'vir>,
+        fields: &'vir List<(VariantIdx, FieldIdx)>,
+    ) -> Result<EncodedRvalue<'vir>, EncodeRvalueError<'vir, E>> {
+        let addr_fns = self.deps.require_dep::<RefDataEnc>(())?;
+        let ty_task = RustTyDecomposition::from_ty(base_ty, GParams::empty());
+
+        let ty_constructor = self.deps.require_ref::<TyConstructorEnc>(ty_task.ty)?;
+        let int_ty =
+            self.deps
+                .require_dep::<TyUsePureEnc>(RustTyDecomposition::from_prim_ty(
+                    ty::Ty::new_uint(self.vcx.tcx(), ty::UintTy::Usize),
+                ))?;
+        let args = self.deps.require_dep::<GArgsTyEnc>(ty_task.args)?;
+        Ok(int_ty.expect_primitive().prim_to_snap.call()(
+            addr_fns.offset.call()(
+                ty_constructor.ty_constructor.call()(args.get_ty(), args.get_const()),
+                self.vcx
+                    .mk_const_expr(vir::ConstData::Int(
+                        fields[0].1.as_usize().try_into().unwrap(),
+                    ))
+                    .downcast_ty(),
+            )
+            .upcast_ty(),
+        )
+        .upcast_ty()
+        .into())
+    }
+
     fn encode_rvalue(
         &mut self,
         rvalue: &mir::Rvalue<'vir>,
@@ -291,6 +327,9 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
     ) -> Result<EncodedRvalue<'vir>, EncodeRvalueError<'vir, E>> {
         let rvalue_ty = rvalue.ty(self.local_decls, self.vcx.tcx());
         match rvalue {
+            mir::Rvalue::NullaryOp(mir::NullOp::OffsetOf(lst), ty) => {
+                self.encode_offsetof(*ty, lst)
+            }
             mir::Rvalue::Use(op) => Ok(self
                 .encode_operand_snap(op, &())
                 .map_err(EncodeRvalueError::from)?
@@ -411,20 +450,76 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             mir::Rvalue::Ref(_reg, _kind, place) => Ok(match rvalue_ty.kind() {
                 TyKind::Ref(.., ty::Mutability::Not) => {
                     let (address, snap, _, _) = self.encode_place_with_snap((*place).into());
+
+                    let ty_name = RustTyDecomposition::from_ty(address.ty.ty, GParams::empty())
+                        .ty
+                        .name
+                        .as_str();
+                    let ref_self_frac = self.vcx.mk_field_expr(
+                        address.expr.expect_predicate(),
+                        self.vcx.mk_field(
+                            vir::vir_format!(self.vcx, "p_{}_frac", ty_name),
+                            vir::TYPE_PERM,
+                        ),
+                    );
+                    let two_perms = self
+                        .vcx
+                        .mk_bin_op_expr(
+                            vir::BinOpKind::FractionalPerm,
+                            self.vcx.mk_const_expr(vir::ConstData::Int(2)),
+                            self.vcx.mk_const_expr(vir::ConstData::Int(1)),
+                        )
+                        .downcast_ty();
+                    let new_perms = self
+                        .vcx
+                        .mk_bin_op_expr(
+                            vir::BinOpKind::DivRationalRational,
+                            ref_self_frac,
+                            two_perms,
+                        )
+                        .downcast_ty();
+                    let child = self.vcx.mk_local_decl("_tmp_ref", vir::TYPE_REF);
+                    let block_stmt = self.ty_use_impure(address.ty.ty).apply_method_block(
+                        self.vcx,
+                        address.expr.expect_predicate(),
+                        self.vcx.mk_local(child),
+                        new_perms,
+                    );
+                    let child_expr = self.vcx.mk_local_ex(child);
+
                     let inner = self.ty_use_pure(rvalue_ty).expect_immref();
-                    inner
-                        .prim_to_snap(address.expr.address, snap)
-                        .upcast_ty()
-                        .into()
+                    EncodedRvalue {
+                        pre_assign_stmts: vec![block_stmt],
+                        expr: inner.prim_to_snap(child_expr, snap).upcast_ty(),
+                        post_assign_folds: None,
+                    }
                 }
                 TyKind::Ref(.., ty::Mutability::Mut) => {
                     let p_rvalue_ty = self.ty_use_impure(rvalue_ty);
                     let (place_expr, _, _, _) = self.encode_place_with_snap(Place::from(*place));
 
                     let inner = p_rvalue_ty.expect_mutref();
-                    let place_ref = place_expr.expr.expect_predicate();
+                    let full_perms = self
+                        .vcx
+                        .mk_bin_op_expr(
+                            vir::BinOpKind::FractionalPerm,
+                            self.vcx.mk_const_expr(vir::ConstData::Int(1)),
+                            self.vcx.mk_const_expr(vir::ConstData::Int(1)),
+                        )
+                        .downcast_ty();
+
+                    let child = self.vcx.mk_local_decl("_tmp_ref", vir::TYPE_REF);
+                    let block_stmt = self.ty_use_impure(place_expr.ty.ty).apply_method_block(
+                        self.vcx,
+                        place_expr.expr.expect_predicate(),
+                        self.vcx.mk_local(child),
+                        full_perms,
+                    );
+                    let child_expr = self.vcx.mk_local_ex(child);
+
                     EncodedRvalue {
-                        expr: inner.prim_to_snap_assign(place_ref).upcast_ty(),
+                        pre_assign_stmts: vec![block_stmt],
+                        expr: inner.prim_to_snap_assign(child_expr).upcast_ty(),
                         post_assign_folds: Some(Box::new(move |lhs_place| {
                             p_rvalue_ty.fold(None, lhs_place, None, None, None)
                         })),
@@ -462,6 +557,17 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                     ),
                 );
                 Ok(tmp_exp.upcast_ty().into())
+            }
+
+            mir::Rvalue::RawPtr(_, place) => {
+                let e_rvalue_ty = self.ty_use_pure(rvalue_ty);
+                let (place_expr, ..) = self.encode_place_with_snap(Place::from(*place));
+
+                let inner = e_rvalue_ty.expect_rawptr();
+                Ok(inner
+                    .prim_to_snap(place_expr.expr.address)
+                    .upcast_ty()
+                    .into())
             }
 
             _ => Err(EncodeRvalueError::UnsupportedRvalue),
@@ -621,6 +727,63 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 // folded into the Rvalue `&mut y` that is stored in `x`. This
                 // reverses that effect
                 self.unfold(borrow.assigned_ref(), label);
+
+                // unblocks original ref
+                let full_perms = self
+                    .vcx
+                    .mk_bin_op_expr(
+                        vir::BinOpKind::FractionalPerm,
+                        self.vcx.mk_const_expr(vir::ConstData::Int(1)),
+                        self.vcx.mk_const_expr(vir::ConstData::Int(1)),
+                    )
+                    .downcast_ty();
+                let (parent_expr, _, _, _) =
+                    self.encode_place_with_snap(borrow.blocked_place().place());
+                let (child_expr, _, _, _) =
+                    self.encode_place_with_snap(borrow.assigned_ref().place());
+                let unblock_stmt = self.ty_use_impure(parent_expr.ty.ty).apply_method_unblock(
+                    self.vcx,
+                    parent_expr.expr.expect_predicate(),
+                    self.ty_use_impure(child_expr.ty.ty)
+                        .expect_mutref()
+                        .deref(child_expr.expr.expect_predicate(), None),
+                    full_perms,
+                );
+                self.stmt(unblock_stmt);
+            }
+            BorrowPcgEdgeKind::Borrow(borrow) if !borrow.is_mut() && edge_action.is_remove() => {
+                // unblocks original ref
+                let (parent_expr, _, _, _) =
+                    self.encode_place_with_snap(borrow.blocked_place().place());
+                let (child_expr, _, _, _) =
+                    self.encode_place_with_snap(borrow.assigned_ref().place());
+                let ty_name = RustTyDecomposition::from_ty(parent_expr.ty.ty, GParams::empty())
+                    .ty
+                    .name
+                    .as_str();
+                let child = self
+                    .ty_use_pure(child_expr.ty.ty)
+                    .expect_immref()
+                    .deref_access(
+                        self.ty_use_impure(child_expr.ty.ty)
+                            .expect_immref()
+                            .snap(child_expr.expr.expect_predicate())
+                            .downcast_ty(),
+                    );
+                let ref_self_frac = self.vcx.mk_field_expr(
+                    child,
+                    self.vcx.mk_field(
+                        vir::vir_format!(self.vcx, "p_{}_frac", ty_name),
+                        vir::TYPE_PERM,
+                    ),
+                );
+                let unblock_stmt = self.ty_use_impure(parent_expr.ty.ty).apply_method_unblock(
+                    self.vcx,
+                    parent_expr.expr.expect_predicate(),
+                    child,
+                    ref_self_frac,
+                );
+                self.stmt(unblock_stmt);
             }
             BorrowPcgEdgeKind::BorrowFlow(borrow_flow)
                 if let BorrowFlowEdgeKind::Assignment(assignment_data) = borrow_flow.kind()
@@ -979,6 +1142,20 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             place_enc.expr.expect_predicate(),
             None,
         )));
+
+        let ty_name = RustTyDecomposition::from_ty(place_ty.ty, GParams::empty())
+            .ty
+            .name
+            .as_str();
+
+        self.stmt(self.vcx.mk_exhale_stmt(self.vcx.mk_acc_field_expr(
+            place_enc.expr.address,
+            self.vcx.mk_field(
+                vir::vir_format!(self.vcx, "p_{}_frac", ty_name),
+                vir::TYPE_REF,
+            ),
+            None,
+        )));
     }
 
     fn loop_analysis(&mut self) -> &LoopAnalysis {
@@ -1153,6 +1330,21 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                         address: e_ty.expect_mutref().deref(expr.address, None),
                         snap: None,
                     },
+                    ty::TyKind::RawPtr(..) => {
+                        if let Some(snap) = expr.snap {
+                            let snap = snap.downcast_ty();
+                            let p_ty = self.ty_use_pure(place_ty.ty).expect_rawptr();
+                            PlaceExpr {
+                                address: p_ty.deref_access(snap),
+                                snap: None,
+                            }
+                        } else {
+                            PlaceExpr {
+                                address: e_ty.expect_rawptr().deref(expr.address),
+                                snap: None,
+                            }
+                        }
+                    }
                     _ => unreachable!(),
                 }
             }
@@ -1364,12 +1556,28 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                     )))));
                 }
                 mir::StatementKind::Assign(box (dest, rvalue)) => {
+
+                    self.vcx.handle_error("exhale.failed:insufficient.permission", move |_| {
+                            Some(vec![PrustiError::verification(
+                                "There might be insufficient permission",
+                                span.into(),
+                            )])
+                    });
+
+                    self.vcx.handle_error("application.precondition:insufficient.permission", move |_| {
+                            Some(vec![PrustiError::verification(
+                                "There might be insufficient permission",
+                                span.into(),
+                            )])
+                    });
+
+
                     // What are we assigning to?
                     let proj_enc = self
                         .encode_place(Place::from(*dest))
                         .expr
                         .expect_predicate();
-
+                    
                     // The snapshot of the value that we are assigning.
                     let rval_enc = self.encode_rvalue(rvalue, span);
 
@@ -1380,6 +1588,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                             let dest_ty_out = self.ty_use_impure(dest_ty.ty);
                             let method_assign_app =
                                 dest_ty_out.apply_method_assign(self.vcx, proj_enc, rval_enc.expr);
+                            self.stmts(rval_enc.pre_assign_stmts.clone());
                             self.stmt(method_assign_app);
                             self.stmts(rval_enc.post_fold_stmts(proj_enc));
                         }

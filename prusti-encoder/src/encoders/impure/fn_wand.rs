@@ -393,8 +393,10 @@ impl TaskEncoder for WandEnc {
                     // we don't want to emit an identity wand, like P --* P
                     // this can happen when PCG returns self-edges, like for fn(x: &'a mut &'b i32)
                     // where 'b is in invariant position and we therefore have an edge x|'b -> x|'b.
-                    let mut sources_as_nodes =
-                        sources.iter().map(|&s| s.to_function_shape_node()).collect::<Vec<_>>();
+                    let mut sources_as_nodes = sources
+                        .iter()
+                        .map(|&s| s.to_function_shape_node())
+                        .collect::<Vec<_>>();
                     sources_as_nodes.sort();
                     targets.sort();
                     if sources_as_nodes == targets {

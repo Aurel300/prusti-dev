@@ -289,7 +289,6 @@ impl TaskEncoder for MethodEnc {
 
                     current_stmts: None,
                     current_terminator: None,
-                    current_processed_unsize_pairs: Default::default(),
                     encoded_blocks,
                 };
                 // if we encountered an error/cycle during encoding, we don't emit a method body

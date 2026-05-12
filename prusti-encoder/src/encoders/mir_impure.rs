@@ -27,7 +27,8 @@ use pcg::{
 use prusti_interface::{PrustiError, specs::specifications::SpecQuery};
 use prusti_rustc_interface::{
     abi,
-    data_structures::fx::{FxHashMap, FxHashSet},
+    data_structures::fx::FxHashMap,
+    index::Idx,
     middle::{
         mir,
         ty::{self, TyKind},
@@ -172,13 +173,6 @@ where
     pub current_block_label: Option<vir::CfgBlockLabel<'vir>>,
     pub current_stmts: Option<Vec<vir::Stmt<'vir>>>,
     pub current_terminator: Option<vir::TerminatorStmt<'vir>>,
-
-    /// Tracks (src, dst) place pairs for which `undo_unsize` has already been
-    /// emitted in the current statement/terminator. `&mut dyn Trait` has two
-    /// lifetime projections ('a and the dyn object lifetime), so two
-    /// `BorrowFlow(Unsize)` edges are created for the same place pair. We only
-    /// want to call `undo_unsize` once per pair.
-    pub current_processed_unsize_pairs: FxHashSet<(Place<'vir>, Place<'vir>)>,
 
     pub encoded_blocks: Vec<vir::CfgBlock<'vir>>, // TODO: use IndexVec ?
 }
@@ -644,11 +638,13 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 // during the unsize operation we call a method to transter
                 // permissions from one to the other, when the slice expires,
                 // we need to undo the unsize operation.
-                let PlaceOrConst::Place(src) = borrow_flow.long().base() else {
+                let long = borrow_flow.long();
+                let short = borrow_flow.short();
+                let PlaceOrConst::Place(src) = long.base() else {
                     unreachable!();
                 };
                 let src = src.as_local_place().unwrap();
-                let dst = borrow_flow.short().base();
+                let dst = short.base();
 
                 let ctxt = CompilerCtxt::new(self.body, self.vcx.tcx(), ());
                 let src_ty = src.ty(ctxt).ty;
@@ -661,14 +657,25 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 }
 
                 let src_place = src.place();
-                let dst_place = dst.place();
-                // `&mut dyn Trait` has two lifetime projections ('a and the dyn
-                // object lifetime), producing two BorrowFlow(Unsize) edges for
-                // the same place pair. Only emit undo_unsize once per pair.
-                if !self
-                    .current_processed_unsize_pairs
-                    .insert((src_place, dst_place))
-                {
+
+                // For every unsize coercion in the standard library
+                // (`[T; N] -> [T]`, `T -> dyn Trait`, recursive struct-field
+                // unsizes through `&`/`&mut`/`Box`/`Rc`/...), the
+                // transformation lives at the outermost lifetime slot of the
+                // holder, i.e. idx 0 on both src and dst. The single
+                // `mir_undo_unsize` call emitted for that slot accounts for
+                // the entire type (including any inner regions). All other
+                // BorrowFlow(Unsize) edges the PCG produces are bookkeeping
+                // with no recoverable permission:
+                //   - inner-slot pass-throughs (e.g. `&mut [&mut T; N] ->
+                //     &mut [&mut T]` emits a redundant idx 1 -> idx 1 edge
+                //     for the inner `&mut T`'s lifetime equation),
+                //   - cross-slot witnesses (e.g. `&mut S -> &mut dyn Trait +
+                //     'b` emits an idx 0 -> idx 1 edge into the new
+                //     trait-object lifetime slot).
+                // We do not attempt to handle user-defined `CoerceUnsized`
+                // impls that put the transformation at a non-outer slot.
+                if long.region_idx().index() != 0 || short.region_idx().index() != 0 {
                     return Ok(());
                 }
                 let src_label = if let MaybeLabelledPlace::Labelled(snap) = src {
@@ -676,6 +683,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 } else {
                     label.map(vir::OldLabel::Label)
                 };
+                let dst_place = dst.place();
                 let dst_label = if let MaybeLabelledPlace::Labelled(snap) = dst {
                     Some(self.get_location_label(snap.at()))
                 } else {
@@ -1337,7 +1345,6 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
 
             let current_fpcs = self.current_fpcs.take().unwrap();
             let cfpcs = &current_fpcs.statements[location.statement_index];
-            self.current_processed_unsize_pairs.clear();
             for phase in EvalStmtPhase::phases() {
                 self.pcg_actions(&cfpcs.states[phase], &cfpcs.actions(phase), false).unwrap();
             }
@@ -1462,7 +1469,6 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
 
         let current_fpcs = self.current_fpcs.take().unwrap();
         let cfpcs = &current_fpcs.statements[location.statement_index];
-        self.current_processed_unsize_pairs.clear();
         for phase in EvalStmtPhase::phases() {
             comment!(self, "PCG (T) {phase}");
             self.pcg_actions(&cfpcs.states[phase], &cfpcs.actions(phase), false)

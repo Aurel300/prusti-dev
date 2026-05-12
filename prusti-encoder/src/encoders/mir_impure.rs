@@ -649,32 +649,23 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 let ctxt = CompilerCtxt::new(self.body, self.vcx.tcx(), ());
                 let src_ty = src.ty(ctxt).ty;
                 let dst_ty = dst.ty(ctxt).ty;
-                if let ty::TyKind::Ref(_, _, ty::Mutability::Not) = dst_ty.kind() {
-                    // We don't want to undo the unsize operation for shared
-                    // references; the slice cannot have modified the array it
-                    // unsized.
+                // An undo is only needed when the destination is `&mut U`: the mutable
+                // borrow ends and we need to return the permission to the original `&mut S`
+                // of the source type. For every other CoerceUnsized destination (`&T`, raw
+                // pointers, `Box<T>`, `Rc<T>`, `Arc<T>`, ...), there is no mutable borrow
+                // expiring and so nothing to undo.
+                if !matches!(dst_ty.kind(), ty::TyKind::Ref(_, _, ty::Mutability::Mut)) {
                     return Ok(());
                 }
-
-                let src_place = src.place();
-
-                // For every unsize coercion in the standard library
-                // (`[T; N] -> [T]`, `T -> dyn Trait`, recursive struct-field
-                // unsizes through `&`/`&mut`/`Box`/`Rc`/...), the
-                // transformation lives at the outermost lifetime slot of the
-                // holder, i.e. idx 0 on both src and dst. The single
-                // `mir_undo_unsize` call emitted for that slot accounts for
-                // the entire type (including any inner regions). All other
-                // BorrowFlow(Unsize) edges the PCG produces are bookkeeping
-                // with no recoverable permission:
-                //   - inner-slot pass-throughs (e.g. `&mut [&mut T; N] ->
-                //     &mut [&mut T]` emits a redundant idx 1 -> idx 1 edge
-                //     for the inner `&mut T`'s lifetime equation),
-                //   - cross-slot witnesses (e.g. `&mut S -> &mut dyn Trait +
-                //     'b` emits an idx 0 -> idx 1 edge into the new
-                //     trait-object lifetime slot).
-                // We do not attempt to handle user-defined `CoerceUnsized`
-                // impls that put the transformation at a non-outer slot.
+                // Since we only consider undoing unsize coercions for &mut S -> &mut U
+                // when T: Unsize<U>, we only consider the edge with idx=0 on both src and dst,
+                // corresponding to the lifetime projections of the mutable references.
+                // The single `mir_undo_unsize` accounts for the entire unsize coercion.
+                // All other BorrowFlow(Unsize) edges in the PCG are bookkeeping:
+                //   - same-index (e.g. `&mut [&mut T; N] -> &mut [&mut T]`
+                //     emits a redundant idx=1 -> idx=1 edge
+                //   - cross-index (e.g. `&mut S -> &mut dyn Trait + 'b` 
+                //     emits an idx=0 -> idx=1 edge).
                 if long.region_idx().index() != 0 || short.region_idx().index() != 0 {
                     return Ok(());
                 }
@@ -683,6 +674,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 } else {
                     label.map(vir::OldLabel::Label)
                 };
+                let src_place = src.place();
                 let dst_place = dst.place();
                 let dst_label = if let MaybeLabelledPlace::Labelled(snap) = dst {
                     Some(self.get_location_label(snap.at()))

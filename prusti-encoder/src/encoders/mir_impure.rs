@@ -165,8 +165,6 @@ where
     pub call_labels: FxHashMap<mir::BasicBlock, (&'vir str, &'vir str)>,
     pub from_to_vars: FromToVars<'vir>,
 
-    // TODO: group all the `current_*` fields into a single per-block context
-    // struct.
     // for the current basic block
     pub current_fpcs: Option<PcgBasicBlock<'enc, 'vir>>,
 

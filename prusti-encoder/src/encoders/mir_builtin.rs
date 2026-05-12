@@ -376,6 +376,7 @@ impl MirBuiltinEnc {
                 ));
             }
         }
+
         Ok((
             vcx.mk_method(
                 method,

@@ -390,8 +390,8 @@ impl TaskEncoder for WandEnc {
                 .into_iter()
                 .filter_map(|hyper_edge| {
                     let (sources, mut targets) = hyper_edge.into_tuple();
-                    // We don't want to emit an identity wand, like P --* P. This can happen when 
-                    // PCG returns self-edges, like for fn(x: &'a mut &'b i32) where 'b is in 
+                    // We don't want to emit an identity wand, like P --* P. This can happen when
+                    // PCG returns self-edges, like for fn(x: &'a mut &'b i32) where 'b is in
                     // invariant position and we therefore have an edge x|'b -> x|'b.
                     // Currently, these edges also prevent us from emitting indirect postconditions.
                     // TODO: we might want to emit these identity wands in the future to attach functional

@@ -662,7 +662,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 // All other BorrowFlow(Unsize) edges in the PCG are bookkeeping, for example:
                 //   - same-index (e.g. `&mut [&mut T; N] -> &mut [&mut T]`
                 //     emits a redundant idx=1 -> idx=1 edge
-                //   - cross-index (e.g. `&mut T -> &mut dyn Trait + 'b` 
+                //   - cross-index (e.g. `&mut T -> &mut dyn Trait + 'b`
                 //     emits an idx=0 -> idx=1 edge).
                 if long.region_idx().index() != 0 || short.region_idx().index() != 0 {
                     return Ok(());

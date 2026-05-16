@@ -45,7 +45,9 @@ impl<'vir, E: TaskEncoder> ImpureEncVisitor<'vir, '_, E> {
         let args = PledgeExpr::pledge_args(result, args);
 
         for wand_data in self.wands.viper_wands() {
-            let Some(wand) = self.wands.mk_wand(&wand_data, args, None, self.vcx, self.deps)
+            let Some(wand) = self
+                .wands
+                .mk_wand(&wand_data, args, None, self.vcx, self.deps)
             else {
                 continue;
             };
@@ -271,13 +273,9 @@ impl<'vir> WandEncOutput<'vir> {
         });
         let args = PledgeExpr::pledge_args(result, args);
         for wand_data in self.viper_wands() {
-            let Some(wand) = self.mk_wand(
-                &wand_data,
-                args,
-                Some(call_ctx),
-                visitor.vcx,
-                visitor.deps,
-            ) else {
+            let Some(wand) =
+                self.mk_wand(&wand_data, args, Some(call_ctx), visitor.vcx, visitor.deps)
+            else {
                 continue;
             };
             visitor.stmt(visitor.vcx.mk_apply_stmt(wand));
@@ -294,13 +292,9 @@ impl<'vir> WandEncOutput<'vir> {
     ) -> Option<vir::Wand<'vir>> {
         debug_assert!(!wand_data.lhs.is_empty());
         let rhs = wand_data.rhs.iter().filter_map(|g| {
-            self.encode_predicates_for_function_shape_node(
-                vcx,
-                deps,
-                *g,
-                call_ctx,
-                |i| pledge_args[i],
-            )
+            self.encode_predicates_for_function_shape_node(vcx, deps, *g, call_ctx, |i| {
+                pledge_args[i]
+            })
         });
         let rhs = rhs
             .chain(
@@ -318,13 +312,9 @@ impl<'vir> WandEncOutput<'vir> {
         }
         let rhs = vcx.mk_conj(&rhs);
         let lhs = wand_data.lhs.iter().filter_map(|g| {
-            self.encode_predicates_for_function_shape_node(
-                vcx,
-                deps,
-                *g,
-                call_ctx,
-                |i| pledge_args[i],
-            )
+            self.encode_predicates_for_function_shape_node(vcx, deps, *g, call_ctx, |i| {
+                pledge_args[i]
+            })
         });
         let lhs = lhs
             .chain(

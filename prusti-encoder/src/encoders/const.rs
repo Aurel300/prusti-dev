@@ -50,6 +50,11 @@ pub enum ConstEncTask<'vir> {
 /// https://rustc-dev-guide.rust-lang.org/mir/index.html#representing-constants
 pub struct ConstEnc;
 
+// Counter ensuring every emitted array constant gets a unique Viper name.
+thread_local! {
+    static CONST_CTR: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
 struct Enc<'enc, 'vir: 'enc> {
     deps: &'enc mut TaskEncoderDependencies<'vir, ConstEnc>,
     ecx: &'enc InterpCx<'vir, CompileTimeMachine<'vir>>,
@@ -130,39 +135,28 @@ impl<'enc, 'vir: 'enc> Enc<'enc, 'vir> {
                             ),
                         );
                     }
-                    // We need to choose a unique identifier to avoid name collisions.
-                    // This is tricky for constants in macro expansions.
-                    // Expanding the same macro twice leads to identical `self.span` values.
-                    // We choose to keep identifiers simpler if we are in a non-macro context.
-                    let source_map = vcx.tcx().sess.source_map();
-                    let source_span = self.span.source_callsite();
-                    let callsite = source_map.lookup_char_pos(source_span.lo());
-                    let name = if source_span == self.span {
-                        // Non-macro case: a single position is already unique.
+                    let id = CONST_CTR.with(|c| {
+                        let v = c.get();
+                        c.set(v + 1);
+                        v
+                    });
+                    // `source_callsite()` walks out of any macro expansion to the user's call site.
+                    let span_pos = vcx
+                        .tcx()
+                        .sess
+                        .source_map()
+                        .lookup_char_pos(self.span.source_callsite().lo());
+                    let gen_snap_func_idn: FunctionIdn<'_, (), vir::CSnap> = FunctionIdn::new(
                         vir::vir_format_identifier!(
                             vcx,
                             "const_{}_{}_{}",
-                            callsite.line,
-                            callsite.col_display,
-                            self.span.lo().0,
-                        )
-                    } else {
-                        // Macro case: the macro definition site (`self.span`) distinguishes constants
-                        // within one invocation; the call site distinguishes between invocations.
-                        let original = source_map.lookup_char_pos(self.span.lo());
-                        vir::vir_format_identifier!(
-                            vcx,
-                            "const_{}_{}_{}__{}_{}_{}",
-                            callsite.line,
-                            callsite.col_display,
-                            source_span.lo().0,
-                            original.line,
-                            original.col_display,
-                            self.span.lo().0,
-                        )
-                    };
-                    let gen_snap_func_idn: FunctionIdn<'_, (), vir::CSnap> =
-                        FunctionIdn::new(name, (), kind.snapshot.downcast_ty());
+                            span_pos.line,
+                            span_pos.col_display,
+                            id,
+                        ),
+                        (),
+                        kind.snapshot.downcast_ty(),
+                    );
                     self.functions.push(vcx.mk_function(
                         gen_snap_func_idn,
                         (),

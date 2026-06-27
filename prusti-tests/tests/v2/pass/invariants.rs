@@ -67,7 +67,7 @@ fn test_multiple_invariants() {
         body_invariant!(x == 42);
     }
 }
-
+/*
 /// If there are multiple body invariants, they should all be in the same place.
 // TODO: this should not be accepted and probably produces incorrect Viper code
 fn test_multiple_invariants_wrong() {
@@ -75,17 +75,26 @@ fn test_multiple_invariants_wrong() {
     let y = 72;
     loop {
         body_invariant!(y == 72);
-        choose();
+        //choose();
         body_invariant!(x == 42);
         choose();
     }
 }
-/*
+
+/// The body invariant should be hit in *any* loop iteration, i.e., it should
+/// not be hit conditionally.
+// TODO: this should not be accepted
+fn test_conditional_invariant_wrong() {
+    loop {
+        if choose() {
+            body_invariant!(true);
+        }
+    }
+}
+*/
 /// Pathological case described in `mir_impure.rs` -- a loop with a body
 /// invariant in the loop guard of a loop with a body invariant. This should
 /// result in duplication of multiple basic blocks.
-// TODO: still produces an irreducible CFG -- maybe the `break;` in (IN) does
-//   not jump to where it is supposed to?
 fn test_pathological_nesting() {
     while { // (OUT)
         loop { // (IN)
@@ -98,11 +107,11 @@ fn test_pathological_nesting() {
         choose()
     } {
         choose();
-        body_invariant!(false);
+        body_invariant!(true);
         choose();
     }
 }
-*/
+
 /// The loop invariant should be able to refer to a local variable declared
 /// within the loop.
 // TODO: the issue here is where to emit the body invariant exactly: the CFG

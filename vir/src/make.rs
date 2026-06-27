@@ -910,9 +910,7 @@ impl<'tcx> VirCtxt<'tcx> {
         block: usize,
         pres: impl IntoIterator<Item = usize>,
     ) -> CfgBlockLabel<'vir> {
-        let pres = self.alloc(pres.into_iter()
-            .map(|l| self.alloc(l))
-            .collect::<Vec<_>>());
+        let pres = self.alloc(pres.into_iter().map(|l| self.alloc(l)).collect::<Vec<_>>());
         if pres.is_empty() {
             self.alloc(CfgBlockLabelData::BasicBlock(block))
         } else {
@@ -925,9 +923,7 @@ impl<'tcx> VirCtxt<'tcx> {
         block: usize,
         pres: impl IntoIterator<Item = usize>,
     ) -> CfgBlockLabel<'vir> {
-        let pres = self.alloc(pres.into_iter()
-            .map(|l| self.alloc(l))
-            .collect::<Vec<_>>());
+        let pres = self.alloc(pres.into_iter().map(|l| self.alloc(l)).collect::<Vec<_>>());
         if pres.is_empty() {
             self.alloc(CfgBlockLabelData::BasicBlockTerminator(block))
         } else {

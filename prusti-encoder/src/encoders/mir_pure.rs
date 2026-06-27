@@ -149,7 +149,8 @@ impl TaskEncoder for MirPureEnc {
             } else {
                 enc.encode_body()?
             };
-            let inputs = std::mem::take(&mut enc.versions_used).into_iter()
+            let inputs = std::mem::take(&mut enc.versions_used)
+                .into_iter()
                 .filter(|(l, v)| *l != mir::RETURN_PLACE && *v == 0)
                 .map(|(l, _v)| l)
                 .unique()
@@ -187,10 +188,7 @@ impl TaskEncoder for MirPureEnc {
         })?;
         tracing::debug!("finished {def_id:?}");
 
-        Ok(((), MirPureEncOutput {
-            inputs,
-            expr,
-        }))
+        Ok(((), MirPureEncOutput { inputs, expr }))
     }
 }
 
@@ -344,7 +342,6 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
         body: &'enc mir::Body<'vir>,
         deps: &'enc mut TaskEncoderDependencies<'vir, MirPureEnc>,
     ) -> Self {
-
         let rev_doms = rev_doms::ReverseDominators::new(&body.basic_blocks);
         let local_def_enc_task = if kind.extern_spec().is_some() {
             MirLocalDefEncTask::ExternSpec(def_id)
@@ -572,15 +569,32 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
             !graph::is_cyclic(&self.body.basic_blocks),
             "MIR pure encoding does not support loops"
         );
-        self.encode_common(mir::START_BLOCK, self.rev_doms.end, self.body.arg_count + 1, mir::RETURN_PLACE)
+        self.encode_common(
+            mir::START_BLOCK,
+            self.rev_doms.end,
+            self.body.arg_count + 1,
+            mir::RETURN_PLACE,
+        )
     }
 
-    fn encode_spec_block(&mut self, block: mir::BasicBlock) -> Result<ExprRet<'vir>, EncodeFullError<'vir, MirPureEnc>> {
-        let Some(mir::TerminatorKind::Call { destination, .. }) = self.body.basic_blocks[block].terminator.as_ref().map(|t| &t.kind) else {
+    fn encode_spec_block(
+        &mut self,
+        block: mir::BasicBlock,
+    ) -> Result<ExprRet<'vir>, EncodeFullError<'vir, MirPureEnc>> {
+        let Some(mir::TerminatorKind::Call { destination, .. }) = self.body.basic_blocks[block]
+            .terminator
+            .as_ref()
+            .map(|t| &t.kind)
+        else {
             unreachable!("malformed spec-only block: should end in a call terminator");
         };
         assert!(destination.projection.is_empty());
-        self.encode_common(block, self.body.basic_blocks.successors(block).next().unwrap(), self.body.local_decls.len(), destination.local)
+        self.encode_common(
+            block,
+            self.body.basic_blocks.successors(block).next().unwrap(),
+            self.body.local_decls.len(),
+            destination.local,
+        )
     }
 
     fn encode_cfg(
@@ -663,9 +677,11 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                 // TODO: this is an over-estimation: the variable after the
                 //   join point may not actually be used
                 for update in &updates {
-                    let Some(update) = update else { continue; };
+                    let Some(update) = update else {
+                        continue;
+                    };
                     for local in &mod_locals {
-                        if let Some(version) = update.versions.get(&local) {
+                        if let Some(version) = update.versions.get(local) {
                             self.versions_used.insert((*local, version.index));
                         }
                     }
@@ -764,7 +780,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                 //   join point may not actually be used
                 if let Some(update) = &ok_update {
                     for local in &mod_locals {
-                        if let Some(version) = update.versions.get(&local) {
+                        if let Some(version) = update.versions.get(local) {
                             self.versions_used.insert((*local, version.index));
                         }
                     }
@@ -849,7 +865,12 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                     .unwrap_or_default();
 
                     let env_query = EnvQuery::new(self.vcx.tcx());
-                    if env_query.is_function_in_crate(self.def_id, def_id, arg_tys, "prusti_contracts") {
+                    if env_query.is_function_in_crate(
+                        self.def_id,
+                        def_id,
+                        arg_tys,
+                        "prusti_contracts",
+                    ) {
                         let sig = self.vcx.tcx().fn_sig(def_id);
                         let sig = sig.instantiate_identity();
                         let actual_impl = env_query.find_impl_of_trait_method_call(def_id, arg_tys);
@@ -1100,7 +1121,8 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
     ) -> EncodedPlace<'vir> {
         // TODO: remove (debug)
         assert!(curr_ver.contains_key(&place.local));
-        self.versions_used.insert((place.local, curr_ver[&place.local].index));
+        self.versions_used
+            .insert((place.local, curr_ver[&place.local].index));
 
         let mut place_ty = mir::PlaceTy::from_ty(self.body.local_decls[place.local].ty);
 
@@ -1385,9 +1407,12 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                 assert_eq!(cl_kind, ty::ClosureKind::Fn);
 
                 reify_args.insert(1usize.into(), closure_ref);
-                reify_args.extend(qvars.iter()
-                    .enumerate()
-                    .map(|(idx, qvar)| ((idx + 2).into(), self.vcx.mk_local_ex(qvar))));
+                reify_args.extend(
+                    qvars
+                        .iter()
+                        .enumerate()
+                        .map(|(idx, qvar)| ((idx + 2).into(), self.vcx.mk_local_ex(qvar))),
+                );
 
                 // TODO: recursively invoke MirPure encoder to encode
                 // the body of the closure; pass the closure as the
@@ -1434,7 +1459,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
 
                 let closure_ty = arg_tys[1].expect_ty();
 
-                let (/*qvar_tys, _upvar_tys, */cl_kind, cl_def_id) = match closure_ty.kind() {
+                let (/*qvar_tys, _upvar_tys, */ cl_kind, cl_def_id) = match closure_ty.kind() {
                     TyKind::Closure(cl_def_id, cl_args) => (
                         /*match cl_args.as_closure().sig().skip_binder().inputs()[0].kind() {
                             TyKind::Tuple(list) => list,

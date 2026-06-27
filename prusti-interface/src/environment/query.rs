@@ -352,7 +352,8 @@ impl<'tcx> EnvQuery<'tcx> {
         call_substs: GenericArgsRef<'tcx>,
         crate_name: &'tcx str,
     ) -> bool {
-        let (resolved_def_id, _) = self.resolve_method_call(caller_def_id, called_def_id, call_substs);
+        let (resolved_def_id, _) =
+            self.resolve_method_call(caller_def_id, called_def_id, call_substs);
         let resolved_crate_name = self.tcx.crate_name(resolved_def_id.krate);
         resolved_crate_name.as_str() == crate_name
     }

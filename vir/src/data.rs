@@ -262,8 +262,14 @@ pub enum CfgBlockLabelData<'vir> {
     End,
     BasicBlock(usize),
     BasicBlockTerminator(usize),
-    PreLoopBasicBlock(usize, #[serde(with = "crate::serde::serde_slice")] &'vir [&'vir usize]),
-    PreLoopBasicBlockTerminator(usize, #[serde(with = "crate::serde::serde_slice")] &'vir [&'vir usize]),
+    PreLoopBasicBlock(
+        usize,
+        #[serde(with = "crate::serde::serde_slice")] &'vir [&'vir usize],
+    ),
+    PreLoopBasicBlockTerminator(
+        usize,
+        #[serde(with = "crate::serde::serde_slice")] &'vir [&'vir usize],
+    ),
 }
 
 impl<'vir> CfgBlockLabelData<'vir> {
@@ -274,15 +280,11 @@ impl<'vir> CfgBlockLabelData<'vir> {
             Self::BasicBlock(idx) => format!("bb_{idx}"),
             Self::BasicBlockTerminator(idx) => format!("bb_term_{idx}"),
             Self::PreLoopBasicBlock(idx, pres) => {
-                let pres = pres.iter()
-                    .map(|l| format!("_pre{l}"))
-                    .collect::<String>();
+                let pres = pres.iter().map(|l| format!("_pre{l}")).collect::<String>();
                 format!("bb_{idx}{pres}")
             }
             Self::PreLoopBasicBlockTerminator(idx, pres) => {
-                let pres = pres.iter()
-                    .map(|l| format!("_pre{l}"))
-                    .collect::<String>();
+                let pres = pres.iter().map(|l| format!("_pre{l}")).collect::<String>();
                 format!("bb_term_{idx}{pres}")
             }
         }

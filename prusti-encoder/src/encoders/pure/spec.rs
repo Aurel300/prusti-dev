@@ -175,7 +175,10 @@ impl TaskEncoder for MirSpecEnc {
                 }
                 MirSpecEncMode::PureWithoutResult => local_iter
                     .map(|local| (local, vcx.mk_local_ex(local_defs[local].local_snap)))
-                    .chain([((local_defs.arg_count + 1).into(), vcx.mk_local_ex(local_defs[mir::RETURN_PLACE].local_snap))])
+                    .chain([(
+                        (local_defs.arg_count + 1).into(),
+                        vcx.mk_local_ex(local_defs[mir::RETURN_PLACE].local_snap),
+                    )])
                     .collect(),
             };
             let all_args = vcx.alloc(all_args);
@@ -218,7 +221,10 @@ impl TaskEncoder for MirSpecEnc {
                     let post_args: FxHashMap<mir::Local, vir::ExprSnap<'vir>> = pre_args
                         .iter()
                         .map(|(local, arg)| (*local, vcx.mk_old_expr(arg)))
-                        .chain([((local_defs.arg_count + 1).into(), local_defs[mir::RETURN_PLACE].impure_snap)])
+                        .chain([(
+                            (local_defs.arg_count + 1).into(),
+                            local_defs[mir::RETURN_PLACE].impure_snap,
+                        )])
                         .collect();
                     vcx.alloc(post_args)
                 }

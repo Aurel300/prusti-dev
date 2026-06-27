@@ -19,7 +19,7 @@ use pcg::{
     },
     coupling::PcgCoupledEdgeKind,
     free_pcs::{RepackGuide, RepackOp},
-    r#loop::{LoopAnalysis, LoopId, PlaceUsages},
+    r#loop::{LoopAnalysis, LoopId},
     pcg::{CapabilityKind, EvalStmtPhase, Pcg, PcgNode, PcgSuccessor},
     results::PcgBasicBlock,
     utils::{
@@ -38,18 +38,22 @@ use prusti_rustc_interface::{
     },
     span::{Span, def_id::DefId},
 };
-use rustc_hash::{FxHashMap, FxHashSet};
 use prusti_utils::config;
+use rustc_hash::{FxHashMap, FxHashSet};
 use task_encoder::{EncodeFullError, TaskEncoder, TaskEncoderDependencies};
 use vir::{CastType, CompType, LocalDeclData};
 
 use crate::encoders::{
-    self, FunctionCallEnc, MirBuiltinEnc, MirBuiltinEncTask, MirPureEnc, MirPureEncTask, PureKind, TyUseImpureEnc, WandEnc, WandEncTask, mir_fn::{CallTaskDescription, RustSignature, SpecBlock, SpecBlockKind, SpecBlocks}, mir_shared::PureRvalueEnc, ty::{
+    self, FunctionCallEnc, MirBuiltinEnc, MirBuiltinEncTask, MirPureEnc, MirPureEncTask, PureKind,
+    TyUseImpureEnc, WandEnc, WandEncTask,
+    mir_fn::{CallTaskDescription, RustSignature, SpecBlockKind, SpecBlocks},
+    mir_shared::PureRvalueEnc,
+    ty::{
         RustTyDecomposition,
         generics::{GParams, GenericParamsEnc},
         use_impure::TyUseImpure,
         use_pure::{TyUsePure, TyUsePureEnc},
-    }
+    },
 };
 
 use super::WandEncOutput;
@@ -1005,13 +1009,6 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         self.fpcs_analysis.analysis().loop_analysis()
     }
 
-    fn loop_place_usages(&mut self, block: mir::BasicBlock) -> Option<PlaceUsages<'vir>> {
-        self.fpcs_analysis
-            .analysis()
-            .loop_place_usages_of_loop_with_head(block)
-            .cloned()
-    }
-
     fn loop_head_of(&mut self, block: mir::BasicBlock) -> Option<LoopId> {
         self.loop_analysis().loop_head_of(block)
     }
@@ -1219,7 +1216,8 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         location: mir::Location,
         loop_pres: &[usize],
     ) -> &'vir str {
-        let pres = loop_pres.iter()
+        let pres = loop_pres
+            .iter()
             .map(|l| format!("_pre{l}"))
             .collect::<String>();
         vir::vir_format!(
@@ -1232,7 +1230,11 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
     }
 
     fn new_before_label(&mut self, location: mir::Location) {
-        let label = self.location_label(LocationLabelPrefix::Before, location, self.current_block_pres.as_ref().unwrap());
+        let label = self.location_label(
+            LocationLabelPrefix::Before,
+            location,
+            self.current_block_pres.as_ref().unwrap(),
+        );
         self.stmt(self.vcx.mk_label_stmt(label));
     }
 
@@ -1301,7 +1303,9 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         // path); a LoopId is in this set as soon as the loop head (or the body
         // invariant for a loop with one) is entered
         let mut start_heads = FxHashSet::default();
-        let start_loops = self.loop_analysis().loops(mir::START_BLOCK)
+        let start_loops = self
+            .loop_analysis()
+            .loops(mir::START_BLOCK)
             .collect::<FxHashSet<_>>();
         if !start_loops.is_empty() {
             // the start block is either not part of a loop, or else it is in
@@ -1316,21 +1320,21 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         queue.push_back((mir::START_BLOCK, start_heads));
 
         while let Some((block, mut heads_hit)) = queue.pop_front() {
-            let in_loops = self.loop_analysis().loops(block)
-                .collect::<FxHashSet<_>>();
+            let in_loops = self.loop_analysis().loops(block).collect::<FxHashSet<_>>();
 
             heads_hit.retain(|l| in_loops.contains(l));
 
             // is this a loop head?
-            if let Some(loop_spec) = self.spec_blocks.loop_specs.get(&block) {
-                if !heads_hit.insert(loop_spec.loop_id) {
-                    // we already walked over this loop head, so the full loop
-                    // iteration was already emitted on this path
-                    continue;
-                }
+            if let Some(loop_spec) = self.spec_blocks.loop_specs.get(&block)
+                && !heads_hit.insert(loop_spec.loop_id)
+            {
+                // we already walked over this loop head, so the full loop
+                // iteration was already emitted on this path
+                continue;
             }
 
-            let pre_loops = in_loops.iter()
+            let pre_loops = in_loops
+                .iter()
                 .copied()
                 .filter(|l| !heads_hit.contains(l))
                 .sorted()
@@ -1343,33 +1347,38 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             self.current_block = Some(block);
             // Allocate label for current block and its successors with the
             // correct pre-loop prefixes.
-            self.current_block_pres = Some(pre_loops.iter()
-                .map(|l| l.index())
-                .collect());
-            self.current_block_succs = Some(body.basic_blocks.successors(block)
-                // Successors can have a different prefix than the current
-                // block; the successor can be:
-                // * part of a loop the current block is not in;
-                // * the loop head of a loop the current block is in; and/or
-                // * not part of a loop the current block is in.
-                .map(|succ| {
-                    // TODO: this does a lot of duplicate work
-                    //   maybe some two-pass approach would be nicer?
-                    let succ_in_loops = self.loop_analysis().loops(succ)
-                        .collect::<FxHashSet<_>>();
-                    let mut succ_heads_hit = heads_hit.clone();
-                    succ_heads_hit.retain(|l| succ_in_loops.contains(l));
-                    if let Some(loop_spec) = self.spec_blocks.loop_specs.get(&succ) {
-                        succ_heads_hit.insert(loop_spec.loop_id);
-                    }
-                    let succ_pre_loops = succ_in_loops.iter()
-                        .copied()
-                        .filter(|l| !succ_heads_hit.contains(l))
-                        .map(|l| l.index())
-                        .sorted();
-                    (succ, self.vcx.mk_block_label(succ.as_usize(), succ_pre_loops))
-                })
-                .collect());
+            self.current_block_pres = Some(pre_loops.iter().map(|l| l.index()).collect());
+            self.current_block_succs = Some(
+                body.basic_blocks
+                    .successors(block)
+                    // Successors can have a different prefix than the current
+                    // block; the successor can be:
+                    // * part of a loop the current block is not in;
+                    // * the loop head of a loop the current block is in; and/or
+                    // * not part of a loop the current block is in.
+                    .map(|succ| {
+                        // TODO: this does a lot of duplicate work
+                        //   maybe some two-pass approach would be nicer?
+                        let succ_in_loops =
+                            self.loop_analysis().loops(succ).collect::<FxHashSet<_>>();
+                        let mut succ_heads_hit = heads_hit.clone();
+                        succ_heads_hit.retain(|l| succ_in_loops.contains(l));
+                        if let Some(loop_spec) = self.spec_blocks.loop_specs.get(&succ) {
+                            succ_heads_hit.insert(loop_spec.loop_id);
+                        }
+                        let succ_pre_loops = succ_in_loops
+                            .iter()
+                            .copied()
+                            .filter(|l| !succ_heads_hit.contains(l))
+                            .map(|l| l.index())
+                            .sorted();
+                        (
+                            succ,
+                            self.vcx.mk_block_label(succ.as_usize(), succ_pre_loops),
+                        )
+                    })
+                    .collect(),
+            );
 
             self.visit_basic_block_data(block, &body[block])?;
             self.current_block = None;
@@ -1396,11 +1405,17 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             caller_def_id: Some(self.def_id),
         })?;
         use vir::Reify;
-        let locals: FxHashMap<mir::Local, _> = enc_output.inputs.iter()
+        let locals: FxHashMap<mir::Local, _> = enc_output
+            .inputs
+            .iter()
             .map(|local| (*local, self.local_defs.locals[*local].impure_snap))
             .collect();
-        let expr = enc_output.expr.reify(self.vcx, (self.def_id, self.vcx.alloc(locals))).downcast_ty();
-        let to_bool = self.deps
+        let expr = enc_output
+            .expr
+            .reify(self.vcx, (self.def_id, self.vcx.alloc(locals)))
+            .downcast_ty();
+        let to_bool = self
+            .deps
             .require_dep::<TyUsePureEnc>(RustTyDecomposition::from_prim_ty(
                 self.vcx.tcx().types.bool,
             ))?
@@ -1414,7 +1429,10 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         block: mir::BasicBlock,
         data: &mir::BasicBlockData<'vir>,
     ) -> Result<(), EncodeFullError<'vir, E>> {
-        let current_block_label = self.vcx.mk_block_label(block.as_usize(), self.current_block_pres.as_ref().unwrap().iter().copied());
+        let current_block_label = self.vcx.mk_block_label(
+            block.as_usize(),
+            self.current_block_pres.as_ref().unwrap().iter().copied(),
+        );
 
         // We are verifying the absence of panics, so cleanup block should never
         // be reached, or even referenced.
@@ -1459,29 +1477,43 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         // loop head by default
         let mut invariant = None;
         if let Some(loop_spec) = self.spec_blocks.loop_specs.get(&block) {
-            let loop_place_usages = self.fpcs_analysis
+            let loop_place_usages = self
+                .fpcs_analysis
                 .analysis()
                 .loop_place_usages(loop_spec.loop_id)
                 .clone();
-            let functional = loop_spec.invariants.clone().into_iter()
-                .map(|(spec_block, span)| self.vcx.with_span(span, |vcx| {
-                    let error_msg = "loop invariant might not be preserved";
-                    vcx.handle_error("invariant.not.preserved:assertion.false", move |_| {
-                        Some(vec![PrustiError::verification(error_msg, span.into())])
-                    });
+            let functional = loop_spec
+                .invariants
+                .clone()
+                .into_iter()
+                .map(|(spec_block, span)| {
                     self.vcx.with_span(span, |vcx| {
-                        let error_msg = "loop invariant might not hold on entry";
-                        vcx.handle_error("invariant.not.established:assertion.false", move |_| {
+                        let error_msg = "loop invariant might not be preserved";
+                        vcx.handle_error("invariant.not.preserved:assertion.false", move |_| {
                             Some(vec![PrustiError::verification(error_msg, span.into())])
                         });
-                        self.encode_spec_block(spec_block)
+                        self.vcx.with_span(span, |vcx| {
+                            let error_msg = "loop invariant might not hold on entry";
+                            vcx.handle_error(
+                                "invariant.not.established:assertion.false",
+                                move |_| {
+                                    Some(vec![PrustiError::verification(error_msg, span.into())])
+                                },
+                            );
+                            self.encode_spec_block(spec_block)
+                        })
                     })
-                }))
+                })
                 .collect::<Result<Vec<_>, _>>()?;
             let permissions = self.get_loop_inv(&cfpcs, &loop_place_usages, self.pcg_ctxt());
-            invariant = Some(self.vcx.alloc_slice(&permissions.into_iter()
-                .chain(functional)
-                .collect::<Vec<_>>()));
+            invariant = Some(
+                self.vcx.alloc_slice(
+                    &permissions
+                        .into_iter()
+                        .chain(functional)
+                        .collect::<Vec<_>>(),
+                ),
+            );
         }
 
         self.current_fpcs = Some(cfpcs);
@@ -1739,7 +1771,8 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 self.current_fpcs = Some(current_fpcs);
                 let set_flag = self.set_from_to_flag(location.block, *target);
                 self.stmt(set_flag);
-                self.vcx.mk_goto_stmt(self.current_block_succs.as_ref().unwrap()[target])
+                self.vcx
+                    .mk_goto_stmt(self.current_block_succs.as_ref().unwrap()[target])
             }
             mir::TerminatorKind::SwitchInt { discr, targets } => {
                 let discr_ty_rs = discr.ty(self.local_decls, self.vcx.tcx());
@@ -1771,7 +1804,8 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                         })
                         .collect::<Vec<_>>(),
                 );
-                let goto_otherwise = self.current_block_succs.as_ref().unwrap()[&targets.otherwise()];
+                let goto_otherwise =
+                    self.current_block_succs.as_ref().unwrap()[&targets.otherwise()];
 
                 let otherwise_succ_idx = goto_targets.len();
                 assert_eq!(
@@ -1825,14 +1859,11 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 );
                 self.encoded_blocks.push(
                     self.vcx.mk_cfg_block(
-                        self.current_block_label
-                            .replace(terminator_label)
-                            .unwrap(),
+                        self.current_block_label.replace(terminator_label).unwrap(),
                         &[],
                         self.vcx
                             .alloc_slice(&self.current_stmts.replace(Vec::new()).unwrap()),
-                        self.vcx
-                            .mk_goto_stmt(terminator_label),
+                        self.vcx.mk_goto_stmt(terminator_label),
                     ),
                 );
 
@@ -1960,7 +1991,8 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                         let set_flag = self.set_from_to_flag(location.block, target);
                         self.stmt(set_flag);
 
-                        self.vcx.mk_goto_stmt(self.current_block_succs.as_ref().unwrap()[&target])
+                        self.vcx
+                            .mk_goto_stmt(self.current_block_succs.as_ref().unwrap()[&target])
                     })
                     .unwrap_or_else(|| {
                         // TODO: detect panic causes, adjust message accordingly
@@ -2049,7 +2081,8 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 }
                 let set_flag = self.set_from_to_flag(location.block, *target);
                 self.stmt(set_flag);
-                self.vcx.mk_goto_stmt(self.current_block_succs.as_ref().unwrap()[target])
+                self.vcx
+                    .mk_goto_stmt(self.current_block_succs.as_ref().unwrap()[target])
             }
             mir::TerminatorKind::Unreachable => self.vcx.with_span(span, |vcx| {
                 vcx.handle_error("exhale.failed:assertion.false", move |_| {
@@ -2065,7 +2098,8 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             mir::TerminatorKind::Drop { target, .. } => {
                 let set_flag = self.set_from_to_flag(location.block, *target);
                 self.stmt(set_flag);
-                self.vcx.mk_goto_stmt(self.current_block_succs.as_ref().unwrap()[target])
+                self.vcx
+                    .mk_goto_stmt(self.current_block_succs.as_ref().unwrap()[target])
             }
 
             mir::TerminatorKind::UnwindResume | mir::TerminatorKind::UnwindTerminate(..) => {

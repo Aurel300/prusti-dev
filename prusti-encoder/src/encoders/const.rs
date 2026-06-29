@@ -50,8 +50,8 @@ pub enum ConstEncTask<'vir> {
 /// https://rustc-dev-guide.rust-lang.org/mir/index.html#representing-constants
 pub struct ConstEnc;
 
-// Counter ensuring every emitted array constant gets a unique Viper name.
 thread_local! {
+    /// Counter ensuring every emitted constant gets a unique Viper name.
     static CONST_CTR: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
@@ -335,6 +335,11 @@ impl TaskEncoder for ConstEnc {
                 program.add_function(fun);
             }
         }
+        // reset the counter across compilations
+        CONST_CTR.with(|c| {
+            let v = c.get();
+            c.set(v + 1);
+        });
     }
 
     fn do_encode_full<'vir>(

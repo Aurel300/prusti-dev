@@ -1,11 +1,16 @@
 use crate::encoders::{
     ImpureEncVisitor, MirLocalDefEncOutput, MirSpecEnc,
     pure::spec::{EncodedPledge, MirSpecEncMode, PledgeArgs, PledgeExpr},
-    ty::{RustTyDecomposition, generics::GParams, indirect::IndirectPredicatesEnc},
+    ty::{
+        RustTyDecomposition,
+        generics::GParams,
+        indirect::{IndirectPredicatesEnc, projection_for_generalized_idx},
+    },
 };
 use pcg::borrow_pcg::{
     FunctionData, FunctionShape, FunctionShapeInput, FunctionShapeNode, FunctionShapeOutput,
-    MakeFunctionShapeError, state::BorrowsState, unblock_graph::UnblockGraph,
+    MakeFunctionShapeError, region_projection::Generalized, state::BorrowsState,
+    unblock_graph::UnblockGraph,
 };
 use prusti_interface::PrustiError;
 use prusti_rustc_interface::{
@@ -40,7 +45,10 @@ impl<'vir, E: TaskEncoder> ImpureEncVisitor<'vir, '_, E> {
         let args = PledgeExpr::pledge_args(result, args);
 
         for wand_data in self.wands.viper_wands() {
-            let Some(wand) = self.wands.mk_wand(&wand_data, args, self.vcx, self.deps) else {
+            let Some(wand) = self
+                .wands
+                .mk_wand(&wand_data, args, None, self.vcx, self.deps)
+            else {
                 continue;
             };
             let mut package_script = Vec::new();
@@ -84,49 +92,82 @@ impl<'vir, E: TaskEncoder> ImpureEncVisitor<'vir, '_, E> {
 
 type EncodedPledges<'vir> = Vec<EncodedPledge<'vir>>;
 
+/// Not tied to a caller or callee context. `indirect_pres`, `indirect_posts`,
+/// `wand_posts`, and `package_wands` are identity-substituted and intended for
+/// use in the callee's own contract; `apply_wands` is for caller use and
+/// re-substitutes via a [`WandCallContext`].
 #[derive(Clone)]
 pub struct WandEncOutput<'vir> {
     /// Information about the corresponding function.
     function_data: FunctionData<'vir>,
 
     /// The lifetime projections of all arguments to the function.
-    inputs: Vec<FunctionShapeInput>,
+    inputs: Vec<FunctionShapeInput<Generalized>>,
 
     /// The lifetime projections of all function outputs (according to the
     /// corresponding [`FunctionShape`]). This *includes* lifetime projections
     /// of nested lifetimes in the function arguments.
-    outputs: Vec<FunctionShapeOutput>,
+    outputs: Vec<FunctionShapeOutput<Generalized>>,
 
     /// Encoded VIR expressions for the magic wands.
     wands: Vec<WandData<'vir>>,
 }
 
+/// Substitution context for instantiating a wand at a call site. When `None`,
+/// the wand is encoded using the callee's identity substitution (appropriate
+/// when emitting wands inside the function being defined). When `Some`, the
+/// wand is re-encoded with the call-site substitutions and the caller's
+/// generic parameters, so that placeholders like `Self` or other callee
+/// generics are replaced by concrete types from the caller's perspective.
+#[derive(Clone, Copy)]
+pub struct WandCallContext<'vir> {
+    pub caller_substs: ty::GenericArgsRef<'vir>,
+    pub caller_g_params: GParams<'vir>,
+}
+
 impl<'vir> WandEncOutput<'vir> {
-    pub(crate) fn fn_sig(&self, vcx: &'vir vir::VirCtxt<'vir>) -> ty::FnSig<'vir> {
-        self.function_data.identity_fn_sig(vcx.tcx())
+    pub(crate) fn fn_sig(
+        &self,
+        vcx: &'vir vir::VirCtxt<'vir>,
+        call_ctx: Option<WandCallContext<'vir>>,
+    ) -> ty::FnSig<'vir> {
+        match call_ctx {
+            Some(ctx) => self.function_data.fn_sig(vcx.tcx(), ctx.caller_substs),
+            None => self.function_data.identity_fn_sig(vcx.tcx()),
+        }
     }
 
-    pub(crate) fn g_params(&self, vcx: &'vir vir::VirCtxt<'vir>) -> GParams<'vir> {
-        GParams::new(
-            self.function_data.identity_substs(vcx.tcx()),
-            self.function_data.param_env(vcx.tcx()),
-            false,
-        )
+    pub(crate) fn g_params(
+        &self,
+        vcx: &'vir vir::VirCtxt<'vir>,
+        call_ctx: Option<WandCallContext<'vir>>,
+    ) -> GParams<'vir> {
+        match call_ctx {
+            Some(ctx) => ctx.caller_g_params,
+            None => GParams::new(
+                self.function_data.identity_substs(vcx.tcx()),
+                self.function_data.param_env(vcx.tcx()),
+                false,
+            ),
+        }
     }
 
     fn encode_predicates_for_function_shape_node(
         &self,
         vcx: &'vir vir::VirCtxt<'vir>,
         deps: &mut TaskEncoderDependencies<'vir, impl TaskEncoder>,
-        g: impl Into<FunctionShapeNode>,
+        g: impl Into<FunctionShapeNode<Generalized>>,
+        call_ctx: Option<WandCallContext<'vir>>,
         mut snap: impl FnMut(mir::Local) -> vir::ExprSnap<'vir>,
     ) -> Option<vir::ExprBool<'vir>> {
         use vir::Reify;
         let g = g.into();
-        let fn_sig = self.fn_sig(vcx);
-        let ty = RustTyDecomposition::from_ty(g.ty(fn_sig), self.g_params(vcx));
+        let arg_ty = g.ty(self.fn_sig(vcx, call_ctx));
+        let decomp = RustTyDecomposition::from_ty(arg_ty, self.g_params(vcx, call_ctx));
+        let region_proj =
+            projection_for_generalized_idx(arg_ty, g.region_idx(), decomp, vcx.tcx())?;
         let predicates = deps
-            .require_dep::<IndirectPredicatesEnc>(g.with_base(ty))
+            .require_dep::<IndirectPredicatesEnc>(region_proj)
             .unwrap()
             .predicate_applications;
         if predicates.is_empty() {
@@ -153,7 +194,7 @@ impl<'vir> WandEncOutput<'vir> {
         deps: &'a mut TaskEncoderDependencies<'vir, E>,
     ) -> impl Iterator<Item = vir::ExprBool<'vir>> + 'a {
         self.inputs().filter_map(|g| {
-            self.encode_predicates_for_function_shape_node(vcx, deps, g, |i| {
+            self.encode_predicates_for_function_shape_node(vcx, deps, g, None, |i| {
                 local_defs[i].impure_snap
             })
         })
@@ -174,7 +215,7 @@ impl<'vir> WandEncOutput<'vir> {
             .inputs()
             .filter(|i| !self.blocked_inputs().contains(i))
             .filter_map(|lp| {
-                self.encode_predicates_for_function_shape_node(vcx, deps, lp, |i| {
+                self.encode_predicates_for_function_shape_node(vcx, deps, lp, None, |i| {
                     vcx.mk_old_expr(local_defs[i].impure_snap)
                 })
             })
@@ -182,7 +223,7 @@ impl<'vir> WandEncOutput<'vir> {
             .into_iter();
 
         let output_posts = self.outputs().filter_map(|g| {
-            self.encode_predicates_for_function_shape_node(vcx, deps, g, |i| {
+            self.encode_predicates_for_function_shape_node(vcx, deps, g, None, |i| {
                 local_defs[i].impure_snap
             })
         });
@@ -205,7 +246,7 @@ impl<'vir> WandEncOutput<'vir> {
 
         // TODO: wands for late-bound regions
         self.viper_wands().into_iter().filter_map(move |wand_data| {
-            let wand = self.mk_wand(&wand_data, args, vcx, deps)?;
+            let wand = self.mk_wand(&wand_data, args, None, vcx, deps)?;
             Some(vcx.mk_let_expr(
                 wand_result,
                 local_defs[mir::RETURN_PLACE].impure_snap,
@@ -219,6 +260,7 @@ impl<'vir> WandEncOutput<'vir> {
         arguments: &[vir::ExprSnap<'vir>],
         label_pre: &'vir str,
         label_post: &'vir str,
+        call_ctx: WandCallContext<'vir>,
         visitor: &mut ImpureEncVisitor<'vir, '_, E>,
     ) {
         let result = visitor
@@ -231,7 +273,9 @@ impl<'vir> WandEncOutput<'vir> {
         });
         let args = PledgeExpr::pledge_args(result, args);
         for wand_data in self.viper_wands() {
-            let Some(wand) = self.mk_wand(&wand_data, args, visitor.vcx, visitor.deps) else {
+            let Some(wand) =
+                self.mk_wand(&wand_data, args, Some(call_ctx), visitor.vcx, visitor.deps)
+            else {
                 continue;
             };
             visitor.stmt(visitor.vcx.mk_apply_stmt(wand));
@@ -242,12 +286,15 @@ impl<'vir> WandEncOutput<'vir> {
         &'a self,
         wand_data: &WandData<'vir>,
         pledge_args: PledgeArgs<'vir>,
+        call_ctx: Option<WandCallContext<'vir>>,
         vcx: &'vir vir::VirCtxt<'vir>,
         deps: &mut TaskEncoderDependencies<'vir, E>,
     ) -> Option<vir::Wand<'vir>> {
         debug_assert!(!wand_data.lhs.is_empty());
         let rhs = wand_data.rhs.iter().filter_map(|g| {
-            self.encode_predicates_for_function_shape_node(vcx, deps, *g, |i| pledge_args[i])
+            self.encode_predicates_for_function_shape_node(vcx, deps, *g, call_ctx, |i| {
+                pledge_args[i]
+            })
         });
         let rhs = rhs
             .chain(
@@ -265,7 +312,9 @@ impl<'vir> WandEncOutput<'vir> {
         }
         let rhs = vcx.mk_conj(&rhs);
         let lhs = wand_data.lhs.iter().filter_map(|g| {
-            self.encode_predicates_for_function_shape_node(vcx, deps, *g, |i| pledge_args[i])
+            self.encode_predicates_for_function_shape_node(vcx, deps, *g, call_ctx, |i| {
+                pledge_args[i]
+            })
         });
         let lhs = lhs
             .chain(
@@ -294,13 +343,13 @@ impl<'tcx> WandEncTask<'tcx> {
     pub fn function_shape(
         &self,
         vcx: &vir::VirCtxt<'tcx>,
-    ) -> Result<FunctionShape, MakeFunctionShapeError<'tcx>> {
+    ) -> Result<FunctionShape<Generalized>, MakeFunctionShapeError> {
         self.data.shape(vcx.tcx())
     }
 }
 
-pub type WandRhsKey = FunctionShapeInput;
-pub type WandLhsKey = FunctionShapeNode;
+pub type WandRhsKey = FunctionShapeInput<Generalized>;
+pub type WandLhsKey = FunctionShapeNode<Generalized>;
 
 #[derive(Clone, Debug)]
 pub struct WandData<'vir> {
@@ -380,9 +429,24 @@ impl TaskEncoder for WandEnc {
             }
             let wands: Vec<WandData<'vir>> = coupled_edges
                 .into_iter()
-                .map(|hyper_edge| {
-                    let (sources, targets) = hyper_edge.into_tuple();
-                    WandData::new(targets, sources, pledges.clone())
+                .filter_map(|hyper_edge| {
+                    let (sources, mut targets) = hyper_edge.into_tuple();
+                    // We don't want to emit an identity wand, like P --* P. This can happen when
+                    // PCG returns self-edges, like for fn(x: &'a mut &'b i32) where 'b is in
+                    // invariant position and we therefore have an edge x|'b -> x|'b.
+                    // Currently, these edges also prevent us from emitting indirect postconditions.
+                    // TODO: we might want to emit these identity wands in the future to attach functional
+                    // specifications to them. We still need to emit the resources on the wand's LHS.
+                    let mut sources_as_nodes = sources
+                        .iter()
+                        .map(|&s| s.to_function_shape_node())
+                        .collect::<Vec<_>>();
+                    sources_as_nodes.sort();
+                    targets.sort();
+                    if sources_as_nodes == targets {
+                        return None;
+                    }
+                    Some(WandData::new(targets, sources, pledges.clone()))
                 })
                 .collect();
             let output: WandEncOutput<'vir> = WandEncOutput {
@@ -403,18 +467,18 @@ impl<'vir> WandEncOutput<'vir> {
 
     /// All lifetime projections in the arguments that are blocked by any of the
     /// lifetime projections in the function's result.
-    pub fn blocked_inputs(&self) -> FxHashSet<FunctionShapeInput> {
+    pub fn blocked_inputs(&self) -> FxHashSet<FunctionShapeInput<Generalized>> {
         self.wands
             .iter()
             .flat_map(|wand| wand.rhs.iter().copied())
             .collect()
     }
 
-    pub fn inputs(&self) -> impl Iterator<Item = FunctionShapeInput> + '_ {
+    pub fn inputs(&self) -> impl Iterator<Item = FunctionShapeInput<Generalized>> + '_ {
         self.inputs.iter().copied()
     }
 
-    pub fn outputs(&self) -> impl Iterator<Item = FunctionShapeOutput> + '_ {
+    pub fn outputs(&self) -> impl Iterator<Item = FunctionShapeOutput<Generalized>> + '_ {
         self.outputs.iter().copied()
     }
 }

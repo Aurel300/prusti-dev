@@ -121,9 +121,8 @@ pub fn test_entrypoint<'tcx>(
         std::fs::write("local-testing/simple.vpr", program.code()).unwrap();
     }
 
-    for error_msg in program.encoder_errors().drain(..) {
-        PrustiError::internal(error_msg, prusti_rustc_interface::span::DUMMY_SP.into())
-            .emit(env_diagnostic);
+    for (error_msg, span) in program.encoder_errors().drain(..) {
+        PrustiError::internal(error_msg, span.into()).emit(env_diagnostic);
     }
 
     let program = program.mk_program();
@@ -141,6 +140,6 @@ pub fn backtranslate_error(
     error_kind: &str,
     offending_pos_id: usize,
     reason_pos_id: Option<usize>,
-) -> Option<Vec<PrustiError>> {
+) -> Vec<PrustiError> {
     vir::with_vcx(|vcx| vcx.backtranslate(error_kind, offending_pos_id, reason_pos_id))
 }

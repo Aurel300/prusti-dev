@@ -21,7 +21,7 @@ pub struct MirBuiltinEnc;
 
 #[derive(Clone, Debug)]
 pub enum MirBuiltinEncError {
-    // Unsupported,
+    UnsupportedUnsize { src: String, dst: String },
 }
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
@@ -99,6 +99,14 @@ impl TaskEncoder for MirBuiltinEnc {
         *task
     }
 
+    fn describe_error(error: Self::EncodingError) -> String {
+        match error {
+            MirBuiltinEncError::UnsupportedUnsize { src, dst } => {
+                format!("unsizing from `{src}` to `{dst}` is not yet supported")
+            }
+        }
+    }
+
     fn do_encode_full<'vir>(
         task_key: &Self::TaskKey<'vir>,
         deps: &mut TaskEncoderDependencies<'vir, Self>,
@@ -174,14 +182,14 @@ impl MirBuiltinEnc {
         let dst_ty_inner = dst_ty.peel_refs();
 
         let ty_task = RustTyDecomposition::from_ty(src_ty_inner, params);
-        let src_array_pure = deps.require_dep::<TyUsePureEnc>(ty_task)?.expect_array();
+        let src_inner_pure = deps.require_dep::<TyUsePureEnc>(ty_task)?;
 
         let src_ty = RustTyDecomposition::from_ty(src_ty, params);
         let src_ref_pure = deps.require_dep::<TyUsePureEnc>(src_ty)?;
         let src_ref_impure = deps.require_dep::<TyUseImpureEnc>(src_ty)?;
 
         let ty_task = RustTyDecomposition::from_ty(dst_ty_inner, params);
-        let dst_array_pure = deps.require_dep::<TyUsePureEnc>(ty_task)?.expect_array();
+        let dst_inner_pure = deps.require_dep::<TyUsePureEnc>(ty_task)?;
 
         let dst_ty = RustTyDecomposition::from_ty(dst_ty, params);
         let dst_ref_pure = deps.require_dep::<TyUsePureEnc>(dst_ty)?;
@@ -219,33 +227,6 @@ impl MirBuiltinEnc {
 
         let snap_src = src_ref_impure.ref_to_snap(ref_src_ex);
         let snap_dst = dst_ref_impure.ref_to_snap(ref_dst_ex);
-
-        let src_value = match &src_ref_pure.specifics {
-            TySpecifics::ImmRef(data) => data.value_access(snap_src.downcast_ty()),
-            TySpecifics::MutRef(data) => data.value_access(snap_src.downcast_ty()),
-            _ => unreachable!(),
-        }
-        .downcast_ty();
-        let dst_value = match &dst_ref_pure.specifics {
-            TySpecifics::ImmRef(data) => data.value_access(snap_dst.downcast_ty()),
-            TySpecifics::MutRef(data) => data.value_access(snap_dst.downcast_ty()),
-            _ => unreachable!(),
-        }
-        .downcast_ty();
-
-        let src_len = match src_ty_inner.kind() {
-            ty::TyKind::Array(_, len) => {
-                let const_enc = deps.require_dep::<ConstEnc>(ConstEncTask::Ty {
-                    const_: *len,
-                    ty: vcx.tcx().types.usize,
-                    context: params,
-                })?;
-                let ty_task = RustTyDecomposition::from_prim_ty(vcx.tcx().types.usize);
-                let usize_out = deps.require_dep::<TyUsePureEnc>(ty_task)?.expect_native();
-                (usize_out.snap_to_prim)(const_enc).downcast_ty()
-            }
-            _ => src_array_pure.len(src_value),
-        };
 
         let mut pres = vec![src_ref_impure.ref_to_pred(vcx, ref_src_ex, None)];
         let mut posts = vec![dst_ref_impure.ref_to_pred(vcx, ref_dst_ex, None)];
@@ -292,19 +273,109 @@ impl MirBuiltinEnc {
                     == (old([dst_ref_impure.expect_mutref().deref(ref_dst_ex, None)]))
             });
         }
-        posts.extend(&[
-            vir::expr! { (src_len) == ([dst_array_pure.len(dst_value)]) },
-            vir::expr! {
-                forall idx: Int :: {[dst_array_pure.index(dst_value, idx)]}
-                    ([dst_array_pure.index(dst_value, idx)])
-                    == (old([src_array_pure.index(src_value, idx)]))
-            },
-        ]);
-        posts_undo.push(vir::expr! {
-            forall idx: Int :: {[src_array_pure.index(src_value, idx)]}
-                ([src_array_pure.index(src_value, idx)])
-                == (old([dst_array_pure.index(dst_value, idx)]))
-        });
+
+        match dst_ty_inner.kind() {
+            ty::TyKind::Dynamic(_, _, _) => {
+                // dyn is opaque; predicate transfer in pres/posts is sufficient
+                // no content postconditions can be stated
+            }
+            ty::TyKind::Slice(elem_ty) => {
+                let src_value = match &src_ref_pure.specifics {
+                    TySpecifics::ImmRef(data) => data.value_access(snap_src.downcast_ty()),
+                    TySpecifics::MutRef(data) => {
+                        let normalized = src_ty
+                            .ty
+                            .expect_mutref()
+                            .decompose_compare_normalize(src_ty.ty.params, src_ty.args);
+                        let caster = deps
+                            .require_dep::<crate::GArgsCastEnc<crate::Pure>>(normalized)
+                            .unwrap();
+                        let ty_task_param = src_ty
+                            .ty
+                            .expect_mutref()
+                            .decompose_context(src_ty.ty.params, src_ty.args);
+                        let src_param_impure = deps.require_dep::<TyUseImpureEnc>(ty_task_param)?;
+                        caster.cast_to_caller_ctx(
+                            src_param_impure.ref_to_snap(data.deref_access(snap_src.downcast_ty())),
+                        )
+                    }
+                    _ => unreachable!(),
+                }
+                .downcast_ty();
+                let dst_value = match &dst_ref_pure.specifics {
+                    TySpecifics::ImmRef(data) => data.value_access(snap_dst.downcast_ty()),
+                    TySpecifics::MutRef(data) => {
+                        let normalized = dst_ty
+                            .ty
+                            .expect_mutref()
+                            .decompose_compare_normalize(dst_ty.ty.params, dst_ty.args);
+                        let caster = deps
+                            .require_dep::<crate::GArgsCastEnc<crate::Pure>>(normalized)
+                            .unwrap();
+                        let ty_task_param = dst_ty
+                            .ty
+                            .expect_mutref()
+                            .decompose_context(src_ty.ty.params, dst_ty.args);
+                        let dst_param_impure = deps.require_dep::<TyUseImpureEnc>(ty_task_param)?;
+                        caster.cast_to_caller_ctx(
+                            dst_param_impure.ref_to_snap(data.deref_access(snap_dst.downcast_ty())),
+                        )
+                    }
+                    _ => unreachable!(),
+                }
+                .downcast_ty();
+
+                let src_array_pure = src_inner_pure.expect_array();
+                let dst_array_pure = dst_inner_pure.expect_array();
+                let src_len = match src_ty_inner.kind() {
+                    ty::TyKind::Array(_, len) => {
+                        let const_enc = deps.require_dep::<ConstEnc>(ConstEncTask::Ty {
+                            const_: *len,
+                            ty: vcx.tcx().types.usize,
+                            context: params,
+                        })?;
+                        let ty_task = RustTyDecomposition::from_prim_ty(vcx.tcx().types.usize);
+                        let usize_out = deps.require_dep::<TyUsePureEnc>(ty_task)?.expect_native();
+                        (usize_out.snap_to_prim)(const_enc).downcast_ty()
+                    }
+                    _ => src_array_pure.len(src_value),
+                };
+                posts.extend(&[
+                    vir::expr! { (src_len) == ([dst_array_pure.len(dst_value)]) },
+                    vir::expr! {
+                        forall idx: Int :: {[dst_array_pure.index(dst_value, idx)]}
+                            ([dst_array_pure.index(dst_value, idx)])
+                            == (old([src_array_pure.index(src_value, idx)]))
+                    },
+                ]);
+
+                let elem_ty_task = RustTyDecomposition::from_ty(*elem_ty, params);
+                let elem_pure = deps.require_dep::<TyUsePureEnc>(elem_ty_task)?;
+                posts_undo.extend(&[
+                    vir::expr! {
+                        forall idx: Int :: {[src_array_pure.index(src_value, idx)]}
+                            ([src_array_pure.index(src_value, idx)])
+                            == (old([dst_array_pure.index(dst_value, idx)]))
+                    },
+                    // TODO: this is very hacky! we let-bind an array access to
+                    //   make sure the quantifier is triggered at least once
+                    vcx.mk_let_expr(
+                        vcx.mk_local_decl("_trigger_hack", elem_pure.snapshot),
+                        src_array_pure.index(src_value, vcx.mk_int::<0>()),
+                        vcx.mk_bool::<true>(),
+                    ),
+                ]);
+            }
+            _ => {
+                return Err(EncodeFullError::EncodingError(
+                    MirBuiltinEncError::UnsupportedUnsize {
+                        src: src_ty_inner.to_string(),
+                        dst: dst_ty_inner.to_string(),
+                    },
+                    None,
+                ));
+            }
+        }
 
         Ok((
             vcx.mk_method(

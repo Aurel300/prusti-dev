@@ -1,9 +1,9 @@
 use prusti_interface::specs::typed::ExternSpecKind;
 use prusti_rustc_interface::{
-    middle::ty,
+    middle::ty::{self, TypeFoldable},
     span::{def_id::DefId, symbol},
 };
-use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
+use task_encoder::{EncodeFullError, EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 use vir::{CastType, HasType};
 
 use crate::encoders::{
@@ -15,6 +15,23 @@ use crate::encoders::{
         lifted::TyConstructorEnc,
     },
 };
+
+/// Replaces region inference variables (ReVar) with erased regions.
+/// Used before type normalization with a fresh `InferCtxt` that doesn't
+/// know about ReVars from the original type-checking context.
+struct EraseReVars<'tcx>(ty::TyCtxt<'tcx>);
+impl<'tcx> ty::TypeFolder<ty::TyCtxt<'tcx>> for EraseReVars<'tcx> {
+    fn cx(&self) -> ty::TyCtxt<'tcx> {
+        self.0
+    }
+    fn fold_region(&mut self, r: ty::Region<'tcx>) -> ty::Region<'tcx> {
+        if r.is_var() {
+            self.0.lifetimes.re_erased
+        } else {
+            r
+        }
+    }
+}
 
 /// The list of defined parameters in a given context. E.g. the type parameters
 /// `T` and `U` in the body of the function `fn foo<T, U>(t: T) -> U { ... }`
@@ -113,6 +130,8 @@ impl<'tcx> GParams<'tcx> {
             },
         };
         vir::with_vcx(|vcx| {
+            // Erase ReVars before normalizing with a fresh InferCtxt.
+            let ty = ty.fold_with(&mut EraseReVars(vcx.tcx()));
             // Normalize associated types
             let ifctxt: InferCtxt = vcx.tcx().infer_ctxt().build(ty::TypingMode::PostAnalysis);
             let mut fulfill_cx = <dyn TraitEngine<ScrubbedTraitError> as TraitEngineExt<
@@ -267,10 +286,10 @@ impl<'vir> GenericParams<'vir> {
         &self,
         deps: &mut TaskEncoderDependencies<'vir, E>,
         ty: RustTyDecomposition<'vir>,
-    ) -> vir::ExprTyVal<'vir> {
+    ) -> Result<vir::ExprTyVal<'vir>, EncodeFullError<'vir, E>> {
         if let TySpecifics::Param(RustParamData::Generic) = &ty.ty.specifics {
             let param = ty.args.expect_param();
-            return match param {
+            return Ok(match param {
                 GParamVariant::Param(p) => self.ty_exprs[self.map_idx(p.index).unwrap()],
                 GParamVariant::Alias(alias) => vir::with_vcx(|vcx| {
                     let tcx = vcx.tcx();
@@ -280,14 +299,11 @@ impl<'vir> GenericParams<'vir> {
                     let args = deps.require_dep::<GArgsTyEnc>(args).unwrap();
                     (trait_data.assoc_types[&alias.def_id])(args.get_ty(), args.get_const())
                 }),
-            };
+            });
         }
-        let ty_constructor = deps
-            .require_ref::<TyConstructorEnc>(ty.ty)
-            .unwrap()
-            .ty_constructor;
-        let args = deps.require_dep::<GArgsTyEnc>(ty.args).unwrap();
-        ty_constructor(args.get_ty(), args.get_const())
+        let ty_constructor = deps.require_ref::<TyConstructorEnc>(ty.ty)?.ty_constructor;
+        let args = deps.require_dep::<GArgsTyEnc>(ty.args)?;
+        Ok(ty_constructor(args.get_ty(), args.get_const()))
     }
 }
 

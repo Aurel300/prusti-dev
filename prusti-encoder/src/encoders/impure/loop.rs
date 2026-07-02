@@ -1,6 +1,7 @@
 use pcg::{
     borrow_pcg::region_projection::{
-        HasRegions, LifetimeProjection, PcgLifetimeProjectionBase, PcgLifetimeProjectionBaseLike,
+        ExtractRegionsCtxt, LifetimeProjection, PcgLifetimeProjectionBase,
+        PcgLifetimeProjectionBaseLike,
     },
     r#loop::PlaceUsages,
     pcg::{EvalStmtPhase, PcgNode},
@@ -32,7 +33,7 @@ impl<'vir: 'a, 'a, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         cfpcs: &PcgBasicBlock<'_, 'vir>,
         loop_place_usages: &PlaceUsages<'vir>,
         ctxt: impl HasCompilerCtxt<'a, 'vir>,
-    ) -> &'vir [vir::ExprBool<'vir>] {
+    ) -> Vec<vir::ExprBool<'vir>> {
         let mut inv = Vec::new();
         let start = &cfpcs.statements[0];
         let state = &start.states[EvalStmtPhase::PreOperands];
@@ -52,7 +53,7 @@ impl<'vir: 'a, 'a, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             // gets all the lifetime projections of the place
             // for example, if we add an invariant for x and x is a reference, then we also want to add
             // an invariant for *x
-            let projs = place.lifetime_projections(ctxt);
+            let projs = ctxt.extract_lifetime_projections(place.with_inherent_region(ctxt));
             for proj in projs {
                 let indirect = self
                     .deps
@@ -98,7 +99,8 @@ impl<'vir: 'a, 'a, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             }
             inv.push(wand);
         }
-        self.vcx.alloc_slice(&inv)
+
+        inv
     }
 
     pub(super) fn encode_pcg_node<T: PcgLifetimeProjectionBaseLike<'vir>>(

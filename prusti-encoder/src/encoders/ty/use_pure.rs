@@ -361,6 +361,18 @@ impl<'vir> TyUsePureImmRef<'vir> {
 }
 
 impl<'vir> TyUsePureRaw<'vir> {
+    /// Construct the raw-pointer snapshot from an address and (fat) pointer
+    /// metadata. The pointee is opaque, so there is no value/referent argument.
+    pub fn prim_to_snap<Curr, Next>(
+        &self,
+        ref_: vir::ExprGenRef<'vir, Curr, Next>,
+        metadata: vir::ExprGenSnap<'vir, Curr, Next>,
+    ) -> vir::ExprGenCSnap<'vir, Curr, Next> {
+        let metadata = self.metadata_caster.cast_to_callee_ctx(metadata);
+        self.pure.prim_to_snap.call()(ref_, metadata.downcast_ty())
+    }
+
+    #[allow(dead_code)]
     pub fn address_access<Curr, Next>(
         &self,
         snap: vir::ExprGenCSnap<'vir, Curr, Next>,

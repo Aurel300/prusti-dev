@@ -436,25 +436,17 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             mir::Rvalue::RawPtr(mir::RawPtrKind::FakeForPtrMetadata, place) => {
                 // `&raw const (fake) (*p)` exists only to carry the pointee's
                 // pointer metadata (e.g. a slice's length) so that a following
-                // `PtrMetadata` can read it back out (see `mir_shared`). The raw
-                // pointer is modelled opaquely; produce a fresh snapshot whose
-                // metadata equals the metadata of the (wide) place pointed at,
-                // which was propagated from the wide reference it derefs.
+                // `PtrMetadata` can read it back out (see `mir_shared`).
                 let place_expr = self.encode_place(Place::from(*place));
                 let metadata = place_expr.expr.metadata.expect(
                     "raw pointer to an unsized place requires metadata propagated \
                      from its wide pointer",
                 );
-                let e_rvalue_ty = self.ty_use_pure(rvalue_ty);
-                let tmp_exp: vir::ExprCSnap<'vir> =
-                    self.new_tmp(e_rvalue_ty.snapshot.downcast_ty());
-                self.stmt(
-                    self.vcx.mk_inhale_stmt(
-                        self.vcx
-                            .mk_eq_expr(e_rvalue_ty.metadata_access(tmp_exp), metadata),
-                    ),
-                );
-                Ok(tmp_exp.upcast_ty().into())
+                let raw = self.ty_use_pure(rvalue_ty).expect_raw();
+                Ok(raw
+                    .prim_to_snap(place_expr.expr.address, metadata)
+                    .upcast_ty()
+                    .into())
             }
 
             _ => Err(EncodeRvalueError::UnsupportedRvalue),
@@ -1075,9 +1067,12 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             mir::ProjectionElem::Field(field_idx, _) => {
                 let e_ty = self.ty_use_impure(place_ty.ty);
                 let field_access = e_ty.expect_variant_opt(place_ty.variant_index);
+                // Only the last field of a struct/tuple can be unsized (a DST's
+                // tail); it then shares the containing value's pointer metadata.
+                let is_last_field = field_idx.index() + 1 == field_access.fields.len();
                 PlaceExpr {
                     address: field_access[field_idx].field_ref(expr.address),
-                    metadata: None,
+                    metadata: if is_last_field { expr.metadata } else { None },
                     snap: expr.snap.map(|snap| {
                         let e_ty = self.ty_use_pure(place_ty.ty);
                         let field_access = e_ty.expect_variant_opt(place_ty.variant_index);

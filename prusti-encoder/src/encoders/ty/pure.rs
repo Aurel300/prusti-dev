@@ -79,6 +79,7 @@ pub struct TyPureRawData<'vir> {
     /// Construct the snapshot from an address and pointer metadata.
     pub(super) prim_to_snap: FunctionIdn<'vir, (vir::Ref, vir::PSnap), vir::CSnap>,
     /// Function to access the pointer address.
+    #[allow(dead_code)]
     pub(super) address_access: AdtDestructor<'vir, vir::CSnap, vir::Ref>,
     /// Function to access the pointer metadata (fat pointer).
     pub(super) metadata_access: AdtDestructor<'vir, vir::CSnap, vir::PSnap>,

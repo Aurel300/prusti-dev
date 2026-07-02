@@ -14,7 +14,7 @@ use crate::encoders::{
     Pure,
     builtin::{MetadataCastEnc, ValueCastEnc},
     ty::{
-        RustTy, RustTyDecomposition, RustTyNormalized,
+        RustTy, RustTyDecomposition, RustTyNormalized, TySpecifics,
         generics::{GArgs, GArgsCastEnc, GParams, GenericParamsEnc},
         lifted::TyConstructorEnc,
         use_pure::TyUsePureEnc,
@@ -37,7 +37,7 @@ impl TaskEncoder for MetadataCastAxiomEnc {
     const ENCODER_NAME: &'static str = "metadata cast axiom encoder";
 
     type TaskDescription<'vir> = (RustTy<'vir>, RustTy<'vir>);
-    type OutputFullLocal<'vir> = vir::Domain<'vir>;
+    type OutputFullLocal<'vir> = Option<vir::Domain<'vir>>;
 
     fn task_to_key<'vir>(task: &Self::TaskDescription<'vir>) -> Self::TaskKey<'vir> {
         *task
@@ -49,6 +49,10 @@ impl TaskEncoder for MetadataCastAxiomEnc {
     ) -> EncodeFullResult<'vir, Self> {
         deps.emit_output_ref(*task_key, ())?;
         let (array_ty, slice_ty) = *task_key;
+        match (&array_ty.specifics, &slice_ty.specifics) {
+            (TySpecifics::ArrayLike(ad), TySpecifics::ArrayLike(sd)) if !ad.slice && sd.slice => {}
+            _ => return Ok((None, ())),
+        }
 
         let metadata_cast = deps.require_dep::<MetadataCastEnc>(())?;
         let array_ctor = deps.require_ref::<TyConstructorEnc>(array_ty)?;
@@ -99,12 +103,15 @@ impl TaskEncoder for MetadataCastAxiomEnc {
                 &[],
                 None,
             );
-            Ok((domain, ()))
+            Ok((Some(domain), ()))
         })
     }
 
     fn emit_outputs<'vir>(program: &mut task_encoder::Program<'vir>) {
         for domain in Self::all_outputs_local_no_errors(program) {
+            let Some(domain) = domain else {
+                continue;
+            };
             program.add_domain(domain);
         }
     }
@@ -128,7 +135,7 @@ impl TaskEncoder for ValueCastAxiomEnc {
     const ENCODER_NAME: &'static str = "value cast axiom encoder";
 
     type TaskDescription<'vir> = (RustTy<'vir>, RustTy<'vir>);
-    type OutputFullLocal<'vir> = vir::Domain<'vir>;
+    type OutputFullLocal<'vir> = Option<vir::Domain<'vir>>;
 
     fn task_to_key<'vir>(task: &Self::TaskDescription<'vir>) -> Self::TaskKey<'vir> {
         *task
@@ -140,6 +147,11 @@ impl TaskEncoder for ValueCastAxiomEnc {
     ) -> EncodeFullResult<'vir, Self> {
         deps.emit_output_ref(*task_key, ())?;
         let (array_ty, slice_ty) = *task_key;
+        match (&array_ty.specifics, &slice_ty.specifics) {
+            (TySpecifics::ArrayLike(ad), TySpecifics::ArrayLike(sd)) if !ad.slice && sd.slice => {}
+            _ => return Ok((None, ())),
+        }
+
         // The most-generic array/slice (identity args), so the axiom quantifies
         // over the element/length params rather than baking in a concrete `[T; N]`.
         let array_inner = RustTyDecomposition::identity(array_ty);
@@ -241,12 +253,15 @@ impl TaskEncoder for ValueCastAxiomEnc {
                 &[],
                 None,
             );
-            Ok((domain, ()))
+            Ok((Some(domain), ()))
         })
     }
 
     fn emit_outputs<'vir>(program: &mut task_encoder::Program<'vir>) {
         for domain in Self::all_outputs_local_no_errors(program) {
+            let Some(domain) = domain else {
+                continue;
+            };
             program.add_domain(domain);
         }
     }

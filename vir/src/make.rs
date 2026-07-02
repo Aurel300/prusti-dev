@@ -1168,8 +1168,10 @@ impl<'tcx> VirCtxt<'tcx> {
             (u32::BITS, _) => self.mk_uint::<{ 1_u128 << u32::BITS }>(),
             (u64::BITS, _) => self.mk_uint::<{ 1_u128 << u64::BITS }>(),
             (u128::BITS, _) => {
+                // `2^128` overflows `u128` and can't be written as a literal, so
+                // build it as `2^127 + 2^127` in the (unbounded) Viper `Int`.
                 // TODO: make this a `const` once `Expr` isn't invariant in `'vir` so that it can be `'const` instead
-                let half = self.mk_uint::<{ 1_u128 << u64::BITS }>();
+                let half = self.mk_uint::<{ 1_u128 << (u128::BITS - 1) }>();
                 self.mk_bin_op_expr(BinOpKind::Add, half.as_dyn(), half.as_dyn())
                     .downcast_ty()
             }
@@ -1197,5 +1199,27 @@ impl<'tcx> VirCtxt<'tcx> {
             (u128::BITS, _) => self.mk_uint::<{ u128::BITS as u128 }>(),
             _ => unreachable!(),
         }
+    }
+    /// Wrap `exp` into the range of the integer type `rust_ty` (two's complement):
+    /// a `uN` target is `exp mod 2^N`; an `iN` target is
+    /// `((exp + 2^(N-1)) mod 2^N) - 2^(N-1)`. This is the identity when `exp` is
+    /// already in range, and reproduces Rust's `as`/wrapping-arithmetic otherwise.
+    pub fn get_wrapped_val<'vir>(
+        &'vir self,
+        mut exp: ExprInt<'vir>,
+        rust_ty: &ty::TyKind,
+    ) -> ExprInt<'vir> {
+        let shift_amount = self.get_signed_shift_int(rust_ty);
+        if let Some(half) = shift_amount {
+            exp = self.mk_bin_op_expr(BinOpKind::Add, exp, half).downcast_ty();
+        }
+        let modulo_val = self.get_modulo_int(rust_ty);
+        exp = self
+            .mk_bin_op_expr(BinOpKind::Mod, exp, modulo_val)
+            .downcast_ty();
+        if let Some(half) = shift_amount {
+            exp = self.mk_bin_op_expr(BinOpKind::Sub, exp, half).downcast_ty();
+        }
+        exp
     }
 }

@@ -50,3 +50,35 @@ fn preserve_sign() {
     assert!(-5i64 as i128 == -5i128);
     assert!(-5i128 as i128 == -5i128);
 }
+
+// Boundary values via `::MAX`/`::MIN`. The 128-bit cases exercise the full-width
+// modulo (`get_modulo_int`): a small-value cast can't detect a wrong modulus,
+// but wrapping `MAX`/`MIN` at the full width does.
+fn max_min_wrap() {
+    // signed `-1` wraps to the unsigned `MAX`
+    assert!(-1i8 as u8 == u8::MAX);
+    assert!(-1i16 as u16 == u16::MAX);
+    assert!(-1i32 as u32 == u32::MAX);
+    assert!(-1i64 as u64 == u64::MAX);
+    assert!(-1i128 as u128 == u128::MAX);
+    // widening a negative signed value to a wider unsigned type still wraps to MAX
+    assert!(-1i8 as u128 == u128::MAX);
+    assert!(-1i64 as u128 == u128::MAX);
+
+    // unsigned `MAX` reinterpreted at the same width is `-1`
+    assert!(u8::MAX as i8 == -1);
+    assert!(u64::MAX as i64 == -1);
+    assert!(u128::MAX as i128 == -1);
+
+    // narrowing an all-ones `MAX` keeps the low bits (target `MAX` / `-1`)
+    assert!(u128::MAX as u8 == u8::MAX);
+    assert!(u64::MAX as u32 == u32::MAX);
+    assert!(i128::MAX as u8 == u8::MAX);
+    assert!(i128::MAX as i8 == -1);
+
+    // signed `MIN`
+    assert!(i8::MIN as u8 == 128);
+    assert!(i128::MIN as i8 == 0);
+    assert!(i128::MIN as u8 == 0);
+    assert!(i64::MIN as i8 == 0);
+}

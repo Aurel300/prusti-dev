@@ -1,5 +1,5 @@
 use crate::encoders::{
-    FunctionCallEnc, MirLocalDefEnc, MirLocalDefEncOutput, MirLocalDefEncTask, ViperTupleEnc,
+    FunctionCallEnc, ViperTupleEnc,
     mir_fn::{CallTaskDescription, RustSignature},
     mir_shared::PureRvalueEnc,
     ty::{
@@ -45,14 +45,11 @@ pub enum Mode {
     BeforeExpiry,
 }
 
-// The reify input for a pure-encoded body: the `DefId` it was encoded for, the
-// argument snapshots (keyed by `Local`), and the argument place references
-// (`Ref`s, positional by argument). The refs are used when a reference to an
-// argument is taken (`&arg`); the slice may be shorter/empty, in which case
-// missing entries default to `null` (the address is irrelevant in a purely
-// functional context). The impure spec encoder supplies real refs so that, e.g.,
-// `&result` in a postcondition resolves to the method's return place `_0p`
-// rather than the spec function's own parameter local.
+// The reify input for a pure-encoded body: the `DefId` it was encoded for and
+// the argument snapshots (keyed by `Local`). There is no place-reference slot:
+// in pure code an argument's address is always `null` (see `encode_place_with_ref`,
+// where `place_ref` is initialized to `None`), because the address of a reference
+// taken in pure code is irrelevant — it cannot escape.
 pub type ExprInput<'vir> = (DefId, &'vir FxHashMap<mir::Local, vir::ExprSnap<'vir>>);
 type ExprRet<'vir> = vir::ExprGenSnap<'vir, ExprInput<'vir>, vir::ExprKind<'vir>>;
 type ExprRetRef<'vir> = vir::ExprGenRef<'vir, ExprInput<'vir>, vir::ExprKind<'vir>>;
@@ -275,7 +272,6 @@ struct Enc<'vir: 'enc, 'enc> {
     rel0_mode: bool,
     rel1_mode: bool,
     before_expiry_mode: bool,
-    local_defs: MirLocalDefEncOutput<'vir>,
     impure_context: bool,
 }
 
@@ -360,17 +356,6 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
         deps: &'enc mut TaskEncoderDependencies<'vir, MirPureEnc>,
     ) -> Self {
         let rev_doms = rev_doms::ReverseDominators::new(&body.basic_blocks);
-        let local_def_enc_task = if kind.extern_spec().is_some() {
-            MirLocalDefEncTask::ExternSpec(def_id)
-        } else {
-            MirLocalDefEncTask::Local {
-                def_id,
-                all_locals: true,
-            }
-        };
-        let local_defs = deps
-            .require_dep::<MirLocalDefEnc>(local_def_enc_task)
-            .unwrap();
         Self {
             vcx,
             encoding_depth,
@@ -387,7 +372,6 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
             rel0_mode: false,
             rel1_mode: false,
             before_expiry_mode: false,
-            local_defs,
             impure_context: matches!(kind, PureKind::Spec(_)),
         }
     }
@@ -1127,11 +1111,20 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                     _ => unreachable!(),
                 }
             }
-            mir::ProjectionElem::Field(field_idx, _ty) => {
-                let proj = e_ty.expect_variant_opt(place_ty.variant_index)[field_idx];
+            mir::ProjectionElem::Field(field_idx, _) => {
+                let variant = e_ty.expect_variant_opt(place_ty.variant_index);
+                let proj = variant[field_idx];
                 let proj_app = proj.read(encoded_place.snap.downcast_ty());
                 let place_ref = encoded_place.place_ref.map(|pr| proj.field_ref(pr));
-                EncodedPlace::new(proj_app, place_ref)
+                let place = EncodedPlace::new(proj_app, place_ref);
+                // Only the last field can be an unsized DST tail that shares the
+                // containing value's pointer metadata; propagate it there, and
+                // nowhere else (every other field is sized and thin).
+                let is_last_field = field_idx.index() + 1 == variant.fields.len();
+                match encoded_place.metadata {
+                    Some(metadata) if is_last_field => place.with_metadata(metadata),
+                    _ => place,
+                }
             }
             mir::ProjectionElem::Index(idx) => {
                 let proj = e_ty.expect_array();

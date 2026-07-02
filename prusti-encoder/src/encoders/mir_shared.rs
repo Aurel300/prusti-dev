@@ -24,6 +24,12 @@ type ExprOutput<'vir, Enc: PureRvalueEnc<'vir>> =
 type ExprResult<'vir, Enc: PureRvalueEnc<'vir>> =
     Result<ExprOutput<'vir, Enc>, EncodeFullError<'vir, Enc::Encoder>>;
 
+#[allow(type_alias_bounds)]
+type CastSnap<'vir, Enc: PureRvalueEnc<'vir>> = (
+    Option<vir::StmtGen<'vir, Enc::ExprCurr, Enc::ExprNext>>,
+    ExprOutput<'vir, Enc>,
+);
+
 pub(crate) trait PureRvalueEnc<'vir> {
     type Encoder: TaskEncoder + 'vir;
     type EncodePlaceCtxt;
@@ -89,13 +95,7 @@ pub(crate) trait PureRvalueEnc<'vir> {
         operand: &mir::Operand<'vir>,
         span: Span,
         ctxt: &Self::EncodePlaceCtxt,
-    ) -> Result<
-        (
-            Option<vir::StmtGen<'vir, Self::ExprCurr, Self::ExprNext>>,
-            ExprOutput<'vir, Self>,
-        ),
-        EncodeFullError<'vir, Self::Encoder>,
-    > {
+    ) -> Result<CastSnap<'vir, Self>, EncodeFullError<'vir, Self::Encoder>> {
         let encoded_operand = self.encode_operand_snap(operand, ctxt)?.downcast_ty();
         let operand_ty = operand.ty(self.body(), self.vcx().tcx());
         let rvalue_ty = RustTyDecomposition::from_ty(rvalue_ty, self.def_id());

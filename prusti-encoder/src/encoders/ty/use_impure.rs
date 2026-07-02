@@ -136,7 +136,13 @@ impl TaskEncoder for TyUseImpureEnc {
 
         let ty_impure = deps.require_dep::<TyImpureEnc>(task_key.ty)?;
         let mut walker = TyUseImpureWalker::new(deps, task_key.args);
-        let ty_use_impure = walker.encode_ty(task_key.ty.zip(ty_impure), task_key.maybe_inhabited);
+        // Impure encoding needs to know whether the type may be inhabited (to emit
+        // the right predicate). It is `None` only from `RustTyDecomposition::identity`.
+        let maybe_inhabited = task_key.maybe_inhabited.expect(
+            "impure type encoding requires a decomposition with known inhabitedness \
+             (from `from_ty`), not one built by `RustTyDecomposition::identity`",
+        );
+        let ty_use_impure = walker.encode_ty(task_key.ty.zip(ty_impure), maybe_inhabited);
         Ok(((), ty_use_impure.alloc()))
     }
 

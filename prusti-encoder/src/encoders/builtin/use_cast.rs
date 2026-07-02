@@ -146,16 +146,12 @@ impl TaskEncoder for MirBuiltinUseCastEnc {
                 // normalizing the reference's (generic `p_Param`) referent type
                 // against the reference's args.
                 let referents = match (&operand_ty.ty.specifics, &result_ty.ty.specifics) {
-                    (TySpecifics::ImmRef(_), TySpecifics::ImmRef(_)) => Some((
-                        operand_ty.ty.expect_immref().referent,
-                        result_ty.ty.expect_immref().referent,
-                        false,
-                    )),
-                    (TySpecifics::MutRef(_), TySpecifics::MutRef(_)) => Some((
-                        operand_ty.ty.expect_mutref().referent,
-                        result_ty.ty.expect_mutref().referent,
-                        true,
-                    )),
+                    (TySpecifics::ImmRef(od), TySpecifics::ImmRef(rd)) => {
+                        Some((od.referent, rd.referent, false))
+                    }
+                    (TySpecifics::MutRef(od), TySpecifics::MutRef(rd)) => {
+                        Some((od.referent, rd.referent, true))
+                    }
                     // Raw-pointer / other coercions don't reach here (the cast
                     // encoder only handles Imm/MutRef unsizing).
                     _ => None,
@@ -163,20 +159,13 @@ impl TaskEncoder for MirBuiltinUseCastEnc {
                 if let Some((op_ref, res_ref, is_mut)) = referents {
                     let op_inner = op_ref.decompose_normalize(operand_ty.args);
                     let res_inner = res_ref.decompose_normalize(result_ty.args);
-                    // Only an array -> slice coercion rewrites the fat-pointer
-                    // metadata to a length (a `dyn` coercion's metadata is an opaque
-                    // vtable). Both axioms are keyed on the *generic* array/slice
-                    // shapes (`.ty`, shared by all `[T; N]`), so they are encoded once
-                    // and are themselves generic over the element/length.
-                    if op_inner.ty.as_array().is_some() && res_inner.ty.as_array().is_some() {
-                        // The `cast` fn rewrites the metadata (unit -> length) for both
-                        // shared and `&mut` coercions.
-                        deps.require_dep::<MetadataCastAxiomEnc>((op_inner.ty, res_inner.ty))?;
-                        // Only `&mut` transfers the referent element values (via the
-                        // `unsize`/`undo` methods' `value_cast`).
-                        if is_mut {
-                            deps.require_dep::<ValueCastAxiomEnc>((op_inner.ty, res_inner.ty))?;
-                        }
+                    // The `cast` fn rewrites the metadata (unit -> length) for both
+                    // shared and `&mut` coercions.
+                    deps.require_dep::<MetadataCastAxiomEnc>((op_inner.ty, res_inner.ty))?;
+                    // Only `&mut` transfers the referent element values (via the
+                    // `unsize`/`undo` methods' `value_cast`).
+                    if is_mut {
+                        deps.require_dep::<ValueCastAxiomEnc>((op_inner.ty, res_inner.ty))?;
                     }
                 }
                 Ok(((), MirBuiltinUseCastOutput::Unsize(unsize)))

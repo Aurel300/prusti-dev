@@ -12,7 +12,10 @@ use super::{
 pub struct RustTyDecomposition<'tcx> {
     pub ty: RustTy<'tcx>,
     pub args: GArgs<'tcx>,
-    pub maybe_inhabited: bool,
+    /// Whether this (concrete) type might be inhabited. `None` when this was
+    /// created in `RustTyDecomposition::identity` from a `RustTy` where we
+    /// cannot know the value.
+    pub maybe_inhabited: Option<bool>,
     /// Whether this (concrete) type is a zero-sized type. This lives on the
     /// args-aware decomposition rather than on the args-agnostic `ty`, because
     /// it is an instantiation property: e.g. `GhostBox<i64>` is a ZST but the
@@ -23,7 +26,12 @@ pub struct RustTyDecomposition<'tcx> {
 }
 
 impl<'tcx> RustTyDecomposition<'tcx> {
-    fn new(ty: RustTy<'tcx>, args: GArgs<'tcx>, maybe_inhabited: bool, is_zst: bool) -> Self {
+    fn new(
+        ty: RustTy<'tcx>,
+        args: GArgs<'tcx>,
+        maybe_inhabited: Option<bool>,
+        is_zst: bool,
+    ) -> Self {
         ty.params.check(args.args());
         RustTyDecomposition {
             ty,
@@ -76,7 +84,7 @@ impl<'tcx> RustTyDecomposition<'tcx> {
         Self::new(
             TyData::<'tcx, RustTyDatas>::new(data, specifics).alloc(),
             GArgs::new(GParams::empty(), &[]),
-            true,
+            Some(true),
             false,
         )
     }
@@ -89,11 +97,12 @@ impl<'tcx> RustTyDecomposition<'tcx> {
     }
 
     /// When you only have a `RustTy<'tcx>` but you want to use the
-    /// `TyUsePureEnc`. Not to be used for `TyUseImpureEnc` as the `inhabited`
-    /// flag is not set correctly!
+    /// `TyUsePureEnc`. We cannot determine `maybe_inhabited` so it
+    /// is left `None` — the pure encoder never reads it, and passing
+    /// this decomposition to `TyUseImpureEnc` will panic.
     pub fn identity(ty: RustTy<'tcx>) -> Self {
         let args = GArgs::new(ty.params, ty.params.rust_params());
-        Self::new(ty, args, false, false)
+        Self::new(ty, args, None, false)
     }
 
     pub fn param() -> RustTy<'tcx> {
@@ -334,14 +343,6 @@ impl<'tcx> Deref for RustFieldData<'tcx> {
 }
 
 impl<'tcx> TyData<'tcx, RustTyDatas> {
-    pub fn expect_ref(&self) -> &RefData<'tcx> {
-        match &self.specifics {
-            TySpecifics::ImmRef(r) => r,
-            TySpecifics::MutRef(r) => r,
-            other => panic!("expected RefData, found {:?}", other),
-        }
-    }
-
     fn from_ty(ty: ty::Ty<'tcx>, context: GParams<'tcx>) -> RustTyDecomposition<'tcx> {
         // We normalize since we may be translating a type such as the field of
         // `struct MyStruct<T: Iterator<Item = i32>>(T::Item);` where `ty` is
@@ -381,7 +382,7 @@ impl<'tcx> TyData<'tcx, RustTyDatas> {
                     typing_env: ty::TypingEnv::fully_monomorphized(),
                     value: layout_ty,
                 };
-                tcx.layout_of(pci).is_ok_and(|layout| layout.is_1zst())
+                tcx.layout_of(pci).is_ok_and(|layout| layout.is_zst())
             };
             let maybe_inhabited =
                 !groundish || !layout_ty.is_privately_uninhabited(tcx, context.typing_env());
@@ -394,7 +395,7 @@ impl<'tcx> TyData<'tcx, RustTyDatas> {
         RustTyDecomposition::new(
             Self::new(data, specifics).alloc(),
             args,
-            maybe_inhabited,
+            Some(maybe_inhabited),
             is_zst,
         )
     }
@@ -408,7 +409,7 @@ impl<'tcx> TyData<'tcx, RustTyDatas> {
             params,
         };
         let specifics = TySpecifics::from_prim_ty(ty);
-        RustTyDecomposition::new(Self::new(data, specifics).alloc(), args, true, false)
+        RustTyDecomposition::new(Self::new(data, specifics).alloc(), args, Some(true), false)
     }
 
     fn ty_name(ty: ty::Ty<'tcx>) -> String {

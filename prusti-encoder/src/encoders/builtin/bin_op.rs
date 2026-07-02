@@ -4,10 +4,9 @@ use vir::{CallableIdn, CastType, FunctionIdn};
 
 use crate::encoders::ty::{
     RustTy, RustTyDecomposition,
-    generics::{GArgs, GParams},
     interpretation::float::FloatDomain,
     pure::{TyPurePrimData, TyPurePrimDataKind},
-    use_pure::{TyUsePure, TyUsePureEnc},
+    use_pure::TyUsePureEnc,
 };
 
 pub struct MirBuiltinBinOpEnc;
@@ -91,9 +90,11 @@ impl TaskEncoder for MirBuiltinBinOpEnc {
                 TyPurePrimDataKind::Native(l_ty_prim) => {
                     let lhs = (l_ty_prim.snap_to_prim)(lhs);
                     let rhs = (r_ty_prim.expect_native().snap_to_prim)(rhs);
+                    // `l_ty` is the type the operation is performed in. The operands
+                    // do not always share a type (e.g. a shift's amount may be a
+                    // different integer type than the shifted value), so we do not
+                    // require `lhs_ty == rhs_ty` here.
                     let l_ty = *lhs_ty.expect_primitive();
-                    let r_ty = *rhs_ty.expect_primitive();
-                    assert_eq!(l_ty, r_ty);
 
                     if op.is_overflowing() {
                         let val =
@@ -175,7 +176,8 @@ impl MirBuiltinBinOpEnc {
                 // the RHS will be masked to the bit width.
                 Add | Sub | Mul | Shl | Shr => (
                     Vec::new(),
-                    Self::get_wrapped_val(vcx, viper_val.downcast_ty(), res_ty).upcast_ty(),
+                    vcx.get_wrapped_val(viper_val.downcast_ty(), res_ty.kind())
+                        .upcast_ty(),
                 ),
                 // Undefined behavior to overflow (need precondition)
                 AddUnchecked | SubUnchecked | MulUnchecked => {
@@ -206,7 +208,8 @@ impl MirBuiltinBinOpEnc {
                         .downcast_ty::<vir::Bool>();
                     (
                         vec![lower_bound, upper_bound],
-                        Self::get_wrapped_val(vcx, viper_val.downcast_ty(), res_ty).upcast_ty(),
+                        vcx.get_wrapped_val(viper_val.downcast_ty(), res_ty.kind())
+                            .upcast_ty(),
                     )
                 }
                 // Could divide by zero or overflow if divisor is `-1`
@@ -380,7 +383,7 @@ impl MirBuiltinBinOpEnc {
         let val = vcx.mk_local_ex(val_decl);
         // Wrapped value
         let wrapped_val_decl = vcx.mk_local_decl("wrapped_val", prim_type);
-        let wrapped_val_exp = Self::get_wrapped_val(vcx, val, res_ty_int);
+        let wrapped_val_exp = vcx.get_wrapped_val(val, res_ty_int.kind());
         let wrapped_val = vcx.mk_local_ex(wrapped_val_decl);
         let wrapped_val_snap = (e_res_ty_int.prim_to_snap)(wrapped_val.upcast_ty());
         // Overflowed?
@@ -396,32 +399,5 @@ impl MirBuiltinBinOpEnc {
         // `let wrapped_val == (val ..) in $tuple`
         let inner_let = vcx.mk_let_expr(wrapped_val_decl, wrapped_val_exp, tuple);
         Ok(vcx.mk_let_expr(val_decl, val_exp, inner_let))
-    }
-
-    /// Wrap the value in the range of the type, e.g. `uN` is wrapped in the
-    /// range `uN::MIN..=uN::MAX` using modulo. For signed integers, the range
-    /// is `iN::MIN..=iN::MAX` and the value is wrapped using two's complement.
-    #[allow(clippy::needless_lifetimes)]
-    fn get_wrapped_val<'vir, 'tcx>(
-        vcx: &'vir vir::VirCtxt<'tcx>,
-        mut exp: vir::ExprInt<'vir>,
-        rust_ty: ty::Ty,
-    ) -> vir::ExprInt<'vir> {
-        let shift_amount = vcx.get_signed_shift_int(rust_ty.kind());
-        if let Some(half) = shift_amount {
-            exp = vcx
-                .mk_bin_op_expr(vir::BinOpKind::Add, exp, half)
-                .downcast_ty();
-        }
-        let modulo_val = vcx.get_modulo_int(rust_ty.kind());
-        exp = vcx
-            .mk_bin_op_expr(vir::BinOpKind::Mod, exp, modulo_val)
-            .downcast_ty();
-        if let Some(half) = shift_amount {
-            exp = vcx
-                .mk_bin_op_expr(vir::BinOpKind::Sub, exp, half)
-                .downcast_ty();
-        }
-        exp
     }
 }

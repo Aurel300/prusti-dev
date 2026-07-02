@@ -1,22 +1,9 @@
-use prusti_rustc_interface::{
-    middle::{mir, ty},
-    span::def_id::DefId,
-};
-use task_encoder::{
-    EncodeFullError, EncodeFullResult, OutputRefAny, TaskEncoder, TaskEncoderDependencies,
-};
-use vir::{CallableIdn, CastType, FunctionIdn, HasType, MethodIdn};
+use prusti_rustc_interface::middle::mir;
+use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
+use vir::{CastType, FunctionIdn};
 
-use crate::encoders::{
-    ConstEnc, TyUseImpureEnc,
-    r#const::ConstEncTask,
-    ty::{
-        RustTy, RustTyDecomposition, TySpecifics,
-        generics::{GParams, GenericParamsEnc},
-        interpretation::float::FloatDomain,
-        pure::{TyPure, TyPurePrimData, TyPurePrimDataKind},
-        use_pure::TyUsePureEnc,
-    },
+use crate::encoders::ty::{
+    RustTy, RustTyDecomposition, pure::TyPurePrimDataKind, use_pure::TyUsePureEnc,
 };
 
 pub struct MirBuiltinUnOpEnc;

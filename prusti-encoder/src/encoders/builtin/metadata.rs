@@ -56,7 +56,7 @@ impl TaskEncoder for ValueCastEnc {
     fn emit_outputs<'vir>(program: &mut task_encoder::Program<'vir>) {
         match Self::all_outputs_local_no_errors(program).as_slice() {
             [] => (),
-            [domain] => program.add_domain(*domain),
+            [domain] => program.add_domain(domain),
             _ => unreachable!(),
         }
     }
@@ -117,7 +117,7 @@ impl TaskEncoder for MetadataCastEnc {
     fn emit_outputs<'vir>(program: &mut task_encoder::Program<'vir>) {
         match Self::all_outputs_local_no_errors(program).as_slice() {
             [] => (),
-            [domain] => program.add_domain(*domain),
+            [domain] => program.add_domain(domain),
             _ => unreachable!(),
         }
     }

@@ -1,21 +1,17 @@
 use prusti_rustc_interface::{
     middle::{mir, ty},
-    span::{def_id::DefId, symbol},
+    span::symbol,
 };
-use task_encoder::{EncodeFullError, EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
-use vir::{CallableIdn, CastType, FunctionIdn, HasType, MethodIdn};
+use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
+use vir::{CastType, FunctionIdn, MethodIdn};
 
 use crate::encoders::{
-    ConstEnc, Pure, TyUseImpureEnc,
+    TyUseImpureEnc,
     builtin::{MetadataCastEnc, ValueCastEnc},
-    r#const::ConstEncTask,
     ty::{
-        LazyRustTy, RustTy, RustTyDecomposition, RustTyNormalized, TySpecifics,
-        generics::{GArgs, GArgsCastEnc, GParams, GenericParamsEnc},
-        interpretation::float::FloatDomain,
-        lifted::TyConstructorEnc,
-        pure::{TyPure, TyPurePrimData, TyPurePrimDataKind},
-        use_pure::{TyUsePure, TyUsePureEnc},
+        LazyRustTy, RustTy, RustTyDecomposition, TySpecifics,
+        generics::{GParams, GenericParamsEnc},
+        use_pure::TyUsePureEnc,
     },
 };
 
@@ -129,31 +125,11 @@ impl TaskEncoder for MirBuiltinCastEnc {
                     let wrapped = if lossless {
                         arg_prim
                     } else {
-                        // Wrap into the target range as `((x [+ 2^(N-1)]) mod 2^N)
-                        // [- 2^(N-1)]`, where the `2^(N-1)` shifts are applied only
-                        // for a signed target (two's-complement reinterpretation).
-                        let shift = vcx.get_signed_shift_int(result_kind);
-                        let mut wrapped = arg_prim;
-                        if let Some(half) = shift {
-                            wrapped = vcx.mk_bin_op_expr(
-                                vir::BinOpKind::Add,
-                                wrapped.as_dyn(),
-                                half.as_dyn(),
-                            );
-                        }
-                        wrapped = vcx.mk_bin_op_expr(
-                            vir::BinOpKind::Mod,
-                            wrapped.as_dyn(),
-                            vcx.get_modulo_int(result_kind).as_dyn(),
-                        );
-                        if let Some(half) = shift {
-                            wrapped = vcx.mk_bin_op_expr(
-                                vir::BinOpKind::Sub,
-                                wrapped.as_dyn(),
-                                half.as_dyn(),
-                            );
-                        }
-                        wrapped
+                        // Truncate to the target width and reinterpret with its
+                        // signedness (two's complement); the shared helper wraps
+                        // `((x [+ 2^(N-1)]) mod 2^N) [- 2^(N-1)]`.
+                        vcx.get_wrapped_val(arg_prim.downcast_ty(), result_kind)
+                            .upcast_ty()
                     };
                     let expr = (e_res_ty.prim_to_snap)(wrapped);
 

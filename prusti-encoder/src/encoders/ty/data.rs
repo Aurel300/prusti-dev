@@ -171,13 +171,6 @@ impl<'vir, D: TyDatas<'vir>> TyData<'vir, D> {
         }
     }
 
-    pub fn as_array(&self) -> Option<&ArrayData<'vir, D>> {
-        match &self.specifics {
-            TySpecifics::ArrayLike(data) => Some(data),
-            _ => None,
-        }
-    }
-
     #[track_caller]
     pub fn expect_immref(&self) -> &D::ImmRefData
     where

@@ -14,8 +14,7 @@ pub struct MirBuiltinBinOpEnc;
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub struct MirBuiltinBinOpTask<'vir> {
-    result_ty: RustTy<'vir>,
-    result_args: &'vir [ty::GenericArg<'vir>],
+    result_ty: RustTyDecomposition<'vir>,
     op: mir::BinOp,
     lhs_ty: RustTy<'vir>,
     rhs_ty: RustTy<'vir>,
@@ -23,14 +22,16 @@ pub struct MirBuiltinBinOpTask<'vir> {
 
 impl<'vir> MirBuiltinBinOpTask<'vir> {
     pub fn new(
-        result_ty: RustTyDecomposition<'vir>,
+        mut result_ty: RustTyDecomposition<'vir>,
         op: mir::BinOp,
         lhs_ty: RustTyDecomposition<'vir>,
         rhs_ty: RustTyDecomposition<'vir>,
     ) -> Self {
+        // The result type is always the concrete `<int>` or `(<int>, bool)`),
+        // remove the context to avoid duplicate keys.
+        result_ty.args = result_ty.args.with_empty_context();
         Self {
-            result_ty: result_ty.ty,
-            result_args: result_ty.args.args(),
+            result_ty,
             op,
             lhs_ty: lhs_ty.ty,
             rhs_ty: rhs_ty.ty,
@@ -59,7 +60,6 @@ impl TaskEncoder for MirBuiltinBinOpEnc {
         vir::with_vcx(|vcx| {
             let MirBuiltinBinOpTask {
                 result_ty,
-                result_args,
                 op,
                 lhs_ty,
                 rhs_ty,
@@ -72,7 +72,7 @@ impl TaskEncoder for MirBuiltinBinOpEnc {
             let (l_ty_prim, l_ty_snap) = (res.expect_primitive(), res.snapshot.downcast_ty());
             let res = encode(rhs_ty)?;
             let (r_ty_prim, r_ty_snap) = (res.expect_primitive(), res.snapshot.downcast_ty());
-            let res = encode(result_ty)?;
+            let res = encode(result_ty.ty)?;
             let res_ty_snap = res.snapshot.downcast_ty();
 
             let name = vir::vir_format_identifier!(
@@ -96,18 +96,11 @@ impl TaskEncoder for MirBuiltinBinOpEnc {
                     assert_eq!(l_ty, r_ty);
 
                     if op.is_overflowing() {
-                        let val = Self::handle_bin_op_overflowing(
-                            vcx,
-                            deps,
-                            result_ty,
-                            result_args,
-                            op,
-                            lhs,
-                            rhs,
-                        )?;
+                        let val =
+                            Self::handle_bin_op_overflowing(vcx, deps, result_ty, op, lhs, rhs)?;
                         (Vec::new(), val)
                     } else {
-                        let res_ty = *result_ty.expect_primitive();
+                        let res_ty = *result_ty.ty.expect_primitive();
                         let (pres, val) =
                             Self::handle_bin_op_native(vcx, lhs, rhs, res_ty, op, l_ty);
                         (pres, (res.expect_primitive().prim_to_snap)(val))
@@ -346,8 +339,7 @@ impl MirBuiltinBinOpEnc {
     fn handle_bin_op_overflowing<'vir>(
         vcx: &'vir vir::VirCtxt<'vir>,
         deps: &mut TaskEncoderDependencies<'vir, Self>,
-        res_ty: RustTy<'vir>,
-        res_args: &'vir [ty::GenericArg<'vir>],
+        result_ty: RustTyDecomposition<'vir>,
         op: mir::BinOp,
         lhs: vir::ExprPrim<'vir>,
         rhs: vir::ExprPrim<'vir>,
@@ -357,9 +349,9 @@ impl MirBuiltinBinOpEnc {
 
         // The result of a checked add will always be `(T, bool)`, get the `T`
         // type
-        assert_eq!(res_ty.name(), "2_Tuple");
-        let res_ty_int = res_args[0].expect_ty();
-        let bool_ty = res_args[1].expect_ty();
+        assert_eq!(result_ty.ty.name(), "2_Tuple");
+        let res_ty_int = result_ty.args.args()[0].expect_ty();
+        let bool_ty = result_ty.args.args()[1].expect_ty();
         assert!(bool_ty.is_bool());
 
         // Re-encode the result tuple with its concrete arguments (always
@@ -367,11 +359,7 @@ impl MirBuiltinBinOpEnc {
         // `int`/`bool` field snapshots to the tuple's generic (`Param`) fields.
         // (Encoding it via `identity` would give identity field casters that
         // expect already-generic `Param` snapshots.)
-        let e_res_ty = deps.require_dep::<TyUsePureEnc>(RustTyDecomposition::new(
-            res_ty,
-            GArgs::new(GParams::empty(), res_args),
-            false,
-        ))?;
+        let e_res_ty = deps.require_dep::<TyUsePureEnc>(result_ty)?;
 
         let ty = RustTyDecomposition::from_prim_ty(res_ty_int);
         let e_res_ty_int = deps.require_dep::<TyUsePureEnc>(ty)?.expect_primitive();

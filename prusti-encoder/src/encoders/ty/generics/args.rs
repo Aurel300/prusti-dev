@@ -35,6 +35,14 @@ impl<'tcx> GArgs<'tcx> {
         self.args
     }
 
+    /// Drops the generic context, keeping the (ground) `args`. Use when the
+    /// context is irrelevant to the encoding — e.g. a builtin's concrete result
+    /// type — so that clients in different contexts (different where-clauses)
+    /// share one task key. Panics (via `new`) if the `args` are not ground.
+    pub fn with_empty_context(self) -> Self {
+        Self::new(GParams::empty(), self.args)
+    }
+
     /// Substitutes type arguments and try to normalize associated types
     pub fn normalize(self, ty: ty::Ty<'tcx>) -> ty::Ty<'tcx> {
         // Substitute type parameters

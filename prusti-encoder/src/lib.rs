@@ -98,6 +98,7 @@ pub fn test_entrypoint<'tcx>(
 
     program.header("snapshots");
     crate::encoders::TyUsePureEnc::emit_outputs(&mut program);
+    crate::encoders::ty::TyZstEnc::emit_outputs(&mut program);
     BitVecEnc::emit_outputs(&mut program);
 
     program.header("predicates");

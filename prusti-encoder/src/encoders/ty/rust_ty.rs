@@ -13,15 +13,23 @@ pub struct RustTyDecomposition<'tcx> {
     pub ty: RustTy<'tcx>,
     pub args: GArgs<'tcx>,
     pub maybe_inhabited: bool,
+    /// Whether this (concrete) type is a zero-sized type. This lives on the
+    /// args-aware decomposition rather than on the args-agnostic `ty`, because
+    /// it is an instantiation property: e.g. `GhostBox<i64>` is a ZST but the
+    /// generic `GhostBox<T>` cannot be shown to be (its layout is unknown). The
+    /// canonical `s_T_zst` value is emitted on demand by [`super::TyZstEnc`] when
+    /// this is set (see `TyUsePureEnc`).
+    pub is_zst: bool,
 }
 
 impl<'tcx> RustTyDecomposition<'tcx> {
-    pub fn new(ty: RustTy<'tcx>, args: GArgs<'tcx>, maybe_inhabited: bool) -> Self {
+    fn new(ty: RustTy<'tcx>, args: GArgs<'tcx>, maybe_inhabited: bool, is_zst: bool) -> Self {
         ty.params.check(args.args());
         RustTyDecomposition {
             ty,
             args,
             maybe_inhabited,
+            is_zst,
         }
     }
 
@@ -62,7 +70,6 @@ impl<'tcx> RustTyDecomposition<'tcx> {
     pub fn from_real() -> Self {
         let data = RustTyData {
             name: symbol::Symbol::intern("Real"),
-            is_zst: false,
             params: GParams::empty(),
         };
         let specifics = TySpecifics::Builtin(RustBuiltinData::BuiltinReal);
@@ -70,6 +77,7 @@ impl<'tcx> RustTyDecomposition<'tcx> {
             TyData::<'tcx, RustTyDatas>::new(data, specifics).alloc(),
             GArgs::new(GParams::empty(), &[]),
             true,
+            false,
         )
     }
 
@@ -85,14 +93,13 @@ impl<'tcx> RustTyDecomposition<'tcx> {
     /// flag is not set correctly!
     pub fn identity(ty: RustTy<'tcx>) -> Self {
         let args = GArgs::new(ty.params, ty.params.rust_params());
-        Self::new(ty, args, false)
+        Self::new(ty, args, false, false)
     }
 
     pub fn param() -> RustTy<'tcx> {
         let gty = TyData::<RustTyDatas>::args_from_tys([TySpecifics::new_param_ty(0)]);
         let data = RustTyData {
             name: symbol::Symbol::intern("Param"),
-            is_zst: false,
             params: GParams::empty_env(gty),
         };
         let specifics = TySpecifics::Param(RustParamData::Generic);
@@ -265,17 +272,12 @@ pub type RustBuiltin<'tcx> = <RustTyDatas as TyDatas<'tcx>>::BuiltinData;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct RustTyData<'tcx> {
     pub name: symbol::Symbol,
-    pub is_zst: bool,
     pub params: GParams<'tcx>,
 }
 
 impl<'tcx> RustTyData<'tcx> {
     pub fn name(&self) -> &str {
         self.name.as_str()
-    }
-
-    pub fn is_zst(&self) -> bool {
-        self.is_zst
     }
 }
 
@@ -387,10 +389,14 @@ impl<'tcx> TyData<'tcx, RustTyDatas> {
         });
         let data = RustTyData {
             name: symbol::Symbol::intern(&name),
-            is_zst,
             params,
         };
-        RustTyDecomposition::new(Self::new(data, specifics).alloc(), args, maybe_inhabited)
+        RustTyDecomposition::new(
+            Self::new(data, specifics).alloc(),
+            args,
+            maybe_inhabited,
+            is_zst,
+        )
     }
 
     fn from_prim_ty(ty: ty::Ty<'tcx>) -> RustTyDecomposition<'tcx> {
@@ -399,11 +405,10 @@ impl<'tcx> TyData<'tcx, RustTyDatas> {
         let args = GArgs::new(params, args);
         let data = RustTyData {
             name: symbol::Symbol::intern(&name),
-            is_zst: false,
             params,
         };
         let specifics = TySpecifics::from_prim_ty(ty);
-        RustTyDecomposition::new(Self::new(data, specifics).alloc(), args, true)
+        RustTyDecomposition::new(Self::new(data, specifics).alloc(), args, true, false)
     }
 
     fn ty_name(ty: ty::Ty<'tcx>) -> String {

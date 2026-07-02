@@ -644,7 +644,7 @@ impl TraitImplEnc {
                     let decomp = RustTyDecomposition::from_ty(ty, impl_ctx);
                     let ty_expr = impl_params.ty_expr(deps, decomp);
                     Self::discover_bind_points(deps, &mut generics_map, impl_ctx, projection, ty)?;
-                    (projection.upcast_ty(), ty_expr.upcast_ty())
+                    (projection.upcast_ty(), ty_expr?.upcast_ty())
                 }
                 ty::TermKind::Const(const_) => {
                     let projection =

@@ -1035,6 +1035,34 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                     .1)
             }
             mir::Rvalue::Len(place) => self.encode_len_snap((*place).into(), curr_ver),
+            mir::Rvalue::RawPtr(mir::RawPtrKind::FakeForPtrMetadata, place) => {
+                // `&raw const (fake) (*p)` exists only to carry the pointee's
+                // pointer metadata (e.g. a slice's length) so that a following
+                // `PtrMetadata` can read it back out (see `mir_shared`). This
+                // lets a spec index or take the length of a slice argument.
+                let encoded_place = self.encode_place_with_ref(curr_ver, (*place).into());
+                // As for `Rvalue::Ref`: a raw pointer built in pure code never
+                // escapes, so its address is `null` unless it re-borrows the
+                // place of an impure `&mut` argument.
+                let place_ref = encoded_place
+                    .place_ref
+                    .filter(|_| place.is_indirect())
+                    .unwrap_or_else(|| self.vcx.mk_null().lazy());
+                // Use the metadata carried by the place (propagated from the
+                // wide pointer it was reached through), falling back to a thin
+                // pointer's metadata for a sized pointee.
+                let Some(metadata) = encoded_place.metadata else {
+                    return Err(self.unsupported_rvalue(
+                        format!("unsupported raw pointer to unsized place {place:?} in pure code"),
+                        span,
+                    ));
+                };
+                let raw_ty = self.ty_use(rvalue_ty);
+                Ok(raw_ty
+                    .expect_raw()
+                    .prim_to_snap(place_ref, metadata)
+                    .upcast_ty())
+            }
             _ => Err(self
                 .unsupported_rvalue(format!("unsupported rvalue {rvalue:?} in pure code"), span)),
         }

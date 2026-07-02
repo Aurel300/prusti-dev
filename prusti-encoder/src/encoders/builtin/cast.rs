@@ -108,57 +108,58 @@ impl TaskEncoder for MirBuiltinCastEnc {
                 mir::CastKind::IntToInt => {
                     let e_op_ty = op_ty.expect_primitive();
                     let e_res_ty = res_ty.expect_primitive();
-
-                    let result_ty = result_ty.expect_primitive().kind();
-                    let operand_ty = operand_ty.expect_primitive().kind();
-                    let (to_bits, to_signed) = vir::VirCtxt::get_int_data(result_ty);
-                    let (from_bits, from_signed) = vir::VirCtxt::get_int_data(operand_ty);
-
-                    let needs_min_check = match (from_signed, to_signed) {
-                        (true, true) => from_bits > to_bits, // both signed, check required if target has fewer bits
-                        (false, false) => false, // both unsigned, no min check necessary
-                        (false, true) => false,  // unsigned to signed, no min check necessary
-                        (true, false) => false,  // signed to unsigned, `from` must be >= 0
-                    };
-
-                    let needs_max_check = match (from_signed, to_signed) {
-                        (false, true) => from_bits >= to_bits, // unsigned to signed, must check unless target is bigger
-                        _ => from_bits > to_bits, // otherwise check if target has fewer bits
-                    };
+                    let result_kind = result_ty.expect_primitive().kind();
+                    let operand_kind = operand_ty.expect_primitive().kind();
+                    let (to_bits, to_signed) = vir::VirCtxt::get_int_data(result_kind);
+                    let (from_bits, from_signed) = vir::VirCtxt::get_int_data(operand_kind);
 
                     let arg_prim = (e_op_ty.expect_native().snap_to_prim)(arg_ex);
 
-                    let mut preconditions = Vec::new();
-                    if needs_min_check {
-                        let to_min = vcx.get_min_int(result_ty);
-                        let min_check = vcx
-                            .mk_bin_op_expr(
-                                vir::BinOpKind::CmpGe,
-                                arg_prim.as_dyn(),
-                                to_min.as_dyn(),
-                            )
-                            .downcast_ty::<vir::Bool>();
-                        preconditions.push(min_check);
-                    }
+                    // An integer `as` cast never panics: when every value of the
+                    // source type is representable in the target the value is
+                    // preserved unchanged; otherwise it is truncated to the target
+                    // width and reinterpreted with the target's signedness. Either
+                    // way any input is valid, so the cast function needs NO
+                    // precondition.
+                    let lossless = match (from_signed, to_signed) {
+                        (false, false) | (true, true) => from_bits <= to_bits,
+                        (false, true) => from_bits < to_bits, // one bit reserved for the sign
+                        (true, false) => false,               // a negative source never fits
+                    };
+                    let wrapped = if lossless {
+                        arg_prim
+                    } else {
+                        // Wrap into the target range as `((x [+ 2^(N-1)]) mod 2^N)
+                        // [- 2^(N-1)]`, where the `2^(N-1)` shifts are applied only
+                        // for a signed target (two's-complement reinterpretation).
+                        let shift = vcx.get_signed_shift_int(result_kind);
+                        let mut wrapped = arg_prim;
+                        if let Some(half) = shift {
+                            wrapped = vcx.mk_bin_op_expr(
+                                vir::BinOpKind::Add,
+                                wrapped.as_dyn(),
+                                half.as_dyn(),
+                            );
+                        }
+                        wrapped = vcx.mk_bin_op_expr(
+                            vir::BinOpKind::Mod,
+                            wrapped.as_dyn(),
+                            vcx.get_modulo_int(result_kind).as_dyn(),
+                        );
+                        if let Some(half) = shift {
+                            wrapped = vcx.mk_bin_op_expr(
+                                vir::BinOpKind::Sub,
+                                wrapped.as_dyn(),
+                                half.as_dyn(),
+                            );
+                        }
+                        wrapped
+                    };
+                    let expr = (e_res_ty.prim_to_snap)(wrapped);
 
-                    if needs_max_check {
-                        let to_max = vcx.get_max_int(result_ty);
-                        let max_check = vcx
-                            .mk_bin_op_expr(
-                                vir::BinOpKind::CmpLe,
-                                arg_prim.as_dyn(),
-                                to_max.as_dyn(),
-                            )
-                            .downcast_ty::<vir::Bool>();
-                        preconditions.push(max_check);
-                    }
-
-                    let expr = (e_res_ty.prim_to_snap)(arg_prim);
-                    let pres = vcx.alloc_slice(&preconditions);
-                    // A value-level (thin) cast: no generic parameters.
+                    // A value-level (thin) cast: no generic parameters, no precondition.
                     let fn_idn = FunctionIdn::new(name, op_ty_snap, res_ty_snap);
-                    let function =
-                        vcx.mk_function(fn_idn, (arg_decl,), pres, &[], None, Some(expr));
+                    let function = vcx.mk_function(fn_idn, (arg_decl,), &[], &[], None, Some(expr));
                     (
                         MirBuiltinCastLocal {
                             cast: function,

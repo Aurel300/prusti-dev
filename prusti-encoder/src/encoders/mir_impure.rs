@@ -724,6 +724,13 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                         destination,
                         ..
                     } => {
+                        let (_, caller_substs, is_pure) = self.get_call_data(func);
+                        if is_pure {
+                            // The call was encoded as a pure function application, so
+                            // there is no wand to apply.
+                            return Ok(());
+                        }
+
                         let (_, dest_snap, _, _) =
                             self.encode_place_with_snap((*destination).into());
                         let wand_args =
@@ -733,9 +740,6 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                                 }))
                                 .collect::<Result<Vec<_>, EncodeFullError<'vir, E>>>()?;
                         let (label_pre, label_post) = self.call_labels[&call.location().block];
-                        let func_ty = func.ty(self.body, self.vcx.tcx());
-                        let (_, caller_substs) =
-                            RustSignature::get_def_id_and_caller_substs(func_ty);
                         let call_ctx = WandCallContext {
                             caller_substs,
                             caller_g_params: GParams::from(self.def_id),
@@ -1148,6 +1152,20 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             }
             _ => todo!("Unsupported ProjectionElem {:?}", elem),
         }
+    }
+
+    fn get_call_data(&self, func: &mir::Operand<'vir>) -> (DefId, ty::GenericArgsRef<'vir>, bool) {
+        let func_ty = func.ty(self.body, self.vcx.tcx());
+        let (func_def_id, caller_substs) = RustSignature::get_def_id_and_caller_substs(func_ty);
+        let is_pure = crate::encoders::with_proc_spec(
+            SpecQuery::GetProcKind(
+                func_def_id,
+                ty::List::identity_for_item(self.vcx.tcx(), func_def_id),
+            ),
+            |spec| spec.kind.is_pure().unwrap_or_default(),
+        )
+        .unwrap_or_default();
+        (func_def_id, caller_substs, is_pure)
     }
 
     fn new_tmp<T: CompType>(&mut self, ty: vir::Type<'vir, T>) -> vir::Expr<'vir, T> {
@@ -1827,17 +1845,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                     ),
                 );
 
-                let func_ty = func.ty(self.body, self.vcx.tcx());
-                let (func_def_id, caller_substs) =
-                    RustSignature::get_def_id_and_caller_substs(func_ty);
-                let is_pure = crate::encoders::with_proc_spec(
-                    SpecQuery::GetProcKind(
-                        func_def_id,
-                        ty::List::identity_for_item(self.vcx.tcx(), func_def_id),
-                    ),
-                    |spec| spec.kind.is_pure().unwrap_or_default(),
-                )
-                .unwrap_or_default();
+                let (func_def_id, caller_substs, is_pure) = self.get_call_data(func);
 
                 let dest = self
                     .encode_place(Place::from(*destination))

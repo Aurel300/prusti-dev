@@ -64,43 +64,92 @@ struct Enc<'enc, 'vir: 'enc> {
 }
 
 impl<'enc, 'vir: 'enc> Enc<'enc, 'vir> {
+    /// Encodes the `(address, metadata, referent_snapshot)` triple of a
+    /// reference constant. The reference's generic args are `[region, inner]`,
+    /// so the referent type is at index 1; the pointer-metadata type is derived
+    /// from the referent (`()` for sized referents, `usize` for slices/`str`).
     fn encode_ref_addr_snap(
         &mut self,
         val: impl Projectable<'vir, CtfeProvenance>,
         ty: RustTyDecomposition<'vir>,
-    ) -> Result<(vir::ExprRef<'vir>, vir::ExprSnap<'vir>), EncodeFullError<'vir, ConstEnc>> {
+    ) -> Result<
+        (vir::ExprRef<'vir>, vir::ExprSnap<'vir>, vir::ExprSnap<'vir>),
+        EncodeFullError<'vir, ConstEnc>,
+    > {
         let inner_ty = ty.args.args()[1].expect_ty();
         let addr_to_ref = self.deps.require_dep::<RefDataEnc>(())?.addr_to_ref;
-        vir::with_vcx(|vcx| {
-            Ok(if inner_ty.is_str() || inner_ty.is_slice() {
-                let sl_ty = inner_ty.peel_refs();
-                let sl_ty_task = RustTyDecomposition::from_ty(sl_ty, self.context);
-                let sl_snap = self.deps.require_dep::<TyUsePureEnc>(sl_ty_task)?;
-                let sl_snap = sl_snap.expect_opaque();
+        if inner_ty.is_str() || inner_ty.is_slice() {
+            // Wide pointer: the metadata is the length of the referent. The
+            // referent itself is currently modelled opaquely (no string/slice
+            // content reasoning).
+            let len = self.ecx.deref_pointer(&val).unwrap().len(self.ecx).unwrap();
+            let metadata = self.encode_usize_metadata(ty, len as u128)?;
+            let sl_ty = inner_ty.peel_refs();
+            let sl_ty_task = RustTyDecomposition::from_ty(sl_ty, self.context);
+            let sl_snap = self.deps.require_dep::<TyUsePureEnc>(sl_ty_task)?;
+            let sl_snap = sl_snap.expect_opaque();
+            vir::with_vcx(|vcx| {
                 let snap = (sl_snap.arbitrary)().upcast_ty();
-                (vcx.mk_null(), snap)
-            } else {
-                let ptr = self.ecx.read_pointer(&val).expect("Expected a pointer");
-                let rel_addr = match ptr.into_pointer_or_addr() {
-                    Ok(ptr) => {
-                        ((ptr.provenance.alloc_id().0.get() as u128) << 64)
-                            | ptr.prov_and_relative_offset().1.bytes() as u128
-                    }
-                    Err(addr) => addr.bytes() as u128,
-                };
-                let snap = self.encode_const_val_tree(
-                    self.ecx.deref_pointer(&val).unwrap(),
-                    RustTyDecomposition::from_ty(inner_ty, self.context),
-                )?;
-                (
+                Ok((vcx.mk_null(), metadata, snap))
+            })
+        } else {
+            // Thin pointer to a sized referent: the metadata is the ZST of the
+            // (unit) metadata type.
+            let metadata = self.encode_thin_ptr_metadata(ty)?;
+            let snap = self.encode_const_val_tree(
+                self.ecx.deref_pointer(&val).unwrap(),
+                RustTyDecomposition::from_ty(inner_ty, self.context),
+            )?;
+            let ptr = self.ecx.read_pointer(&val).expect("Expected a pointer");
+            let rel_addr = match ptr.into_pointer_or_addr() {
+                Ok(ptr) => {
+                    ((ptr.provenance.alloc_id().0.get() as u128) << 64)
+                        | ptr.prov_and_relative_offset().1.bytes() as u128
+                }
+                Err(addr) => addr.bytes() as u128,
+            };
+            vir::with_vcx(|vcx| {
+                Ok((
                     addr_to_ref(
                         vcx.mk_const_expr(vir::ConstData::Int(rel_addr))
                             .downcast_ty(),
                     ),
+                    metadata,
                     snap.upcast_ty(),
-                )
+                ))
             })
-        })
+        }
+    }
+
+    /// The pointer metadata for a reference to a sized referent (a thin
+    /// pointer): the ZST snapshot of the (unit) metadata type. The metadata type
+    /// is derived from the referent rather than read off a generic argument.
+    fn encode_thin_ptr_metadata(
+        &mut self,
+        _ty: RustTyDecomposition<'vir>,
+    ) -> Result<vir::ExprSnap<'vir>, EncodeFullError<'vir, ConstEnc>> {
+        let unit = vir::with_vcx(|vcx| vcx.tcx().types.unit);
+        let metadata_ty = RustTyDecomposition::from_ty(unit, self.context);
+        Ok(self
+            .deps
+            .require_dep::<TyUsePureEnc>(metadata_ty)?
+            .zst()
+            .expect("thin pointer metadata for a sized const referent should be a ZST"))
+    }
+
+    /// The pointer metadata for a wide pointer to a slice/str referent: the
+    /// `usize` length snapshot.
+    fn encode_usize_metadata(
+        &mut self,
+        _ty: RustTyDecomposition<'vir>,
+        len: u128,
+    ) -> Result<vir::ExprSnap<'vir>, EncodeFullError<'vir, ConstEnc>> {
+        let metadata_ty = vir::with_vcx(|vcx| vcx.tcx().types.usize);
+        let prim = self
+            .deps
+            .require_dep::<TyUsePureEnc>(RustTyDecomposition::from_ty(metadata_ty, self.context))?
+            .expect_primitive();
+        Ok((prim.prim_to_snap)(prim.expr_from_bits(metadata_ty, len)).upcast_ty())
     }
 
     fn encode_const_val_tree(
@@ -180,12 +229,12 @@ impl<'enc, 'vir: 'enc> Enc<'enc, 'vir> {
                     (prim.prim_to_snap)(val)
                 }
                 super::ty::TySpecifics::ImmRef(immref) => {
-                    let (addr, snap) = self.encode_ref_addr_snap(val, ty)?;
-                    TyUsePureImmRef::prim_to_snap(immref, addr, snap)
+                    let (addr, metadata, snap) = self.encode_ref_addr_snap(val, ty)?;
+                    TyUsePureImmRef::prim_to_snap(immref, addr, metadata, snap)
                 }
                 super::ty::TySpecifics::MutRef(mutref) => {
-                    let (addr, snap) = self.encode_ref_addr_snap(val, ty)?;
-                    TyUsePureMutRef::prim_to_snap(mutref, addr, snap)
+                    let (addr, metadata, snap) = self.encode_ref_addr_snap(val, ty)?;
+                    TyUsePureMutRef::prim_to_snap(mutref, addr, metadata, snap)
                 }
                 super::ty::TySpecifics::StructLike(struct_data) => {
                     let mut snaps = Vec::new();
@@ -276,16 +325,24 @@ impl ConstEnc {
                 // Encode `&str` constants to an opaque domain. If we ever want to perform string reasoning
                 // we will need to revisit this encoding, but for the moment this allows assertions to avoid
                 // crashing Prusti.
-                ConstValue::Slice { .. } if ty.peel_refs().is_str() => {
+                ConstValue::Slice { meta, .. } if matches!(ty.kind(), ty::TyKind::Ref(.., inner, ty::Mutability::Not) if inner.is_str()) =>
+                {
+                    let metadata_ty = ty.pointee_metadata_ty_or_projection(vcx.tcx());
+                    assert!(metadata_ty.is_usize());
                     let ref_ty = kind.expect_immref();
-                    let str_ty = ty.peel_refs();
-                    let str_ty_task = RustTyDecomposition::from_ty(str_ty, context);
-                    let str_snap = deps.require_dep::<TyUsePureEnc>(str_ty_task)?;
-                    let str_snap = str_snap.expect_opaque();
-                    // first, we create a string snapshot
-                    let snap = (str_snap.arbitrary)().upcast_ty();
+
+                    let metadata = RustTyDecomposition::from_ty(metadata_ty, context);
+                    let metadata = deps
+                        .require_dep::<TyUsePureEnc>(metadata)?
+                        .expect_primitive();
+                    let str_ = RustTyDecomposition::from_ty(vcx.tcx().types.str_, context);
+                    let str_ = deps.require_dep::<TyUsePureEnc>(str_)?.expect_opaque();
+                    // first, we create the metadata and string snapshots
+                    let meta = metadata.expr_from_bits(metadata_ty, meta as u128);
+                    let meta = (metadata.prim_to_snap)(meta).upcast_ty();
+                    let inner = (str_.arbitrary)().upcast_ty();
                     // wrap it in a ref
-                    vir::with_vcx(|vcx| ref_ty.prim_to_snap(vcx.mk_null(), snap))
+                    vir::with_vcx(|vcx| ref_ty.prim_to_snap(vcx.mk_null(), meta, inner))
                 }
                 ConstValue::Slice { .. } => todo!("ConstValue::Slice: {ty:?}"),
                 ConstValue::Indirect { .. } => todo!("ConstValue::Indirect"),

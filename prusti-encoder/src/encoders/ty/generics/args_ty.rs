@@ -3,7 +3,7 @@ use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 
 use crate::encoders::{ConstEnc, r#const::ConstEncTask, ty::RustTyDecomposition};
 
-use super::{GArgs, GenericParamsEnc};
+use super::{GArgs, TyExprEnc};
 
 /// Encodes type arguments when calling a function in this context
 pub struct GArgsTyEnc;
@@ -15,6 +15,19 @@ pub struct GArgsTy<'vir> {
 }
 
 impl<'vir> GArgsTy<'vir> {
+    /// Build the encoded type/const arguments directly (e.g. to instantiate a
+    /// builtin method whose type arguments are referent type values rather than
+    /// the args of a single `RustTyDecomposition`).
+    pub fn new(
+        ty_args: &'vir [vir::ExprTyVal<'vir>],
+        const_args: &'vir [vir::ExprCSnap<'vir>],
+    ) -> Self {
+        GArgsTy {
+            ty_args,
+            const_args,
+        }
+    }
+
     pub fn get_ty<Curr, Next>(&self) -> &'vir [vir::ExprGenTyVal<'vir, Curr, Next>] {
         let args = self.ty_args as *const [vir::ExprTyVal<'vir>]
             as *const [vir::ExprGenTyVal<'vir, Curr, Next>];
@@ -43,7 +56,6 @@ impl TaskEncoder for GArgsTyEnc {
         deps: &mut TaskEncoderDependencies<'vir, Self>,
     ) -> EncodeFullResult<'vir, Self> {
         deps.emit_output_ref(*task_key, ())?;
-        let params = deps.require_dep::<GenericParamsEnc>(task_key.context)?;
         let ty_args = task_key
             .args
             .iter()
@@ -51,7 +63,7 @@ impl TaskEncoder for GArgsTyEnc {
             .filter_map(ty::GenericArg::as_type)
             .map(|arg| {
                 let decomp = RustTyDecomposition::from_ty(arg, task_key.context);
-                params.ty_expr(deps, decomp)
+                deps.require_dep::<TyExprEnc>(decomp)
             })
             .collect::<Result<Vec<_>, _>>()?;
         let const_args = task_key

@@ -32,6 +32,7 @@ impl<'vir> TyDatas<'vir> for PureTyDatas {
     type PrimitiveData = TyPurePrimData<'vir>;
     type ImmRefData = TyPureImmRefData<'vir>;
     type MutRefData = TyPureMutRefData<'vir>;
+    type RawData = TyPureRawData<'vir>;
     type FieldData = TyPureFieldData<'vir>;
     type StructData = TyPureStructData<'vir>;
     type VariantData = TyPureVariantData<'vir>;
@@ -45,6 +46,7 @@ pub type TyPureOpaque<'vir> = <PureTyDatas as TyDatas<'vir>>::OpaqueData;
 pub type TyPurePrimitive<'vir> = <PureTyDatas as TyDatas<'vir>>::PrimitiveData;
 pub type TyPureImmRef<'vir> = <PureTyDatas as TyDatas<'vir>>::ImmRefData;
 pub type TyPureMutRef<'vir> = <PureTyDatas as TyDatas<'vir>>::MutRefData;
+pub type TyPureRaw<'vir> = <PureTyDatas as TyDatas<'vir>>::RawData;
 pub type TyPureBuiltin<'vir> = <PureTyDatas as TyDatas<'vir>>::BuiltinData;
 
 #[derive(Debug, Clone, Copy)]
@@ -69,15 +71,25 @@ pub struct TyPureOpaqueData<'vir> {
     pub arbitrary: FunctionIdn<'vir, (), vir::CSnap>,
 }
 
+/// Pure data for a raw pointer. Modelled like a reference (`TyPureImmRefData`)
+/// but with the pointee left opaque: the snapshot carries the address and the
+/// pointer metadata, and there is no `value_access` into the pointee.
+#[derive(Debug, Clone, Copy)]
+pub struct TyPureRawData<'vir> {
+    /// Construct the snapshot from an address and pointer metadata.
+    pub(super) prim_to_snap: FunctionIdn<'vir, (vir::Ref, vir::PSnap), vir::CSnap>,
+    /// Function to access the pointer address.
+    pub(super) address_access: AdtDestructor<'vir, vir::CSnap, vir::Ref>,
+    /// Function to access the pointer metadata (fat pointer).
+    pub(super) metadata_access: AdtDestructor<'vir, vir::CSnap, vir::PSnap>,
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct TyPureArrayData<'vir> {
     /// Function to access the value at the given index.
     pub(super) index_access: FunctionIdn<'vir, (vir::CSnap, vir::Int), vir::PSnap>,
     /// Function to access the ref at the given index.
-    pub ref_to_index_ref:
-        vir::FunctionIdn<'vir, (vir::Ref, vir::Int, vir::ManyTyVal, vir::ManyCSnap), vir::Ref>,
-    /// Function to read the length of the array.
-    pub(super) len: FunctionIdn<'vir, vir::CSnap, vir::Int>,
+    pub ref_to_index_ref: vir::FunctionIdn<'vir, (vir::Ref, vir::Int, vir::ManyTyVal), vir::Ref>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -125,9 +137,11 @@ impl<'vir, D: TyDatas<'vir, PrimitiveData = TyPurePrimData<'vir>>> TyData<'vir, 
 #[derive(Debug, Clone, Copy)]
 pub struct TyPureImmRefData<'vir> {
     /// Construct domain from a `Ref` value.
-    pub(super) prim_to_snap: FunctionIdn<'vir, (vir::Ref, vir::PSnap), vir::CSnap>,
+    pub(super) prim_to_snap: FunctionIdn<'vir, (vir::Ref, vir::PSnap, vir::PSnap), vir::CSnap>,
     /// Function to access the referee.
     pub(super) deref_access: AdtDestructor<'vir, vir::CSnap, vir::Ref>,
+    /// Function to access the reference metadata (fat pointer).
+    pub(super) metadata_access: AdtDestructor<'vir, vir::CSnap, vir::PSnap>,
     /// Function to access the snapshot value.
     pub(super) value_access: AdtDestructor<'vir, vir::CSnap, vir::PSnap>,
 }
@@ -135,9 +149,11 @@ pub struct TyPureImmRefData<'vir> {
 #[derive(Debug, Clone, Copy)]
 pub struct TyPureMutRefData<'vir> {
     /// Construct domain from a `Ref` value.
-    pub(super) prim_to_snap: FunctionIdn<'vir, (vir::Ref, vir::PSnap), vir::CSnap>,
+    pub(super) prim_to_snap: FunctionIdn<'vir, (vir::Ref, vir::PSnap, vir::PSnap), vir::CSnap>,
     /// Function to access the referee.
     pub(super) deref_access: AdtDestructor<'vir, vir::CSnap, vir::Ref>,
+    /// Function to access the reference metadata (fat pointer).
+    pub(super) metadata_access: AdtDestructor<'vir, vir::CSnap, vir::PSnap>,
     /// Function to access the value (beware that this may not be set).
     pub(super) value_access: AdtDestructor<'vir, vir::CSnap, vir::PSnap>,
 }
@@ -178,6 +194,7 @@ pub(super) type TyPureEnc = super::TyEnc<Pure>;
 #[derive(Debug, Clone, Copy)]
 pub struct TyPureRef<'vir> {
     pub domain: vir::DomainIdnSnap<'vir>,
+    pub zst: Option<FunctionIdn<'vir, (vir::ManyTyVal, vir::ManyCSnap), vir::Snap>>,
     pub unreachable_to_snap: FunctionIdn<'vir, (vir::ManyTyVal, vir::ManyCSnap), vir::Snap>,
 }
 
@@ -185,10 +202,11 @@ impl<'vir> task_encoder::OutputRefAny for TyPureRef<'vir> {}
 
 #[derive(Debug, Clone, Copy)]
 pub struct TyPureEncLocal<'vir> {
-    pub unreachable_to_snap: vir::Function<'vir>,
+    zst: Option<vir::Function<'vir>>,
+    unreachable_to_snap: vir::Function<'vir>,
     /// Other functions related to this type.
-    pub functions: &'vir [vir::Function<'vir>],
-    pub kind: TyPureEncLocalKind<'vir>,
+    functions: &'vir [vir::Function<'vir>],
+    kind: TyPureEncLocalKind<'vir>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -217,7 +235,7 @@ impl TaskEncoder for TyPureEnc {
     /// encoded in [`GenericEnc`]. The reason we do not encode the domain for
     /// `Param` types here is because we don't want [`GenericEnc`] to depend on
     /// this encoder: doing so would create a cyclic dependency.
-    type OutputFullLocal<'vir> = TyPureEncLocal<'vir>;
+    type OutputFullLocal<'vir> = Option<TyPureEncLocal<'vir>>;
 
     type EncodingError = TyPureEncError;
 
@@ -259,9 +277,15 @@ impl TaskEncoder for TyPureEnc {
                         task_key, immref, deps, builder,
                     )?)
                 }
-                TySpecifics::MutRef(_) => {
+                TySpecifics::MutRef(mutref) => {
                     let builder = builder.set_adt_builder();
-                    TySpecifics::MutRef(super::kinds::mutref::ty_pure(builder)?)
+                    TySpecifics::MutRef(super::kinds::mutref::ty_pure(
+                        task_key, mutref, deps, builder,
+                    )?)
+                }
+                TySpecifics::Raw(raw) => {
+                    let builder = builder.set_adt_builder();
+                    TySpecifics::Raw(super::kinds::raw::ty_pure(task_key, raw, deps, builder)?)
                 }
                 TySpecifics::StructLike(structlike) => {
                     let builder = builder.set_adt_builder();
@@ -281,12 +305,18 @@ impl TaskEncoder for TyPureEnc {
                 }
             };
             let output = TyData::new(output_ref, specifics).alloc();
-            Ok((builder.build(), output))
+            Ok((Some(builder.build()), output))
         })
     }
 
     fn emit_outputs<'vir>(program: &mut task_encoder::Program<'vir>) {
         for output in Self::all_outputs_local_no_errors(program) {
+            let Some(output) = output else {
+                continue;
+            };
+            if let Some(zst) = output.zst {
+                program.add_function(zst);
+            }
             program.add_function(output.unreachable_to_snap);
             for function in output.functions {
                 program.add_function(function);
@@ -348,6 +378,7 @@ pub(crate) struct TyPureBuilder<'vir> {
     domain_ident: vir::DomainIdnSnap<'vir>,
     self_type: vir::TypeSnap<'vir>,
     unreachable_to_snap: FunctionIdn<'vir, (vir::ManyTyVal, vir::ManyCSnap), vir::Snap>,
+    zst: Option<FunctionIdn<'vir, (vir::ManyTyVal, vir::ManyCSnap), vir::Snap>>,
     pub(super) params: GenericParams<'vir>,
     data: BuilderData<'vir>,
 }
@@ -393,6 +424,14 @@ impl<'vir> TyPureBuilder<'vir> {
         let name = vir::vir_format!(vcx, "s_{}", ty.name());
         let domain_ident = DomainIdnSnap::new(vir::ViperIdent::new(name), 0);
         let self_type = domain_ident();
+        let zst = ty.is_zst().then(|| {
+            let zst_name = vir::vir_format!(vcx, "{name}_zst");
+            FunctionIdn::new(
+                vir::ViperIdent::new(zst_name),
+                (params.ty_args(), params.const_args()),
+                self_type,
+            )
+        });
         let unreachable_to_snap = FunctionIdn::new(
             vir::ViperIdent::new(vir::vir_format!(vcx, "{name}_unreachable")),
             (params.ty_args(), params.const_args()),
@@ -403,6 +442,7 @@ impl<'vir> TyPureBuilder<'vir> {
             name,
             domain_ident,
             self_type,
+            zst,
             unreachable_to_snap,
             params,
             data: BuilderData::None,
@@ -416,6 +456,7 @@ impl<'vir> TyPureBuilder<'vir> {
     pub(crate) fn output_ref(&self) -> TyPureRef<'vir> {
         TyPureRef {
             domain: self.domain_ident.cast_ty(),
+            zst: self.zst,
             unreachable_to_snap: self.unreachable_to_snap,
         }
     }
@@ -447,27 +488,38 @@ impl<'vir> TyPureBuilder<'vir> {
     }
 
     pub(crate) fn build(self) -> TyPureEncLocal<'vir> {
-        let unreachable_to_snap = vir::with_vcx(|vcx| {
-            vcx.mk_function(
+        vir::with_vcx(|vcx| {
+            let zst = self.zst.map(|zst| {
+                vcx.mk_function(
+                    zst,
+                    (self.params.ty_decls(), self.params.const_decls()),
+                    &[],
+                    &[],
+                    None,
+                    None,
+                )
+            });
+            let unreachable_to_snap = vcx.mk_function(
                 self.unreachable_to_snap,
                 (self.params.ty_decls(), self.params.const_decls()),
                 &[],
                 vcx.alloc_array(&[vcx.mk_bool::<false>()]),
                 None,
                 None,
-            )
-        });
-        let functions = match &self.data {
-            BuilderData::Adt(data) => data.functions.as_slice(),
-            _ => &[],
-        };
-        let functions = vir::with_vcx(|vcx| vcx.alloc_slice(functions));
-        let kind = self.build_kind();
-        TyPureEncLocal {
-            unreachable_to_snap,
-            kind,
-            functions,
-        }
+            );
+            let functions = match &self.data {
+                BuilderData::Adt(data) => data.functions.as_slice(),
+                _ => &[],
+            };
+            let functions = vcx.alloc_slice(functions);
+            let kind = self.build_kind();
+            TyPureEncLocal {
+                zst,
+                unreachable_to_snap,
+                kind,
+                functions,
+            }
+        })
     }
 
     fn build_kind(self) -> TyPureEncLocalKind<'vir> {
@@ -679,7 +731,7 @@ impl<'vir> TyPurePrimData<'vir> {
                     TyKind::Int(IntTy::Isize) => ((std::mem::size_of::<isize>() * 8) as u64, true),
                     TyKind::Int(ty) => (ty.bit_width().unwrap(), true),
                     TyKind::Uint(UintTy::Usize) => {
-                        ((std::mem::size_of::<usize>() * 8) as u64, true)
+                        ((std::mem::size_of::<usize>() * 8) as u64, false)
                     }
                     TyKind::Uint(ty) => (ty.bit_width().unwrap(), false),
                     TyKind::Char => (32, false),

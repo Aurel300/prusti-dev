@@ -506,6 +506,12 @@ pub enum StmtKindGenData<'vir, Curr, Next> {
     Dummy(&'vir str),
 }
 
+impl<'vir, Curr, Next> StmtKindGenData<'vir, Curr, Next> {
+    pub fn alloc(self) -> StmtGen<'vir, Curr, Next> {
+        with_vcx(|vcx| vcx.alloc(StmtGenData::new(vcx.alloc(self))))
+    }
+}
+
 #[derive(VirHash, VirReify, VirSerde)]
 pub struct GotoIfGenData<'vir, Curr, Next> {
     pub value: ExprGenDyn<'vir, Curr, Next>,

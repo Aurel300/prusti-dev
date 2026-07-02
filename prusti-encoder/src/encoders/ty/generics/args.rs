@@ -17,10 +17,14 @@ pub enum GParamVariant<'tcx> {
 
 impl<'tcx> GArgs<'tcx> {
     pub fn new(context: impl Into<GParams<'tcx>>, args: &'tcx [ty::GenericArg<'tcx>]) -> Self {
-        GArgs {
-            context: context.into(),
-            args,
+        let context: GParams<'tcx> = context.into();
+        // Sanity check that all generic values in args are bound (i.e. defined
+        // in context).
+        for arg in args.iter().flat_map(|arg| arg.walk()) {
+            let valid = context.check_arg(arg);
+            assert!(valid, "context: {context:#?}, args: {args:#?}");
         }
+        GArgs { context, args }
     }
 
     pub(in crate::encoders::ty) fn context(self) -> GParams<'tcx> {

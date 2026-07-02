@@ -12,7 +12,6 @@ use crate::encoders::{
 use itertools::Itertools;
 use pcg::utils::Place;
 use prusti_interface::{
-    PrustiError,
     environment::EnvQuery,
     specs::{specifications::SpecQuery, typed::ExternSpecKind},
 };
@@ -46,7 +45,14 @@ pub enum Mode {
     BeforeExpiry,
 }
 
-// TODO: does this need to be `&'vir ...`?
+// The reify input for a pure-encoded body: the `DefId` it was encoded for, the
+// argument snapshots (keyed by `Local`), and the argument place references
+// (`Ref`s, positional by argument). The refs are used when a reference to an
+// argument is taken (`&arg`); the slice may be shorter/empty, in which case
+// missing entries default to `null` (the address is irrelevant in a purely
+// functional context). The impure spec encoder supplies real refs so that, e.g.,
+// `&result` in a postcondition resolves to the method's return place `_0p`
+// rather than the spec function's own parameter local.
 pub type ExprInput<'vir> = (DefId, &'vir FxHashMap<mir::Local, vir::ExprSnap<'vir>>);
 type ExprRet<'vir> = vir::ExprGenSnap<'vir, ExprInput<'vir>, vir::ExprKind<'vir>>;
 type ExprRetRef<'vir> = vir::ExprGenRef<'vir, ExprInput<'vir>, vir::ExprKind<'vir>>;
@@ -276,6 +282,11 @@ struct Enc<'vir: 'enc, 'enc> {
 struct EncodedPlace<'vir> {
     snap: ExprRet<'vir>,
     place_ref: Option<ExprRetRef<'vir>>,
+    /// The pointer metadata, when this place is reached through a wide pointer
+    /// (i.e. it is an unsized referent such as a slice/`dyn`). `None` for sized
+    /// places. Propagated through `Deref` so that re-borrowing an unsized place
+    /// recovers the correct metadata.
+    metadata: Option<ExprRet<'vir>>,
 }
 
 impl<'vir> EncodedPlace<'vir> {
@@ -283,7 +294,13 @@ impl<'vir> EncodedPlace<'vir> {
         Self {
             snap: expr,
             place_ref,
+            metadata: None,
         }
+    }
+
+    fn with_metadata(mut self, metadata: ExprRet<'vir>) -> Self {
+        self.metadata = Some(metadata);
+        self
     }
 }
 
@@ -955,38 +972,51 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
             mir::Rvalue::Ref(_, kind, place) => {
                 let rvalue_snapshot_encoding = self.ty_use(rvalue_ty);
                 let encoded_place = self.encode_place_with_ref(curr_ver, (*place).into());
-                if kind.mutability().is_mut() {
+                // We want to distinguish if `place` is a value that lives
+                // in pure code or not. If it lives in impure (the only way
+                // that this can happen is that we have a `&mut` argument)
+                // then we want to return the actual address in the
+                // snapshot. Otherwise we want to use `null` as this value
+                // should never escape pure code anyway. Thus `place_ref`
+                // will return `None` if this isn't a re-borrow, and if it's
+                // a re-borrow of created-in-pure reference then it will be
+                // field projections of `null` which is also `null`.
+                let place_ref = encoded_place
+                    .place_ref
+                    // TODO: this is a bit of a hack to use `null` if one does
+                    // e.g. `#[requires(x == y)]`, which creates a borrow of the
+                    // arguments which weren't borrows in the first place.
+                    .filter(|_| place.is_indirect())
+                    .unwrap_or_else(|| self.vcx.mk_null().lazy());
+                // Use the metadata carried by the place (set when reaching it
+                // through a wide pointer, e.g. an unsized re-borrow), falling
+                // back to a thin pointer's metadata for a sized referent. A
+                // genuinely unsized referent with no carried metadata degrades
+                // to an `unsupported` verification error rather than crashing.
+                let metadata = encoded_place.metadata;
+                let Some(metadata) = metadata.or_else(|| self.thin_ptr_metadata(rvalue_ty)) else {
+                    // An unsized referent with no carried metadata cannot be encoded
+                    // in pure code; surface a real error rather than a havoc snapshot
+                    // (a placeholder here would be unsound).
+                    return Err(self.unsupported_rvalue(
+                        format!("unsupported reference to unsized place {place:?} in pure code"),
+                        span,
+                    ));
+                };
+                let snap = if kind.mutability().is_mut() {
                     let e_rvalue_ty = rvalue_snapshot_encoding.expect_mutref();
-                    // We want to distinguish if `place` is a value that lives
-                    // in pure code or not. If it lives in impure (the only way
-                    // that this can happen is that we have a `&mut` argument)
-                    // then we want to return the actual address in the
-                    // snapshot. Otherwise we want to use `null` as this value
-                    // should never escape pure code anyway. Thus `place_ref`
-                    // will return `None` if this isn't a re-borrow, and if it's
-                    // a re-borrow of created-in-pure reference then it will be
-                    // field projections of `null` which is also `null`.
-                    let place_ref = encoded_place
-                        .place_ref
-                        .unwrap_or_else(|| self.vcx.mk_null().lazy());
-                    Ok(e_rvalue_ty
-                        .prim_to_snap(place_ref, encoded_place.snap)
-                        .upcast_ty())
+                    e_rvalue_ty.prim_to_snap(place_ref, metadata, encoded_place.snap)
                 } else {
                     let e_rvalue_ty = rvalue_snapshot_encoding.expect_immref();
-                    // For shared borrows we want to use just the snapshot
-                    // without the reference so that snapshot equality compares
-                    // only values.
-                    Ok(e_rvalue_ty
-                        .prim_to_snap(self.vcx.mk_null().lazy(), encoded_place.snap)
-                        .upcast_ty())
-                }
+                    e_rvalue_ty.prim_to_snap(place_ref, metadata, encoded_place.snap)
+                };
+                Ok(snap.upcast_ty())
             }
             mir::Rvalue::BinaryOp(op, box (l, r)) => {
                 self.encode_binop_snap(rvalue_ty, *op, l, r, curr_ver)
             }
             mir::Rvalue::UnaryOp(unop, operand) => {
-                self.encode_unary_op_snap(rvalue_ty, *unop, operand, curr_ver)
+                self.encode_unary_op_snap(rvalue_ty, *unop, operand, span, curr_ver)
             }
             mir::Rvalue::Aggregate(
                 box kind @ (mir::AggregateKind::Adt(..)
@@ -1015,16 +1045,14 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                 Ok(discr.upcast_ty())
             }
             mir::Rvalue::Cast(kind, operand, ty) => {
-                Ok(self.encode_cast_snap(*kind, operand, *ty, curr_ver)?.expr)
+                assert_eq!(*ty, rvalue_ty);
+                Ok(self
+                    .encode_cast_snap(rvalue_ty, *kind, operand, span, curr_ver)?
+                    .1)
             }
-            mir::Rvalue::Len(place) => Ok(self.encode_len_snap((*place).into(), curr_ver)),
-            _ => self.vcx.with_span(span, |vcx| {
-                let error_msg = format!("unsupported rvalue {rvalue:?} might be reached");
-                vcx.handle_error("application.precondition:assertion.false", move |_| {
-                    Some(vec![PrustiError::verification(&error_msg, span.into())])
-                });
-                Ok(self.ty_use(rvalue_ty).unreachable_to_snap())
-            }),
+            mir::Rvalue::Len(place) => self.encode_len_snap((*place).into(), curr_ver),
+            _ => Err(self
+                .unsupported_rvalue(format!("unsupported rvalue {rvalue:?} in pure code"), span)),
         }
     }
 
@@ -1049,34 +1077,52 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                     }
                     TyKind::Ref(.., ty::Mutability::Not) => {
                         let e_ty = e_ty.expect_immref();
-                        let val_expr = e_ty.value_access(encoded_place.snap.downcast_ty());
-                        EncodedPlace::new(val_expr, encoded_place.place_ref)
+                        let snap = encoded_place.snap.downcast_ty();
+                        let metadata = e_ty.metadata_access(snap);
+                        let val_expr = e_ty.value_access(snap);
+                        // Carry the metadata of the (possibly wide) pointer so a
+                        // re-borrow of an unsized referent recovers its length/vtable.
+                        // The place ref is threaded through unchanged: in pure code
+                        // an argument's address is `null` (it cannot escape), which
+                        // keeps spec references address-independent (their `requires`
+                        // are stated over `null`-addressed references).
+                        EncodedPlace::new(val_expr, encoded_place.place_ref).with_metadata(metadata)
                     }
                     TyKind::Ref(.., ty::Mutability::Mut) => {
-                        assert!(
-                            self.impure_context,
-                            "mutable deref is not allowed in a pure context (e.g. pure functions)"
-                        );
                         let e_ty = e_ty.expect_mutref();
-                        let val_expr = e_ty.deref_access(encoded_place.snap.downcast_ty());
-                        // TODO: avoid all of this by using shallow and deep snapshots
-                        let ty_task = RustTyDecomposition::from_ty(place_ty.ty, self.context);
-                        let inner = ty_task.ty.expect_mutref();
-                        let normalized =
-                            inner.decompose_compare_normalize(ty_task.ty.params, ty_task.args);
-                        let caster = self
-                            .deps
-                            .require_dep::<crate::GArgsCastEnc<crate::Pure>>(normalized)
-                            .unwrap();
-                        let inner_ty_task =
-                            inner.decompose_context(ty_task.ty.params, ty_task.args);
-                        let inner_ty = self
-                            .deps
-                            .require_dep::<crate::encoders::TyUseImpureEnc>(inner_ty_task)
-                            .unwrap();
-                        let val_expr = inner_ty.ref_to_snap(val_expr);
-                        let val_expr = caster.cast_to_caller_ctx(val_expr);
-                        EncodedPlace::new(val_expr, encoded_place.place_ref)
+                        let snap = encoded_place.snap.downcast_ty();
+                        let metadata = e_ty.metadata_access(snap);
+                        let ref_expr = e_ty.deref_access(snap);
+                        let val_expr = if self.impure_context {
+                            // In impure code the value behind the `&mut` may have
+                            // been mutated since its snapshot was taken, so read the
+                            // *current* value at the address via its predicate.
+                            // TODO: avoid all of this by using shallow and deep snapshots
+                            let ty_task = RustTyDecomposition::from_ty(place_ty.ty, self.context);
+                            let inner = ty_task.ty.expect_mutref();
+                            let normalized = inner
+                                .referent
+                                .decompose_compare_normalize(ty_task.ty.params, ty_task.args);
+                            let caster = self
+                                .deps
+                                .require_dep::<crate::GArgsCastEnc<crate::Pure>>(normalized)
+                                .unwrap();
+                            let inner_ty_task = inner
+                                .referent
+                                .decompose_context(ty_task.ty.params, ty_task.args);
+                            let inner_ty = self
+                                .deps
+                                .require_dep::<crate::encoders::TyUseImpureEnc>(inner_ty_task)
+                                .unwrap();
+                            caster.cast_to_caller_ctx(inner_ty.ref_to_snap(ref_expr))
+                        } else {
+                            // In pure code (e.g. a quantifier body inside a spec)
+                            // there is no mutation, so the referent value carried by
+                            // the `&mut` snapshot is up to date — read it directly,
+                            // like the shared-reference case above.
+                            e_ty.value_access(snap)
+                        };
+                        EncodedPlace::new(val_expr, encoded_place.place_ref).with_metadata(metadata)
                     }
                     _ => unreachable!(),
                 }
@@ -1140,9 +1186,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
         } else {
             self.mk_local_ex(place.local, curr_ver[&place.local])
         };
-        let place_ref: Option<ExprRetRef<'vir>> =
-            Some(self.local_defs[place.local].local_ex.lazy());
-        let mut encoded_place = EncodedPlace::new(expr, place_ref);
+        let mut encoded_place = EncodedPlace::new(expr, None);
         // TODO: factor this out (duplication with impure encoder)?
         for elem in place.projection {
             encoded_place = self.encode_place_element(curr_ver, place_ty, *elem, encoded_place);
@@ -1338,6 +1382,18 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                 assert_eq!(args.len(), 2);
                 let lhs = self.encode_operand_snap(&args[0].node, curr_ver)?;
                 let rhs = self.encode_operand_snap(&args[1].node, curr_ver)?;
+                // The `x === y` is turned into `snap_eq(&x, &y)`, we do not
+                // want to compare the values of `x` and `y` only (without
+                // addresses, though note that if `x`/`y` are `&a`/`&b` then the
+                // addresses will be compared).
+                let lhs_ty = self
+                    .ty_use(args[0].node.ty(self.body, self.vcx.tcx()))
+                    .expect_immref();
+                let rhs_ty = self
+                    .ty_use(args[1].node.ty(self.body, self.vcx.tcx()))
+                    .expect_immref();
+                let lhs = lhs_ty.value_access(lhs.downcast_ty());
+                let rhs = rhs_ty.value_access(rhs.downcast_ty());
                 mk_bool(self.vcx.mk_eq_expr(lhs, rhs))
             }
             PrustiBuiltin::Forall | PrustiBuiltin::Exists => {
@@ -1428,8 +1484,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                         param_env: self.vcx.tcx().param_env(cl_def_id),
                         substs: ty::List::identity_for_item(self.vcx.tcx(), cl_def_id),
                         caller_def_id: Some(self.def_id),
-                    })
-                    .unwrap()
+                    })?
                     .expr
                     // arguments to the closure are
                     // - the closure itself
@@ -1539,12 +1594,10 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                     slice_ty,
                     ty::Mutability::Not,
                 ));
-                let ref_ty_out = self.ty_use(ref_slice_ty).expect_immref();
-                let slice_ty_out = self.ty_use(slice_ty).expect_array();
-                let prim =
-                    slice_ty_out.len(ref_ty_out.value_access(op.downcast_ty()).downcast_ty());
-                let usize_ = self.ty_use(self.vcx.tcx().types.usize).expect_primitive();
-                usize_.prim_to_snap.call()(prim.upcast_ty())
+                // A slice's length is its fat-pointer metadata (a `usize`).
+                self.ty_use(ref_slice_ty)
+                    .metadata_access(op.downcast_ty())
+                    .downcast_ty()
             }
             PrustiBuiltin::ModeStart(mode) => {
                 match mode {

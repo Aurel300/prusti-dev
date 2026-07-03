@@ -27,7 +27,7 @@ use pcg::{
         maybe_old::MaybeLabelledPlace,
     },
 };
-use prusti_interface::{PrustiError, specs::specifications::SpecQuery};
+use prusti_interface::PrustiError;
 use prusti_rustc_interface::{
     abi,
     data_structures::graph::Successors,
@@ -1880,14 +1880,10 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 let func_ty = func.ty(self.body, self.vcx.tcx());
                 let (func_def_id, caller_substs) =
                     RustSignature::get_def_id_and_caller_substs(func_ty);
-                let is_pure = crate::encoders::with_proc_spec(
-                    SpecQuery::GetProcKind(
-                        func_def_id,
-                        ty::List::identity_for_item(self.vcx.tcx(), func_def_id),
-                    ),
-                    |spec| spec.kind.is_pure().unwrap_or_default(),
-                )
-                .unwrap_or_default();
+                let is_pure = crate::encoders::is_function_pure(
+                    func_def_id,
+                    ty::List::identity_for_item(self.vcx.tcx(), func_def_id),
+                );
 
                 let dest = self
                     .encode_place(Place::from(*destination))

@@ -14,7 +14,7 @@ use pcg::utils::Place;
 use prusti_interface::{
     PrustiError,
     environment::EnvQuery,
-    specs::{specifications::SpecQuery, typed::ExternSpecKind},
+    specs::typed::ExternSpecKind,
 };
 use prusti_rustc_interface::{
     abi,
@@ -855,14 +855,10 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                     // A fn call in pure can only be one of two kinds: a
                     // call to another pure function, or a call to a prusti
                     // builtin function.
-                    let is_pure = crate::encoders::with_proc_spec(
-                        SpecQuery::GetProcKind(
-                            def_id,
-                            ty::List::identity_for_item(self.vcx.tcx(), def_id),
-                        ),
-                        |def_spec| def_spec.kind.is_pure().unwrap_or_default(),
-                    )
-                    .unwrap_or_default();
+                    let is_pure = crate::encoders::is_function_pure(
+                        def_id,
+                        ty::List::identity_for_item(self.vcx.tcx(), def_id),
+                    );
 
                     let env_query = EnvQuery::new(self.vcx.tcx());
                     if env_query.is_function_in_crate(
@@ -1232,6 +1228,69 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
         ))
     }
 
+    /// Shared encoding of the spec closures passed to the `forall`/`exists`/
+    /// `spec_block` builtins: recursively encodes the closure body, reifying
+    /// the closure itself (closure argument 1) and the given quantified
+    /// variables (closure arguments 2..).
+    fn encode_spec_closure(
+        &mut self,
+        builtin_name: &str,
+        closure_ty: ty::Ty<'vir>,
+        closure_expr: ExprRet<'vir>,
+        qvar_exprs: &[vir::ExprGen<'vir, (), !, vir::Snap>],
+    ) -> ExprRet<'vir> {
+        let (cl_kind, cl_def_id) = match closure_ty.kind() {
+            TyKind::Closure(cl_def_id, cl_args) => (cl_args.as_closure().kind(), *cl_def_id),
+            other => panic!("illegal prusti::{builtin_name}: expected closure, got {other:?}"),
+        };
+        // The signature of the builtin should enforce that the argument is
+        // an `Fn` only.
+        assert_eq!(cl_kind, ty::ClosureKind::Fn);
+
+        // TODO: big hack!
+        //   the problem is that we expect this to
+        //   be a simple Expr, but `encode_operand`
+        //   returns an ExprRet; do we need ExprRet
+        //   to be piped throughout this encoder?
+        //   alternatively, can we have an "unlift"
+        //   operation, which will work like reify
+        //   but panicking on a Lazy(..)?
+        let closure_ref = unsafe {
+            std::mem::transmute::<ExprRet<'_>, vir::ExprGen<'_, (), !, vir::Snap>>(closure_expr)
+        };
+
+        // arguments to the closure are
+        // - the closure itself
+        // - the qvars
+        let mut reify_args = FxHashMap::default();
+        reify_args.insert(1usize.into(), closure_ref);
+        reify_args.extend(
+            qvar_exprs
+                .iter()
+                .enumerate()
+                .map(|(idx, expr)| ((idx + 2).into(), *expr)),
+        );
+
+        // TODO: recursively invoke MirPure encoder to encode
+        // the body of the closure; pass the closure as the
+        // variable to use, then closure access = tuple access
+        // (then hope to optimise this away later ...?)
+        use vir::Reify;
+        self.deps
+            .require_dep::<MirPureEnc>(MirPureEncTask {
+                encoding_depth: self.encoding_depth + 1,
+                kind: PureKind::Closure,
+                parent_def_id: cl_def_id,
+                param_env: self.vcx.tcx().param_env(cl_def_id),
+                substs: ty::List::identity_for_item(self.vcx.tcx(), cl_def_id),
+                caller_def_id: Some(self.def_id),
+            })
+            .unwrap()
+            .expr
+            .reify(self.vcx, (cl_def_id, self.vcx.alloc(reify_args)))
+            .lift()
+    }
+
     fn encode_prusti_builtin(
         &mut self,
         def_id: DefId,
@@ -1342,6 +1401,11 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
             }
             PrustiBuiltin::Forall | PrustiBuiltin::Exists => {
                 assert_eq!(arg_tys.len(), 3);
+                let builtin_name = if builtin == PrustiBuiltin::Forall {
+                    "forall"
+                } else {
+                    "exists"
+                };
 
                 let encoded_args = args
                     .iter()
@@ -1354,24 +1418,16 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
 
                 let closure_ty = arg_tys[2].expect_ty();
 
-                let (qvar_tys, _upvar_tys, cl_kind, cl_def_id) = match closure_ty.kind() {
-                    TyKind::Closure(cl_def_id, cl_args) => (
+                let qvar_tys = match closure_ty.kind() {
+                    TyKind::Closure(_, cl_args) => {
                         match cl_args.as_closure().sig().skip_binder().inputs()[0].kind() {
                             TyKind::Tuple(list) => list,
                             _ => unreachable!(),
-                        },
-                        cl_args.as_closure().upvar_tys().iter().collect::<Vec<_>>(),
-                        cl_args.as_closure().kind(),
-                        *cl_def_id,
-                    ),
-                    other => panic!(
-                        "illegal prusti::{}: expected closure, got {other:?}",
-                        if builtin == PrustiBuiltin::Forall {
-                            "forall"
-                        } else {
-                            "exists"
                         }
-                    ),
+                    }
+                    other => {
+                        panic!("illegal prusti::{builtin_name}: expected closure, got {other:?}")
+                    }
                 };
 
                 let qvars = self.vcx.alloc_slice(
@@ -1387,56 +1443,13 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                         })
                         .collect::<Vec<_>>(),
                 );
+                let qvar_exprs = qvars
+                    .iter()
+                    .map(|qvar| self.vcx.mk_local_ex(qvar))
+                    .collect::<Vec<_>>();
 
-                let mut reify_args = FxHashMap::default();
-                // TODO: big hack!
-                //   the problem is that we expect this to
-                //   be a simple Expr, but `encode_operand`
-                //   returns an ExprRet; do we need ExprRet
-                //   to be piped throughout this encoder?
-                //   alternatively, can we have an "unlift"
-                //   operation, which will work like reify
-                //   but panicking on a Lazy(..)?
-                let closure_ref = unsafe {
-                    std::mem::transmute::<ExprRet<'_>, vir::ExprGen<'_, (), !, vir::Snap>>(
-                        encoded_args[1],
-                    )
-                };
-                // The signature of `forall` should enforce that the argument is
-                // an `Fn` only.
-                assert_eq!(cl_kind, ty::ClosureKind::Fn);
-
-                reify_args.insert(1usize.into(), closure_ref);
-                reify_args.extend(
-                    qvars
-                        .iter()
-                        .enumerate()
-                        .map(|(idx, qvar)| ((idx + 2).into(), self.vcx.mk_local_ex(qvar))),
-                );
-
-                // TODO: recursively invoke MirPure encoder to encode
-                // the body of the closure; pass the closure as the
-                // variable to use, then closure access = tuple access
-                // (then hope to optimise this away later ...?)
-                use vir::Reify;
-                let body = self
-                    .deps
-                    .require_dep::<MirPureEnc>(MirPureEncTask {
-                        encoding_depth: self.encoding_depth + 1,
-                        kind: PureKind::Closure,
-                        parent_def_id: cl_def_id,
-                        param_env: self.vcx.tcx().param_env(cl_def_id),
-                        substs: ty::List::identity_for_item(self.vcx.tcx(), cl_def_id),
-                        caller_def_id: Some(self.def_id),
-                    })
-                    .unwrap()
-                    .expr
-                    // arguments to the closure are
-                    // - the closure itself
-                    // - the qvars
-                    .reify(self.vcx, (cl_def_id, self.vcx.alloc(reify_args)))
-                    .lift();
-
+                let body =
+                    self.encode_spec_closure(builtin_name, closure_ty, encoded_args[1], &qvar_exprs);
                 let body =
                     bool.expect_native().snap_to_prim.call()(body.downcast_ty()).downcast_ty();
                 // TODO: triggers
@@ -1448,7 +1461,6 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                 mk_bool(res)
             }
             PrustiBuiltin::SpecBlock => {
-                // TODO: reduce duplication with Forall/Exists above
                 assert_eq!(arg_tys.len(), 2);
 
                 let encoded_args = args
@@ -1458,71 +1470,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                 assert_eq!(encoded_args.len(), 1);
 
                 let closure_ty = arg_tys[1].expect_ty();
-
-                let (/*qvar_tys, _upvar_tys, */ cl_kind, cl_def_id) = match closure_ty.kind() {
-                    TyKind::Closure(cl_def_id, cl_args) => (
-                        /*match cl_args.as_closure().sig().skip_binder().inputs()[0].kind() {
-                            TyKind::Tuple(list) => list,
-                            _ => unreachable!(),
-                        },
-                        cl_args.as_closure().upvar_tys().iter().collect::<Vec<_>>(),*/
-                        cl_args.as_closure().kind(),
-                        *cl_def_id,
-                    ),
-                    other => panic!(
-                        "illegal prusti::{}: expected closure, got {other:?}",
-                        if builtin == PrustiBuiltin::Forall {
-                            "forall"
-                        } else {
-                            "exists"
-                        }
-                    ),
-                };
-
-                let mut reify_args = FxHashMap::default();
-
-                // TODO: big hack!
-                //   the problem is that we expect this to
-                //   be a simple Expr, but `encode_operand`
-                //   returns an ExprRet; do we need ExprRet
-                //   to be piped throughout this encoder?
-                //   alternatively, can we have an "unlift"
-                //   operation, which will work like reify
-                //   but panicking on a Lazy(..)?
-                let closure_ref = unsafe {
-                    std::mem::transmute::<ExprRet<'_>, vir::ExprGen<'_, (), !, vir::Snap>>(
-                        encoded_args[0],
-                    )
-                };
-                // The signature of `forall` should enforce that the argument is
-                // an `Fn` only.
-                assert_eq!(cl_kind, ty::ClosureKind::Fn);
-
-                reify_args.insert(1usize.into(), closure_ref);
-                //reify_args.extend(qvars.iter().map(|qvar| self.vcx.mk_local_ex(qvar)));
-
-                // TODO: recursively invoke MirPure encoder to encode
-                // the body of the closure; pass the closure as the
-                // variable to use, then closure access = tuple access
-                // (then hope to optimise this away later ...?)
-                use vir::Reify;
-                let body = self
-                    .deps
-                    .require_dep::<MirPureEnc>(MirPureEncTask {
-                        encoding_depth: self.encoding_depth + 1,
-                        kind: PureKind::Closure,
-                        parent_def_id: cl_def_id,
-                        param_env: self.vcx.tcx().param_env(cl_def_id),
-                        substs: ty::List::identity_for_item(self.vcx.tcx(), cl_def_id),
-                        caller_def_id: Some(self.def_id),
-                    })
-                    .unwrap()
-                    .expr
-                    // arguments to the closure are
-                    // - the closure itself
-                    .reify(self.vcx, (cl_def_id, self.vcx.alloc(reify_args)))
-                    .lift();
-
+                let body = self.encode_spec_closure("spec_block", closure_ty, encoded_args[0], &[]);
                 let body =
                     bool.expect_native().snap_to_prim.call()(body.downcast_ty()).downcast_ty();
                 mk_bool(body)

@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 
-use prusti_interface::{PrustiError, specs::specifications::SpecQuery};
+use prusti_interface::PrustiError;
 use prusti_rustc_interface::{
     data_structures::fx::FxIndexMap,
     index::bit_set::DenseBitSet,
@@ -175,22 +175,14 @@ impl TaskEncoder for TraitImplEnc {
                         let ref_args = vcx.alloc_slice(&vec![vir::TYPE_REF; arg_count]);
                         let func_ret = local_defs.local_decl_ret();
 
-                        let trait_item_is_pure = crate::encoders::with_proc_spec(
-                            SpecQuery::GetProcKind(
-                                trait_item_def_id,
-                                trait_item_context.rust_params(),
-                            ),
-                            |spec| spec.kind.is_pure().unwrap_or_default(),
-                        )
-                        .unwrap_or_default();
-                        let impl_item_is_pure = crate::encoders::with_proc_spec(
-                            SpecQuery::GetProcKind(
-                                impl_item_def_id,
-                                impl_item_context.rust_params(),
-                            ),
-                            |spec| spec.kind.is_pure().unwrap_or_default(),
-                        )
-                        .unwrap_or_default();
+                        let trait_item_is_pure = crate::encoders::is_function_pure(
+                            trait_item_def_id,
+                            trait_item_context.rust_params(),
+                        );
+                        let impl_item_is_pure = crate::encoders::is_function_pure(
+                            impl_item_def_id,
+                            impl_item_context.rust_params(),
+                        );
 
                         let trait_item_has_body =
                             is_function_with_body(vcx.tcx(), trait_item_def_id);
@@ -208,7 +200,9 @@ impl TaskEncoder for TraitImplEnc {
 
                         let signature = RustSignature::new(trait_item_def_id);
 
-                        let pre_func_args = func_args
+                        // TODO: clean up: this kind of casting also happens in
+                        //   `FunctionCallEncOutput::call_pure`.
+                        let casted_args = func_args
                             .iter()
                             .zip(signature.inputs)
                             .map(|(arg, ty)| {
@@ -221,11 +215,9 @@ impl TaskEncoder for TraitImplEnc {
                                 caster.cast_to_callee_ctx(vcx.mk_local_ex(arg))
                             })
                             .collect::<Vec<_>>();
-                        let pre_func_call = assoc_fn.pre_func.call()(
-                            vcx.alloc_slice(&pre_func_args),
-                            trait_tys,
-                            trait_consts,
-                        );
+                        let casted_args_slice = vcx.alloc_slice(&casted_args);
+                        let pre_func_call =
+                            assoc_fn.pre_func.call()(casted_args_slice, trait_tys, trait_consts);
                         axioms.push(vcx.mk_domain_axiom(
                             vir_format_identifier!(
                                 vcx,
@@ -246,14 +238,12 @@ impl TaskEncoder for TraitImplEnc {
                                 )
                                 .resolve_trait_calls(false),
                             )?;
-                            let pure_func_app = pure_func.call_pure(pre_func_args);
+                            let pure_func_app = pure_func.call_pure(casted_args);
                             posts.push(vir::expr! {
                                 ([func_ret]) == ([pure_func_app])
                             });
                         }
                         let posts = vcx.mk_conj(&posts);
-                        // TODO: clean up: this kind of casting also happens in
-                        //   `FunctionCallEncOutput::call_pure`.
                         let post_func_call = assoc_fn.post_func.call()(
                             {
                                 let normalized = signature.output.decompose_compare_normalize(
@@ -264,22 +254,7 @@ impl TaskEncoder for TraitImplEnc {
                                     deps.require_dep::<GArgsCastEnc<Pure>>(normalized).unwrap();
                                 caster.cast_to_callee_ctx(vcx.mk_local_ex(func_ret))
                             },
-                            vcx.alloc_slice(
-                                &func_args
-                                    .iter()
-                                    .zip(signature.inputs)
-                                    .map(|(arg, ty)| {
-                                        let normalized = ty.decompose_compare_normalize(
-                                            trait_item_context,
-                                            impl_item_args,
-                                        );
-                                        let caster = deps
-                                            .require_dep::<GArgsCastEnc<Pure>>(normalized)
-                                            .unwrap();
-                                        caster.cast_to_callee_ctx(vcx.mk_local_ex(arg))
-                                    })
-                                    .collect::<Vec<_>>(),
-                            ),
+                            casted_args_slice,
                             trait_tys,
                             trait_consts,
                         );
@@ -303,17 +278,18 @@ impl TaskEncoder for TraitImplEnc {
                             impl_span,
                         )?;
 
-                        let mut pre_weaken_pres = Vec::new();
-                        let mut args = Vec::with_capacity(arg_count + impl_item_context.count());
+                        let mut impure_arg_preds = Vec::new();
+                        let mut ref_arg_decls = Vec::with_capacity(arg_count);
                         for arg_idx in (0..arg_count).map(mir::Local::from) {
                             let name_p = local_defs[arg_idx].local.name;
-                            args.push(vir::vir_local_decl! { vcx; [name_p] : Ref });
+                            ref_arg_decls.push(vir::vir_local_decl! { vcx; [name_p] : Ref });
                             if arg_idx != mir::RETURN_PLACE {
-                                pre_weaken_pres.push(local_defs[arg_idx].impure_pred);
+                                impure_arg_preds.push(local_defs[arg_idx].impure_pred);
                             }
                         }
                         // TODO: wands
 
+                        let mut pre_weaken_pres = impure_arg_preds.clone();
                         pre_weaken_pres.extend(trait_item_spec.pres.clone());
 
                         methods.push(vcx.mk_method(
@@ -321,7 +297,7 @@ impl TaskEncoder for TraitImplEnc {
                                 vir_format_identifier!(vcx, "trait_{trait_name}_impl_{implementing_ty}_{idx}_fn_pre_weaken_{item_name}"),
                                 (ref_args, impl_item_params.ty_args(), impl_item_params.const_args()),
                             ),
-                            (args.as_slice(), trait_ty_decls, trait_const_decls),
+                            (ref_arg_decls.as_slice(), trait_ty_decls, trait_const_decls),
                             &[],
                             vcx.alloc_slice(&pre_weaken_pres),
                             &[],
@@ -343,17 +319,7 @@ impl TaskEncoder for TraitImplEnc {
                             ])),
                         ));
 
-                        let mut post_strengthen_pres = Vec::new();
-                        let mut args = Vec::with_capacity(arg_count + impl_item_context.count());
-                        for arg_idx in (0..arg_count).map(mir::Local::from) {
-                            let name_p = local_defs[arg_idx].local.name;
-                            args.push(vir::vir_local_decl! { vcx; [name_p] : Ref });
-                            if arg_idx != mir::RETURN_PLACE {
-                                post_strengthen_pres.push(local_defs[arg_idx].impure_pred);
-                            }
-                        }
-                        // TODO: wands
-
+                        let mut post_strengthen_pres = impure_arg_preds;
                         post_strengthen_pres.extend(trait_item_spec.pres);
 
                         // exceptionally, we also put the allocated result in the precondition
@@ -423,7 +389,7 @@ impl TaskEncoder for TraitImplEnc {
                                 vir_format_identifier!(vcx, "trait_{trait_name}_impl_{implementing_ty}_{idx}_fn_post_strengthen_{item_name}"),
                                 (ref_args, impl_item_params.ty_args(), impl_item_params.const_args()),
                             ),
-                            (args.as_slice(), trait_ty_decls, trait_const_decls),
+                            (ref_arg_decls.as_slice(), trait_ty_decls, trait_const_decls),
                             &[],
                             vcx.alloc_slice(&post_strengthen_pres),
                             &[],

@@ -57,6 +57,14 @@ pub fn is_function_trusted(def_id: DefId) -> bool {
     .unwrap_or_default()
 }
 
+pub fn is_function_pure<'tcx>(def_id: DefId, substs: ty::GenericArgsRef<'tcx>) -> bool {
+    with_proc_spec(
+        SpecQuery::GetProcKind(def_id, substs),
+        |proc_spec: &ProcedureSpecification| proc_spec.kind.is_pure().unwrap_or_default(),
+    )
+    .unwrap_or_default()
+}
+
 pub fn is_type_trusted(ty: ty::Ty) -> bool {
     match ty.kind() {
         prusti_rustc_interface::middle::ty::TyKind::Adt(adt_def, _) => with_type_spec(|def_spec| {

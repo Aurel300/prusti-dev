@@ -224,7 +224,7 @@ impl TaskEncoder for TraitImplEnc {
                                 "{trait_name}_impl_{implementing_ty}_{idx}_fn_pre_{item_name}",
                             ),
                             vir::expr! {
-                                forall ..[func_args], ..[trait_ty_decls] :: {[pre_func_call]}
+                                forall ..[func_args], ..[trait_ty_decls], ..[trait_const_decls] :: {[pre_func_call]}
                                     (pres) ==> (pre_func_call)
                             },
                         ));

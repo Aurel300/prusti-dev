@@ -160,32 +160,17 @@ pub(crate) trait PureRvalueEnc<'vir> {
         rvalue_ty: ty::Ty<'vir>,
         op: mir::UnOp,
         operand: &mir::Operand<'vir>,
-        span: Span,
+        _span: Span,
         ctxt: &Self::EncodePlaceCtxt,
     ) -> ExprResult<'vir, Self> {
         let encoded_operand = self.encode_operand_snap(operand, ctxt)?;
         let operand_ty = operand.ty(self.body(), self.vcx().tcx());
-        if let mir::UnOp::PtrMetadata = op {
-            let operand_ty_enc = self.ty_use_pure(operand_ty);
-            // `PtrMetadata` reads the pointer metadata (e.g. a slice's length).
-            // Both references and raw pointers carry it; other types do not.
-            if let Some(metadata) =
-                operand_ty_enc.try_metadata_access(encoded_operand.downcast_ty())
-            {
-                return Ok(metadata);
-            }
-            let error_msg = format!(
-                "unsupported `PtrMetadata` on type {operand_ty:?} without pointer metadata"
-            );
-            return Err(self.unsupported_rvalue(error_msg, span));
-        }
-
         let operand_ty = RustTyDecomposition::from_ty(operand_ty, self.def_id());
         let rvalue_ty = RustTyDecomposition::from_ty(rvalue_ty, self.def_id());
         let un_op_function = self
             .deps()
             .require_dep::<MirBuiltinUnOpEnc>(MirBuiltinUnOpTask::new(rvalue_ty, op, operand_ty))?;
-        Ok(un_op_function.call()(encoded_operand.downcast_ty()).upcast_ty())
+        Ok(un_op_function.call()(encoded_operand.downcast_ty()))
     }
 
     fn encode_aggregate_snap(

@@ -35,7 +35,7 @@ impl TaskEncoder for MirBuiltinUnOpEnc {
 
     type TaskDescription<'vir> = MirBuiltinUnOpTask<'vir>;
 
-    type OutputFullDependency<'vir> = vir::FunctionIdn<'vir, vir::CSnap, vir::CSnap>;
+    type OutputFullDependency<'vir> = vir::FunctionIdn<'vir, vir::CSnap, vir::Snap>;
     type OutputFullLocal<'vir> = vir::Function<'vir>;
 
     fn task_to_key<'vir>(task: &Self::TaskDescription<'vir>) -> Self::TaskKey<'vir> {
@@ -52,43 +52,52 @@ impl TaskEncoder for MirBuiltinUnOpEnc {
             op,
             operand_ty,
         } = *task_key;
-        assert!(matches!(op, mir::UnOp::Neg | mir::UnOp::Not));
         vir::with_vcx(|vcx| {
-            assert_eq!(result_ty, operand_ty);
             let ty_task = RustTyDecomposition::identity(operand_ty);
             let e_ty = deps.require_dep::<TyUsePureEnc>(ty_task)?;
+            let ty_task = RustTyDecomposition::identity(result_ty);
+            let r_ty = deps.require_ref::<TyUsePureEnc>(ty_task)?;
 
             let name = vir::vir_format_identifier!(vcx, "mir_unop_{op:?}_{}", operand_ty.name());
-            let e_ty_snap = e_ty.snapshot.downcast_ty();
-            let fn_idn = FunctionIdn::new(name, e_ty_snap, e_ty_snap);
+            let e_ty_snap = e_ty.snapshot.downcast_ty::<vir::CSnap>();
+            let fn_idn = FunctionIdn::new(name, e_ty_snap, r_ty.snapshot);
 
             let snap_arg_decl = vcx.mk_local_decl("arg", e_ty_snap);
-            let prim_res_ty = e_ty.expect_primitive();
             let snap_arg = vcx.mk_local_ex(snap_arg_decl);
-            let body = match prim_res_ty.kind {
-                TyPurePrimDataKind::Native(native) => {
-                    let prim_arg = (native.snap_to_prim)(snap_arg);
-                    let mut val = (prim_res_ty.prim_to_snap)(
-                        vcx.mk_unary_op_expr(vir::UnOpKind::from(op), prim_arg),
-                    );
-                    // Can overflow when doing `- iN::MIN -> iN::MIN`. There is no
-                    // `CheckedUnOp`, instead the compiler puts an `TerminatorKind::Assert`
-                    // before in debug mode. We should still produce the correct result in
-                    // release mode, which the code under this branch does.
-                    let operand_ty = *operand_ty.expect_primitive();
-                    if op == mir::UnOp::Neg && operand_ty.is_signed() {
-                        let bound = vcx.get_min_int(operand_ty.kind());
-                        // `snap_to_prim(arg) == -iN::MIN`
-                        let cond = vcx.mk_eq_expr(prim_arg.downcast_ty(), bound);
-                        // `snap_to_prim(arg) == -iN::MIN ? arg :
-                        // prim_to_snap(-snap_to_prim(arg))`
-                        val = vcx.mk_ternary_expr(cond, snap_arg, val)
+
+            let body = match op {
+                // `PtrMetadata` reads the pointer metadata (e.g. a slice's length).
+                // Both references and raw pointers carry it; other types do not.
+                mir::UnOp::PtrMetadata => e_ty.metadata_access(snap_arg),
+                mir::UnOp::Neg | mir::UnOp::Not => {
+                    assert_eq!(result_ty, operand_ty);
+                    let prim_res_ty = e_ty.expect_primitive();
+                    match prim_res_ty.kind {
+                        TyPurePrimDataKind::Native(native) => {
+                            let prim_arg = (native.snap_to_prim)(snap_arg);
+                            let mut val = (prim_res_ty.prim_to_snap)(
+                                vcx.mk_unary_op_expr(vir::UnOpKind::from(op), prim_arg),
+                            );
+                            // Can overflow when doing `- iN::MIN -> iN::MIN`. There is no
+                            // `CheckedUnOp`, instead the compiler puts an `TerminatorKind::Assert`
+                            // before in debug mode. We should still produce the correct result in
+                            // release mode, which the code under this branch does.
+                            let operand_ty = *operand_ty.expect_primitive();
+                            if op == mir::UnOp::Neg && operand_ty.is_signed() {
+                                let bound = vcx.get_min_int(operand_ty.kind());
+                                // `snap_to_prim(arg) == -iN::MIN`
+                                let cond = vcx.mk_eq_expr(prim_arg.downcast_ty(), bound);
+                                // `snap_to_prim(arg) == -iN::MIN ? arg :
+                                // prim_to_snap(-snap_to_prim(arg))`
+                                val = vcx.mk_ternary_expr(cond, snap_arg, val)
+                            }
+                            val.upcast_ty()
+                        }
+                        TyPurePrimDataKind::Float(float) => {
+                            assert!(matches!(op, mir::UnOp::Neg));
+                            (float.fp_neg)(snap_arg).upcast_ty()
+                        }
                     }
-                    val
-                }
-                TyPurePrimDataKind::Float(float) => {
-                    assert!(matches!(op, mir::UnOp::Neg));
-                    (float.fp_neg)(snap_arg)
                 }
             };
             let function = vcx.mk_function(fn_idn, (snap_arg_decl,), &[], &[], None, Some(body));

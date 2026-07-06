@@ -21,7 +21,7 @@ use prusti_rustc_interface::{
     index::IndexVec,
     middle::{
         mir,
-        ty::{self, Binder, FnSig, Region, TyKind},
+        ty::{self, Binder, FnSig, TyKind},
     },
     span::{Span, def_id::DefId, source_map::Spanned},
 };
@@ -1312,7 +1312,6 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
             Exists,
             SpecBlock,
             SnapshotEquality,
-            SliceLen,
             ModeStart(Mode),
             ModeEnd(Mode),
             IsNaN(ty::FloatTy),
@@ -1365,7 +1364,6 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                     .unwrap()
                     .to_bits_unchecked() as usize,
             )),
-            (None, "slice_len") => PrustiBuiltin::SliceLen,
             (None, "before_expiry_start") => PrustiBuiltin::ModeStart(Mode::BeforeExpiry),
             (None, "before_expiry_end") => PrustiBuiltin::ModeEnd(Mode::BeforeExpiry),
             (None, "f16_is_nan") => PrustiBuiltin::IsNaN(ty::FloatTy::F16),
@@ -1602,23 +1600,6 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                 let body =
                     bool.expect_native().snap_to_prim.call()(body.downcast_ty()).downcast_ty();
                 mk_bool(body)
-            }
-            PrustiBuiltin::SliceLen => {
-                assert_eq!(args.len(), 1);
-                let op = self.encode_operand_snap(&args[0].node, curr_ver)?;
-                let slice_ty = self
-                    .vcx
-                    .tcx()
-                    .mk_ty_from_kind(TyKind::Slice(arg_tys[0].expect_ty()));
-                let ref_slice_ty = self.vcx.tcx().mk_ty_from_kind(TyKind::Ref(
-                    Region::new_var(self.vcx.tcx(), 0usize.into()),
-                    slice_ty,
-                    ty::Mutability::Not,
-                ));
-                // A slice's length is its fat-pointer metadata (a `usize`).
-                self.ty_use(ref_slice_ty)
-                    .metadata_access(op.downcast_ty())
-                    .downcast_ty()
             }
             PrustiBuiltin::ModeStart(mode) => {
                 match mode {

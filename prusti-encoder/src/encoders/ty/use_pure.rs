@@ -302,23 +302,12 @@ impl<'vir> TyData<'vir, UsePureTyDatas> {
         &self,
         snap: vir::ExprGenCSnap<'vir, Curr, Next>,
     ) -> vir::ExprGenSnap<'vir, Curr, Next> {
-        self.try_metadata_access(snap)
-            .expect("metadata_access called on non-ref type")
-    }
-
-    /// Like [`Self::metadata_access`] but returns `None` for types that carry
-    /// no pointer metadata (everything except references and raw pointers),
-    /// so callers can degrade gracefully.
-    pub fn try_metadata_access<Curr, Next>(
-        &self,
-        snap: vir::ExprGenCSnap<'vir, Curr, Next>,
-    ) -> Option<vir::ExprGenSnap<'vir, Curr, Next>> {
         match &self.specifics {
-            TySpecifics::ImmRef(data) => Some(data.metadata_access(snap)),
-            TySpecifics::MutRef(data) => Some(data.metadata_access(snap)),
-            // Raw pointers carry their pointer metadata like a reference.
-            TySpecifics::Raw(data) => Some(data.metadata_access(snap)),
-            _ => None,
+            TySpecifics::Raw(data) => data.metadata_access(snap),
+            TySpecifics::ImmRef(data) => data.metadata_access(snap),
+            TySpecifics::MutRef(data) => data.metadata_access(snap),
+            // Cannot be reached as per `UnOp::PtrMetadata` description
+            _ => unreachable!("metadata_access called on non-ref type"),
         }
     }
 }

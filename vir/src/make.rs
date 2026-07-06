@@ -825,25 +825,21 @@ impl<'tcx> VirCtxt<'tcx> {
         &'vir self,
         expr: ExprGenBool<'vir, Curr, Next>,
     ) -> StmtGen<'vir, Curr, Next> {
-        self.alloc(StmtGenData::new(self.alloc(StmtKindGenData::Exhale(expr))))
+        StmtKindGenData::Exhale(expr).alloc_vcx(self)
     }
 
     pub fn mk_unfold_stmt<'vir, Curr, Next>(
         &'vir self,
         pred_app: PredicateAppGen<'vir, Curr, Next>,
     ) -> StmtGen<'vir, Curr, Next> {
-        self.alloc(StmtGenData::new(
-            self.alloc(StmtKindGenData::Unfold(pred_app)),
-        ))
+        StmtKindGenData::Unfold(pred_app).alloc_vcx(self)
     }
 
     pub fn mk_fold_stmt<'vir, Curr, Next>(
         &'vir self,
         pred_app: PredicateAppGen<'vir, Curr, Next>,
     ) -> StmtGen<'vir, Curr, Next> {
-        self.alloc(StmtGenData::new(
-            self.alloc(StmtKindGenData::Fold(pred_app)),
-        ))
+        StmtKindGenData::Fold(pred_app).alloc_vcx(self)
     }
 
     pub fn mk_package_stmt<'vir, Curr, Next>(
@@ -851,16 +847,14 @@ impl<'tcx> VirCtxt<'tcx> {
         wand: WandGen<'vir, Curr, Next>,
         stmts: &'vir [StmtGen<'vir, Curr, Next>],
     ) -> StmtGen<'vir, Curr, Next> {
-        self.alloc(StmtGenData::new(
-            self.alloc(StmtKindGenData::Package(wand, stmts)),
-        ))
+        StmtKindGenData::Package(wand, stmts).alloc_vcx(self)
     }
 
     pub fn mk_apply_stmt<'vir, Curr, Next>(
         &'vir self,
         wand: WandGen<'vir, Curr, Next>,
     ) -> StmtGen<'vir, Curr, Next> {
-        self.alloc(StmtGenData::new(self.alloc(StmtKindGenData::Apply(wand))))
+        StmtKindGenData::Apply(wand).alloc_vcx(self)
     }
 
     pub fn mk_pure_assign_stmt<'vir, Curr, Next, T: CompType>(
@@ -875,12 +869,11 @@ impl<'tcx> VirCtxt<'tcx> {
                 rhs.ty()
             );
         }
-        self.alloc(StmtGenData::new(self.alloc(StmtKindGenData::PureAssign(
-            self.alloc(PureAssignGenData {
-                lhs: lhs.as_dyn(),
-                rhs: rhs.as_dyn(),
-            }),
-        ))))
+        StmtKindGenData::PureAssign(self.alloc(PureAssignGenData {
+            lhs: lhs.as_dyn(),
+            rhs: rhs.as_dyn(),
+        }))
+        .alloc_vcx(self)
     }
 
     pub fn mk_local_decl_stmt<'vir, Curr, Next, T: CompType>(
@@ -888,10 +881,7 @@ impl<'tcx> VirCtxt<'tcx> {
         local: LocalDecl<'vir, T>,
         expr: Option<ExprGen<'vir, Curr, Next, T>>,
     ) -> StmtGen<'vir, Curr, Next> {
-        self.alloc(StmtGenData::new(self.alloc(StmtKindGenData::LocalDecl(
-            local.as_dyn(),
-            expr.map(|e| e.as_dyn()),
-        ))))
+        StmtKindGenData::LocalDecl(local.as_dyn(), expr.map(|e| e.as_dyn())).alloc_vcx(self)
     }
 
     pub fn mk_if_stmt<'vir, Curr, Next>(
@@ -900,9 +890,7 @@ impl<'tcx> VirCtxt<'tcx> {
         then_stmts: &'vir [StmtGen<'vir, Curr, Next>],
         else_stmts: &'vir [StmtGen<'vir, Curr, Next>],
     ) -> StmtGen<'vir, Curr, Next> {
-        self.alloc(StmtGenData::new(
-            self.alloc(StmtKindGenData::If(cond, then_stmts, else_stmts)),
-        ))
+        StmtKindGenData::If(cond, then_stmts, else_stmts).alloc_vcx(self)
     }
 
     pub fn mk_block_label<'vir>(
@@ -935,21 +923,21 @@ impl<'tcx> VirCtxt<'tcx> {
         &'vir self,
         label: &'vir str,
     ) -> StmtGen<'vir, Curr, Next> {
-        self.alloc(StmtGenData::new(self.alloc(StmtKindGenData::Label(label))))
+        StmtKindGenData::Label(label).alloc_vcx(self)
     }
 
     pub fn mk_inhale_stmt<'vir, Curr, Next>(
         &'vir self,
         expr: ExprGenBool<'vir, Curr, Next>,
     ) -> StmtGen<'vir, Curr, Next> {
-        self.alloc(StmtGenData::new(self.alloc(StmtKindGenData::Inhale(expr))))
+        StmtKindGenData::Inhale(expr).alloc_vcx(self)
     }
 
     pub fn mk_refute_stmt<'vir, Curr, Next>(
         &'vir self,
         expr: ExprGenBool<'vir, Curr, Next>,
     ) -> StmtGen<'vir, Curr, Next> {
-        self.alloc(StmtGenData::new(self.alloc(StmtKindGenData::Refute(expr))))
+        StmtKindGenData::Refute(expr).alloc_vcx(self)
     }
 
     pub fn mk_assume_false_stmt<'vir, Curr, Next>(
@@ -976,7 +964,7 @@ impl<'tcx> VirCtxt<'tcx> {
         &'vir self,
         msg: &'vir str,
     ) -> StmtGen<'vir, Curr, Next> {
-        self.alloc(StmtGenData::new(self.alloc(StmtKindGenData::Comment(msg))))
+        StmtKindGenData::Comment(msg).alloc_vcx(self)
     }
 
     pub fn mk_goto_if_stmt<'vir, Curr, Next>(

@@ -45,11 +45,6 @@ pub enum Mode {
     BeforeExpiry,
 }
 
-// The reify input for a pure-encoded body: the `DefId` it was encoded for and
-// the argument snapshots (keyed by `Local`). There is no place-reference slot:
-// in pure code an argument's address is always `null` (see `encode_place_with_ref`,
-// where `place_ref` is initialized to `None`), because the address of a reference
-// taken in pure code is irrelevant — it cannot escape.
 pub type ExprInput<'vir> = (DefId, &'vir FxHashMap<mir::Local, vir::ExprSnap<'vir>>);
 type ExprRet<'vir> = vir::ExprGenSnap<'vir, ExprInput<'vir>, vir::ExprKind<'vir>>;
 type ExprRetRef<'vir> = vir::ExprGenRef<'vir, ExprInput<'vir>, vir::ExprKind<'vir>>;
@@ -278,10 +273,8 @@ struct Enc<'vir: 'enc, 'enc> {
 struct EncodedPlace<'vir> {
     snap: ExprRet<'vir>,
     place_ref: Option<ExprRetRef<'vir>>,
-    /// The pointer metadata, when this place is reached through a wide pointer
-    /// (i.e. it is an unsized referent such as a slice/`dyn`). `None` for sized
-    /// places. Propagated through `Deref` so that re-borrowing an unsized place
-    /// recovers the correct metadata.
+    /// The metadata for the pointed-to value. Set when going through a
+    /// `ProjectionElem::Deref`.
     metadata: Option<ExprRet<'vir>>,
 }
 
@@ -1092,12 +1085,6 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                         let snap = encoded_place.snap.downcast_ty();
                         let metadata = e_ty.metadata_access(snap);
                         let val_expr = e_ty.value_access(snap);
-                        // Carry the metadata of the (possibly wide) pointer so a
-                        // re-borrow of an unsized referent recovers its length/vtable.
-                        // The place ref is threaded through unchanged: in pure code
-                        // an argument's address is `null` (it cannot escape), which
-                        // keeps spec references address-independent (their `requires`
-                        // are stated over `null`-addressed references).
                         EncodedPlace::new(val_expr, encoded_place.place_ref).with_metadata(metadata)
                     }
                     TyKind::Ref(.., ty::Mutability::Mut) => {
@@ -1106,9 +1093,10 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                         let metadata = e_ty.metadata_access(snap);
                         let ref_expr = e_ty.deref_access(snap);
                         let val_expr = if self.impure_context {
-                            // In impure code the value behind the `&mut` may have
-                            // been mutated since its snapshot was taken, so read the
-                            // *current* value at the address via its predicate.
+                            // In a method's pre/post the snapshot is shallow
+                            // and doesn't contain the value behind the mutable
+                            // reference, so we need to take an extra snapshot
+                            // here.
                             // TODO: avoid all of this by using shallow and deep snapshots
                             let ty_task = RustTyDecomposition::from_ty(place_ty.ty, self.context);
                             let inner = ty_task.ty.expect_mutref();
@@ -1128,10 +1116,9 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                                 .unwrap();
                             caster.cast_to_caller_ctx(inner_ty.ref_to_snap(ref_expr))
                         } else {
-                            // In pure code (e.g. a quantifier body inside a spec)
-                            // there is no mutation, so the referent value carried by
-                            // the `&mut` snapshot is up to date — read it directly,
-                            // like the shared-reference case above.
+                            // In a pure function, the snapshot passed in as an
+                            // argument should be "deep" such that we can
+                            // read the value directly from the snapshot itself
                             e_ty.value_access(snap)
                         };
                         EncodedPlace::new(val_expr, encoded_place.place_ref).with_metadata(metadata)

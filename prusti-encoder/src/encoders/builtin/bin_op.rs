@@ -9,6 +9,8 @@ use crate::encoders::ty::{
     use_pure::TyUsePureEnc,
 };
 
+/// Encodes the builtin MIR binary operations (e.g. `Add`, `Sub`, `Mul`, `Div`,
+/// etc.) as Viper functions with the correct semantics.
 pub struct MirBuiltinBinOpEnc;
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]

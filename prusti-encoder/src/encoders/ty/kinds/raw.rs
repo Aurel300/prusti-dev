@@ -3,7 +3,7 @@
 //! Modelled like a reference (see [`super::immref`]) but conservatively: the
 //! snapshot carries the pointer address and the pointer metadata, and the
 //! pointee is left opaque (there is no `value_access` into it, and we do not
-//! require the pointee type to be encoded — this keeps raw pointers to
+//! require the pointee type to be encoded. This keeps raw pointers to
 //! otherwise-unencodable types, e.g. the panic/formatting machinery, working).
 
 use crate::encoders::{

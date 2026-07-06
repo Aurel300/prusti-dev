@@ -15,6 +15,15 @@ use crate::encoders::{
     },
 };
 
+/// Encodes the builtin MIR cast operations (e.g. `IntToInt`, `PointerCoercion`)
+/// as Viper functions with the correct semantics. The pointer coercion ones are
+/// applied to generic refs (the inner type is a parameter) and thus the meaning
+/// for those is given by axioms for concrete types (e.g. `&[T; N] -> &[T]`).
+/// Also returns a side-effecting `unsize`/`undo` method for coercing the inner
+/// referent (i.e. an `p_Param` to `p_Param` with different type).
+///
+/// Use `MirBuiltinUseCastEnc` to encode a cast in a specific context (with concrete
+/// type arguments).
 pub(super) struct MirBuiltinCastEnc;
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]

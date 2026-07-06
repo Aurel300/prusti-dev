@@ -6,8 +6,7 @@ use vir::FunctionIdn;
 /// the new referent snapshot. Like `metadata_cast`, it is only defined by
 /// axioms; the array->slice axioms are added (for the concrete element types) in
 /// `MirBuiltinUseCastEnc`. The identity axiom handles degenerate `T -> T`
-/// reborrows; every other (e.g. `Struct -> dyn`) coercion is left unconstrained
-/// (the contents are conservatively havoced).
+/// reborrows; every other (e.g. `Struct -> dyn`) coercion is left unconstrained.
 pub struct ValueCastEnc;
 
 impl TaskEncoder for ValueCastEnc {
@@ -62,6 +61,9 @@ impl TaskEncoder for ValueCastEnc {
     }
 }
 
+/// The (uninterpreted) function transferring the *referent metadata* across an
+/// unsize coercion: `metadata_cast(old_referent_metadata, from_ty, to_ty)` is
+/// the new referent metadata. It is only defined by axioms.
 pub struct MetadataCastEnc;
 
 impl TaskEncoder for MetadataCastEnc {

@@ -98,7 +98,7 @@ impl<'tcx> RustTyDecomposition<'tcx> {
 
     /// When you only have a `RustTy<'tcx>` but you want to use the
     /// `TyUsePureEnc`. We cannot determine `maybe_inhabited` so it
-    /// is left `None` — the pure encoder never reads it, and passing
+    /// is left `None`; the pure encoder never reads it, and passing
     /// this decomposition to `TyUseImpureEnc` will panic.
     pub fn identity(ty: RustTy<'tcx>) -> Self {
         let args = GArgs::new(ty.params, ty.params.rust_params());
@@ -143,7 +143,7 @@ impl<'tcx> LazyRustTy<'tcx> {
 
     /// The (sized) type parameter at the given index. `decompose`d against a
     /// `GParams` that declares it, this yields a `Param` decomposition whose
-    /// argument is that type variable — used to make a builtin method generic
+    /// argument is that type variable. Used to make a builtin method generic
     /// over one of the reference's type parameters.
     pub fn new_param_ty(index: u32) -> Self {
         Self(TySpecifics::new_param_ty(index))
@@ -292,10 +292,9 @@ impl<'tcx> RustTyData<'tcx> {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct RefData<'tcx> {
-    /// Will always be `ParamTy { index: 1, .. }`, the concrete type can be
-    /// found in the `args` of the containing `RustTyDecomposition`.
+    /// Will always be a `pointee_metadata_projection` (`TyKind::Alias`).
     pub metadata: LazyRustTy<'tcx>,
-    /// Will always be `ParamTy { index: 2, .. }`, the concrete type can be
+    /// Will always be `ParamTy { index: 1, .. }`, the concrete type can be
     /// found in the `args` of the containing `RustTyDecomposition`.
     pub referent: LazyRustTy<'tcx>,
 }
@@ -577,13 +576,10 @@ impl<'tcx> TySpecifics<'tcx, RustTyDatas> {
             return TySpecifics::mk_opaque(());
         }
 
-        /// The `<Referent as core::ptr::Pointee>::Metadata` projection type. The pointer
-        /// metadata type of a reference or raw pointer is *derived* from its referent
-        /// this way, rather than being carried as a separate generic parameter — so a
-        /// `&T` and a `&Self` (with `Self = T`) share one reference predicate instance
-        /// (keyed only by the referent). `rustc` normalizes this projection to the
-        /// concrete metadata type (`()` for sized referents, `usize` for slices/`str`,
-        /// ...) at every use site, so it never surfaces in the encoded Viper.
+        /// The `<Referent as core::ptr::Pointee>::Metadata` projection type.
+        /// `rustc` normalizes this projection to the concrete metadata type
+        /// (`()` for sized referents, `usize` for slices/`str`, ...) at every
+        /// use site, so it appears as a projection only for generic referents.
         fn pointee_metadata_projection<'tcx>(
             tcx: ty::TyCtxt<'tcx>,
             referent: ty::Ty<'tcx>,

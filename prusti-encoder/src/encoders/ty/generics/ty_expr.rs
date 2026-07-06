@@ -2,6 +2,7 @@ use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 
 use crate::encoders::ty::{RustTyDecomposition, generics::GenericParamsEnc};
 
+/// Encodes a Rust type as a Viper expression.
 pub struct TyExprEnc;
 
 impl TaskEncoder for TyExprEnc {

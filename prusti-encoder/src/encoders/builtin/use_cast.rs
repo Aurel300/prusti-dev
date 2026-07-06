@@ -13,6 +13,8 @@ use crate::encoders::{
     },
 };
 
+/// See `MirBuiltinCastEnc`. This adds a wrapper which substitutes in the
+/// concrete type arguments.
 pub struct MirBuiltinUseCastEnc;
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
@@ -48,7 +50,7 @@ pub struct MirBuiltinUnsize<'vir> {
     unsize: Option<vir::MethodIdn<'vir, (vir::CSnap, vir::ManyTyVal, vir::ManyCSnap)>>,
     undo: Option<vir::MethodIdn<'vir, (vir::CSnap, vir::ManyTyVal, vir::ManyCSnap)>>,
     /// The operand and result referent type values `[U, V]`, used by the `cast`
-    /// function (to rewrite the metadata) and by the `unsize`/`undo` methods (to
+    /// function (to construct the metadata) and by the `unsize`/`undo` methods (to
     /// transfer the referent's `p_Param` predicate and value).
     generics: GArgsTy<'vir>,
 }
@@ -69,24 +71,26 @@ impl<'vir> MirBuiltinUseCastOutput<'vir> {
     pub fn unsize<Curr, Next>(
         &self,
         input: vir::ExprGenCSnap<'vir, Curr, Next>,
-    ) -> Option<vir::StmtKindGenData<'vir, Curr, Next>> {
+    ) -> Option<vir::StmtGen<'vir, Curr, Next>> {
         match self {
             MirBuiltinUseCastOutput::Simple(..) => None,
             MirBuiltinUseCastOutput::Unsize(u) => u
                 .unsize
-                .map(|f| f.call()(input, u.generics.get_ty(), u.generics.get_const())),
+                .map(|f| f.call()(input, u.generics.get_ty(), u.generics.get_const()))
+                .map(vir::StmtKindGenData::alloc),
         }
     }
 
     pub fn undo<Curr, Next>(
         &self,
         input: vir::ExprGenCSnap<'vir, Curr, Next>,
-    ) -> Option<vir::StmtKindGenData<'vir, Curr, Next>> {
+    ) -> Option<vir::StmtGen<'vir, Curr, Next>> {
         match self {
             MirBuiltinUseCastOutput::Simple(..) => None,
             MirBuiltinUseCastOutput::Unsize(u) => u
                 .undo
-                .map(|f| f.call()(input, u.generics.get_ty(), u.generics.get_const())),
+                .map(|f| f.call()(input, u.generics.get_ty(), u.generics.get_const()))
+                .map(vir::StmtKindGenData::alloc),
         }
     }
 }
@@ -145,28 +149,34 @@ impl TaskEncoder for MirBuiltinUseCastEnc {
                 // Recover the operand/result referent (`[T; N]` / `[T]`) structure by
                 // normalizing the reference's (generic `p_Param`) referent type
                 // against the reference's args.
-                let referents = match (&operand_ty.ty.specifics, &result_ty.ty.specifics) {
+                let (op_ref, res_ref, is_mut) = match (
+                    &operand_ty.ty.specifics,
+                    &result_ty.ty.specifics,
+                ) {
                     (TySpecifics::ImmRef(od), TySpecifics::ImmRef(rd)) => {
-                        Some((od.referent, rd.referent, false))
+                        (od.referent, rd.referent, false)
                     }
                     (TySpecifics::MutRef(od), TySpecifics::MutRef(rd)) => {
-                        Some((od.referent, rd.referent, true))
+                        (od.referent, rd.referent, true)
                     }
-                    // Raw-pointer / other coercions don't reach here (the cast
-                    // encoder only handles Imm/MutRef unsizing).
-                    _ => None,
+                    (TySpecifics::Raw(od), TySpecifics::Raw(rd)) => {
+                        (od.referent, rd.referent, false)
+                    }
+                    // `MirBuiltinCastOutput::Unsize` should only happen for
+                    // reference/pointer types, do not expect other types here.
+                    _ => unreachable!(
+                        "unexpected operand/result reference types for pointer cast: {operand_ty:?} / {result_ty:?}"
+                    ),
                 };
-                if let Some((op_ref, res_ref, is_mut)) = referents {
-                    let op_inner = op_ref.decompose_normalize(operand_ty.args);
-                    let res_inner = res_ref.decompose_normalize(result_ty.args);
-                    // The `cast` fn rewrites the metadata (unit -> length) for both
-                    // shared and `&mut` coercions.
-                    deps.require_dep::<MetadataCastAxiomEnc>((op_inner.ty, res_inner.ty))?;
-                    // Only `&mut` transfers the referent element values (via the
-                    // `unsize`/`undo` methods' `value_cast`).
-                    if is_mut {
-                        deps.require_dep::<ValueCastAxiomEnc>((op_inner.ty, res_inner.ty))?;
-                    }
+                let op_inner = op_ref.decompose_normalize(operand_ty.args);
+                let res_inner = res_ref.decompose_normalize(result_ty.args);
+                // The `cast` fn constructs the metadata (unit -> length) for both
+                // shared and `&mut` coercions.
+                deps.require_dep::<MetadataCastAxiomEnc>((op_inner.ty, res_inner.ty))?;
+                // Only `&mut` transfers the referent element values (via the
+                // `unsize`/`undo` methods' `value_cast`).
+                if is_mut {
+                    deps.require_dep::<ValueCastAxiomEnc>((op_inner.ty, res_inner.ty))?;
                 }
                 Ok(((), MirBuiltinUseCastOutput::Unsize(unsize)))
             }

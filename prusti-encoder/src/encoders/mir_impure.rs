@@ -670,7 +670,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 };
                 let src_snap = self.encode_place_with_snap(src_place).1.downcast_ty();
                 let src_enc = self.vcx.maybe_apply_label(src_snap, src_label);
-                let undo = cast_output.undo(src_enc).map(vir::StmtKindGenData::alloc);
+                let undo = cast_output.undo(src_enc);
                 self.stmts(undo);
                 return Ok(());
             }
@@ -1117,7 +1117,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                             // with a Ref field rather than a field_access
                             // function.
                             address: field_access[abi::FieldIdx::ZERO].field_ref(expr.address),
-                            // Also should have metadata
+                            // TODO: also should have metadata
                             metadata: None,
                             snap: expr.snap.map(|snap| {
                                 let e_ty = self.ty_use_pure(place_ty.ty);
@@ -1627,13 +1627,6 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             let span = statement.source_info.span;
 
             match &statement.kind {
-                // Unsizing is a side-effectful operation (the unsized result
-                // "borrows from" the original, usually sized, value). It used to
-                // be handled here as a special case via `MirBuiltinEnc::Unsize`,
-                // but is now handled uniformly through the normal cast rvalue
-                // path (`encode_cast_snap` -> `MirBuiltinUseCastEnc`), which
-                // emits the side-effecting `unsize` method call. The matching
-                // `undo` on borrow expiry is emitted in `pcg_actions`.
                 mir::StatementKind::Assign(box (dest, rvalue)) => {
                     // What are we assigning to?
                     let proj_enc = self

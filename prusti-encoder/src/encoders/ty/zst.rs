@@ -6,8 +6,8 @@ use super::{RustTy, generics::GenericParamsEnc, pure::TyPureEnc};
 /// Emits the canonical zero-sized-value function `s_T_zst(<T's params>): s_T` for
 /// a (base) type `T`. All values of a ZST are equal, so this uninterpreted
 /// function names that single value. It is required on demand (keyed on the base
-/// `RustTy`) from `TyUsePureEnc` only for decompositions whose `is_zst` is set —
-/// see [`super::RustTyDecomposition::is_zst`] — so it is never emitted for types
+/// `RustTy`) from `TyUsePureEnc` only for decompositions whose `is_zst` is set
+/// (see [`super::RustTyDecomposition::is_zst`]) so it is never emitted for types
 /// that are not (known to be) zero-sized. Keeping it in its own encoder (rather
 /// than in the snapshot) is what lets the snapshot stay keyed purely on the base
 /// type: `is_zst` is an instantiation property and must not vary the snapshot's

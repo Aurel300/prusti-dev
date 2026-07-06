@@ -6,6 +6,8 @@ use crate::encoders::ty::{
     RustTy, RustTyDecomposition, pure::TyPurePrimDataKind, use_pure::TyUsePureEnc,
 };
 
+/// Encodes the builtin MIR unary operations (e.g. `Neg`, `Not`, `PtrMetadata`)
+/// as Viper functions with the correct semantics.
 pub struct MirBuiltinUnOpEnc;
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]

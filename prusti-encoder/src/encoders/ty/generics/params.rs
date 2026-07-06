@@ -105,11 +105,11 @@ impl<'tcx> GParams<'tcx> {
             args.len(),
             "generic args length mismatch, context {self:?}, args {args:?}"
         );
-        for (i, param) in self.rust_params().iter().enumerate() {
+        for (param, arg) in self.rust_params().iter().zip(args) {
             let valid = match param.kind() {
-                ty::GenericArgKind::Lifetime(_) => args[i].as_region().is_some(),
-                ty::GenericArgKind::Type(_) => args[i].as_type().is_some(),
-                ty::GenericArgKind::Const(_) => args[i].as_const().is_some(),
+                ty::GenericArgKind::Lifetime(_) => arg.as_region().is_some(),
+                ty::GenericArgKind::Type(_) => arg.as_type().is_some(),
+                ty::GenericArgKind::Const(_) => arg.as_const().is_some(),
             };
             assert!(valid, "mismatched generic arg kinds ({self:?} vs {args:?})");
         }

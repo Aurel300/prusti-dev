@@ -15,9 +15,11 @@ pub struct GArgsTy<'vir> {
 }
 
 impl<'vir> GArgsTy<'vir> {
-    /// Build the encoded type/const arguments directly (e.g. to instantiate a
-    /// builtin method whose type arguments are referent type values rather than
-    /// the args of a single `RustTyDecomposition`).
+    /// If possible, use `GArgsTyEnc` instead.
+    ///
+    /// Builds the type/const arguments directly (e.g. to instantiate a builtin
+    /// method with synthetic type parameters that don't have a corresponding
+    /// Rust `GArgs`).
     pub fn new(
         ty_args: &'vir [vir::ExprTyVal<'vir>],
         const_args: &'vir [vir::ExprCSnap<'vir>],

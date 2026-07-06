@@ -1,5 +1,4 @@
 use pcg::utils::Place;
-use prusti_interface::PrustiError;
 use task_encoder::{EncodeFullError, TaskEncoder, TaskEncoderDependencies};
 use vir::CastType;
 
@@ -57,10 +56,6 @@ pub(crate) trait PureRvalueEnc<'vir> {
     }
 
     /// Build an error for an unsupported feature reached during rvalue encoding.
-    /// Encoded as a (encoder-agnostic) dependency error carrying the message, so
-    /// it propagates up to the enclosing method/function encoder, which reports
-    /// it and falls back to an abstract stub. This replaces (unsound) placeholder
-    /// snapshots for genuinely unsupported constructs.
     fn unsupported_rvalue(
         &self,
         message: String,
@@ -93,7 +88,7 @@ pub(crate) trait PureRvalueEnc<'vir> {
         rvalue_ty: ty::Ty<'vir>,
         kind: mir::CastKind,
         operand: &mir::Operand<'vir>,
-        span: Span,
+        _span: Span,
         ctxt: &Self::EncodePlaceCtxt,
     ) -> Result<CastSnap<'vir, Self>, EncodeFullError<'vir, Self::Encoder>> {
         let encoded_operand = self.encode_operand_snap(operand, ctxt)?.downcast_ty();
@@ -105,19 +100,8 @@ pub(crate) trait PureRvalueEnc<'vir> {
                 .require_dep::<MirBuiltinUseCastEnc>(MirBuiltinUseCastTask::new(
                     rvalue_ty, kind, operand_ty,
                 ))?;
-        let cast = self.vcx().with_span(span, |_| {
-            self.vcx()
-                .handle_error("application.precondition:assertion.false", move |_| {
-                    Some(vec![PrustiError::verification(
-                        "cast may fail: value might not fit into the target type",
-                        span.into(),
-                    )])
-                });
-            cast_output.cast(encoded_operand).upcast_ty()
-        });
-        let cast_stmt = cast_output
-            .unsize(encoded_operand)
-            .map(vir::StmtKindGenData::alloc);
+        let cast = cast_output.cast(encoded_operand).upcast_ty();
+        let cast_stmt = cast_output.unsize(encoded_operand);
         Ok((cast_stmt, cast))
     }
 

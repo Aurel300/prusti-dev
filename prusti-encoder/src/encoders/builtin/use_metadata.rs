@@ -1,12 +1,3 @@
-//! Array-to-slice specializations of the abstract pointer-metadata / referent
-//! value casts. The abstract `metadata_cast` / `unsize_value_cast` domain
-//! functions (and their identity axioms) live in `metadata.rs`; the encoders
-//! here attach the concrete `[T; N] -> [T]` axioms, keyed on the *generic*
-//! array/slice shapes so each is encoded once and is itself generic over the
-//! element type and length. They are required per-coercion by
-//! `MirBuiltinUseCastEnc` (see `use_cast.rs`), so a program that never coerces an
-//! array into a slice never pulls in any array/slice machinery.
-
 use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 use vir::CastType;
 
@@ -23,7 +14,7 @@ use crate::encoders::{
 
 /// Emits the metadata rewrite for a concrete `[T; N] -> [T]` (array-to-slice)
 /// coercion: an axiom defining `metadata_cast(_, [T; N], [T])` as the array's
-/// static length `N` — the fat-pointer metadata of the resulting slice. Like
+/// static length `N` - the fat-pointer metadata of the resulting slice. Like
 /// `ValueCastAxiomEnc`, it is keyed on the *generic* array/slice shapes (the
 /// `RustTy`, shared by every `[T; N]`), so it is encoded once and is itself
 /// generic over the element type and length. The abstract `metadata_cast`
@@ -197,21 +188,6 @@ impl TaskEncoder for ValueCastAxiomEnc {
             let u_ty = (array_ctor.ty_constructor)(array_gen.ty_exprs(), array_gen.const_exprs());
             let v_ty = (slice_ctor.ty_constructor)(array_gen.ty_exprs(), &[]);
 
-            // Element-wise value relation across the coercion. `unsize_value_cast`
-            // is always applied to the array value, so the axiom takes the array's
-            // CONCRETE snapshot `arr`, maps it to the slice via
-            // `value_cast(make_generic_s_Array(arr, U, M), [U;M], [U])`, and equates
-            // their elements. The outer quantifier triggers on that `value_cast`
-            // term: it fires exactly when an actual coercion value exists (e.g. the
-            // `unsize`/`undo` ensures materialise `value_cast(<array p_Param>, ..)`,
-            // and after a coerce + `undo` that p_Param is the restored array, which
-            // the `a[i]` read exposes as `make_generic_s_Array(p_Array_snap(a), U, M)`
-            // — so the trigger matches up to congruence). The inner quantifier
-            // triggers on `s_Array_index(arr, idx)`, which the read materialises
-            // directly. (Keying the outer on a generic `input` with
-            // `make_concrete_s_Array(input)` instead — as it was — never fired: the
-            // restored value only reaches the read through make_generic/make_concrete
-            // round-trips in an `old(..)` context.)
             let arr_decl = vcx.mk_local_decl("arr", array_use.snapshot.downcast_ty());
             let arr = vcx.mk_local_ex(arr_decl);
             let arr_generic = array_caster

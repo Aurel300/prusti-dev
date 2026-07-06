@@ -46,7 +46,7 @@ pub struct TyImpureRawData {}
 #[derive(Debug, Clone, Copy)]
 pub struct TyImpureMutRefData<'vir> {
     pub pure: <PureTyDatas as TyDatas<'vir>>::MutRefData,
-    /// For use in constructing a snapshot from just a `Ref`.
+    /// For use in constructing a snapshot from just a `Ref` and metadata `PSnap`.
     pub arbitrary_value: vir::FunctionIdn<'vir, (vir::Ref, vir::PSnap), vir::CSnap>,
 }
 

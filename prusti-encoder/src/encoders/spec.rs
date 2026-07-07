@@ -19,6 +19,8 @@ pub struct SpecEncOutput<'vir> {
     pub extern_spec: Option<ExternSpecKind>,
     pub pres: &'vir [DefId],
     pub posts: &'vir [DefId],
+    pub refined_pres: &'vir [DefId],
+    pub refined_posts: &'vir [DefId],
     pub pledges: &'vir [Pledge],
 }
 
@@ -43,6 +45,16 @@ where
             .borrow_mut()
             .get_and_refine_proc_spec(vcx.tcx(), query)
             .map(f)
+    })
+}
+
+pub fn with_proc_spec_constrained<'tcx, F, R>(query: SpecQuery<'tcx>, f: F) -> Option<R>
+where
+    F: FnOnce(Vec<&ProcedureSpecification>) -> R,
+{
+    vir::with_vcx(|vcx| {
+        let specs = vcx.specs.as_ref().unwrap();
+        specs.borrow_mut().get_proc_spec_constrained(&query).map(f)
     })
 }
 
@@ -115,7 +127,28 @@ impl TaskEncoder for SpecEnc {
                     (specs.extern_spec, pres, posts, pledges)
                 },
             )
-            .unwrap_or((None, &[], &[], &[]));
+            .unwrap_or_default();
+
+            let (refined_pres, refined_posts) = with_proc_spec_constrained(
+                SpecQuery::GetProcKind(
+                    task_key.0,
+                    ty::List::identity_for_item(vcx.tcx(), task_key.0),
+                ),
+                |specs| {
+                    assert!(
+                        specs.len() <= 1,
+                        "Only at most one constrained spec is supported"
+                    );
+                    specs.first().map(|specs| {
+                        let refined_pres = get_spec_items(vcx, &specs.pres);
+                        let refined_posts = get_spec_items(vcx, &specs.posts);
+                        (refined_pres, refined_posts)
+                    })
+                },
+            )
+            .flatten()
+            .unwrap_or_default();
+
             let pledges = vcx.alloc_slice(
                 &pledges
                     .iter()
@@ -128,6 +161,8 @@ impl TaskEncoder for SpecEnc {
                     extern_spec,
                     pres,
                     posts,
+                    refined_pres,
+                    refined_posts,
                     pledges,
                 },
             ))

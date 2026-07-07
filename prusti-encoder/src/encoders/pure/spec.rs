@@ -16,7 +16,14 @@ use vir::{CastType, HasType, Reify};
 use crate::encoders::{
     MirLocalDefEncTask, MirPureEnc,
     mir_pure::{ExprInput, PureKind},
-    ty::{RustTyDecomposition, generics::GParams, use_pure::TyUsePureEnc},
+    ty::{
+        RustTyDecomposition,
+        generics::{
+            GParams,
+            clauses::{ClausesEnc, ClausesEncTask},
+        },
+        use_pure::TyUsePureEnc,
+    },
 };
 pub struct MirSpecEnc;
 
@@ -184,6 +191,25 @@ impl TaskEncoder for MirSpecEnc {
             let all_args = vcx.alloc(all_args);
             let pre_args = all_args; // it should be ok to provide more keys than required
 
+            // Get the condition from the first refined pre/post, if any.
+            let refine_spec_cond = specs
+                .refined_pres
+                .first()
+                .or(specs.refined_posts.first())
+                .map(|did| {
+                    let refined_gparams = GParams::from(*did);
+                    deps.require_dep::<ClausesEnc>(ClausesEncTask {
+                        gparams: refined_gparams,
+                        substs, // Substitute the known types
+                    })
+                })
+                .transpose()?;
+
+            let not_refine_spec_cond = refine_spec_cond.map(|cond| {
+                vcx.mk_unary_op_expr(vir::UnOpKind::Not, cond.upcast_ty())
+                    .downcast_ty()
+            });
+
             let to_bool = deps
                 .require_dep::<TyUsePureEnc>(RustTyDecomposition::from_prim_ty(
                     vcx.tcx().types.bool,
@@ -191,30 +217,52 @@ impl TaskEncoder for MirSpecEnc {
                 .expect_native()
                 .snap_to_prim;
 
+            let pre_to_expr = |spec_did, deps: &mut TaskEncoderDependencies<'vir, MirSpecEnc>| {
+                let expr = deps
+                    .require_dep::<crate::encoders::MirPureEnc>(crate::encoders::MirPureEncTask {
+                        encoding_depth: 0,
+                        kind: PureKind::Spec(specs.extern_spec),
+                        parent_def_id: spec_did,
+                        param_env: vcx.tcx().param_env(spec_did),
+                        substs,
+                        // TODO: should this be `def_id` or `caller_def_id`
+                        caller_def_id: Some(def_id),
+                    })
+                    .unwrap()
+                    .expr
+                    .downcast_ty();
+                let span = vcx.tcx().def_span(spec_did);
+                let expr = vcx.with_span(span, |_| expr);
+                to_bool(expr.reify(vcx, (spec_did, pre_args))).downcast_ty()
+            };
+
+            let refined_pres = specs
+                .refined_pres
+                .iter()
+                .map(|spec_did| {
+                    let expr = pre_to_expr(*spec_did, deps);
+
+                    // Must be present if there are refined pres or posts
+                    let cond = refine_spec_cond.unwrap();
+
+                    vcx.mk_bin_op_expr(vir::BinOpKind::Implies, cond, expr)
+                        .downcast_ty()
+                })
+                .collect::<Vec<_>>();
+
             let pres = specs
                 .pres
                 .iter()
-                .map(|spec_def_id| {
-                    let expr = deps
-                        .require_dep::<crate::encoders::MirPureEnc>(
-                            crate::encoders::MirPureEncTask {
-                                encoding_depth: 0,
-                                kind: PureKind::Spec(specs.extern_spec),
-                                parent_def_id: *spec_def_id,
-                                param_env: vcx.tcx().param_env(spec_def_id),
-                                substs,
-                                // TODO: should this be `def_id` or `caller_def_id`
-                                caller_def_id: Some(context_def_id),
-                            },
-                        )
-                        .unwrap()
-                        .expr
-                        .downcast_ty();
-                    let expr = expr.reify(vcx, (*spec_def_id, pre_args));
-                    let span = vcx.tcx().def_span(spec_def_id);
-                    vcx.with_span(span, |_| to_bool(expr).downcast_ty())
+                .map(|spec_did| {
+                    let expr = pre_to_expr(*spec_did, deps);
+
+                    not_refine_spec_cond.map_or(expr, |not_cond| {
+                        vcx.mk_bin_op_expr(vir::BinOpKind::Implies, not_cond, expr)
+                            .downcast_ty()
+                    })
                 })
-                .collect::<Vec<vir::ExprBool<'_>>>();
+                .chain(refined_pres)
+                .collect::<Vec<_>>();
 
             let post_args = match enc_mode {
                 MirSpecEncMode::Impure => {
@@ -230,37 +278,62 @@ impl TaskEncoder for MirSpecEnc {
                 }
                 MirSpecEncMode::PureWithResult | MirSpecEncMode::PureWithoutResult => all_args,
             };
+
+            let post_to_expr = |spec_did, deps: &mut TaskEncoderDependencies<'vir, MirSpecEnc>| {
+                let span = vcx.tcx().def_span(spec_did);
+                vcx.with_span(span, |vcx| {
+                    vcx.handle_error("postcondition.violated:assertion.false", move |_| {
+                        Some(vec![PrustiError::verification(
+                            "postcondition might not hold",
+                            span.into(),
+                        )])
+                    });
+                    let expr = deps
+                        .require_dep::<crate::encoders::MirPureEnc>(
+                            crate::encoders::MirPureEncTask {
+                                encoding_depth: 0,
+                                kind: PureKind::Spec(specs.extern_spec),
+                                parent_def_id: spec_did,
+                                param_env: vcx.tcx().param_env(spec_did),
+                                substs,
+                                // TODO: should this be `def_id` or `caller_def_id`
+                                caller_def_id: Some(def_id),
+                            },
+                        )
+                        .unwrap()
+                        .expr
+                        .downcast_ty();
+                    to_bool(expr.reify(vcx, (spec_did, post_args))).downcast_ty()
+                })
+            };
+
+            let refined_posts = specs
+                .refined_posts
+                .iter()
+                .map(|spec_did| {
+                    let expr = post_to_expr(*spec_did, deps);
+
+                    let cond = refine_spec_cond.unwrap();
+
+                    vcx.mk_bin_op_expr(vir::BinOpKind::Implies, cond, expr)
+                        .downcast_ty()
+                })
+                .collect::<Vec<_>>();
+
             let posts = specs
                 .posts
                 .iter()
-                .map(|spec_def_id| {
-                    let span = vcx.tcx().def_span(spec_def_id);
-                    vcx.with_span(span, |vcx| {
-                        vcx.handle_error("postcondition.violated:assertion.false", move |_| {
-                            Some(vec![PrustiError::verification(
-                                "postcondition might not hold",
-                                span.into(),
-                            )])
-                        });
-                        let expr = deps
-                            .require_dep::<crate::encoders::MirPureEnc>(
-                                crate::encoders::MirPureEncTask {
-                                    encoding_depth: 0,
-                                    kind: PureKind::Spec(specs.extern_spec),
-                                    parent_def_id: *spec_def_id,
-                                    param_env: vcx.tcx().param_env(spec_def_id),
-                                    substs,
-                                    // TODO: should this be `def_id` or `caller_def_id`
-                                    caller_def_id: Some(context_def_id),
-                                },
-                            )?
-                            .expr
-                            .downcast_ty();
-                        let expr = expr.reify(vcx, (*spec_def_id, post_args));
-                        Ok(to_bool(expr).downcast_ty())
+                .map(|spec_did| {
+                    let expr = post_to_expr(*spec_did, deps);
+
+                    not_refine_spec_cond.map_or(expr, |not_cond| {
+                        vcx.mk_bin_op_expr(vir::BinOpKind::Implies, not_cond, expr)
+                            .downcast_ty()
                     })
                 })
-                .collect::<Result<Vec<vir::ExprBool<'_>>, _>>()?;
+                .chain(refined_posts)
+                .collect::<Vec<_>>();
+
             let pledges = specs
                 .pledges
                 .iter()

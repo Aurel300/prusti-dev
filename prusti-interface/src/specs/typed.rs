@@ -1,6 +1,6 @@
 use crate::{
     environment::Environment, specs::external::ExternSpecDeclaration,
-    utils::has_trait_bounds_type_cond_spec, PrustiError,
+    utils::read_trait_bounds_type_cond_spec, PrustiError,
 };
 pub use common::{SpecIdRef, SpecType, SpecificationId};
 use prusti_rustc_interface::{
@@ -249,7 +249,9 @@ pub enum ProcedureSpecificationKind {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, TyEncodable, TyDecodable)]
 pub enum SpecConstraintKind {
-    ResolveGenericParamTraitBounds,
+    /// The string id is used to group type-conditional specifications
+    /// originating from the same `refine_spec`
+    ResolveGenericParamTraitBounds(String),
 }
 
 impl Display for ProcedureSpecificationKind {
@@ -427,8 +429,6 @@ impl SpecGraph<ProcedureSpecification> {
         match self.get_constraint(pre, env) {
             None => {
                 self.base_spec.pres.push(pre.to_def_id());
-                // Preconditions are explicitly not copied (as opposed to postconditions)
-                // This would always violate behavioral subtyping rules
             }
             Some(constraint) => {
                 self.get_constrained_spec_mut(constraint)
@@ -441,14 +441,11 @@ impl SpecGraph<ProcedureSpecification> {
     /// Attaches the postcondition `post` to this [SpecGraph].
     ///
     /// If this postcondition has a constraint it will be attached to the corresponding
-    /// constrained spec **and** the base spec, otherwise just to the base spec.
+    /// constrained spec, otherwise just to the base spec.
     pub fn add_postcondition<'tcx>(&mut self, post: LocalDefId, env: &Environment<'tcx>) {
         match self.get_constraint(post, env) {
             None => {
                 self.base_spec.posts.push(post.to_def_id());
-                self.specs_with_constraints
-                    .values_mut()
-                    .for_each(|s| s.posts.push(post.to_def_id()));
             }
             Some(obligation) => {
                 self.get_constrained_spec_mut(obligation)
@@ -524,7 +521,14 @@ impl SpecGraph<ProcedureSpecification> {
     ) -> &mut ProcedureSpecification {
         self.specs_with_constraints
             .entry(constraint)
-            .or_insert_with(|| self.base_spec.clone())
+            .or_insert_with(|| {
+                let mut spec = self.base_spec.clone();
+                // Reset specification items so they aren't duplicated from the base
+                spec.pres = SpecificationItem::Empty;
+                spec.posts = SpecificationItem::Empty;
+                spec.pledges = SpecificationItem::Empty;
+                spec
+            })
     }
 
     /// Gets the constraint of a spec function `spec`.
@@ -536,10 +540,8 @@ impl SpecGraph<ProcedureSpecification> {
         env: &Environment<'tcx>,
     ) -> Option<SpecConstraintKind> {
         let attrs = env.query.get_local_attributes(spec);
-        if has_trait_bounds_type_cond_spec(attrs) {
-            return Some(SpecConstraintKind::ResolveGenericParamTraitBounds);
-        }
-        None
+        read_trait_bounds_type_cond_spec(attrs)
+            .map(SpecConstraintKind::ResolveGenericParamTraitBounds)
     }
 }
 
@@ -807,6 +809,40 @@ impl Refinable for ProcedureSpecification {
             trusted: self.trusted.refine(&other.trusted),
             terminates: self.terminates.refine(&other.terminates),
             purity: self.purity.refine(&other.purity),
+        }
+    }
+}
+
+impl<T: Refinable + Clone> Refinable for SpecGraph<T> {
+    fn refine(self, other: &Self) -> Self {
+        // Clone base_spec for use in fallback before consuming it
+        let base_spec_for_fallback = self.base_spec.clone();
+        let base_spec = self.base_spec.refine(&other.base_spec);
+
+        let mut specs_with_constraints = FxHashMap::default();
+
+        // Refine constrained specs from trait with corresponding impl specs
+        for (constraint, trait_constrained_spec) in &other.specs_with_constraints {
+            let impl_constrained_spec = self
+                .specs_with_constraints
+                .get(constraint)
+                .cloned()
+                .unwrap_or_else(|| base_spec_for_fallback.clone());
+
+            let refined_constrained = impl_constrained_spec.refine(trait_constrained_spec);
+            specs_with_constraints.insert(constraint.clone(), refined_constrained);
+        }
+
+        // Add any impl-only constrained specs that weren't in the trait
+        for (constraint, impl_constrained_spec) in self.specs_with_constraints {
+            specs_with_constraints
+                .entry(constraint)
+                .or_insert(impl_constrained_spec);
+        }
+
+        SpecGraph {
+            base_spec,
+            specs_with_constraints,
         }
     }
 }

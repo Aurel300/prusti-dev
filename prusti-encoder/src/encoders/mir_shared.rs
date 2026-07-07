@@ -12,7 +12,7 @@ use prusti_rustc_interface::{
     abi,
     index::IndexVec,
     middle::{mir, ty},
-    span::{Span, def_id::DefId},
+    span::{Span, def_id::DefId, source_map::Spanned, sym},
 };
 
 #[allow(type_alias_bounds)]
@@ -28,6 +28,20 @@ type CastSnap<'vir, Enc: PureRvalueEnc<'vir>> = (
     Option<vir::StmtGen<'vir, Enc::ExprCurr, Enc::ExprNext>>,
     ExprOutput<'vir, Enc>,
 );
+
+#[derive(Debug, PartialEq, Eq)]
+pub(super) enum RustcIntrinsic {
+    PtrMetadata,
+}
+
+impl RustcIntrinsic {
+    pub(super) fn from_intrinsic(intrinsic: ty::IntrinsicDef) -> Option<Self> {
+        Some(match intrinsic.name {
+            sym::ptr_metadata => RustcIntrinsic::PtrMetadata,
+            _ => return None,
+        })
+    }
+}
 
 pub(crate) trait PureRvalueEnc<'vir> {
     type Encoder: TaskEncoder + 'vir;
@@ -88,7 +102,6 @@ pub(crate) trait PureRvalueEnc<'vir> {
         rvalue_ty: ty::Ty<'vir>,
         kind: mir::CastKind,
         operand: &mir::Operand<'vir>,
-        _span: Span,
         ctxt: &Self::EncodePlaceCtxt,
     ) -> Result<CastSnap<'vir, Self>, EncodeFullError<'vir, Self::Encoder>> {
         let encoded_operand = self.encode_operand_snap(operand, ctxt)?.downcast_ty();
@@ -144,7 +157,6 @@ pub(crate) trait PureRvalueEnc<'vir> {
         rvalue_ty: ty::Ty<'vir>,
         op: mir::UnOp,
         operand: &mir::Operand<'vir>,
-        _span: Span,
         ctxt: &Self::EncodePlaceCtxt,
     ) -> ExprResult<'vir, Self> {
         let encoded_operand = self.encode_operand_snap(operand, ctxt)?;
@@ -196,6 +208,24 @@ pub(crate) trait PureRvalueEnc<'vir> {
             // itself; slice `.len()` is instead handled via `PrustiBuiltin::SliceLen`.
             ty::TyKind::Slice(..) => todo!("Rvalue::Len on a slice place"),
             kind => unreachable!("Rvalue::Len on non-array/slice type {kind:?}"),
+        }
+    }
+
+    fn encode_intrinsic(
+        &mut self,
+        intrinsic: RustcIntrinsic,
+        arg_tys: ty::GenericArgsRef<'vir>,
+        args: &[Spanned<mir::Operand<'vir>>],
+        ctxt: &Self::EncodePlaceCtxt,
+    ) -> ExprResult<'vir, Self> {
+        match intrinsic {
+            // pub const fn ptr_metadata<P, M>(ptr: *const P) -> M
+            RustcIntrinsic::PtrMetadata => {
+                assert_eq!(arg_tys.len(), 2);
+                assert_eq!(args.len(), 1);
+                let dest_ty = arg_tys[1].expect_ty();
+                self.encode_unary_op_snap(dest_ty, mir::UnOp::PtrMetadata, &args[0].node, ctxt)
+            }
         }
     }
 }

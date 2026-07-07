@@ -104,8 +104,8 @@ impl TaskEncoder for GArgsCastEnc<Pure> {
             return Ok(((), GArgCaster::NoCast));
         };
 
-        let cast = deps.require_ref::<CastersEnc<Pure>>((ty.param, ty.concrete))?;
-        let ty_args = deps.require_dep::<GArgsTyEnc>(ty.args)?;
+        let cast = deps.require_ref::<CastersEnc<Pure>>((ty.param, ty.concrete.ty))?;
+        let ty_args = deps.require_dep::<GArgsTyEnc>(ty.concrete.args)?;
         Ok(((), GArgCaster::Casters(Casters { cast, ty_args })))
     }
 
@@ -133,8 +133,8 @@ impl TaskEncoder for GArgsCastEnc<Impure> {
         let Some(ty) = task_key else {
             return Ok(((), GArgCaster::NoCast));
         };
-        let cast = deps.require_ref::<CastersEnc<Impure>>((ty.param, ty.concrete))?;
-        let ty_args = deps.require_dep::<GArgsTyEnc>(ty.args)?;
+        let cast = deps.require_ref::<CastersEnc<Impure>>((ty.param, ty.concrete.ty))?;
+        let ty_args = deps.require_dep::<GArgsTyEnc>(ty.concrete.args)?;
         Ok(((), GArgCaster::Casters(Casters { cast, ty_args })))
     }
 

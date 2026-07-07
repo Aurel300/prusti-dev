@@ -47,7 +47,7 @@ use crate::encoders::{
     self, FunctionCallEnc, MirBuiltinUseCastEnc, MirBuiltinUseCastTask, MirPureEnc, MirPureEncTask,
     PureKind, TyUseImpureEnc, WandEnc, WandEncTask,
     mir_fn::{CallTaskDescription, RustSignature, SpecBlockKind, SpecBlocks},
-    mir_shared::PureRvalueEnc,
+    mir_shared::{PureRvalueEnc, RustcIntrinsic},
     ty::{
         RustTyDecomposition,
         generics::GParams,
@@ -308,7 +308,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             mir::Rvalue::Cast(cast_kind, operand, ty) => {
                 assert_eq!(*ty, rvalue_ty);
                 let (stmt, cast) = self
-                    .encode_cast_snap(rvalue_ty, *cast_kind, operand, span, &())
+                    .encode_cast_snap(rvalue_ty, *cast_kind, operand, &())
                     .map_err(EncodeRvalueError::from)?;
                 self.stmts(stmt);
                 Ok(cast.into())
@@ -321,7 +321,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 .into()),
 
             mir::Rvalue::UnaryOp(unop, operand) => Ok(self
-                .encode_unary_op_snap(rvalue_ty, *unop, operand, span, &())
+                .encode_unary_op_snap(rvalue_ty, *unop, operand, &())
                 .map_err(EncodeRvalueError::from)?
                 .into()),
 
@@ -433,15 +433,19 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 _ => unreachable!(),
             }),
 
-            mir::Rvalue::RawPtr(mir::RawPtrKind::FakeForPtrMetadata, place) => {
-                // `&raw const (fake) (*p)` exists only to carry the pointee's
-                // pointer metadata (e.g. a slice's length) so that a following
-                // `PtrMetadata` can read it back out (see `mir_shared`).
+            mir::Rvalue::RawPtr(_, place) => {
                 let place_expr = self.encode_place(Place::from(*place));
-                let metadata = place_expr.expr.metadata.expect(
-                    "raw pointer to an unsized place requires metadata propagated \
-                     from its wide pointer",
-                );
+                let metadata = place_expr.expr.metadata;
+                let metadata = metadata
+                    // Metadata is none if the place does not contain any deref projections.
+                    .or_else(|| self.thin_ptr_metadata(rvalue_ty))
+                    .ok_or_else(|| {
+                        self.unsupported_rvalue(
+                            "unsupported raw pointer: could not construct metadata for place"
+                                .to_string(),
+                            span,
+                        )
+                    })?;
                 let raw = self.ty_use_pure(rvalue_ty).expect_raw();
                 Ok(raw
                     .prim_to_snap(place_expr.expr.address, metadata)
@@ -1845,7 +1849,21 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                     .expr
                     .expect_predicate();
                 self.vcx.with_span(terminator.source_info.span, |vcx| {
-                    if is_pure {
+                    // The bodiless `ptr_metadata` intrinsic is only lowered to
+                    // `UnOp::PtrMetadata` in optimized MIR; do the lowering here.
+                    let intrinsic = self.vcx.tcx().intrinsic(func_def_id);
+                    let intrinsic = intrinsic.and_then(RustcIntrinsic::from_intrinsic);
+                    if let Some(intrinsic) = intrinsic {
+                        let intrinsic_result =
+                            self.encode_intrinsic(intrinsic, caller_substs, args, &())?;
+                        let return_ty = destination.ty(self.local_decls, self.vcx.tcx()).ty;
+                        let assign_stmt = self.ty_use_impure(return_ty).apply_method_assign(
+                            self.vcx,
+                            dest,
+                            intrinsic_result,
+                        );
+                        self.stmt(assign_stmt);
+                    } else if is_pure {
                         let pure_func = self
                             .deps
                             .require_dep::<FunctionCallEnc>(CallTaskDescription::new(
@@ -1896,7 +1914,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                                 self.vcx
                                     .mk_dummy_stmt(vir::vir_format!(self.vcx, "recursion",)),
                             );
-                            return;
+                            return Ok(());
                         };
 
                         let method_in = args
@@ -1928,7 +1946,8 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                         self.call_labels
                             .insert(location.block, (label_pre, label_post));
                     }
-                });
+                    Ok(())
+                })?;
 
                 match *target {
                     Some(target) => {

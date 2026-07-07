@@ -119,8 +119,7 @@ impl<'tcx> RustTyDecomposition<'tcx> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct RustTyNormalized<'tcx> {
     pub param: RustTy<'tcx>,
-    pub concrete: RustTy<'tcx>,
-    pub args: GArgs<'tcx>,
+    pub concrete: RustTyDecomposition<'tcx>,
 }
 
 /// A to-be decomposed Rust type. We need this since we cannot infinitely
@@ -226,15 +225,11 @@ impl<'tcx> LazyRustTy<'tcx> {
         let TySpecifics::Param(..) = &param.specifics else {
             return None;
         };
-        let RustTyDecomposition { ty, args, .. } = self.decompose_normalize(args);
-        if let TySpecifics::Param(..) = &ty.specifics {
+        let concrete = self.decompose_normalize(args);
+        if let TySpecifics::Param(..) = &concrete.ty.specifics {
             None
         } else {
-            Some(RustTyNormalized {
-                param,
-                concrete: ty,
-                args,
-            })
+            Some(RustTyNormalized { param, concrete })
         }
     }
 }
@@ -342,6 +337,15 @@ impl<'tcx> Deref for RustFieldData<'tcx> {
 }
 
 impl<'tcx> TyData<'tcx, RustTyDatas> {
+    pub fn ref_data(&self) -> Option<RefData<'tcx>> {
+        match &self.specifics {
+            TySpecifics::ImmRef(data) | TySpecifics::MutRef(data) | TySpecifics::Raw(data) => {
+                Some(*data)
+            }
+            _ => None,
+        }
+    }
+
     fn from_ty(ty: ty::Ty<'tcx>, context: GParams<'tcx>) -> RustTyDecomposition<'tcx> {
         // We normalize since we may be translating a type such as the field of
         // `struct MyStruct<T: Iterator<Item = i32>>(T::Item);` where `ty` is
@@ -577,9 +581,7 @@ impl<'tcx> TySpecifics<'tcx, RustTyDatas> {
         }
 
         /// The `<Referent as core::ptr::Pointee>::Metadata` projection type.
-        /// `rustc` normalizes this projection to the concrete metadata type
-        /// (`()` for sized referents, `usize` for slices/`str`, ...) at every
-        /// use site, so it appears as a projection only for generic referents.
+        /// Taken from `pointee_metadata_ty_or_projection` in `rustc`
         fn pointee_metadata_projection<'tcx>(
             tcx: ty::TyCtxt<'tcx>,
             referent: ty::Ty<'tcx>,

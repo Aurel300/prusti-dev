@@ -2,8 +2,12 @@ use prusti_rustc_interface::middle::mir;
 use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 use vir::{CastType, FunctionIdn};
 
-use crate::encoders::ty::{
-    RustTy, RustTyDecomposition, pure::TyPurePrimDataKind, use_pure::TyUsePureEnc,
+use crate::encoders::{
+    Pure,
+    ty::{
+        RustTy, RustTyDecomposition, RustTyNormalized, generics::GArgsCastEnc,
+        pure::TyPurePrimDataKind, use_pure::TyUsePureEnc,
+    },
 };
 
 /// Encodes the builtin MIR unary operations (e.g. `Neg`, `Not`, `PtrMetadata`)
@@ -60,7 +64,14 @@ impl TaskEncoder for MirBuiltinUnOpEnc {
             let ty_task = RustTyDecomposition::identity(result_ty);
             let r_ty = deps.require_ref::<TyUsePureEnc>(ty_task)?;
 
-            let name = vir::vir_format_identifier!(vcx, "mir_unop_{op:?}_{}", operand_ty.name());
+            // `PtrMetadata` tasks share the operand base type but differ in the
+            // metadata `result_ty`, so include it in the name to avoid clashes.
+            let mut name = format!("mir_unop_{op:?}_{}", operand_ty.name());
+            if matches!(op, mir::UnOp::PtrMetadata) {
+                name.push('_');
+                name.push_str(result_ty.name());
+            }
+            let name = vir::vir_format_identifier!(vcx, "{name}");
             let e_ty_snap = e_ty.snapshot.downcast_ty::<vir::CSnap>();
             let fn_idn = FunctionIdn::new(name, e_ty_snap, r_ty.snapshot);
 
@@ -69,8 +80,27 @@ impl TaskEncoder for MirBuiltinUnOpEnc {
 
             let body = match op {
                 // `PtrMetadata` reads the pointer metadata (e.g. a slice's length).
-                // Both references and raw pointers carry it; other types do not.
-                mir::UnOp::PtrMetadata => e_ty.metadata_access(snap_arg),
+                // The snapshot holds it generically; we need to cast it to the
+                // (possibly) concrete `result_ty`.
+                mir::UnOp::PtrMetadata => {
+                    let normalized = if result_ty.specifics.is_param() {
+                        None
+                    } else {
+                        let ref_data = operand_ty
+                            .ref_data()
+                            .expect("`PtrMetadata` on a type without pointer metadata");
+                        let param = ref_data.metadata.decompose(operand_ty.params).ty;
+                        // Should not fail
+                        assert!(
+                            param.specifics.is_param(),
+                            "`PtrMetadata` metadata {param:?} is non-generic"
+                        );
+                        let concrete = RustTyDecomposition::identity(result_ty);
+                        Some(RustTyNormalized { param, concrete })
+                    };
+                    let caster = deps.require_dep::<GArgsCastEnc<Pure>>(normalized)?;
+                    caster.cast_to_caller_ctx(e_ty.metadata_access(snap_arg))
+                }
                 mir::UnOp::Neg | mir::UnOp::Not => {
                     assert_eq!(result_ty, operand_ty);
                     let prim_res_ty = e_ty.expect_primitive();

@@ -6,7 +6,7 @@ use crate::encoders::{
     builtin::{MetadataCastEnc, ValueCastEnc},
     ty::{
         RustTy, RustTyDecomposition, RustTyNormalized, TySpecifics,
-        generics::{GArgs, GArgsCastEnc, GParams, GenericParamsEnc},
+        generics::{GArgs, GArgsCastEnc, GenericParamsEnc},
         lifted::TyConstructorEnc,
         use_pure::TyUsePureEnc,
     },
@@ -57,8 +57,7 @@ impl TaskEncoder for MetadataCastAxiomEnc {
         let usize = RustTyDecomposition::from_prim_ty(vir::with_vcx(|vcx| vcx.tcx().types.usize));
         let len_caster = deps.require_dep::<GArgsCastEnc<Pure>>(Some(RustTyNormalized {
             param: RustTyDecomposition::param(),
-            concrete: usize.ty,
-            args: GArgs::new(GParams::empty(), &[]),
+            concrete: usize,
         }))?;
 
         vir::with_vcx(|vcx| {
@@ -146,19 +145,17 @@ impl TaskEncoder for ValueCastAxiomEnc {
         // The most-generic array/slice (identity args), so the axiom quantifies
         // over the element/length params rather than baking in a concrete `[T; N]`.
         let array_inner = RustTyDecomposition::identity(array_ty);
-        let slice_inner = RustTyDecomposition::identity(slice_ty);
+        let mut slice_inner = RustTyDecomposition::identity(slice_ty);
 
         // Re-base the slice's element onto the array's element type parameter: a
         // valid `[T; N] -> [T]` coercion always has matching element types, so
         // the axiom quantifies over the array's params only (`U`, `M`) and the
         // slice reuses the array's element `U`. This is also what lets the
         // concrete-keyed axiom below trigger without a free slice-element var.
-        let slice_args = vir::with_vcx(|vcx| {
-            GArgs::new(
-                array_ty.params,
-                vcx.tcx().mk_args(&[array_ty.params.rust_params()[1]]),
-            )
-        });
+        slice_inner.args = GArgs::new(
+            array_ty.params,
+            vir::with_vcx(|vcx| vcx.tcx().mk_args(&[array_ty.params.rust_params()[1]])),
+        );
 
         let value_cast = deps.require_dep::<ValueCastEnc>(())?;
         let array_use = deps.require_dep::<TyUsePureEnc>(array_inner)?;
@@ -169,13 +166,11 @@ impl TaskEncoder for ValueCastAxiomEnc {
         let param = RustTyDecomposition::param();
         let array_caster = deps.require_dep::<GArgsCastEnc<Pure>>(Some(RustTyNormalized {
             param,
-            concrete: array_ty,
-            args: array_inner.args,
+            concrete: array_inner,
         }))?;
         let slice_caster = deps.require_dep::<GArgsCastEnc<Pure>>(Some(RustTyNormalized {
             param,
-            concrete: slice_ty,
-            args: slice_args,
+            concrete: slice_inner,
         }))?;
 
         vir::with_vcx(|vcx| {

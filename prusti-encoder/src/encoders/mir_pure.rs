@@ -1,7 +1,7 @@
 use crate::encoders::{
     FunctionCallEnc, ViperTupleEnc,
     mir_fn::{CallTaskDescription, RustSignature},
-    mir_shared::PureRvalueEnc,
+    mir_shared::{PureRvalueEnc, RustcIntrinsic},
     ty::{
         RustTyDecomposition,
         generics::GParams,
@@ -21,7 +21,7 @@ use prusti_rustc_interface::{
     index::IndexVec,
     middle::{
         mir,
-        ty::{self, Binder, FnSig, TyKind},
+        ty::{self, TyKind},
     },
     span::{Span, def_id::DefId, source_map::Spanned},
 };
@@ -744,7 +744,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
             } => {
                 // encode the condition operand
                 let cond_ty = cond.ty(self.body, self.vcx.tcx());
-                assert_eq!(*cond_ty.kind(), ty::TyKind::Bool);
+                assert_eq!(*cond_ty.kind(), TyKind::Bool);
                 let cond_expr = self.encode_operand_snap(cond, &new_curr_ver)?.downcast_ty();
                 let cond_ty_out = self.ty_use(cond_ty).expect_primitive();
 
@@ -858,24 +858,19 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                     )
                     .unwrap_or_default();
 
-                    let env_query = EnvQuery::new(self.vcx.tcx());
-                    if env_query.is_function_in_crate(
+                    // The bodiless `ptr_metadata` intrinsic is only lowered to
+                    // `UnOp::PtrMetadata` in optimized MIR; do the lowering here.
+                    let intrinsic = self.vcx.tcx().intrinsic(def_id);
+                    let intrinsic = intrinsic.and_then(RustcIntrinsic::from_intrinsic);
+                    if let Some(intrinsic) = intrinsic {
+                        self.encode_intrinsic(intrinsic, arg_tys, args, &new_curr_ver)
+                    } else if EnvQuery::new(self.vcx.tcx()).is_function_in_crate(
                         self.def_id,
                         def_id,
                         arg_tys,
                         "prusti_contracts",
                     ) {
-                        let sig = self.vcx.tcx().fn_sig(def_id);
-                        let sig = sig.instantiate_identity();
-                        let actual_impl = env_query.find_impl_of_trait_method_call(def_id, arg_tys);
-                        self.encode_prusti_builtin(
-                            def_id,
-                            actual_impl,
-                            sig,
-                            arg_tys,
-                            args,
-                            &new_curr_ver,
-                        )
+                        self.encode_prusti_builtin(def_id, arg_tys, args, &new_curr_ver)
                     } else if is_pure {
                         let pure_func = self
                             .deps
@@ -965,21 +960,17 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                     // arguments which weren't borrows in the first place.
                     .filter(|_| place.is_indirect())
                     .unwrap_or_else(|| self.vcx.mk_null().lazy());
-                // Use the metadata carried by the place (set when reaching it
-                // through a wide pointer, e.g. an unsized re-borrow), falling
-                // back to a thin pointer's metadata for a sized referent. A
-                // genuinely unsized referent with no carried metadata degrades
-                // to an `unsupported` verification error rather than crashing.
-                let metadata = encoded_place.metadata;
-                let Some(metadata) = metadata.or_else(|| self.thin_ptr_metadata(rvalue_ty)) else {
-                    // An unsized referent with no carried metadata cannot be encoded
-                    // in pure code; surface a real error rather than a havoc snapshot
-                    // (a placeholder here would be unsound).
-                    return Err(self.unsupported_rvalue(
-                        format!("unsupported reference to unsized place {place:?} in pure code"),
-                        span,
-                    ));
-                };
+                let metadata = encoded_place
+                    .metadata
+                    // Metadata is none if the place does not contain any deref projections.
+                    .or_else(|| self.thin_ptr_metadata(rvalue_ty))
+                    .ok_or_else(||
+                        self.unsupported_rvalue(
+                            "unsupported reference: could not construct metadata for place in pure code"
+                                .to_string(),
+                            span,
+                        )
+                    )?;
                 let snap = if kind.mutability().is_mut() {
                     let e_rvalue_ty = rvalue_snapshot_encoding.expect_mutref();
                     e_rvalue_ty.prim_to_snap(place_ref, metadata, encoded_place.snap)
@@ -993,7 +984,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                 self.encode_binop_snap(rvalue_ty, *op, l, r, curr_ver)
             }
             mir::Rvalue::UnaryOp(unop, operand) => {
-                self.encode_unary_op_snap(rvalue_ty, *unop, operand, span, curr_ver)
+                self.encode_unary_op_snap(rvalue_ty, *unop, operand, curr_ver)
             }
             mir::Rvalue::Aggregate(
                 box kind @ (mir::AggregateKind::Adt(..)
@@ -1024,15 +1015,11 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
             mir::Rvalue::Cast(kind, operand, ty) => {
                 assert_eq!(*ty, rvalue_ty);
                 Ok(self
-                    .encode_cast_snap(rvalue_ty, *kind, operand, span, curr_ver)?
+                    .encode_cast_snap(rvalue_ty, *kind, operand, curr_ver)?
                     .1)
             }
             mir::Rvalue::Len(place) => self.encode_len_snap((*place).into(), curr_ver),
-            mir::Rvalue::RawPtr(mir::RawPtrKind::FakeForPtrMetadata, place) => {
-                // `&raw const (fake) (*p)` exists only to carry the pointee's
-                // pointer metadata (e.g. a slice's length) so that a following
-                // `PtrMetadata` can read it back out (see `mir_shared`). This
-                // lets a spec index or take the length of a slice argument.
+            mir::Rvalue::RawPtr(_, place) => {
                 let encoded_place = self.encode_place_with_ref(curr_ver, (*place).into());
                 // As for `Rvalue::Ref`: a raw pointer built in pure code never
                 // escapes, so its address is `null` unless it re-borrows the
@@ -1041,15 +1028,17 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                     .place_ref
                     .filter(|_| place.is_indirect())
                     .unwrap_or_else(|| self.vcx.mk_null().lazy());
-                // Use the metadata carried by the place (propagated from the
-                // wide pointer it was reached through), falling back to a thin
-                // pointer's metadata for a sized pointee.
-                let Some(metadata) = encoded_place.metadata else {
-                    return Err(self.unsupported_rvalue(
-                        format!("unsupported raw pointer to unsized place {place:?} in pure code"),
-                        span,
-                    ));
-                };
+                let metadata = encoded_place
+                    .metadata
+                    // Metadata is none if the place does not contain any deref projections.
+                    .or_else(|| self.thin_ptr_metadata(rvalue_ty))
+                    .ok_or_else(||
+                        self.unsupported_rvalue(
+                            "unsupported raw pointer: could not construct metadata for place in pure code"
+                                .to_string(),
+                            span,
+                        )
+                    )?;
                 let raw_ty = self.ty_use(rvalue_ty);
                 Ok(raw_ty
                     .expect_raw()
@@ -1287,8 +1276,6 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
     fn encode_prusti_builtin(
         &mut self,
         def_id: DefId,
-        actual_impl: Option<DefId>,
-        _sig: Binder<'vir, FnSig<'vir>>,
         arg_tys: ty::GenericArgsRef<'vir>,
         args: &[Spanned<mir::Operand<'vir>>],
         curr_ver: &FxHashMap<mir::Local, Version<'vir>>,
@@ -1319,14 +1306,11 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
 
         let item_name = self.vcx.tcx().item_name(def_id);
         let env_query = EnvQuery::new(self.vcx.tcx());
+        let actual_impl = env_query.find_impl_of_trait_method_call(def_id, arg_tys);
 
+        let impl_type_name = env_query.find_impl_type_name(actual_impl.unwrap_or(def_id));
         // TODO: this probably isn't necessary
-        let builtin = match (
-            env_query
-                .find_impl_type_name(actual_impl.unwrap_or(def_id))
-                .as_deref(),
-            item_name.as_str(),
-        ) {
+        let builtin = match (impl_type_name.as_deref(), item_name.as_str()) {
             (None, "forall") => PrustiBuiltin::Forall,
             (None, "exists") => PrustiBuiltin::Exists,
             (None, "spec_block") => PrustiBuiltin::SpecBlock,

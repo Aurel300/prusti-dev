@@ -82,12 +82,8 @@ impl TaskEncoder for GArgsTyEnc {
                     ty::ConstKind::Param(p) => task_key.context.expect_const(p.index as usize).1,
                     other => unreachable!("unexpected ConstKind: {other:?}"),
                 };
-                let task = ConstEncTask::Ty {
-                    const_,
-                    ty,
-                    context: task_key.context,
-                };
-                deps.require_dep::<ConstEnc>(task)
+                let ty = RustTyDecomposition::from_ty(ty, task_key.context);
+                deps.require_dep::<ConstEnc>(ConstEncTask::Ty { const_, ty })
             })
             .collect::<Result<Vec<_>, _>>()?;
         let args = vir::with_vcx(|vcx| GArgsTy {

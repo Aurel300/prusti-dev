@@ -16,28 +16,15 @@ pub struct RustTyDecomposition<'tcx> {
     /// created in `RustTyDecomposition::identity` from a `RustTy` where we
     /// cannot know the value.
     pub maybe_inhabited: Option<bool>,
-    /// Whether this (concrete) type is a zero-sized type. This lives on the
-    /// args-aware decomposition rather than on the args-agnostic `ty`, because
-    /// it is an instantiation property: e.g. `GhostBox<i64>` is a ZST but the
-    /// generic `GhostBox<T>` cannot be shown to be (its layout is unknown). The
-    /// canonical `s_T_zst` value is emitted on demand by [`super::TyZstEnc`] when
-    /// this is set (see `TyUsePureEnc`).
-    pub is_zst: bool,
 }
 
 impl<'tcx> RustTyDecomposition<'tcx> {
-    fn new(
-        ty: RustTy<'tcx>,
-        args: GArgs<'tcx>,
-        maybe_inhabited: Option<bool>,
-        is_zst: bool,
-    ) -> Self {
+    fn new(ty: RustTy<'tcx>, args: GArgs<'tcx>, maybe_inhabited: Option<bool>) -> Self {
         ty.params.check(args.args());
         RustTyDecomposition {
             ty,
             args,
             maybe_inhabited,
-            is_zst,
         }
     }
 
@@ -85,7 +72,6 @@ impl<'tcx> RustTyDecomposition<'tcx> {
             TyData::<'tcx, RustTyDatas>::new(data, specifics).alloc(),
             GArgs::new(GParams::empty(), &[]),
             Some(true),
-            false,
         )
     }
 
@@ -102,7 +88,7 @@ impl<'tcx> RustTyDecomposition<'tcx> {
     /// this decomposition to `TyUseImpureEnc` will panic.
     pub fn identity(ty: RustTy<'tcx>) -> Self {
         let args = GArgs::new(ty.params, ty.params.rust_params());
-        Self::new(ty, args, None, false)
+        Self::new(ty, args, None)
     }
 
     pub fn param() -> RustTy<'tcx> {
@@ -358,17 +344,16 @@ impl<'tcx> TyData<'tcx, RustTyDatas> {
         let (params, args) = Self::identity_for_ty(ty, context.is_trait_extern_spec());
         let args = GArgs::new(context, args);
         let specifics = TySpecifics::from_ty(ty);
-        // Whether the type is definitely a ZST, and whether it might be
-        // inhabited. Both are independent of lifetimes, but `layout_of` /
-        // `is_privately_uninhabited` ICE on types that still carry region
-        // artifacts (inference vars like `'?21` from the panic/format machinery,
-        // or escaping bound/placeholder regions like `'^2`). So first make the
-        // type lifetime-free: erase free & inference regions, then replace any
-        // escaping bound regions with `'erased`. Only genuinely non-ground,
-        // *non-lifetime* features (type/const params or inference vars) can then
-        // still block the queries, in which case we answer conservatively
-        // (non-ZST, possibly-inhabited).
-        let (is_zst, maybe_inhabited) = vir::with_vcx(|vcx| {
+        // Whether the type might be inhabited. This is independent of
+        // lifetimes, but `is_privately_uninhabited` ICEs on types that still
+        // carry region artifacts (inference vars like `'?21` from the
+        // panic/format machinery, or escaping bound/placeholder regions like
+        // `'^2`). So first make the type lifetime-free: erase free & inference
+        // regions, then replace any escaping bound regions with `'erased`. Only
+        // genuinely non-ground, *non-lifetime* features (type/const params or
+        // inference vars) can then still block the query, in which case we
+        // answer conservatively (possibly-inhabited).
+        let maybe_inhabited = vir::with_vcx(|vcx| {
             use prusti_rustc_interface::middle::ty::{FnMutDelegate, TypeVisitableExt};
             let tcx = vcx.tcx();
             let layout_ty = tcx.replace_escaping_bound_vars_uncached(
@@ -380,16 +365,7 @@ impl<'tcx> TyData<'tcx, RustTyDatas> {
                 },
             );
             let groundish = !layout_ty.has_infer() && !layout_ty.has_param();
-            let is_zst = !specifics.is_builtin() && groundish && {
-                let pci = ty::PseudoCanonicalInput {
-                    typing_env: ty::TypingEnv::fully_monomorphized(),
-                    value: layout_ty,
-                };
-                tcx.layout_of(pci).is_ok_and(|layout| layout.is_zst())
-            };
-            let maybe_inhabited =
-                !groundish || !layout_ty.is_privately_uninhabited(tcx, context.typing_env());
-            (is_zst, maybe_inhabited)
+            !groundish || !layout_ty.is_privately_uninhabited(tcx, context.typing_env())
         });
         let data = RustTyData {
             name: symbol::Symbol::intern(&name),
@@ -399,7 +375,6 @@ impl<'tcx> TyData<'tcx, RustTyDatas> {
             Self::new(data, specifics).alloc(),
             args,
             Some(maybe_inhabited),
-            is_zst,
         )
     }
 
@@ -412,7 +387,7 @@ impl<'tcx> TyData<'tcx, RustTyDatas> {
             params,
         };
         let specifics = TySpecifics::from_prim_ty(ty);
-        RustTyDecomposition::new(Self::new(data, specifics).alloc(), args, Some(true), false)
+        RustTyDecomposition::new(Self::new(data, specifics).alloc(), args, Some(true))
     }
 
     fn ty_name(ty: ty::Ty<'tcx>) -> String {

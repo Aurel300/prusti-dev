@@ -1,5 +1,5 @@
 use task_encoder::{EncodeFullResult, TaskEncoder};
-use vir::{CastType, FunctionIdn};
+use vir::CastType;
 
 use crate::encoders::{
     Pure,
@@ -10,7 +10,7 @@ use crate::encoders::{
 };
 
 use super::{
-    TyUseEnc, TyZstEnc, UseTyDatas,
+    TyUseEnc, UseTyDatas,
     data::*,
     generics::{GArgCaster, GArgsTy},
     pure::{PureTyDatas, TyPureEnc, TyPureRef},
@@ -96,9 +96,6 @@ pub struct TyUsePureRef<'vir> {
     pub snapshot: vir::TypeSnap<'vir>,
     args: GArgsTy<'vir>,
     ty_pure_ref: TyPureRef<'vir>,
-    /// The canonical zero-sized-value function, present iff this decomposition is
-    /// a ZST (`RustTyDecomposition::is_zst`), required on demand from `TyZstEnc`.
-    zst: Option<FunctionIdn<'vir, (vir::ManyTyVal, vir::ManyCSnap), vir::Snap>>,
 }
 
 impl<'vir> task_encoder::OutputRefAny for TyUsePureRef<'vir> {}
@@ -128,17 +125,10 @@ impl TaskEncoder for TyUsePureEnc {
         let ty_pure_ref = deps.require_ref::<TyPureEnc>(task_key.ty)?;
         let args = deps.require_dep::<GArgsTyEnc>(task_key.args)?;
         let snapshot = (ty_pure_ref.domain)();
-        // A ZST decomposition gets its canonical value function on demand; the
-        // snapshot itself stays keyed purely on the base type.
-        let zst = task_key
-            .is_zst
-            .then(|| deps.require_dep::<TyZstEnc>(task_key.ty))
-            .transpose()?;
         let inner = TyUsePureRef {
             args,
             snapshot,
             ty_pure_ref,
-            zst,
         };
         deps.emit_output_ref(*task_key, inner)?;
 
@@ -287,17 +277,25 @@ impl<'a, 'vir> TyUsePureWalker<'a, 'vir> {
 }
 
 impl<'vir> TyUsePureRef<'vir> {
-    pub fn zst<Curr, Next>(&self) -> Option<vir::ExprGenSnap<'vir, Curr, Next>> {
-        self.zst
-            .map(|zst| zst.call()(self.args.get_ty(), self.args.get_const()))
-    }
-
     pub fn unreachable_to_snap<Curr, Next>(&self) -> vir::ExprGenSnap<'vir, Curr, Next> {
         self.ty_pure_ref.unreachable_to_snap.call()(self.args.get_ty(), self.args.get_const())
     }
 }
 
 impl<'vir> TyData<'vir, UsePureTyDatas> {
+    /// The snapshot of a zero-sized type such as `()`: all values are equal, so
+    /// it is built with the regular (zero-field) constructor. Returns `None`
+    /// when the type is not a fieldless struct-like, leaving error handling to
+    /// the caller.
+    pub fn zst_to_snap<Curr, Next>(&self) -> Option<vir::ExprGenCSnap<'vir, Curr, Next>> {
+        match &self.specifics {
+            TySpecifics::StructLike(data) if data.fields.is_empty() => {
+                Some(data.field_snaps_to_snap(Vec::new()))
+            }
+            _ => None,
+        }
+    }
+
     pub fn metadata_access<Curr, Next>(
         &self,
         snap: vir::ExprGenCSnap<'vir, Curr, Next>,

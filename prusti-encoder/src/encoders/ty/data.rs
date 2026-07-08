@@ -127,10 +127,6 @@ impl<'vir, D: TyDatas<'vir>> TySpecifics<'vir, D> {
     pub fn is_param(&self) -> bool {
         matches!(self, Self::Param(_))
     }
-
-    pub fn is_builtin(&self) -> bool {
-        matches!(self, Self::Builtin(_))
-    }
 }
 
 impl<'vir, D: TyDatas<'vir>> TyData<'vir, D> {
@@ -139,6 +135,7 @@ impl<'vir, D: TyDatas<'vir>> TyData<'vir, D> {
     }
 
     #[track_caller]
+    #[allow(dead_code)]
     pub fn expect_opaque(&self) -> &D::OpaqueData
     where
         Self: Debug,

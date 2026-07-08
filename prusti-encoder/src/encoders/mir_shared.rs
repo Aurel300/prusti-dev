@@ -56,17 +56,19 @@ pub(crate) trait PureRvalueEnc<'vir> {
 
     /// The pointer metadata for a freshly created reference of type `ref_ty`
     /// when no metadata is carried over from the referent place (i.e. a thin
-    /// pointer to a sized referent): the (ZST) snapshot of the referent's
-    /// metadata type, which is `()` for all sized types. Returns `None` for an
-    /// unsized referent (slice/`dyn`), whose metadata cannot be conjured here
-    /// and must instead be propagated from the wide pointer the place is
-    /// reached through.
+    /// pointer to a sized referent): the snapshot of the referent's metadata
+    /// type, which is `()` for all sized types, built with its regular
+    /// (zero-field) constructor. Returns `None` for an unsized referent
+    /// (slice/`dyn`), whose metadata cannot be conjured here and must instead
+    /// be propagated from the wide pointer the place is reached through.
     fn thin_ptr_metadata(
         &mut self,
         ref_ty: ty::Ty<'vir>,
     ) -> Option<vir::ExprGenSnap<'vir, Self::ExprCurr, Self::ExprNext>> {
         let metadata_ty = ref_ty.pointee_metadata_ty_or_projection(self.vcx().tcx());
-        self.ty_use_pure(metadata_ty).zst()
+        self.ty_use_pure(metadata_ty)
+            .zst_to_snap()
+            .map(|m| m.upcast_ty())
     }
 
     /// Build an error for an unsupported feature reached during rvalue encoding.

@@ -27,7 +27,7 @@ impl<'tcx> GArgs<'tcx> {
         GArgs { context, args }
     }
 
-    pub(in crate::encoders::ty) fn context(self) -> GParams<'tcx> {
+    pub fn context(self) -> GParams<'tcx> {
         self.context
     }
 

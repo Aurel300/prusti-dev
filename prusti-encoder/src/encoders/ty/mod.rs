@@ -11,11 +11,9 @@ pub mod generics;
 mod data;
 mod rust_ty;
 pub mod interpretation;
-pub mod zst;
 
 pub use data::TySpecifics;
 pub use rust_ty::*;
-pub use zst::TyZstEnc;
 
 /// Defines the collection of datas which are output by the Viper type encoders.
 /// For `P = Pure`, this is e.g. the domain/adt FunctionIdn etc.

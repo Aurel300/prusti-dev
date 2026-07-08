@@ -89,6 +89,12 @@ pub fn test_entrypoint<'tcx>(
     crate::encoders::MirBuiltinUnOpEnc::emit_outputs(&mut program);
     crate::encoders::MirBuiltinBinOpEnc::emit_outputs(&mut program);
     crate::encoders::MirBuiltinUseCastEnc::emit_outputs(&mut program);
+    // Unsize casts call `metadata_cast`; the `&mut` methods call
+    // `value_cast`. Both domains must be emitted too.
+    crate::encoders::MetadataCastEnc::emit_outputs(&mut program);
+    crate::encoders::ValueCastEnc::emit_outputs(&mut program);
+    crate::encoders::MetadataCastAxiomEnc::emit_outputs(&mut program);
+    crate::encoders::ValueCastAxiomEnc::emit_outputs(&mut program);
 
     program.header("pure generic casts");
     GArgsCastEnc::<Pure>::emit_outputs(&mut program);

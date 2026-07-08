@@ -371,9 +371,5 @@ impl TaskEncoder for MirBuiltinCastEnc {
                 program.add_method(undo);
             }
         }
-        // Unsize casts call `metadata_cast`; the `&mut` methods call
-        // `value_cast`. Both domains must be emitted too.
-        MetadataCastEnc::emit_outputs(program);
-        ValueCastEnc::emit_outputs(program);
     }
 }

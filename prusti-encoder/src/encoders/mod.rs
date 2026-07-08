@@ -15,8 +15,9 @@ pub mod custom;
 pub mod addr;
 
 pub use builtin::{
-    MirBuiltinBinOpEnc, MirBuiltinBinOpTask, MirBuiltinUnOpEnc, MirBuiltinUnOpTask,
-    MirBuiltinUseCastEnc, MirBuiltinUseCastTask,
+    MetadataCastAxiomEnc, MetadataCastEnc, MirBuiltinBinOpEnc, MirBuiltinBinOpTask,
+    MirBuiltinUnOpEnc, MirBuiltinUnOpTask, MirBuiltinUseCastEnc, MirBuiltinUseCastTask,
+    ValueCastAxiomEnc, ValueCastEnc,
 };
 pub use r#const::ConstEnc;
 pub use impure::fn_wand::{WandCallContext, WandEnc, WandEncOutput, WandEncTask};

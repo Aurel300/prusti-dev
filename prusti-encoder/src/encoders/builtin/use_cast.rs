@@ -185,7 +185,5 @@ impl TaskEncoder for MirBuiltinUseCastEnc {
 
     fn emit_outputs<'vir>(program: &mut task_encoder::Program<'vir>) {
         MirBuiltinCastEnc::emit_outputs(program);
-        MetadataCastAxiomEnc::emit_outputs(program);
-        ValueCastAxiomEnc::emit_outputs(program);
     }
 }

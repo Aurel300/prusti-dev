@@ -30,6 +30,17 @@ impl<'vir> MirBuiltinUseCastTask<'vir> {
         kind: mir::CastKind,
         operand_ty: RustTyDecomposition<'vir>,
     ) -> Self {
+        // Canonicalize away the `CoercionSource`: whether a coercion was
+        // written as an explicit `as` cast or inserted implicitly does not
+        // affect the encoding, but as part of the task key it would create two
+        // tasks emitting the same Viper function (a duplicate-identifier
+        // consistency error).
+        let kind = match kind {
+            mir::CastKind::PointerCoercion(coercion, _) => {
+                mir::CastKind::PointerCoercion(coercion, mir::CoercionSource::Implicit)
+            }
+            other => other,
+        };
         Self {
             result_ty,
             kind,

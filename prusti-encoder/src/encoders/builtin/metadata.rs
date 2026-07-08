@@ -34,6 +34,7 @@ impl TaskEncoder for ValueCastEnc {
         );
         vir::with_vcx(|vcx| {
             let domain_fn = vcx.mk_domain_function(fn_idn, false, None);
+            // See comment in `MetadataCastEnc` about the corresponding axiom there.
             // forall input: s_Param, same: Type :: { value_cast(input, same, same) }
             //     value_cast(input, same, same) == input
             let expr = vir::expr! {

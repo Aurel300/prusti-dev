@@ -167,7 +167,7 @@ mod private {
 
     #[pure]
     pub fn prusti_terminates_trusted() -> Int {
-        Int::new(1)
+        Int::from(1)
     }
 
     /// a mathematical (unbounded) integer type

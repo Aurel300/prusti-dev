@@ -1222,7 +1222,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
 
     fn encode_prim_neg<T: CompType>(
         &mut self,
-        num: &TyPrimLocal<'vir, T>,
+        prim: &TyPrimLocal<'vir, T>,
         args: &[Spanned<mir::Operand<'vir>>],
         curr_ver: &FxHashMap<mir::Local, Version<'vir>>,
     ) -> Result<
@@ -1232,13 +1232,13 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
     where
         vir::Prim: vir::TransmuteFrom<T>,
     {
-        let num_val = num.snap_to_prim.call()(
+        let prim_val = prim.snap_to_prim.call()(
             self.encode_operand_snap(&args[0].node, curr_ver)?
                 .downcast_ty(),
         );
-        Ok(num.prim_to_snap.call()(
+        Ok(prim.prim_to_snap.call()(
             self.vcx
-                .mk_unary_op_expr(vir::UnOpKind::Neg, num_val.upcast_ty())
+                .mk_unary_op_expr(vir::UnOpKind::Neg, prim_val.upcast_ty())
                 .downcast_ty(),
         ))
     }
@@ -1271,7 +1271,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
 
     fn encode_prim_op<T: CompType>(
         &mut self,
-        num: &TyPrimLocal<'vir, T>,
+        prim: &TyPrimLocal<'vir, T>,
         bin_op: vir::BinOpKind,
         args: &[Spanned<mir::Operand<'vir>>],
         curr_ver: &FxHashMap<mir::Local, Version<'vir>>,
@@ -1282,16 +1282,16 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
     where
         vir::Prim: vir::TransmuteFrom<T>,
     {
-        let num1 = num.snap_to_prim.call()(
+        let prim1 = prim.snap_to_prim.call()(
             self.encode_operand_snap(&args[0].node, curr_ver)?
                 .downcast_ty(),
         );
-        let num2 = num.snap_to_prim.call()(
+        let prim2 = prim.snap_to_prim.call()(
             self.encode_operand_snap(&args[1].node, curr_ver)?
                 .downcast_ty(),
         );
-        Ok(num.prim_to_snap.call()(
-            self.vcx.mk_bin_op_expr(bin_op, num1, num2).downcast_ty(),
+        Ok(prim.prim_to_snap.call()(
+            self.vcx.mk_bin_op_expr(bin_op, prim1, prim2).downcast_ty(),
         ))
     }
 
@@ -1323,7 +1323,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
 
     fn encode_prim_cmp<T: CompType>(
         &mut self,
-        num: &TyPrimLocal<'vir, T>,
+        prim: &TyPrimLocal<'vir, T>,
         bin_op: vir::BinOpKind,
         args: &[Spanned<mir::Operand<'vir>>],
         curr_ver: &FxHashMap<mir::Local, Version<'vir>>,
@@ -1334,29 +1334,29 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
         let bool = self.ty_use(self.vcx.tcx().types.bool);
         let bool = bool.expect_primitive();
         let a0_ty = args[0].node.ty(self.body, self.vcx.tcx());
-        let num1 = self
+        let prim1 = self
             .encode_operand_snap(&args[0].node, curr_ver)?
             .downcast_ty();
-        let num1_deref = num.snap_to_prim.call()(
+        let prim1_deref = prim.snap_to_prim.call()(
             self.ty_use(a0_ty)
                 .expect_immref()
-                .value_access(num1)
+                .value_access(prim1)
                 .downcast_ty(),
         );
 
         let a1_ty = args[1].node.ty(self.body, self.vcx.tcx());
-        let num2 = self
+        let prim2 = self
             .encode_operand_snap(&args[1].node, curr_ver)?
             .downcast_ty();
-        let num2_deref = num.snap_to_prim.call()(
+        let prim2_deref = prim.snap_to_prim.call()(
             self.ty_use(a1_ty)
                 .expect_immref()
-                .value_access(num2)
+                .value_access(prim2)
                 .downcast_ty(),
         );
         Ok(bool.prim_to_snap.call()(
             self.vcx
-                .mk_bin_op_expr_inner(bin_op, num1_deref.as_dyn(), num2_deref.as_dyn())
+                .mk_bin_op_expr_inner(bin_op, prim1_deref.as_dyn(), prim2_deref.as_dyn())
                 .downcast_ty(),
         ))
     }

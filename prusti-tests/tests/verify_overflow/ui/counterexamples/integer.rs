@@ -12,7 +12,7 @@ fn test1(a: Int) {}
 #[ensures(!result)]
 fn test2(a: Int, b: Int) -> bool{
     let c = a + b;
-    c == Int::new(30)
+    c == Int::from(30)
 }
 
 

@@ -81,9 +81,9 @@ impl LinkedList {
     #[ensures(result >= Int::from(1))]
     fn len(&self) -> Int {
         match &self.next {
-            None => Int::new(1),
+            None => Int::from(1),
             Some(tail) => {
-                tail.deref().len() + Int::new(1)
+                tail.deref().len() + Int::from(1)
             }
         }
     }
@@ -112,10 +112,10 @@ impl LinkedList {
         match &self.next {
             None => 1,
             Some(tail) => {
-                prusti_assume!(tail.deref().len() + Int::new(1) < Int::new(10));    // Avoid overflow check.
-                prusti_assert!(Int::new_usize(tail.deref().len_shared() + 1) === self.len());
+                prusti_assume!(tail.deref().len() + Int::from(1) < Int::from(10));    // Avoid overflow check.
+                prusti_assert!(Int::from(tail.deref().len_shared() + 1) === self.len());
                 let result = tail.deref().len_shared() + 1;
-                prusti_assert!(Int::new_usize(result) === self.len());
+                prusti_assert!(Int::from(result) === self.len());
                 result
             }
         }
@@ -141,22 +141,22 @@ impl LinkedList {
     #[requires(Int::from(0) <= index && index < self.len())]
     #[terminates(index)]
     fn lookup(&self, index: Int) -> Int {
-        if index == Int::new(0) {
-            Int::new(self.val)
+        if index == Int::from(0) {
+            Int::from(self.val)
         } else {
             prusti_assert!(
-                Int::new(0) <= index &&
+                Int::from(0) <= index &&
                 index < self.len() &&
-                index >= Int::new(1)
+                index >= Int::from(1)
             );
-            prusti_assert!(self.len() > Int::new(1));
+            prusti_assert!(self.len() > Int::from(1));
             match &self.next {
                 None => {
-                    prusti_assert!(self.len() == Int::new(1));
+                    prusti_assert!(self.len() == Int::from(1));
                     unreachable!()
                 },
                 Some(tail) => {
-                    tail.deref().lookup(index - Int::new(1))
+                    tail.deref().lookup(index - Int::from(1))
                 }
             }
         }

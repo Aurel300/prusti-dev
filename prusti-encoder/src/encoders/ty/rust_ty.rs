@@ -256,8 +256,6 @@ impl<'tcx> TyDatas<'tcx> for RustTyDatas {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum RustBuiltinData {
-    // BuiltinSeq,
-    // BuiltinMap,
     BuiltinInt,
     BuiltinReal,
     BuiltinGhost,

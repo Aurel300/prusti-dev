@@ -1220,7 +1220,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
         encoded_place
     }
 
-    fn encode_builtin_num_neg<T: CompType>(
+    fn encode_prim_neg<T: CompType>(
         &mut self,
         num: &TyPrimLocal<'vir, T>,
         args: &[Spanned<mir::Operand<'vir>>],
@@ -1253,7 +1253,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
         EncodeFullError<'vir, MirPureEnc>,
     > {
         let int = self.ty_use_int();
-        self.encode_builtin_num_op(int, bin_op, args, curr_ver)
+        self.encode_prim_op(int, bin_op, args, curr_ver)
     }
 
     fn encode_real_op(
@@ -1266,10 +1266,10 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
         EncodeFullError<'vir, MirPureEnc>,
     > {
         let real = self.ty_use_real();
-        self.encode_builtin_num_op(real, bin_op, args, curr_ver)
+        self.encode_prim_op(real, bin_op, args, curr_ver)
     }
 
-    fn encode_builtin_num_op<T: CompType>(
+    fn encode_prim_op<T: CompType>(
         &mut self,
         num: &TyPrimLocal<'vir, T>,
         bin_op: vir::BinOpKind,
@@ -1305,7 +1305,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
         EncodeFullError<'vir, MirPureEnc>,
     > {
         let int = self.ty_use_int();
-        self.encode_builtin_num_cmp(int, bin_op, args, curr_ver)
+        self.encode_prim_cmp(int, bin_op, args, curr_ver)
     }
 
     fn encode_real_cmp(
@@ -1318,10 +1318,10 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
         EncodeFullError<'vir, MirPureEnc>,
     > {
         let real = self.ty_use_real();
-        self.encode_builtin_num_cmp(real, bin_op, args, curr_ver)
+        self.encode_prim_cmp(real, bin_op, args, curr_ver)
     }
 
-    fn encode_builtin_num_cmp<T: CompType>(
+    fn encode_prim_cmp<T: CompType>(
         &mut self,
         num: &TyPrimLocal<'vir, T>,
         bin_op: vir::BinOpKind,
@@ -1831,7 +1831,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
             PrustiBuiltin::IntGe => self.encode_int_cmp(vir::BinOpKind::CmpGe, args, curr_ver)?,
             PrustiBuiltin::IntNeg => {
                 let int = self.ty_use_int();
-                self.encode_builtin_num_neg(int, args, curr_ver)?
+                self.encode_prim_neg(int, args, curr_ver)?
             }
             PrustiBuiltin::RealMul => self.encode_real_op(vir::BinOpKind::Mul, args, curr_ver)?,
             PrustiBuiltin::RealSub => self.encode_real_op(vir::BinOpKind::Sub, args, curr_ver)?,
@@ -1846,7 +1846,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
             PrustiBuiltin::RealGe => self.encode_real_cmp(vir::BinOpKind::CmpGe, args, curr_ver)?,
             PrustiBuiltin::RealNeg => {
                 let real = self.ty_use_real();
-                self.encode_builtin_num_neg(real, args, curr_ver)?
+                self.encode_prim_neg(real, args, curr_ver)?
             }
         }
         .upcast_ty())

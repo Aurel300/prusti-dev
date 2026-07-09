@@ -14,13 +14,13 @@ use vir::{
     DomainIdnSnap, FunctionIdn, Type,
 };
 
-use crate::encoders::{Pure, ty::interpretation::real};
+use crate::encoders::Pure;
 
 use super::{
     RustTy, ViperTyDatas,
     data::*,
     generics::{GenericParams, GenericParamsEnc},
-    interpretation::float::FloatDomain,
+    interpretation::{TyPrimLocal, float::FloatDomain},
 };
 
 pub(super) type PureTyDatas = ViperTyDatas<Pure>;
@@ -51,12 +51,20 @@ pub type TyPureBuiltin<'vir> = <PureTyDatas as TyDatas<'vir>>::BuiltinData;
 
 #[derive(Debug, Clone, Copy)]
 pub enum TyPureBuiltinData<'vir> {
-    TyPureBuiltinReal(real::TyRealLocal<'vir>),
+    TyPureBuiltinInt(TyPrimLocal<'vir, vir::Int>),
+    TyPureBuiltinReal(TyPrimLocal<'vir, vir::Perm>),
     TyPureBuiltinGhost,
 }
 
 impl<'vir> TyPureBuiltinData<'vir> {
-    pub fn expect_real(&'vir self) -> &'vir real::TyRealLocal<'vir> {
+    pub fn expect_int(&'vir self) -> &'vir TyPrimLocal<'vir, vir::Int> {
+        match &self {
+            TyPureBuiltinData::TyPureBuiltinInt(ty_int_local) => ty_int_local,
+            _ => panic!(),
+        }
+    }
+
+    pub fn expect_real(&'vir self) -> &'vir TyPrimLocal<'vir, vir::Perm> {
         match &self {
             TyPureBuiltinData::TyPureBuiltinReal(ty_real_local) => ty_real_local,
             _ => panic!(),

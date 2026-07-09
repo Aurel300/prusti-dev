@@ -212,6 +212,36 @@ mod private {
         };
     }
 
+    impl From<i16> for Int {
+        fn from(_: i16) -> Self {
+            panic!();
+        }
+    }
+
+    impl From<i32> for Int {
+        fn from(_: i32) -> Self {
+            panic!();
+        }
+    }
+
+    impl From<i64> for Int {
+        fn from(_: i64) -> Self {
+            panic!();
+        }
+    }
+
+    impl From<i128> for Int {
+        fn from(_: i128) -> Self {
+            panic!();
+        }
+    }
+
+    impl From<usize> for Int {
+        fn from(_: usize) -> Self {
+            panic!();
+        }
+    }
+
     impl Neg for Int {
         type Output = Self;
         fn neg(self) -> Self {
@@ -221,6 +251,22 @@ mod private {
 
     impl PartialOrd for Int {
         fn partial_cmp(&self, _other: &Self) -> Option<core::cmp::Ordering> {
+            panic!()
+        }
+
+        fn lt(&self, _: &Self) -> bool {
+            panic!()
+        }
+
+        fn le(&self, _: &Self) -> bool {
+            panic!()
+        }
+
+        fn gt(&self, _: &Self) -> bool {
+            panic!()
+        }
+
+        fn ge(&self, _: &Self) -> bool {
             panic!()
         }
     }

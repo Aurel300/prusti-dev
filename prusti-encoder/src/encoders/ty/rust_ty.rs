@@ -62,6 +62,19 @@ impl<'tcx> RustTyDecomposition<'tcx> {
         TyData::<'tcx, RustTyDatas>::from_ty(ty, context.into())
     }
 
+    pub fn from_int() -> Self {
+        let data = RustTyData {
+            name: symbol::Symbol::intern("Int"),
+            params: GParams::empty(),
+        };
+        let specifics = TySpecifics::Builtin(RustBuiltinData::BuiltinInt);
+        Self::new(
+            TyData::<'tcx, RustTyDatas>::new(data, specifics).alloc(),
+            GArgs::new(GParams::empty(), &[]),
+            Some(true),
+        )
+    }
+
     pub fn from_real() -> Self {
         let data = RustTyData {
             name: symbol::Symbol::intern("Real"),
@@ -243,6 +256,9 @@ impl<'tcx> TyDatas<'tcx> for RustTyDatas {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum RustBuiltinData {
+    // BuiltinSeq,
+    // BuiltinMap,
+    BuiltinInt,
     BuiltinReal,
     BuiltinGhost,
 }
@@ -679,6 +695,7 @@ impl<'tcx> TySpecifics<'tcx, RustTyDatas> {
             EnvQuery::new(vcx.tcx()).is_adt_in_crate(adt, "prusti_contracts")
         }) {
             match adt.non_enum_variant().name.to_string().as_str() {
+                "Int" => Self::Builtin(RustBuiltinData::BuiltinInt),
                 "Real" => Self::Builtin(RustBuiltinData::BuiltinReal),
                 "Ghost" => Self::Builtin(RustBuiltinData::BuiltinGhost),
                 s => panic!("Found unrecognized builtin {s}"),

@@ -1,5 +1,5 @@
 use task_encoder::{EncodeFullError, TaskEncoderDependencies};
-use vir::{CastType, TYPE_PERM};
+use vir::{CastType, TYPE_INT};
 
 use crate::encoders::ty::{
     impure::{PredicateBuilder, TyImpureBuiltin, TyImpureEnc},
@@ -11,8 +11,8 @@ use super::TyPrimLocal;
 pub(crate) fn ty_pure<'vir>(
     builder: &mut AdtBuilder<'vir>,
 ) -> Result<TyPureBuiltinData<'vir>, EncodeFullError<'vir, TyPureEnc>> {
-    let (cons, vec) = builder.constructor("", TYPE_PERM, None);
-    Ok(TyPureBuiltinData::TyPureBuiltinReal(TyPrimLocal {
+    let (cons, vec) = builder.constructor("", TYPE_INT, None);
+    Ok(TyPureBuiltinData::TyPureBuiltinInt(TyPrimLocal {
         prim_to_snap: cons,
         snap_to_prim: vec.first().unwrap().downcast_ty(),
     }))

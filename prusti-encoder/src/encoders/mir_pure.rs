@@ -5,7 +5,6 @@ use crate::encoders::{
     ty::{
         RustTyDecomposition,
         generics::GParams,
-        interpretation::real::TyRealLocal,
         use_pure::{TyUsePure, TyUsePureEnc},
     },
 };
@@ -29,6 +28,8 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use std::fmt;
 use task_encoder::{EncodeFullError, EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 use vir::{CastType, CompType, add_debug_note};
+
+use super::ty::interpretation::TyPrimLocal;
 
 pub struct MirPureEnc;
 
@@ -374,7 +375,16 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
         self.deps.require_dep::<TyUsePureEnc>(ty_task).unwrap()
     }
 
-    fn ty_use_real(&mut self) -> &'vir TyRealLocal<'vir> {
+    fn ty_use_int(&mut self) -> &'vir TyPrimLocal<'vir, vir::Int> {
+        let ty_task = RustTyDecomposition::from_int();
+        self.deps
+            .require_dep::<TyUsePureEnc>(ty_task)
+            .unwrap()
+            .expect_builtin()
+            .expect_int()
+    }
+
+    fn ty_use_real(&mut self) -> &'vir TyPrimLocal<'vir, vir::Perm> {
         let ty_task = RustTyDecomposition::from_real();
         self.deps
             .require_dep::<TyUsePureEnc>(ty_task)
@@ -1210,6 +1220,42 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
         encoded_place
     }
 
+    fn encode_builtin_num_neg<T: CompType>(
+        &mut self,
+        num: &TyPrimLocal<'vir, T>,
+        args: &[Spanned<mir::Operand<'vir>>],
+        curr_ver: &FxHashMap<mir::Local, Version<'vir>>,
+    ) -> Result<
+        vir::ExprGenCSnap<'vir, ExprInput<'vir>, vir::ExprKind<'vir>>,
+        EncodeFullError<'vir, MirPureEnc>,
+    >
+    where
+        vir::Prim: vir::TransmuteFrom<T>,
+    {
+        let num_val = num.snap_to_prim.call()(
+            self.encode_operand_snap(&args[0].node, curr_ver)?
+                .downcast_ty(),
+        );
+        Ok(num.prim_to_snap.call()(
+            self.vcx
+                .mk_unary_op_expr(vir::UnOpKind::Neg, num_val.upcast_ty())
+                .downcast_ty(),
+        ))
+    }
+
+    fn encode_int_op(
+        &mut self,
+        bin_op: vir::BinOpKind,
+        args: &[Spanned<mir::Operand<'vir>>],
+        curr_ver: &FxHashMap<mir::Local, Version<'vir>>,
+    ) -> Result<
+        vir::ExprGenCSnap<'vir, ExprInput<'vir>, vir::ExprKind<'vir>>,
+        EncodeFullError<'vir, MirPureEnc>,
+    > {
+        let int = self.ty_use_int();
+        self.encode_builtin_num_op(int, bin_op, args, curr_ver)
+    }
+
     fn encode_real_op(
         &mut self,
         bin_op: vir::BinOpKind,
@@ -1220,17 +1266,46 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
         EncodeFullError<'vir, MirPureEnc>,
     > {
         let real = self.ty_use_real();
-        let real1 = real.snap_to_perm.call()(
+        self.encode_builtin_num_op(real, bin_op, args, curr_ver)
+    }
+
+    fn encode_builtin_num_op<T: CompType>(
+        &mut self,
+        num: &TyPrimLocal<'vir, T>,
+        bin_op: vir::BinOpKind,
+        args: &[Spanned<mir::Operand<'vir>>],
+        curr_ver: &FxHashMap<mir::Local, Version<'vir>>,
+    ) -> Result<
+        vir::ExprGenCSnap<'vir, ExprInput<'vir>, vir::ExprKind<'vir>>,
+        EncodeFullError<'vir, MirPureEnc>,
+    >
+    where
+        vir::Prim: vir::TransmuteFrom<T>,
+    {
+        let num1 = num.snap_to_prim.call()(
             self.encode_operand_snap(&args[0].node, curr_ver)?
                 .downcast_ty(),
         );
-        let real2 = real.snap_to_perm.call()(
+        let num2 = num.snap_to_prim.call()(
             self.encode_operand_snap(&args[1].node, curr_ver)?
                 .downcast_ty(),
         );
-        Ok(real.perm_to_snap.call()(
-            self.vcx.mk_bin_op_expr(bin_op, real1, real2).downcast_ty(),
+        Ok(num.prim_to_snap.call()(
+            self.vcx.mk_bin_op_expr(bin_op, num1, num2).downcast_ty(),
         ))
+    }
+
+    fn encode_int_cmp(
+        &mut self,
+        bin_op: vir::BinOpKind,
+        args: &[Spanned<mir::Operand<'vir>>],
+        curr_ver: &FxHashMap<mir::Local, Version<'vir>>,
+    ) -> Result<
+        vir::ExprGenCSnap<'vir, ExprInput<'vir>, vir::ExprKind<'vir>>,
+        EncodeFullError<'vir, MirPureEnc>,
+    > {
+        let int = self.ty_use_int();
+        self.encode_builtin_num_cmp(int, bin_op, args, curr_ver)
     }
 
     fn encode_real_cmp(
@@ -1243,32 +1318,45 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
         EncodeFullError<'vir, MirPureEnc>,
     > {
         let real = self.ty_use_real();
+        self.encode_builtin_num_cmp(real, bin_op, args, curr_ver)
+    }
+
+    fn encode_builtin_num_cmp<T: CompType>(
+        &mut self,
+        num: &TyPrimLocal<'vir, T>,
+        bin_op: vir::BinOpKind,
+        args: &[Spanned<mir::Operand<'vir>>],
+        curr_ver: &FxHashMap<mir::Local, Version<'vir>>,
+    ) -> Result<
+        vir::ExprGenCSnap<'vir, ExprInput<'vir>, vir::ExprKind<'vir>>,
+        EncodeFullError<'vir, MirPureEnc>,
+    > {
         let bool = self.ty_use(self.vcx.tcx().types.bool);
         let bool = bool.expect_primitive();
         let a0_ty = args[0].node.ty(self.body, self.vcx.tcx());
-        let real1 = self
+        let num1 = self
             .encode_operand_snap(&args[0].node, curr_ver)?
             .downcast_ty();
-        let real1_deref = real.snap_to_perm.call()(
+        let num1_deref = num.snap_to_prim.call()(
             self.ty_use(a0_ty)
                 .expect_immref()
-                .value_access(real1)
+                .value_access(num1)
                 .downcast_ty(),
         );
 
         let a1_ty = args[1].node.ty(self.body, self.vcx.tcx());
-        let real2 = self
+        let num2 = self
             .encode_operand_snap(&args[1].node, curr_ver)?
             .downcast_ty();
-        let real2_deref = real.snap_to_perm.call()(
+        let num2_deref = num.snap_to_prim.call()(
             self.ty_use(a1_ty)
                 .expect_immref()
-                .value_access(real2)
+                .value_access(num2)
                 .downcast_ty(),
         );
         Ok(bool.prim_to_snap.call()(
             self.vcx
-                .mk_bin_op_expr_inner(bin_op, real1_deref.as_dyn(), real2_deref.as_dyn())
+                .mk_bin_op_expr_inner(bin_op, num1_deref.as_dyn(), num2_deref.as_dyn())
                 .downcast_ty(),
         ))
     }
@@ -1292,6 +1380,18 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
             IsInfinite(ty::FloatTy),
             FlAbs(ty::FloatTy),
             FlToReal,
+            IntToInt,
+            IntMul,
+            IntEq,
+            IntSub,
+            IntAdd,
+            IntDiv,
+            IntRem,
+            IntNeg,
+            IntLt,
+            IntLe,
+            IntGt,
+            IntGe,
             RealMul,
             RealEq,
             RealSub,
@@ -1349,6 +1449,24 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
             (None, "f32_abs") => PrustiBuiltin::FlAbs(ty::FloatTy::F32),
             (None, "f64_abs") => PrustiBuiltin::FlAbs(ty::FloatTy::F64),
             (None, "f128_abs") => PrustiBuiltin::FlAbs(ty::FloatTy::F128),
+
+            // TODO deprecate these two
+            (Some("prusti_contracts::Int"), "new") => PrustiBuiltin::IntToInt,
+            (Some("prusti_contracts::Int"), "new_usize") => PrustiBuiltin::IntToInt,
+
+            (Some("prusti_contracts::Int"), "from") => PrustiBuiltin::IntToInt,
+            (Some("prusti_contracts::Int"), "mul") => PrustiBuiltin::IntMul,
+            (Some("prusti_contracts::Int"), "eq") => PrustiBuiltin::IntEq,
+            (Some("prusti_contracts::Int"), "sub") => PrustiBuiltin::IntSub,
+            (Some("prusti_contracts::Int"), "add") => PrustiBuiltin::IntAdd,
+            (Some("prusti_contracts::Int"), "div") => PrustiBuiltin::IntDiv,
+            (Some("prusti_contracts::Int"), "neg") => PrustiBuiltin::IntNeg,
+            (Some("prusti_contracts::Int"), "lt") => PrustiBuiltin::IntLt,
+            (Some("prusti_contracts::Int"), "le") => PrustiBuiltin::IntLe,
+            (Some("prusti_contracts::Int"), "gt") => PrustiBuiltin::IntGt,
+            (Some("prusti_contracts::Int"), "ge") => PrustiBuiltin::IntGe,
+            (Some("prusti_contracts::Int"), "rem") => PrustiBuiltin::IntRem,
+
             (Some("prusti_contracts::Real"), "from") => PrustiBuiltin::FlToReal,
             (Some("prusti_contracts::Real"), "mul") => PrustiBuiltin::RealMul,
             (Some("prusti_contracts::Real"), "eq") => PrustiBuiltin::RealEq,
@@ -1690,7 +1808,30 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                     .encode_operand_snap(&args[0].node, curr_ver)?
                     .downcast_ty();
                 let res = fl_ty.fp_to_real.call()(fl);
-                self.ty_use_real().perm_to_snap.call()(res)
+                self.ty_use_real().prim_to_snap.call()(res)
+            }
+            PrustiBuiltin::IntToInt => {
+                let a_ty = args[0].node.ty(self.body, self.vcx.tcx());
+                let int_ty = self.ty_use(a_ty).expect_primitive();
+                let int = self
+                    .encode_operand_snap(&args[0].node, curr_ver)?
+                    .downcast_ty();
+                let res = int_ty.expect_native().snap_to_prim.call()(int).downcast_ty();
+                self.ty_use_int().prim_to_snap.call()(res)
+            }
+            PrustiBuiltin::IntMul => self.encode_int_op(vir::BinOpKind::Mul, args, curr_ver)?,
+            PrustiBuiltin::IntSub => self.encode_int_op(vir::BinOpKind::Sub, args, curr_ver)?,
+            PrustiBuiltin::IntAdd => self.encode_int_op(vir::BinOpKind::Add, args, curr_ver)?,
+            PrustiBuiltin::IntDiv => self.encode_int_op(vir::BinOpKind::Div, args, curr_ver)?,
+            PrustiBuiltin::IntRem => self.encode_int_op(vir::BinOpKind::Mod, args, curr_ver)?,
+            PrustiBuiltin::IntEq => self.encode_int_cmp(vir::BinOpKind::CmpEq, args, curr_ver)?,
+            PrustiBuiltin::IntLt => self.encode_int_cmp(vir::BinOpKind::CmpLt, args, curr_ver)?,
+            PrustiBuiltin::IntLe => self.encode_int_cmp(vir::BinOpKind::CmpLe, args, curr_ver)?,
+            PrustiBuiltin::IntGt => self.encode_int_cmp(vir::BinOpKind::CmpGt, args, curr_ver)?,
+            PrustiBuiltin::IntGe => self.encode_int_cmp(vir::BinOpKind::CmpGe, args, curr_ver)?,
+            PrustiBuiltin::IntNeg => {
+                let int = self.ty_use_int();
+                self.encode_builtin_num_neg(int, args, curr_ver)?
             }
             PrustiBuiltin::RealMul => self.encode_real_op(vir::BinOpKind::Mul, args, curr_ver)?,
             PrustiBuiltin::RealSub => self.encode_real_op(vir::BinOpKind::Sub, args, curr_ver)?,
@@ -1705,15 +1846,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
             PrustiBuiltin::RealGe => self.encode_real_cmp(vir::BinOpKind::CmpGe, args, curr_ver)?,
             PrustiBuiltin::RealNeg => {
                 let real = self.ty_use_real();
-                let real_val = real.snap_to_perm.call()(
-                    self.encode_operand_snap(&args[0].node, curr_ver)?
-                        .downcast_ty(),
-                );
-                real.perm_to_snap.call()(
-                    self.vcx
-                        .mk_unary_op_expr(vir::UnOpKind::Neg, real_val.upcast_ty())
-                        .downcast_ty(),
-                )
+                self.encode_builtin_num_neg(real, args, curr_ver)?
             }
         }
         .upcast_ty())

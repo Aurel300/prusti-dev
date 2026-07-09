@@ -34,12 +34,12 @@ fn random_indexing_fails_usize(seq: Seq, idx: usize) {
     prusti_assert!(seq[idx] == seq[idx]); //~ ERROR: the sequence index may be out of bounds
 }
 
-#[requires(0 <= idx && Int::new_usize(idx) < seq.len())]
+#[requires(0 <= idx && Int::from(idx) < seq.len())]
 fn random_indexing_suceeds(seq: Seq, idx: usize) {
     prusti_assert!(seq[idx] == seq[idx]);
 }
 
-#[requires(idx >= Int::new(0))]
+#[requires(idx >= Int::from(0))]
 fn random_indexing_fails_int(seq: Seq, idx: Int) {
     prusti_assert!(seq[idx] == seq[idx]); //~ ERROR: the sequence index may be out of bounds
 }

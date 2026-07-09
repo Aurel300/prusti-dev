@@ -4,10 +4,10 @@
 
 use prusti_contracts::*;
 
-#[requires(a == Int::new(5))]
+#[requires(a == Int::from(5))]
 fn precond_test(a: Int) {}
 
-#[ensures(a == Int::new(5))] //~ ERROR: postcondition might not hold.
+#[ensures(a == Int::from(5))] //~ ERROR: postcondition might not hold.
 fn postcond_test(a: Int) {}
 
 fn int_equality(a: i64) {
@@ -71,18 +71,18 @@ fn negations(a: Int, b: Int) {
     prusti_assert!(-(a + b) == (-a) + (-b));
 }
 
-#[requires(a > Int::new(0) && b > Int::new(0))]
+#[requires(a > Int::from(0) && b > Int::from(0))]
 fn remainder1(a: Int, b: Int) {
     prusti_assert!(a % b >= Int::new(0));
 }
 
-#[requires(a > Int::new(0) && b > Int::new(0))]
+#[requires(a > Int::from(0) && b > Int::from(0))]
 fn remainder2(a: Int, b: Int) {
     let r = a % b;
     prusti_assert!(r >= Int::new(0));
 }
 
-#[requires(a > Int::new(0) && b > Int::new(0))]
+#[requires(a > Int::from(0) && b > Int::from(0))]
 fn divisions(a: Int, b: Int) {
     let c = a / b;
 }

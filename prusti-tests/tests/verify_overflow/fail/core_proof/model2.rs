@@ -78,7 +78,7 @@ impl LinkedList {
     #[pure]
     #[terminates(trusted)]
     // FIXME: This function should be “predicate!”.
-    #[ensures(result >= Int::new(1))]
+    #[ensures(result >= Int::from(1))]
     fn len(&self) -> Int {
         match &self.next {
             None => Int::new(1),
@@ -87,7 +87,7 @@ impl LinkedList {
             }
         }
     }
-    #[ensures((old(self.len()) + Int::new(1)) === result.len())]
+    #[ensures((old(self.len()) + Int::from(1)) === result.len())]
     fn prepend(self, value: i64) -> Self {
         let len = self.len();
         let b = BoxWrapper::new(self);
@@ -97,7 +97,7 @@ impl LinkedList {
             next: Some(b),
         }
     }
-    #[ensures((old(self.len()) + Int::new(1)) === result.len())]
+    #[ensures((old(self.len()) + Int::from(1)) === result.len())]
     fn prepend2(self, value: i64) -> Self {
         let len = self.len();
         Self {
@@ -107,7 +107,7 @@ impl LinkedList {
     }
     #[pure]
     #[terminates(trusted)]
-    #[ensures(Int::new_usize(result) == self.len())]
+    #[ensures(Int::from(result) == self.len())]
     fn len_shared(&self) -> usize {
         match &self.next {
             None => 1,
@@ -138,7 +138,7 @@ impl LinkedList {
     }
     #[pure]
     // FIXME: This function should be “predicate!”.
-    #[requires(Int::new(0) <= index && index < self.len())]
+    #[requires(Int::from(0) <= index && index < self.len())]
     #[terminates(index)]
     fn lookup(&self, index: Int) -> Int {
         if index == Int::new(0) {

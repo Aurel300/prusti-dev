@@ -1,7 +1,7 @@
 error: [Prusti: verification error] postcondition might not hold.
  --> $DIR/integer.rs:8:11
   |
-8 | #[ensures(a == Int::new(5))]
+8 | #[ensures(a == Int::from(5))]
   |           ^^^^^^^^^^^^^^^^
   |
 note: the error originates here

@@ -175,16 +175,6 @@ mod private {
     #[derive(Copy, Clone, PartialEq, Eq)]
     pub struct Int(());
 
-    impl Int {
-        pub fn new(_: i64) -> Self {
-            panic!()
-        }
-
-        pub fn new_usize(_: usize) -> Self {
-            panic!()
-        }
-    }
-
     macro_rules! __int_dummy_trait_impls__ {
         ($($trait:ident $fun:ident),*) => {$(
             impl core::ops::$trait for Int {

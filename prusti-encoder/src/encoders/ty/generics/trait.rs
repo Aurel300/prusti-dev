@@ -6,8 +6,11 @@ use vir::{FunctionIdn, vir_format_identifier};
 use crate::encoders::{
     TyUsePureEnc,
     ty::{
-        RustTyDecomposition,
-        generics::{GParams, GenericParamsEnc, trait_impls::TraitImplEnc},
+        RustTy, RustTyDecomposition,
+        generics::{
+            GParams, GenericParams, GenericParamsEnc,
+            trait_impls::{self, TraitImplConditionEnc},
+        },
         lifted::TyConstructorEnc,
     },
 };
@@ -26,8 +29,11 @@ pub struct TraitEncOutputRef<'vir> {
 
 #[derive(Debug, Clone)]
 pub struct TraitEncOutput<'vir> {
+    trait_did: DefId,
     trait_domain: vir::Domain<'vir>,
-    impl_fun: vir::Function<'vir>,
+    impl_fun_idn: FunctionIdn<'vir, (vir::ManyTyVal, vir::ManyCSnap), vir::Bool>,
+    trait_generics: GenericParams<'vir>,
+    unknown_type_check: vir::ExprBool<'vir>,
 }
 
 impl<'vir> OutputRefAny for TraitEncOutputRef<'vir> {}
@@ -46,10 +52,37 @@ impl TaskEncoder for TraitEnc {
     type OutputFullLocal<'vir> = TraitEncOutput<'vir>;
 
     fn emit_outputs<'vir>(program: &mut task_encoder::Program<'vir>) {
-        for output in TraitEnc::all_outputs_local_no_errors(program) {
-            program.add_domain(output.trait_domain);
-            program.add_function(output.impl_fun);
+        // Which impls contribute to a trait's `impl_fun` is only known once
+        // all encoding is done (the impls of constructed types, see
+        // `register_impl_triggers`), so the function is assembled here,
+        // analogously to how `TyConstructorEnc` assembles the `Type` ADT.
+        let mut conditions: FxHashMap<DefId, Vec<vir::ExprBool<'vir>>> = FxHashMap::default();
+        for (trait_did, condition, axioms) in
+            trait_impls::TraitImplConditionEnc::all_outputs_local_no_errors(program)
+        {
+            conditions.entry(trait_did).or_default().push(condition);
+            program.add_domain(axioms);
         }
+        vir::with_vcx(|vcx| {
+            for output in TraitEnc::all_outputs_local_no_errors(program) {
+                program.add_domain(output.trait_domain);
+                let mut checks = conditions.remove(&output.trait_did).unwrap_or_default();
+                checks.push(output.unknown_type_check);
+                let ensures = vcx.mk_eq_expr(vcx.mk_result(vir::TYPE_BOOL), vcx.mk_disj(&checks));
+                let impl_fun = vcx.mk_function(
+                    output.impl_fun_idn,
+                    (
+                        output.trait_generics.ty_decls(),
+                        output.trait_generics.const_decls(),
+                    ),
+                    &[],
+                    vcx.alloc_slice(&[ensures]),
+                    Some(&vir::DecreasesGenData::Star),
+                    None,
+                );
+                program.add_function(impl_fun);
+            }
+        })
     }
 
     fn do_encode_full<'vir>(
@@ -62,7 +95,6 @@ impl TaskEncoder for TraitEnc {
             let trait_generics = deps.require_dep::<GenericParamsEnc>(trait_params)?;
 
             let trait_args = (trait_generics.ty_args(), trait_generics.const_args());
-            let trait_decls = (trait_generics.ty_decls(), trait_generics.const_decls());
 
             let trait_name = vcx.alloc_str(tcx.item_name(task_key).as_str());
 
@@ -127,50 +159,59 @@ impl TaskEncoder for TraitEnc {
                 },
             )?;
 
-            let impl_fun_body = {
-                let mut trait_impl_checks: Vec<_> = tcx
-                    .all_impls(*task_key)
-                    .map(|impl_did| {
-                        deps.require_dep::<TraitImplEnc>(impl_did)
-                            .unwrap()
-                            .impl_condition
-                    })
-                    .collect();
-
-                let unknown_type_check = {
-                    let self_expr = trait_generics.ty_exprs()[0];
-
-                    let is_unknown_type = vcx
-                        .mk_adt_discriminator_expr(self_expr, TyConstructorEnc::UNKNOWN_TYPE_NAME);
-
-                    let extracted_id =
-                        TyConstructorEnc::unknown_type_id_accessor(vcx).call()(self_expr);
-
-                    let unknown_impls = impl_for_unknown_fun(
-                        extracted_id,
-                        &trait_generics.ty_exprs()[1..],
-                        trait_generics.const_exprs(),
-                    );
-
-                    vir::expr! { vcx;
-                         (is_unknown_type) && (unknown_impls)
+            // The `impl_fun` body (a disjunction over the conditions of this
+            // trait's impls) is assembled in `emit_outputs`, once it is known
+            // which impls are relevant.
+            for impl_did in tcx.all_impls(*task_key) {
+                let self_ty = tcx.type_of(impl_did).instantiate_identity();
+                // A `impl<T> MyTrait for MyType<T, OtherType>` is only relevant
+                // if a) it is in the current crate (in which case it will be
+                // encoded by `TraitImplEnc`) or b) the `TyConstructorEnc` has
+                // been called with both `MyType` and `OtherType` (we guard on
+                // the conjunction of these below). This may still be overly
+                // eager in including impls since these two types could be used
+                // independently, but drastically improves the include-all-impls
+                // approach which pulls in many new never-used types.
+                let mut keys = Vec::new();
+                fn collect_ctor_keys<'vir>(
+                    ty: ty::Ty<'vir>,
+                    ctx: DefId,
+                    out: &mut Vec<RustTy<'vir>>,
+                ) {
+                    let decomp = RustTyDecomposition::from_ty(ty, ctx);
+                    if decomp.ty.specifics.is_param() {
+                        return;
                     }
-                };
-                trait_impl_checks.push(unknown_type_check);
+                    out.push(decomp.ty);
+                    for inner in decomp.args.args().iter().filter_map(|arg| arg.as_type()) {
+                        collect_ctor_keys(inner, ctx, out);
+                    }
+                }
+                collect_ctor_keys(self_ty, impl_did, &mut keys);
+                let span = tcx.def_span(impl_did);
+                TyConstructorEnc::on_all_requested(keys, move || {
+                    let _ = TraitImplConditionEnc::encode(impl_did, false, span);
+                });
+            }
+            let unknown_type_check = {
+                let self_expr = trait_generics.ty_exprs()[0];
 
-                vcx.mk_disj(&trait_impl_checks)
+                let is_unknown_type =
+                    vcx.mk_adt_discriminator_expr(self_expr, TyConstructorEnc::UNKNOWN_TYPE_NAME);
+
+                let extracted_id =
+                    TyConstructorEnc::unknown_type_id_accessor(vcx).call()(self_expr);
+
+                let unknown_impls = impl_for_unknown_fun(
+                    extracted_id,
+                    &trait_generics.ty_exprs()[1..],
+                    trait_generics.const_exprs(),
+                );
+
+                vir::expr! { vcx;
+                     (is_unknown_type) && (unknown_impls)
+                }
             };
-
-            let ensures = vcx.mk_eq_expr(vcx.mk_result(vir::TYPE_BOOL), impl_fun_body);
-
-            let impl_fun = vcx.mk_function(
-                impl_fun,
-                trait_decls,
-                &[],
-                vcx.alloc_slice(&[ensures]),
-                Some(&vir::DecreasesGenData::Star),
-                None,
-            );
 
             let impl_for_unknown_fun = vcx.mk_domain_function(impl_for_unknown_fun, false, None);
             dom_funcs.push(impl_for_unknown_fun);
@@ -185,8 +226,11 @@ impl TaskEncoder for TraitEnc {
 
             Ok((
                 TraitEncOutput {
+                    trait_did: *task_key,
                     trait_domain,
-                    impl_fun,
+                    impl_fun_idn: impl_fun,
+                    trait_generics,
+                    unknown_type_check,
                 },
                 (),
             ))

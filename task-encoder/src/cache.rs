@@ -79,5 +79,18 @@ macro_rules! encoder_cache {
                 f(cache)
             })
         }
+
+        fn with_watchers<'vir, F, R>(f: F) -> R
+            where F: FnOnce(&'vir $crate::WatchersRef<'vir, $encoder>) -> R,
+        {
+            ::std::thread_local! {
+                static WATCHERS: $crate::WatchersStaticRef<$encoder> = ::std::cell::RefCell::new(Default::default());
+            }
+            WATCHERS.with(|watchers| {
+                // SAFETY: as for the cache above
+                let watchers = unsafe { ::std::mem::transmute(watchers) };
+                f(watchers)
+            })
+        }
     };
 }

@@ -3,8 +3,6 @@ use vir::{CallableIdn, CastType, FunctionIdn, HasType};
 
 use crate::encoders::ty::{RustParamData, RustTy, TySpecifics, generics::GenericParamsEnc};
 
-use super::r#typeof::{TypeOfEnc, TypeOfEncOutputRef};
-
 #[derive(Debug, Clone)]
 pub struct TyConstructorEncOutputRef<'vir> {
     /// Takes as input the generics for this type (if any),
@@ -20,29 +18,31 @@ pub struct TyConstructorEncOutputRef<'vir> {
     /// Each function takes as input an instantiated type. The `i`th function in
     /// this list returns the `i`th const argument to the type constructor.
     pub const_param_accessors: &'vir [vir::AdtDestructor<'vir, vir::TyVal, vir::CSnap>],
-
-    pub typeof_data: TypeOfEncOutputRef<'vir>,
 }
 
 impl<'vir> TyConstructorEncOutputRef<'vir> {
-    /// Takes as input a snapshot encoding of a rust value, and returns
-    /// the `idx`th type parameter of its type.
+    /// Takes as input this type's `typeof` function (from `TypeOfEnc`) and a
+    /// snapshot encoding of a rust value, and returns the `idx`th type
+    /// parameter of its type.
     pub fn ty_param_from_snap(
         &self,
         idx: usize,
+        typeof_function: vir::FunctionIdn<'vir, vir::Snap, vir::TyVal>,
         snap: vir::ExprCSnap<'vir>,
     ) -> vir::ExprTyVal<'vir> {
-        self.ty_param_accessors[idx].call()((self.typeof_data.typeof_function)(snap.upcast_ty()))
+        self.ty_param_accessors[idx].call()(typeof_function(snap.upcast_ty()))
     }
 
-    /// Takes as input a snapshot encoding of a rust value, and returns
-    /// the `idx`th const parameter of its type.
+    /// Takes as input this type's `typeof` function (from `TypeOfEnc`) and a
+    /// snapshot encoding of a rust value, and returns the `idx`th const
+    /// parameter of its type.
     pub fn const_param_from_snap(
         &self,
         idx: usize,
+        typeof_function: vir::FunctionIdn<'vir, vir::Snap, vir::TyVal>,
         snap: vir::ExprCSnap<'vir>,
     ) -> vir::ExprCSnap<'vir> {
-        self.const_param_accessors[idx].call()((self.typeof_data.typeof_function)(snap.upcast_ty()))
+        self.const_param_accessors[idx].call()(typeof_function(snap.upcast_ty()))
     }
 }
 
@@ -109,11 +109,9 @@ impl TaskEncoder for TyConstructorEnc {
                 })
                 .collect::<Vec<_>>();
 
-            let typeof_data = deps.require_ref::<TypeOfEnc>(*task_key)?;
             deps.emit_output_ref(
                 *task_key,
                 TyConstructorEncOutputRef {
-                    typeof_data,
                     ty_constructor: type_function_ident,
                     ty_param_accessors: vcx.alloc_slice(&ty_accessor_functions),
                     const_param_accessors: vcx.alloc_slice(&const_accessor_functions),

@@ -28,33 +28,23 @@ use crate::{
     trait_support::is_function_with_body,
 };
 
+/// Encodes the behavioral-subtyping proof obligations of a trait impl:
+/// methods checking that each impl fn weakens the trait fn's precondition and
+/// strengthens its postcondition. Only run on local impls (foreign impls are
+/// trusted to conform, their conditions and axioms are encoded by
+/// [`TraitImplConditionEnc`]).
 pub struct TraitImplEnc;
-
-#[derive(Debug, Clone)]
-pub struct TraitImplEncOutput<'vir> {
-    pub impl_condition: vir::ExprBool<'vir>,
-}
 
 impl TaskEncoder for TraitImplEnc {
     task_encoder::encoder_cache!(TraitImplEnc);
     const ENCODER_NAME: &'static str = "trait impl encoder";
 
+    type TaskDescription<'vir> = DefId;
+    type OutputFullLocal<'vir> = Vec<Method<'vir>>;
+
     fn task_to_key<'vir>(task: &Self::TaskDescription<'vir>) -> Self::TaskKey<'vir> {
         *task
     }
-
-    fn emit_outputs<'vir>(program: &mut task_encoder::Program<'vir>) {
-        for (dom, methods) in Self::all_outputs_local_no_errors(program) {
-            program.add_domain(dom);
-            for method in methods {
-                program.add_method(method);
-            }
-        }
-    }
-
-    type TaskDescription<'vir> = DefId;
-    type OutputFullDependency<'vir> = TraitImplEncOutput<'vir>;
-    type OutputFullLocal<'vir> = (Domain<'vir>, Vec<Method<'vir>>);
 
     fn do_encode_full<'vir>(
         task_key: &Self::TaskKey<'vir>,
@@ -69,19 +59,260 @@ impl TaskEncoder for TraitImplEnc {
             let idx = all_impls.iter().position(|did| did == task_key).unwrap();
 
             let impl_context = GParams::from(*task_key);
-            let impl_params = deps.require_dep::<GenericParamsEnc>(impl_context)?;
 
             let trait_ref = tcx.impl_trait_ref(task_key).unwrap().instantiate_identity();
             let trait_did = trait_ref.def_id;
             let trait_data = deps.require_ref::<TraitEnc>(trait_did)?;
             let trait_name = trait_data.trait_name;
 
-            let mut axioms = Vec::new();
             let mut methods = Vec::new();
 
             let implementing_ty = tcx.type_of(task_key).instantiate_identity();
             let implementing_ty = RustTyDecomposition::from_ty(implementing_ty, impl_context);
             let implementing_ty = implementing_ty.ty.name();
+
+            for impl_item in tcx.associated_items(task_key).in_definition_order() {
+                let ty::AssocKind::Fn { .. } = impl_item.kind else {
+                    continue;
+                };
+                let trait_item_def_id = impl_item.trait_item_def_id.unwrap();
+                let impl_item_def_id = impl_item.def_id;
+                let impl_span = vcx.tcx().def_span(impl_item_def_id);
+                let item_name = tcx.item_name(impl_item_def_id);
+
+                let impl_item_context = GParams::from(impl_item_def_id);
+                let impl_item_params = deps.require_dep::<GenericParamsEnc>(impl_item_context)?;
+                let trait_ty_decls = impl_item_params.ty_decls();
+                let trait_const_decls = impl_item_params.const_decls();
+                let trait_item_context = GParams::from(trait_item_def_id);
+
+                let local_defs = deps.require_dep::<MirLocalDefEnc>(MirLocalDefEncTask::Local {
+                    def_id: impl_item_def_id,
+                    all_locals: false,
+                })?;
+                let arg_count = local_defs.arg_count + 1;
+                let ref_args = vcx.alloc_slice(&vec![vir::TYPE_REF; arg_count]);
+
+                let trait_item_is_pure = crate::encoders::is_function_pure(
+                    trait_item_def_id,
+                    trait_item_context.rust_params(),
+                );
+                let impl_item_is_pure = crate::encoders::is_function_pure(
+                    impl_item_def_id,
+                    impl_item_context.rust_params(),
+                );
+
+                let trait_item_has_body = is_function_with_body(vcx.tcx(), trait_item_def_id);
+                let impl_item_has_body = is_function_with_body(vcx.tcx(), impl_item_def_id);
+
+                let trait_item_spec = deps.require_dep_spanned::<MirSpecEnc>(
+                    (trait_item_def_id, impl_item_def_id, MirSpecEncMode::Impure),
+                    impl_span,
+                )?;
+                let impl_item_spec = deps.require_dep_spanned::<MirSpecEnc>(
+                    (impl_item_def_id, impl_item_def_id, MirSpecEncMode::Impure),
+                    impl_span,
+                )?;
+
+                let mut impure_arg_preds = Vec::new();
+                let mut ref_arg_decls = Vec::with_capacity(arg_count);
+                for arg_idx in (0..arg_count).map(mir::Local::from) {
+                    let name_p = local_defs[arg_idx].local.name;
+                    ref_arg_decls.push(vir::vir_local_decl! { vcx; [name_p] : Ref });
+                    if arg_idx != mir::RETURN_PLACE {
+                        impure_arg_preds.push(local_defs[arg_idx].impure_pred);
+                    }
+                }
+                // TODO: wands
+
+                let mut pre_weaken_pres = impure_arg_preds.clone();
+                pre_weaken_pres.extend(trait_item_spec.pres.clone());
+
+                methods.push(vcx.mk_method(
+                    MethodIdn::<(vir::ManyRef, vir::ManyTyVal, vir::ManyCSnap)>::new(
+                        vir_format_identifier!(vcx, "trait_{trait_name}_impl_{implementing_ty}_{idx}_fn_pre_weaken_{item_name}"),
+                        (ref_args, impl_item_params.ty_args(), impl_item_params.const_args()),
+                    ),
+                    (ref_arg_decls.as_slice(), trait_ty_decls, trait_const_decls),
+                    &[],
+                    vcx.alloc_slice(&pre_weaken_pres),
+                    &[],
+                    Some(vcx.alloc_slice(&[
+                        vcx.mk_cfg_block(
+                            &vir::CfgBlockLabelData::Start,
+                            &[],
+                            vcx.alloc_slice(&impl_item_spec.pres.iter()
+                                .map(|pre| vcx.with_span(impl_span, |vcx| {
+                                    // TODO: make span point precisely to the precondition we cannot show
+                                    vcx.handle_error("exhale.failed:assertion.false", move |_| {
+                                        Some(vec![PrustiError::verification("trait implementation is not a behavioral subtype (precondition is not weakened)", impl_span.into())])
+                                    });
+                                    vcx.mk_exhale_stmt(pre)
+                                }))
+                                .collect::<Vec<_>>()),
+                            vcx.alloc(vir::TerminatorStmtData::Exit),
+                        )
+                    ])),
+                ));
+
+                let mut post_strengthen_pres = impure_arg_preds;
+                post_strengthen_pres.extend(trait_item_spec.pres);
+
+                // exceptionally, we also put the allocated result in the precondition
+                post_strengthen_pres.push(local_defs[mir::RETURN_PLACE].impure_pred);
+
+                // here we inhale the impl postconditions, since they
+                // can contain "old" variables
+                let mut stmts = Vec::new();
+                for post in &impl_item_spec.posts {
+                    stmts.push(vcx.mk_inhale_stmt(post));
+                }
+                if impl_item_has_body && impl_item_is_pure {
+                    let pure_func = deps.require_dep::<FunctionCallEnc>(
+                        CallTaskDescription::new(
+                            impl_item_def_id,
+                            impl_item_context.rust_params(),
+                            impl_item_def_id,
+                        )
+                        .resolve_trait_calls(false),
+                    )?;
+                    let pure_func_app = pure_func.call_pure(
+                        local_defs
+                            .args()
+                            .map(|arg| arg.impure_snap)
+                            .collect::<Vec<_>>(),
+                    );
+                    stmts.push(vcx.mk_inhale_stmt(vir::expr! {
+                        ([local_defs[mir::RETURN_PLACE].impure_snap]) == ([pure_func_app])
+                    }));
+                }
+                for post in trait_item_spec.posts {
+                    vcx.with_span(impl_span, |vcx| {
+                        // TODO: make span point precisely to the postcondition we cannot show
+                        vcx.handle_error("exhale.failed:assertion.false", move |_| {
+                            Some(vec![PrustiError::verification("trait implementation is not a behavioral subtype (postcondition is not strengthened)", impl_span.into())])
+                        });
+                        stmts.push(vcx.mk_exhale_stmt(post));
+                    });
+                }
+                if trait_item_has_body && trait_item_is_pure {
+                    let pure_func = deps.require_dep::<FunctionCallEnc>(
+                        CallTaskDescription::new(
+                            impl_item_def_id,
+                            trait_ref.args,
+                            trait_item_def_id,
+                        )
+                        .resolve_trait_calls(false),
+                    )?;
+                    let pure_func_app = pure_func.call_pure(
+                        local_defs
+                            .args()
+                            .map(|arg| arg.impure_snap)
+                            .collect::<Vec<_>>(),
+                    );
+                    vcx.with_span(impl_span, |vcx| {
+                        vcx.handle_error("exhale.failed:assertion.false", move |_| {
+                            Some(vec![PrustiError::verification("trait implementation is not a behavioral subtype (body is not strengthened)", impl_span.into())])
+                        });
+                        stmts.push(vcx.mk_exhale_stmt(vir::expr! {
+                            ([local_defs[mir::RETURN_PLACE].impure_snap]) == ([pure_func_app])
+                        }));
+                    });
+                }
+
+                methods.push(vcx.mk_method(
+                    MethodIdn::<(vir::ManyRef, vir::ManyTyVal, vir::ManyCSnap)>::new(
+                        vir_format_identifier!(vcx, "trait_{trait_name}_impl_{implementing_ty}_{idx}_fn_post_strengthen_{item_name}"),
+                        (ref_args, impl_item_params.ty_args(), impl_item_params.const_args()),
+                    ),
+                    (ref_arg_decls.as_slice(), trait_ty_decls, trait_const_decls),
+                    &[],
+                    vcx.alloc_slice(&post_strengthen_pres),
+                    &[],
+                    Some(vcx.alloc_slice(&[
+                        vcx.mk_cfg_block(
+                            &vir::CfgBlockLabelData::Start,
+                            &[],
+                            vcx.alloc_slice(&stmts),
+                            vcx.alloc(vir::TerminatorStmtData::Exit),
+                        )
+                    ])),
+                ));
+            }
+
+            // Make the impl visible to the trait's `impl_fun` disjunction, and
+            // resolve its associated types and specification.
+            deps.require_dep::<TraitImplConditionEnc>(*task_key)?;
+
+            Ok((methods, ()))
+        })
+    }
+
+    fn emit_outputs<'vir>(program: &mut task_encoder::Program<'vir>) {
+        for methods in Self::all_outputs_local_no_errors(program) {
+            for method in methods {
+                program.add_method(method);
+            }
+        }
+    }
+}
+
+/// Encodes the assumable content of a trait impl: its applicability condition
+/// (the check that a given instantiation of the trait's parameters matches
+/// this impl and that the impl's where-clauses hold) and its axioms (the
+/// resolution of its associated types and the bridging of the trait's
+/// abstract pre/post functions to the impl items' concrete specifications —
+/// how a call through the trait resolves to a concrete contract once the
+/// `Self` type is known). Unlike [`TraitImplEnc`], this is safe to run on
+/// foreign impls: it produces no proof obligations, so foreign impls are
+/// assumed — not re-verified — to be behavioral subtypes.
+pub struct TraitImplConditionEnc;
+
+impl TaskEncoder for TraitImplConditionEnc {
+    task_encoder::encoder_cache!(TraitImplConditionEnc);
+    const ENCODER_NAME: &'static str = "trait impl condition encoder";
+
+    type TaskDescription<'vir> = DefId;
+    /// The implemented trait, the condition, and the axioms. Consumed (and
+    /// errors surfaced) by `TraitEnc::emit_outputs`, which disjoins the
+    /// conditions into each trait's `impl_fun` and emits the axiom domains.
+    type OutputFullLocal<'vir> = (DefId, vir::ExprBool<'vir>, Domain<'vir>);
+
+    fn task_to_key<'vir>(task: &Self::TaskDescription<'vir>) -> Self::TaskKey<'vir> {
+        *task
+    }
+
+    fn do_encode_full<'vir>(
+        task_key: &Self::TaskKey<'vir>,
+        deps: &mut TaskEncoderDependencies<'vir, Self>,
+    ) -> EncodeFullResult<'vir, Self> {
+        deps.emit_output_ref(*task_key, ())?;
+
+        vir::with_vcx(|vcx| {
+            let tcx = vcx.tcx();
+
+            let all_impls = tcx.trait_impls_in_crate(task_key.krate);
+            let idx = all_impls.iter().position(|did| did == task_key).unwrap();
+            let krate = tcx.crate_name(task_key.krate);
+
+            let impl_context = GParams::from(*task_key);
+            let impl_params = deps.require_dep::<GenericParamsEnc>(impl_context)?;
+
+            let trait_ref = tcx.impl_trait_ref(task_key).unwrap().instantiate_identity();
+            let trait_did = trait_ref.def_id;
+            let condition = TraitImplEnc::impl_block_check(vcx, deps, impl_context, trait_ref)?;
+            let trait_data = deps.require_ref::<TraitEnc>(trait_did)?;
+            let trait_name = trait_data.trait_name;
+
+            let mut axioms = Vec::new();
+
+            let implementing_ty = tcx.type_of(task_key).instantiate_identity();
+            let implementing_ty = RustTyDecomposition::from_ty(implementing_ty, impl_context);
+            let implementing_ty = implementing_ty.ty.name();
+            // `idx` is only unique within a crate, so foreign impls need the
+            // crate name for disambiguation.
+            let impl_name =
+                vir::vir_format!(vcx, "{trait_name}_impl_{krate}_{implementing_ty}_{idx}");
 
             let impl_ty_decls = impl_params.ty_decls();
             let impl_const_decls = impl_params.const_decls();
@@ -154,10 +385,7 @@ impl TaskEncoder for TraitImplEnc {
                             ),
                         )?;
                         axioms.push(vcx.mk_domain_axiom(
-                            vir_format_identifier!(
-                                vcx,
-                                "{trait_name}_impl_{implementing_ty}_{idx}_assoc_type_{item_name}"
-                            ),
+                            vir_format_identifier!(vcx, "{impl_name}_assoc_type_{item_name}"),
                             vir::expr! {forall ..[trait_ty_decls], ..[trait_const_decls] ::
                                 {[assoc_type(trait_tys, trait_consts)]}
                             ([assoc_type(trait_tys, trait_consts)]) == (assoc_type_expr)},
@@ -170,22 +398,13 @@ impl TaskEncoder for TraitImplEnc {
                                 def_id: impl_item_def_id,
                                 all_locals: false,
                             })?;
-                        let arg_count = local_defs.arg_count + 1;
                         let func_args = local_defs.local_decl_args().collect::<Vec<_>>();
-                        let ref_args = vcx.alloc_slice(&vec![vir::TYPE_REF; arg_count]);
                         let func_ret = local_defs.local_decl_ret();
 
-                        let trait_item_is_pure = crate::encoders::is_function_pure(
-                            trait_item_def_id,
-                            trait_item_context.rust_params(),
-                        );
                         let impl_item_is_pure = crate::encoders::is_function_pure(
                             impl_item_def_id,
                             impl_item_context.rust_params(),
                         );
-
-                        let trait_item_has_body =
-                            is_function_with_body(vcx.tcx(), trait_item_def_id);
                         let impl_item_has_body = is_function_with_body(vcx.tcx(), impl_item_def_id);
 
                         let impl_item_spec = deps.require_dep_spanned::<MirSpecEnc>(
@@ -219,10 +438,7 @@ impl TaskEncoder for TraitImplEnc {
                         let pre_func_call =
                             assoc_fn.pre_func.call()(casted_args_slice, trait_tys, trait_consts);
                         axioms.push(vcx.mk_domain_axiom(
-                            vir_format_identifier!(
-                                vcx,
-                                "{trait_name}_impl_{implementing_ty}_{idx}_fn_pre_{item_name}",
-                            ),
+                            vir_format_identifier!(vcx, "{impl_name}_fn_pre_{item_name}"),
                             vir::expr! {
                                 forall ..[func_args], ..[trait_ty_decls], ..[trait_const_decls] :: {[pre_func_call]}
                                     (pres) ==> (pre_func_call)
@@ -259,177 +475,29 @@ impl TaskEncoder for TraitImplEnc {
                             trait_consts,
                         );
                         axioms.push(vcx.mk_domain_axiom(
-                            vir_format_identifier!(
-                                vcx,
-                                "{trait_name}_impl_{implementing_ty}_{idx}_fn_post_{item_name}",
-                            ),
+                            vir_format_identifier!(vcx, "{impl_name}_fn_post_{item_name}"),
                             vir::expr! {
-                                forall [func_ret], ..[func_args], ..[trait_ty_decls] :: {[post_func_call]}
+                                forall [func_ret], ..[func_args], ..[trait_ty_decls], ..[trait_const_decls] :: {[post_func_call]}
                                     (post_func_call) ==> (posts)
                             },
-                        ));
-
-                        let trait_item_spec = deps.require_dep_spanned::<MirSpecEnc>(
-                            (trait_item_def_id, impl_item_def_id, MirSpecEncMode::Impure),
-                            impl_span,
-                        )?;
-                        let impl_item_spec = deps.require_dep_spanned::<MirSpecEnc>(
-                            (impl_item_def_id, impl_item_def_id, MirSpecEncMode::Impure),
-                            impl_span,
-                        )?;
-
-                        let mut impure_arg_preds = Vec::new();
-                        let mut ref_arg_decls = Vec::with_capacity(arg_count);
-                        for arg_idx in (0..arg_count).map(mir::Local::from) {
-                            let name_p = local_defs[arg_idx].local.name;
-                            ref_arg_decls.push(vir::vir_local_decl! { vcx; [name_p] : Ref });
-                            if arg_idx != mir::RETURN_PLACE {
-                                impure_arg_preds.push(local_defs[arg_idx].impure_pred);
-                            }
-                        }
-                        // TODO: wands
-
-                        let mut pre_weaken_pres = impure_arg_preds.clone();
-                        pre_weaken_pres.extend(trait_item_spec.pres.clone());
-
-                        methods.push(vcx.mk_method(
-                            MethodIdn::<(vir::ManyRef, vir::ManyTyVal, vir::ManyCSnap)>::new(
-                                vir_format_identifier!(vcx, "trait_{trait_name}_impl_{implementing_ty}_{idx}_fn_pre_weaken_{item_name}"),
-                                (ref_args, impl_item_params.ty_args(), impl_item_params.const_args()),
-                            ),
-                            (ref_arg_decls.as_slice(), trait_ty_decls, trait_const_decls),
-                            &[],
-                            vcx.alloc_slice(&pre_weaken_pres),
-                            &[],
-                            Some(vcx.alloc_slice(&[
-                                vcx.mk_cfg_block(
-                                    &vir::CfgBlockLabelData::Start,
-                                    &[],
-                                    vcx.alloc_slice(&impl_item_spec.pres.iter()
-                                        .map(|pre| vcx.with_span(impl_span, |vcx| {
-                                            // TODO: make span point precisely to the precondition we cannot show
-                                            vcx.handle_error("exhale.failed:assertion.false", move |_| {
-                                                Some(vec![PrustiError::verification("trait implementation is not a behavioral subtype (precondition is not weakened)", impl_span.into())])
-                                            });
-                                            vcx.mk_exhale_stmt(pre)
-                                        }))
-                                        .collect::<Vec<_>>()),
-                                    vcx.alloc(vir::TerminatorStmtData::Exit),
-                                )
-                            ])),
-                        ));
-
-                        let mut post_strengthen_pres = impure_arg_preds;
-                        post_strengthen_pres.extend(trait_item_spec.pres);
-
-                        // exceptionally, we also put the allocated result in the precondition
-                        post_strengthen_pres.push(local_defs[mir::RETURN_PLACE].impure_pred);
-
-                        // here we inhale the impl postconditions, since they
-                        // can contain "old" variables
-                        let mut stmts = Vec::new();
-                        for post in &impl_item_spec.posts {
-                            stmts.push(vcx.mk_inhale_stmt(post));
-                        }
-                        if impl_item_has_body && impl_item_is_pure {
-                            let pure_func = deps.require_dep::<FunctionCallEnc>(
-                                CallTaskDescription::new(
-                                    impl_item_def_id,
-                                    impl_item_context.rust_params(),
-                                    impl_item_def_id,
-                                )
-                                .resolve_trait_calls(false),
-                            )?;
-                            let pure_func_app = pure_func.call_pure(
-                                local_defs
-                                    .args()
-                                    .map(|arg| arg.impure_snap)
-                                    .collect::<Vec<_>>(),
-                            );
-                            stmts.push(vcx.mk_inhale_stmt(vir::expr! {
-                                ([local_defs[mir::RETURN_PLACE].impure_snap]) == ([pure_func_app])
-                            }));
-                        }
-                        for post in trait_item_spec.posts {
-                            vcx.with_span(impl_span, |vcx| {
-                                // TODO: make span point precisely to the postcondition we cannot show
-                                vcx.handle_error("exhale.failed:assertion.false", move |_| {
-                                    Some(vec![PrustiError::verification("trait implementation is not a behavioral subtype (postcondition is not strengthened)", impl_span.into())])
-                                });
-                                stmts.push(vcx.mk_exhale_stmt(post));
-                            });
-                        }
-                        if trait_item_has_body && trait_item_is_pure {
-                            let pure_func = deps.require_dep::<FunctionCallEnc>(
-                                CallTaskDescription::new(
-                                    impl_item_def_id,
-                                    trait_ref.args,
-                                    trait_item_def_id,
-                                )
-                                .resolve_trait_calls(false),
-                            )?;
-                            let pure_func_app = pure_func.call_pure(
-                                local_defs
-                                    .args()
-                                    .map(|arg| arg.impure_snap)
-                                    .collect::<Vec<_>>(),
-                            );
-                            vcx.with_span(impl_span, |vcx| {
-                                vcx.handle_error("exhale.failed:assertion.false", move |_| {
-                                    Some(vec![PrustiError::verification("trait implementation is not a behavioral subtype (body is not strengthened)", impl_span.into())])
-                                });
-                                stmts.push(vcx.mk_exhale_stmt(vir::expr! {
-                                    ([local_defs[mir::RETURN_PLACE].impure_snap]) == ([pure_func_app])
-                                }));
-                            });
-                        }
-
-                        methods.push(vcx.mk_method(
-                            MethodIdn::<(vir::ManyRef, vir::ManyTyVal, vir::ManyCSnap)>::new(
-                                vir_format_identifier!(vcx, "trait_{trait_name}_impl_{implementing_ty}_{idx}_fn_post_strengthen_{item_name}"),
-                                (ref_args, impl_item_params.ty_args(), impl_item_params.const_args()),
-                            ),
-                            (ref_arg_decls.as_slice(), trait_ty_decls, trait_const_decls),
-                            &[],
-                            vcx.alloc_slice(&post_strengthen_pres),
-                            &[],
-                            Some(vcx.alloc_slice(&[
-                                vcx.mk_cfg_block(
-                                    &vir::CfgBlockLabelData::Start,
-                                    &[],
-                                    vcx.alloc_slice(&stmts),
-                                    vcx.alloc(vir::TerminatorStmtData::Exit),
-                                )
-                            ])),
                         ));
                     }
                     ty::AssocKind::Const { .. } => (),
                 }
             }
 
-            let trait_ref = tcx.impl_trait_ref(task_key).unwrap().instantiate_identity();
-            let impl_condition =
-                Self::impl_block_check(vcx, deps, GParams::from(*task_key), trait_ref)?;
-
-            Ok((
-                (
-                    vcx.mk_domain(
-                        vir_format_identifier!(
-                            vcx,
-                            "trait_{trait_name}_impl_{implementing_ty}_{idx}"
-                        ),
-                        &[],
-                        vcx.alloc_slice(&axioms),
-                        &[],
-                        None,
-                    ),
-                    methods,
-                ),
-                TraitImplEncOutput { impl_condition },
-            ))
+            let axioms = vcx.mk_domain(
+                vir_format_identifier!(vcx, "trait_{impl_name}"),
+                &[],
+                vcx.alloc_slice(&axioms),
+                &[],
+                None,
+            );
+            Ok(((trait_did, condition, axioms), ()))
         })
     }
 }
+
 impl TraitImplEnc {
     fn bitset_from(iter: impl IntoIterator<Item = u32>, size: usize) -> DenseBitSet<u32> {
         iter.into_iter()
@@ -546,10 +614,12 @@ impl TraitImplEnc {
         // Collect the bindings for the generics of this impl block
         let mut generics_map = FxIndexMap::default();
 
-        // Walk the trait type generic arguments
+        // Walk the trait type generic arguments. The types come from the
+        // impl's side of the `trait_ref`, so they are decomposed in the
+        // impl's context.
         let impl_rust_tys = trait_ref.args.iter().filter_map(|arg| arg.as_type());
         for (ty_arg, rust_ty) in std::iter::zip(trait_params.ty_exprs(), impl_rust_tys) {
-            Self::discover_bind_points(deps, &mut generics_map, trait_ctx, ty_arg, rust_ty)?;
+            Self::discover_bind_points(deps, &mut generics_map, impl_ctx, ty_arg, rust_ty)?;
         }
 
         // Walk the trait const generic arguments

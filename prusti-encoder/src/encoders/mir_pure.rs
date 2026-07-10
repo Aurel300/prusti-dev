@@ -11,10 +11,7 @@ use crate::encoders::{
 };
 use itertools::Itertools;
 use pcg::utils::Place;
-use prusti_interface::{
-    environment::EnvQuery,
-    specs::typed::ExternSpecKind,
-};
+use prusti_interface::{environment::EnvQuery, specs::typed::ExternSpecKind};
 use prusti_rustc_interface::{
     abi,
     data_structures::graph::{self, Successors},

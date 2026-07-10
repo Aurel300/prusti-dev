@@ -178,6 +178,7 @@ impl<'enc, 'vir: 'enc> Enc<'enc, 'vir> {
                 }
                 super::ty::TySpecifics::EnumLike(enum_data) => {
                     let variant_idx = self.ecx.read_discriminant(&val).unwrap();
+                    let variant = self.ecx.project_downcast(&val, variant_idx).unwrap();
                     let mut snaps = Vec::new();
                     for (idx, field) in ty.ty.expect_enumlike().variants[variant_idx.as_usize()]
                         .inner
@@ -187,7 +188,7 @@ impl<'enc, 'vir: 'enc> Enc<'enc, 'vir> {
                     {
                         snaps.push(
                             self.encode_const_val_tree(
-                                self.ecx.project_field(&val, idx.into()).unwrap(),
+                                self.ecx.project_field(&variant, idx.into()).unwrap(),
                                 field.decompose_normalize(ty.args),
                             )?
                             .upcast_ty(),

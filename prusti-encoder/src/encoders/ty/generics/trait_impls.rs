@@ -1,9 +1,6 @@
-use std::collections::VecDeque;
-
 use prusti_interface::PrustiError;
 use prusti_rustc_interface::{
-    data_structures::fx::FxIndexMap,
-    index::bit_set::DenseBitSet,
+    data_structures::fx::{FxIndexMap, FxIndexSet},
     middle::{mir, ty},
     span::def_id::DefId,
 };
@@ -499,17 +496,11 @@ impl TaskEncoder for TraitImplConditionEnc {
 }
 
 impl TraitImplEnc {
-    fn bitset_from(iter: impl IntoIterator<Item = u32>, size: usize) -> DenseBitSet<u32> {
-        iter.into_iter()
-            .fold(DenseBitSet::new_empty(size), |mut acc, idx| {
-                acc.insert(idx);
-                acc
-            })
-    }
+    /// The generic indices a projection requires to be bound before it can be
+    /// processed, and those it binds itself.
     fn projection_deps<'vir>(
         projection: ty::ProjectionPredicate<'vir>,
-        generics_count: usize,
-    ) -> (DenseBitSet<u32>, DenseBitSet<u32>) {
+    ) -> (FxIndexSet<u32>, FxIndexSet<u32>) {
         let generic_idx = |arg: ty::GenericArg| match arg.kind() {
             ty::GenericArgKind::Type(ty) if let ty::TyKind::Param(p) = ty.kind() => Some(p.index),
             ty::GenericArgKind::Const(const_) if let ty::ConstKind::Param(p) = const_.kind() => {
@@ -522,40 +513,71 @@ impl TraitImplEnc {
             .projection_term
             .args
             .iter()
-            .flat_map(|arg| arg.walk().filter_map(generic_idx));
+            .flat_map(|arg| arg.walk().filter_map(generic_idx))
+            .collect();
 
-        let produced = projection.term.walk().filter_map(generic_idx);
+        let produced = projection.term.walk().filter_map(generic_idx).collect();
 
-        (
-            Self::bitset_from(required, generics_count),
-            Self::bitset_from(produced, generics_count),
-        )
+        (required, produced)
     }
 
+    /// Topologically sorts the projections such that each one requires only
+    /// generics that are initially known or produced by an earlier projection
+    /// (Kahn's algorithm, where emitting a projection makes its produced
+    /// generics known). Panics if no such order exists; rustc's constrained-
+    /// parameter check guarantees one does for valid impls.
     fn order_projections<'vir>(
         known_generics: impl IntoIterator<Item = u32>,
         projections: impl IntoIterator<Item = ty::ProjectionPredicate<'vir>>,
-        generics_count: usize,
     ) -> Vec<ty::ProjectionPredicate<'vir>> {
-        let mut known_generics = Self::bitset_from(known_generics, generics_count);
+        let mut known: FxIndexSet<u32> = known_generics.into_iter().collect();
 
-        let mut worklist: VecDeque<_> = projections
+        let projections: Vec<_> = projections
             .into_iter()
-            .map(|p| (p, Self::projection_deps(p, generics_count)))
+            .map(|p| (p, Self::projection_deps(p)))
             .collect();
 
-        let mut ordered = Vec::new();
-
-        while let Some((proj, (required, produced))) = worklist.pop_front() {
-            if known_generics.superset(&required) {
-                known_generics.union(&produced);
-                ordered.push(proj);
-            } else {
-                worklist.push_back((proj, (required, produced)));
+        // For each unknown generic, the projections waiting on it; for each
+        // projection, the number of its required generics still unknown.
+        let mut waiting_on: FxIndexMap<u32, Vec<usize>> = FxIndexMap::default();
+        let mut unmet = vec![0usize; projections.len()];
+        // The output doubles as the FIFO worklist: `ordered[cursor..]` are the
+        // ready but not yet processed projections.
+        let mut ordered = Vec::with_capacity(projections.len());
+        for (i, (_, (required, _))) in projections.iter().enumerate() {
+            for &g in required {
+                if !known.contains(&g) {
+                    unmet[i] += 1;
+                    waiting_on.entry(g).or_default().push(i);
+                }
+            }
+            if unmet[i] == 0 {
+                ordered.push(i);
             }
         }
 
-        ordered
+        let mut cursor = 0;
+        while let Some(&i) = ordered.get(cursor) {
+            cursor += 1;
+            let (_, (_, produced)) = &projections[i];
+            for &g in produced {
+                if known.insert(g) {
+                    for &j in waiting_on.get(&g).into_iter().flatten() {
+                        unmet[j] -= 1;
+                        if unmet[j] == 0 {
+                            ordered.push(j);
+                        }
+                    }
+                }
+            }
+        }
+
+        assert_eq!(
+            ordered.len(),
+            projections.len(),
+            "cyclic or unresolvable projection bounds"
+        );
+        ordered.into_iter().map(|i| projections[i].0).collect()
     }
 
     fn discover_bind_points<'vir, E: TaskEncoder + 'vir + ?Sized>(
@@ -608,8 +630,6 @@ impl TraitImplEnc {
         let trait_params = deps.require_dep::<GenericParamsEnc>(trait_ctx)?;
 
         let args = deps.require_dep::<GArgsTyEnc>(GArgs::new(impl_ctx, trait_ref.args))?;
-
-        let generics_count = impl_ctx.rust_params().len();
 
         // Collect the bindings for the generics of this impl block
         let mut generics_map = FxIndexMap::default();
@@ -665,8 +685,7 @@ impl TraitImplEnc {
             .iter()
             .filter_map(ty::Clause::as_projection_clause)
             .map(ty::Binder::skip_binder);
-        let proj_preds =
-            Self::order_projections(generics_map.keys().copied(), proj_preds, generics_count);
+        let proj_preds = Self::order_projections(generics_map.keys().copied(), proj_preds);
         for proj_pred in proj_preds {
             let trait_did = proj_pred.trait_def_id(tcx);
             let trait_ = deps.require_ref::<TraitEnc>(trait_did)?;

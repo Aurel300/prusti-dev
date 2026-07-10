@@ -232,7 +232,6 @@ impl<'tcx> TyDatas<'tcx> for RustTyDatas {
 pub enum RustBuiltinData {
     Int,
     Real,
-    Ghost,
 }
 
 /// An internal representation of a `ty::Ty`. Contains all that we care about
@@ -669,7 +668,16 @@ impl<'tcx> TySpecifics<'tcx, RustTyDatas> {
             match adt.non_enum_variant().name.to_string().as_str() {
                 "Int" => Self::Builtin(RustBuiltinData::Int),
                 "Real" => Self::Builtin(RustBuiltinData::Real),
-                "Ghost" => Self::Builtin(RustBuiltinData::Ghost),
+                // `Ghost<T>` is encoded as if it were `struct Ghost<T>(T)`
+                // (like `Box` above): the snapshot wraps the value of `T`.
+                "Ghost" => {
+                    let fields = vec![RustFieldData {
+                        name: symbol::Symbol::intern("val"),
+                        fid: abi::FieldIdx::from_usize(0),
+                        ty: LazyRustTy(Self::new_param_ty(0)),
+                    }];
+                    TySpecifics::mk_structlike((), fields)
+                }
                 // TODO: support other builtins (e.g. `Seq`, `Map`, `Set`, etc.)
                 s => todo!("Unimplemented builtin {s}"),
             }

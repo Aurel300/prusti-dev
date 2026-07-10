@@ -7,18 +7,13 @@ use crate::encoders::ty::{
 
 pub(crate) fn ty_pure<'vir>(
     data: &RustBuiltin<'vir>,
-    builder: &mut TyPureBuilder<'vir>,
+    _builder: &mut TyPureBuilder<'vir>,
 ) -> Result<TyPureBuiltin<'vir>, EncodeFullError<'vir, TyPureEnc>> {
     match data {
         // Represented directly by the native Viper `Int`/`Perm` types (see
         // `TyPureBuilder::new`); there is nothing to emit.
         RustBuiltinData::Int => Ok(TyPureBuiltinData::Int),
         RustBuiltinData::Real => Ok(TyPureBuiltinData::Real),
-        RustBuiltinData::Ghost => {
-            let builder = builder.set_adt_builder();
-            builder.constructor::<()>("", (), None);
-            Ok(TyPureBuiltinData::Ghost)
-        }
     }
 }
 
@@ -30,10 +25,6 @@ pub(crate) fn ty_impure<'vir>(
     match data.0 {
         RustBuiltinData::Int | RustBuiltinData::Real => {
             super::primitive::set_primitive(builder);
-            Ok(())
-        }
-        RustBuiltinData::Ghost => {
-            super::opaque::set_opaque(builder);
             Ok(())
         }
     }

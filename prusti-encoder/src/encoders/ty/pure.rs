@@ -54,7 +54,6 @@ pub type TyPureBuiltin<'vir> = <PureTyDatas as TyDatas<'vir>>::BuiltinData;
 pub enum TyPureBuiltinData {
     Int,
     Real,
-    Ghost,
 }
 
 #[derive(Debug, Clone, Copy)]

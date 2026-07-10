@@ -26,6 +26,9 @@ pub enum PrustiBuiltin {
     Exists,
     SpecBlock,
     SnapshotEquality,
+    GhostNew,
+    GhostEq,
+    GhostNe,
     ModeStart(Mode),
     ModeEnd(Mode),
     IsNaN(ty::FloatTy),
@@ -104,6 +107,9 @@ impl PrustiBuiltin {
                 (None, "exists") => Self::Exists,
                 (None, "spec_block") => Self::SpecBlock,
                 (None, "snapshot_equality") => Self::SnapshotEquality,
+                (Some("prusti_contracts::Ghost<T>"), "new") => Self::GhostNew,
+                (Some("prusti_contracts::Ghost<T>"), "eq") => Self::GhostEq,
+                (Some("prusti_contracts::Ghost<T>"), "ne") => Self::GhostNe,
                 (None, "old_start") => Self::ModeStart(Mode::Old),
                 (None, "old_end") => Self::ModeEnd(Mode::Old),
                 (None, "rel_start") => Self::ModeStart(Mode::Rel(rel_index())),
@@ -151,8 +157,8 @@ impl PrustiBuiltin {
                 (Some("prusti_contracts::Real"), "ge") => Self::RealGe,
                 (Some("prusti_contracts::Real"), "cmp") => Self::RealCmp,
                 (Some("prusti_contracts::Real"), "partial_cmp") => Self::RealPartialCmp,
-                // TODO: support the remaining builtins (e.g. `Ghost`, `Seq`,
-                // `Map`, `Set`).
+                // TODO: support the remaining builtins (e.g. `Ghost`
+                // dereferencing, `Seq`, `Map`, `Set`).
                 (impl_type_name, other) => todo!(
                     "unsupported `prusti_contracts` function {}{other}",
                     impl_type_name.map(|n| format!("{n}::")).unwrap_or_default(),
@@ -272,6 +278,7 @@ impl TaskEncoder for PrustiBuiltinEnc {
                     args.context(),
                 ))
             };
+
             let res: ExprRet<'vir, vir::CSnap> = match builtin {
                 PrustiBuiltin::Forall
                 | PrustiBuiltin::Exists
@@ -288,6 +295,29 @@ impl TaskEncoder for PrustiBuiltinEnc {
                         .expect_immref()
                         .value_access(operands[1].downcast_ty());
                     vcx.mk_eq_expr(lhs, rhs).upcast_ty()
+                }
+                PrustiBuiltin::GhostNew => {
+                    let ghost = deps.require_dep::<TyUsePureEnc>(RustTyDecomposition::from_ty(
+                        sig.output(),
+                        args.context(),
+                    ))?;
+                    ghost
+                        .expect_structlike()
+                        .field_snaps_to_snap(vec![operands[0]])
+                }
+                PrustiBuiltin::GhostEq | PrustiBuiltin::GhostNe => {
+                    let bin_op = match builtin {
+                        PrustiBuiltin::GhostEq => vir::BinOpKind::CmpEq,
+                        PrustiBuiltin::GhostNe => vir::BinOpKind::CmpNe,
+                        _ => unreachable!(),
+                    };
+                    let lhs = e_input(deps, 0)?
+                        .expect_immref()
+                        .value_access(operands[0].downcast_ty());
+                    let rhs = e_input(deps, 1)?
+                        .expect_immref()
+                        .value_access(operands[1].downcast_ty());
+                    Self::native_cmp(vcx, bin_op, lhs, rhs).upcast_ty()
                 }
                 PrustiBuiltin::IsNaN(fl) => {
                     let is_nan = Self::float_domain(deps, fl)?.fp_is_nan;

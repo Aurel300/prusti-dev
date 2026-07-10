@@ -30,7 +30,7 @@ pub(crate) fn ty_pure<'vir>(
         .map(|variant| {
             let var_idx_num = variant.vid.as_u32();
             let discr =
-                (discr_prim.prim_to_snap)(discr_prim.expr_from_bits(data.discr, variant.discr_val));
+                discr_prim.prim_to_snap(discr_prim.expr_from_bits(data.discr, variant.discr_val));
 
             let specifics = super::structlike::ty_pure_variant(
                 &format!("{var_idx_num}_"),

@@ -88,38 +88,64 @@ pub struct TyPureArrayData<'vir> {
 
 #[derive(Debug, Clone, Copy)]
 pub struct TyPurePrimData<'vir> {
-    pub prim_type: vir::TypePrim<'vir>,
-    /// Viper primitive value as argument. Returns domain.
-    pub prim_to_snap: FunctionIdn<'vir, vir::Prim, vir::CSnap>,
     pub kind: TyPurePrimDataKind<'vir>,
 }
 
 #[derive(Debug, Clone, Copy)]
 pub enum TyPurePrimDataKind<'vir> {
-    Native(TyPurePrimDataNative<'vir>),
+    /// Rust's `bool`, represented directly by the native Viper `Bool` type:
+    /// the primitive and the snapshot coincide, so the conversions are casts.
+    Bool,
+    Int(TyPurePrimDataInt<'vir>),
     Float(FloatDomain<'vir>),
 }
 
+/// The integer-like primitives (`char` and the integer types), whose snapshot
+/// domain wraps a Viper `Int`.
 #[derive(Debug, Clone, Copy)]
-pub struct TyPurePrimDataNative<'vir> {
+pub struct TyPurePrimDataInt<'vir> {
+    /// Viper primitive value as argument. Returns domain.
+    pub prim_to_snap: FunctionIdn<'vir, vir::Prim, vir::CSnap>,
     /// Snapshot of self as argument. Returns Viper primitive value.
     pub snap_to_prim: FunctionIdn<'vir, vir::CSnap, vir::Prim>,
 }
 
 impl<'vir> TyPurePrimData<'vir> {
-    pub fn expect_native(&self) -> &TyPurePrimDataNative<'vir> {
+    /// The Viper primitive representation of this type (the argument of
+    /// [`Self::prim_to_snap`]; for floats the raw bits).
+    pub fn prim_type(&self) -> vir::TypePrim<'vir> {
         match &self.kind {
-            TyPurePrimDataKind::Native(native) => native,
-            _ => panic!(),
+            TyPurePrimDataKind::Bool => vir::TYPE_BOOL.upcast_ty(),
+            TyPurePrimDataKind::Int(_) | TyPurePrimDataKind::Float(_) => vir::TYPE_INT.upcast_ty(),
+        }
+    }
+
+    /// Constructs the snapshot from the Viper primitive value.
+    pub fn prim_to_snap<Curr: 'vir, Next: 'vir>(
+        &self,
+        prim: vir::ExprGenPrim<'vir, Curr, Next>,
+    ) -> vir::ExprGenCSnap<'vir, Curr, Next> {
+        match &self.kind {
+            TyPurePrimDataKind::Bool => prim.downcast_ty::<vir::Bool>().upcast_ty(),
+            TyPurePrimDataKind::Int(int) => int.prim_to_snap.call()(prim),
+            TyPurePrimDataKind::Float(float) => float.prim_to_snap.call()(prim),
+        }
+    }
+
+    /// Extracts the Viper primitive value from the snapshot.
+    pub fn snap_to_prim<Curr: 'vir, Next: 'vir>(
+        &self,
+        snap: vir::ExprGenCSnap<'vir, Curr, Next>,
+    ) -> vir::ExprGenPrim<'vir, Curr, Next> {
+        match &self.kind {
+            TyPurePrimDataKind::Bool => snap.downcast_ty::<vir::Bool>().upcast_ty(),
+            TyPurePrimDataKind::Int(int) => int.snap_to_prim.call()(snap),
+            TyPurePrimDataKind::Float(_) => panic!("float snapshots have no primitive value"),
         }
     }
 }
 
 impl<'vir, D: TyDatas<'vir, PrimitiveData = TyPurePrimData<'vir>>> TyData<'vir, D> {
-    pub fn expect_native(&self) -> &TyPurePrimDataNative<'vir> {
-        self.expect_primitive().expect_native()
-    }
-
     pub fn expect_float(&self) -> &FloatDomain<'vir> {
         match &self.expect_primitive().kind {
             TyPurePrimDataKind::Float(fl) => fl,
@@ -258,12 +284,9 @@ impl TaskEncoder for TyPureEnc {
                     let builder = builder.set_domain_builder();
                     TySpecifics::ArrayLike(super::kinds::arraylike::ty_pure(array, deps, builder)?)
                 }
-                TySpecifics::Primitive(prim) => {
-                    let builder = builder.set_domain_builder();
-                    TySpecifics::Primitive(super::kinds::primitive::ty_pure(
-                        vcx, prim, deps, builder,
-                    )?)
-                }
+                TySpecifics::Primitive(prim) => TySpecifics::Primitive(
+                    super::kinds::primitive::ty_pure(vcx, prim, deps, &mut builder)?,
+                ),
                 TySpecifics::ImmRef(immref) => {
                     let builder = builder.set_adt_builder();
                     TySpecifics::ImmRef(super::kinds::immref::ty_pure(
@@ -410,11 +433,13 @@ impl<'vir> TyPureBuilder<'vir> {
     ) -> Self {
         let params = deps.require_dep::<GenericParamsEnc>(ty.params).unwrap();
         let name = vir::ViperIdent::new(vir::vir_format!(vcx, "s_{}", ty.name()));
-        // The `Int`/`Real` builtins are represented directly by the
-        // native Viper `Int`/`Perm` types; nothing is emitted for them.
+        // The `Int`/`Real` builtins and Rust's `bool` are represented directly
+        // by the native Viper `Int`/`Perm`/`Bool` types; nothing is emitted
+        // for them.
         let self_type = match &ty.specifics {
             TySpecifics::Builtin(RustBuiltinData::Int) => vir::TYPE_INT.upcast_ty(),
             TySpecifics::Builtin(RustBuiltinData::Real) => vir::TYPE_PERM.upcast_ty(),
+            TySpecifics::Primitive(prim) if prim.is_bool() => vir::TYPE_BOOL.upcast_ty(),
             _ => DomainIdnSnap::new(name, 0)(),
         };
         let unreachable_to_snap = FunctionIdn::new(
@@ -519,7 +544,7 @@ impl<'vir> TyPureBuilder<'vir> {
                 });
                 TyPureEncLocalKind::Adt { adt, discr_fn }
             }
-            // Natively-represented builtins (`Int`/`Real`) emit nothing.
+            // Natively-represented types (`Int`/`Real`/`bool`) emit nothing.
             BuilderData::None => TyPureEncLocalKind::None,
         }
     }
@@ -694,11 +719,11 @@ impl<'vir> DomainBuilder<'vir> {
 
 impl<'vir> TyPurePrimData<'vir> {
     pub fn expr_from_bits(&self, ty: ty::Ty<'vir>, value: u128) -> vir::ExprPrim<'vir> {
-        match self.prim_type.kind() {
-            vir::TypeKind::Bool => {
+        match &self.kind {
+            TyPurePrimDataKind::Bool => {
                 vir::with_vcx(|vcx| vcx.mk_const_expr(vir::ConstData::Bool(value != 0)))
             }
-            vir::TypeKind::Int => {
+            TyPurePrimDataKind::Int(_) | TyPurePrimDataKind::Float(_) => {
                 let (bit_width, signed) = match ty.kind() {
                     TyKind::Int(IntTy::Isize) => ((std::mem::size_of::<isize>() * 8) as u64, true),
                     TyKind::Int(ty) => (ty.bit_width().unwrap(), true),
@@ -726,7 +751,6 @@ impl<'vir> TyPurePrimData<'vir> {
                     None => vir::with_vcx(|vcx| vcx.mk_const_expr(vir::ConstData::Int(value))),
                 }
             }
-            ref k => unreachable!("{k:?}"),
         }
     }
 }

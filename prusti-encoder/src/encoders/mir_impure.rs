@@ -396,7 +396,9 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                     None => {
                         // mir::Rvalue::Discriminant documents "Returns zero for types without discriminant"
                         let zero = self.vcx.mk_uint::<0>();
-                        (e_rvalue_ty.expect_primitive().prim_to_snap)(zero.upcast_ty())
+                        e_rvalue_ty
+                            .expect_primitive()
+                            .prim_to_snap(zero.upcast_ty())
                     }
                 }
                 .upcast_ty()
@@ -523,10 +525,10 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                         .unwrap();
                     let usize_ty_out = self.ty_use_pure(self.vcx.tcx().types.usize);
                     Some(
-                        (usize_ty_out.expect_primitive().expect_native().snap_to_prim)(
-                            index.downcast_ty(),
-                        )
-                        .downcast_ty(),
+                        usize_ty_out
+                            .expect_primitive()
+                            .snap_to_prim(index.downcast_ty())
+                            .downcast_ty(),
                     )
                 }
                 _ => None,
@@ -895,10 +897,10 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                             .unwrap();
                         let usize_ty_out = self.ty_use_pure(self.vcx.tcx().types.usize);
                         Some(
-                            (usize_ty_out.expect_primitive().expect_native().snap_to_prim)(
-                                index.downcast_ty(),
-                            )
-                            .downcast_ty(),
+                            usize_ty_out
+                                .expect_primitive()
+                                .snap_to_prim(index.downcast_ty())
+                                .downcast_ty(),
                         )
                     }
                     _ => None,
@@ -1089,8 +1091,10 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 let e_ty = self.ty_use_impure(place_ty.ty).expect_array();
                 let idx = self.encode_place_with_snap(mir::Place::from(idx).into());
                 let usize_ty = self.ty_use_pure(self.vcx.tcx().types.usize);
-                let idx =
-                    usize_ty.expect_native().snap_to_prim.call()(idx.1.downcast_ty()).downcast_ty();
+                let idx = usize_ty
+                    .expect_primitive()
+                    .snap_to_prim(idx.1.downcast_ty())
+                    .downcast_ty();
                 PlaceExpr {
                     address: e_ty.ref_to_index_ref(expr.address, idx),
                     metadata: None,
@@ -1405,14 +1409,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             .expr
             .reify(self.vcx, (self.def_id, self.vcx.alloc(locals)))
             .downcast_ty();
-        let to_bool = self
-            .deps
-            .require_dep::<TyUsePureEnc>(RustTyDecomposition::from_prim_ty(
-                self.vcx.tcx().types.bool,
-            ))?
-            .expect_native()
-            .snap_to_prim;
-        Ok(to_bool(expr).downcast_ty())
+        Ok(expr)
     }
 
     fn visit_basic_block_data(
@@ -1793,9 +1790,8 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 self.current_fpcs = Some(current_fpcs);
                 otherwise_stmts.push(self.set_from_to_flag(location.block, targets.otherwise()));
 
-                let discr_ex = (discr_ty.expect_native().snap_to_prim)(
-                    self.encode_operand_snap(discr, &()).unwrap().downcast_ty(),
-                );
+                let discr_ex = discr_ty
+                    .snap_to_prim(self.encode_operand_snap(discr, &()).unwrap().downcast_ty());
                 self.vcx.mk_goto_if_stmt(
                     discr_ex.as_dyn(), // self.vcx.mk_local_ex(discr_name),
                     goto_targets,
@@ -1977,10 +1973,14 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 )?;
                 self.current_fpcs = Some(current_fpcs);
 
-                let e_bool = self.ty_use_pure(self.vcx.tcx().types.bool);
-                let enc = self.encode_operand_snap(cond, &()).unwrap().downcast_ty();
-                let enc = (e_bool.expect_native().snap_to_prim)(enc);
-                let expected = self.vcx.mk_const_expr(vir::ConstData::Bool(*expected));
+                let enc = self
+                    .encode_operand_snap(cond, &())
+                    .unwrap()
+                    .downcast_ty::<vir::Bool>();
+                let expected = self
+                    .vcx
+                    .mk_const_expr(vir::ConstData::Bool(*expected))
+                    .downcast_ty();
                 let assert = self.vcx.mk_eq_expr(enc, expected);
                 let error_msg = match **msg {
                     mir::AssertMessage::BoundsCheck { .. } => Some("bounds check may fail"),

@@ -272,12 +272,6 @@ impl TaskEncoder for PrustiBuiltinEnc {
                     args.context(),
                 ))
             };
-            let bool_ty = deps
-                .require_dep::<TyUsePureEnc>(RustTyDecomposition::from_prim_ty(tcx.types.bool))?;
-            let bool_ty = bool_ty.expect_primitive();
-            let mk_bool =
-                |prim: ExprRet<'vir, vir::Bool>| bool_ty.prim_to_snap.call()(prim.upcast_ty());
-
             let res: ExprRet<'vir, vir::CSnap> = match builtin {
                 PrustiBuiltin::Forall
                 | PrustiBuiltin::Exists
@@ -293,15 +287,15 @@ impl TaskEncoder for PrustiBuiltinEnc {
                     let rhs = e_input(deps, 1)?
                         .expect_immref()
                         .value_access(operands[1].downcast_ty());
-                    mk_bool(vcx.mk_eq_expr(lhs, rhs))
+                    vcx.mk_eq_expr(lhs, rhs).upcast_ty()
                 }
                 PrustiBuiltin::IsNaN(fl) => {
                     let is_nan = Self::float_domain(deps, fl)?.fp_is_nan;
-                    mk_bool(is_nan.call()(operands[0].downcast_ty()))
+                    is_nan.call()(operands[0].downcast_ty()).upcast_ty()
                 }
                 PrustiBuiltin::IsInfinite(fl) => {
                     let is_infinite = Self::float_domain(deps, fl)?.fp_is_infinite;
-                    mk_bool(is_infinite.call()(operands[0].downcast_ty()))
+                    is_infinite.call()(operands[0].downcast_ty()).upcast_ty()
                 }
                 PrustiBuiltin::FlAbs(fl) => {
                     let abs = Self::float_domain(deps, fl)?.fp_abs;
@@ -331,7 +325,7 @@ impl TaskEncoder for PrustiBuiltinEnc {
                         PrustiBuiltin::RealGe => vir::BinOpKind::CmpGe,
                         _ => unreachable!(),
                     };
-                    mk_bool(Self::native_cmp(vcx, bin_op, v1, v2))
+                    Self::native_cmp(vcx, bin_op, v1, v2).upcast_ty()
                 }
                 PrustiBuiltin::RealCmp => {
                     let (v1, v2) = Self::deref_operands::<vir::Perm>(deps, sig, args, operands)?;
@@ -349,8 +343,8 @@ impl TaskEncoder for PrustiBuiltinEnc {
                     .downcast_ty::<vir::Perm>()
                     .upcast_ty(),
                 PrustiBuiltin::IntFrom => {
-                    let prim = e_input(deps, 0)?.expect_native().snap_to_prim;
-                    let val = prim.call()(operands[0].downcast_ty());
+                    let prim = *e_input(deps, 0)?.expect_primitive();
+                    let val = prim.snap_to_prim(operands[0].downcast_ty());
                     val.downcast_ty::<vir::Int>().upcast_ty()
                 }
                 PrustiBuiltin::IntMul => Self::int_op(vcx, vir::BinOpKind::Mul, operands),
@@ -374,7 +368,7 @@ impl TaskEncoder for PrustiBuiltinEnc {
                         PrustiBuiltin::IntGe => vir::BinOpKind::CmpGe,
                         _ => unreachable!(),
                     };
-                    mk_bool(Self::native_cmp(vcx, bin_op, v1, v2))
+                    Self::native_cmp(vcx, bin_op, v1, v2).upcast_ty()
                 }
                 PrustiBuiltin::IntCmp => {
                     let (v1, v2) = Self::deref_operands::<vir::Int>(deps, sig, args, operands)?;

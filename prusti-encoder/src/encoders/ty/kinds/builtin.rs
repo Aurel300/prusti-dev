@@ -29,20 +29,7 @@ pub(crate) fn ty_impure<'vir>(
 ) -> Result<impure::TyImpureBuiltin<'vir>, EncodeFullError<'vir, impure::TyImpureEnc>> {
     match data.0 {
         RustBuiltinData::Int | RustBuiltinData::Real => {
-            let snap_type = builder.csnap_type();
-
-            let ref_self_decl = builder.ref_self_decl();
-            let ref_self = builder.vcx.mk_local_ex(ref_self_decl);
-
-            // fields
-            let prim_field = builder.field("val", snap_type);
-
-            // main predicate
-            builder.mk_predicate("", Some(vir::expr! { acc((ref_self).[prim_field]) }));
-
-            // Ref-to-snap
-            builder.mk_snap_function(Some(vir::expr! { [prim_field](ref_self) }));
-
+            super::primitive::set_primitive(builder);
             Ok(())
         }
         RustBuiltinData::Ghost => {

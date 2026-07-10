@@ -148,14 +148,15 @@ impl TaskEncoder for MirPureEnc {
             // We wrap the expression with an additional lazy that will perform
             // some sanity checks. These requirements cannot be expressed using
             // only the type system.
-            let ret = if let PureKind::SpecBlock(..) = kind {
-                RustTyDecomposition::from_prim_ty(vcx.tcx().types.bool)
+            let snapshot = if let PureKind::SpecBlock(..) = kind {
+                vir::TYPE_BOOL.upcast_ty()
             } else {
-                RustTyDecomposition::from_ty(body.return_ty(), def_id)
+                let ret = RustTyDecomposition::from_ty(body.return_ty(), def_id);
+                deps.require_ref::<TyUsePureEnc>(ret)?.snapshot
             };
             let expr = vcx.mk_lazy_expr(
                 vir::vir_format!(vcx, "pure body {def_id:?}"),
-                deps.require_ref::<TyUsePureEnc>(ret)?.snapshot,
+                snapshot,
                 Box::new(move |vcx, lctx: ExprInput<'_>| {
                     // check: are we actually providing inputs for the
                     //   correct `DefId`?
@@ -672,7 +673,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                     |expr, ((cond_val, _target), branch_update)| {
                         self.vcx.mk_ternary_expr(
                             self.vcx.mk_eq_expr(
-                                discr_ty_out.expect_native().snap_to_prim.call()(discr_expr),
+                                discr_ty_out.snap_to_prim(discr_expr),
                                 discr_ty_out.expr_from_bits(discr_ty, cond_val).lift(),
                             ),
                             self.reify_branch(
@@ -725,8 +726,9 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                 // encode the condition operand
                 let cond_ty = cond.ty(self.body, self.vcx.tcx());
                 assert_eq!(*cond_ty.kind(), TyKind::Bool);
-                let cond_expr = self.encode_operand_snap(cond, &new_curr_ver)?.downcast_ty();
-                let cond_ty_out = self.ty_use(cond_ty).expect_primitive();
+                let cond_expr = self
+                    .encode_operand_snap(cond, &new_curr_ver)?
+                    .downcast_ty::<vir::Bool>();
 
                 // if cond == expected: walk the rest of the CFG
                 let ok_update = self.encode_cfg(&new_curr_ver, *target, join_point)?;
@@ -767,10 +769,10 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                     .unwrap();
                 let phi_expr = self.vcx.mk_ternary_expr(
                     self.vcx.mk_eq_expr(
-                        cond_ty_out.expect_native().snap_to_prim.call()(cond_expr),
-                        cond_ty_out
-                            .expr_from_bits(cond_ty, if *expected { 1 } else { 0 })
-                            .lift(),
+                        cond_expr,
+                        self.vcx
+                            .mk_const_expr(vir::ConstData::Bool(*expected))
+                            .downcast_ty(),
                     ),
                     self.reify_branch(&tuple_ref, &mod_locals, &new_curr_ver, ok_update),
                     self.reify_branch(&tuple_ref, &mod_locals, &new_curr_ver, None),
@@ -995,7 +997,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                         let e_rvalue_ty = self.ty_use(rvalue_ty).expect_primitive();
                         // mir::Rvalue::Discriminant documents "Returns zero for types without discriminant"
                         let zero = self.vcx.mk_uint::<0>();
-                        e_rvalue_ty.prim_to_snap.call()(zero.upcast_ty()).lift()
+                        e_rvalue_ty.prim_to_snap(zero.upcast_ty()).lift()
                     }
                 };
                 Ok(discr.upcast_ty())
@@ -1126,10 +1128,8 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                 let usize_ty = self.ty_use(self.vcx.tcx().types.usize);
                 let idx = usize_ty
                     .expect_primitive()
-                    .expect_native()
-                    .snap_to_prim
-                    .call()(idx.downcast_ty())
-                .downcast_ty();
+                    .snap_to_prim(idx.downcast_ty())
+                    .downcast_ty();
                 let proj_app = proj.index(encoded_place.snap.downcast_ty(), idx);
                 let place_ref = encoded_place
                     .place_ref
@@ -1209,10 +1209,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
         args: &[Spanned<mir::Operand<'vir>>],
         curr_ver: &FxHashMap<mir::Local, Version<'vir>>,
     ) -> Result<ExprRet<'vir>, EncodeFullError<'vir, MirPureEnc>> {
-        let bool = self.ty_use(self.vcx.tcx().types.bool);
-        let bool = bool.expect_primitive();
-        let mk_bool =
-            |prim: vir::ExprGenBool<'vir, _, _>| bool.prim_to_snap.call()(prim.upcast_ty());
+        let mk_bool = |prim: vir::ExprGenBool<'vir, _, _>| prim.upcast_ty::<vir::CSnap>();
         Ok(match builtin {
             PrustiBuiltin::Forall | PrustiBuiltin::Exists => {
                 assert_eq!(arg_tys.len(), 3);
@@ -1310,8 +1307,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                     .reify(self.vcx, (cl_def_id, self.vcx.alloc(reify_args)))
                     .lift();
 
-                let body =
-                    bool.expect_native().snap_to_prim.call()(body.downcast_ty()).downcast_ty();
+                let body = body.downcast_ty::<vir::Bool>();
                 // TODO: triggers
                 let res = if builtin == PrustiBuiltin::Forall {
                     self.vcx.mk_forall_expr(qvars, &[], body)
@@ -1396,8 +1392,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                     .reify(self.vcx, (cl_def_id, self.vcx.alloc(reify_args)))
                     .lift();
 
-                let body =
-                    bool.expect_native().snap_to_prim.call()(body.downcast_ty()).downcast_ty();
+                let body = body.downcast_ty::<vir::Bool>();
                 mk_bool(body)
             }
             PrustiBuiltin::ModeStart(mode) => {

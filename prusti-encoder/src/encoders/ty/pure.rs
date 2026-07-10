@@ -14,13 +14,14 @@ use vir::{
     DomainIdnSnap, FunctionIdn, Type,
 };
 
-use crate::encoders::{Pure, ty::interpretation::real};
+use crate::encoders::Pure;
 
 use super::{
     RustTy, ViperTyDatas,
     data::*,
     generics::{GenericParams, GenericParamsEnc},
     interpretation::float::FloatDomain,
+    rust_ty::RustBuiltinData,
 };
 
 pub(super) type PureTyDatas = ViperTyDatas<Pure>;
@@ -37,7 +38,7 @@ impl<'vir> TyDatas<'vir> for PureTyDatas {
     type StructData = TyPureStructData<'vir>;
     type VariantData = TyPureVariantData<'vir>;
     type EnumData = TyPureEnumData<'vir>;
-    type BuiltinData = TyPureBuiltinData<'vir>;
+    type BuiltinData = TyPureBuiltinData;
 }
 
 pub type TyPure<'vir> = Ty<'vir, PureTyDatas>;
@@ -50,18 +51,10 @@ pub type TyPureRaw<'vir> = <PureTyDatas as TyDatas<'vir>>::RawData;
 pub type TyPureBuiltin<'vir> = <PureTyDatas as TyDatas<'vir>>::BuiltinData;
 
 #[derive(Debug, Clone, Copy)]
-pub enum TyPureBuiltinData<'vir> {
-    TyPureBuiltinReal(real::TyRealLocal<'vir>),
-    TyPureBuiltinGhost,
-}
-
-impl<'vir> TyPureBuiltinData<'vir> {
-    pub fn expect_real(&'vir self) -> &'vir real::TyRealLocal<'vir> {
-        match &self {
-            TyPureBuiltinData::TyPureBuiltinReal(ty_real_local) => ty_real_local,
-            _ => panic!(),
-        }
-    }
+pub enum TyPureBuiltinData {
+    Int,
+    Real,
+    Ghost,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -194,7 +187,7 @@ pub(super) type TyPureEnc = super::TyEnc<Pure>;
 
 #[derive(Debug, Clone, Copy)]
 pub struct TyPureRef<'vir> {
-    pub domain: vir::DomainIdnSnap<'vir>,
+    pub snapshot: vir::TypeSnap<'vir>,
     pub unreachable_to_snap: FunctionIdn<'vir, (vir::ManyTyVal, vir::ManyCSnap), vir::Snap>,
 }
 
@@ -217,6 +210,7 @@ pub enum TyPureEncLocalKind<'vir> {
         adt: vir::Adt<'vir>,
         discr_fn: Option<vir::Function<'vir>>,
     },
+    None,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -299,8 +293,7 @@ impl TaskEncoder for TyPureEnc {
                     )?)
                 }
                 TySpecifics::Builtin(builtin) => {
-                    let builder = builder.set_adt_builder();
-                    TySpecifics::Builtin(super::kinds::builtin::ty_pure(builtin, builder)?)
+                    TySpecifics::Builtin(super::kinds::builtin::ty_pure(builtin, &mut builder)?)
                 }
             };
             let output = TyData::new(output_ref, specifics).alloc();
@@ -325,6 +318,7 @@ impl TaskEncoder for TyPureEnc {
                         program.add_function(discr_fn);
                     }
                 }
+                TyPureEncLocalKind::None => {}
             }
         }
     }
@@ -370,8 +364,7 @@ impl<'vir> Deref for AdtBuilder<'vir> {
 
 pub(crate) struct TyPureBuilder<'vir> {
     pub(crate) vcx: &'vir vir::VirCtxt<'vir>,
-    name: &'vir str,
-    domain_ident: vir::DomainIdnSnap<'vir>,
+    name: vir::ViperIdent<'vir>,
     self_type: vir::TypeSnap<'vir>,
     unreachable_to_snap: FunctionIdn<'vir, (vir::ManyTyVal, vir::ManyCSnap), vir::Snap>,
     pub(super) params: GenericParams<'vir>,
@@ -416,9 +409,14 @@ impl<'vir> TyPureBuilder<'vir> {
         ty: RustTy<'vir>,
     ) -> Self {
         let params = deps.require_dep::<GenericParamsEnc>(ty.params).unwrap();
-        let name = vir::vir_format!(vcx, "s_{}", ty.name());
-        let domain_ident = DomainIdnSnap::new(vir::ViperIdent::new(name), 0);
-        let self_type = domain_ident();
+        let name = vir::ViperIdent::new(vir::vir_format!(vcx, "s_{}", ty.name()));
+        // The `Int`/`Real` builtins are represented directly by the
+        // native Viper `Int`/`Perm` types; nothing is emitted for them.
+        let self_type = match &ty.specifics {
+            TySpecifics::Builtin(RustBuiltinData::Int) => vir::TYPE_INT.upcast_ty(),
+            TySpecifics::Builtin(RustBuiltinData::Real) => vir::TYPE_PERM.upcast_ty(),
+            _ => DomainIdnSnap::new(name, 0)(),
+        };
         let unreachable_to_snap = FunctionIdn::new(
             vir::ViperIdent::new(vir::vir_format!(vcx, "{name}_unreachable")),
             (params.ty_args(), params.const_args()),
@@ -427,7 +425,6 @@ impl<'vir> TyPureBuilder<'vir> {
         TyPureBuilder {
             vcx,
             name,
-            domain_ident,
             self_type,
             unreachable_to_snap,
             params,
@@ -441,7 +438,7 @@ impl<'vir> TyPureBuilder<'vir> {
 
     pub(crate) fn output_ref(&self) -> TyPureRef<'vir> {
         TyPureRef {
-            domain: self.domain_ident.cast_ty(),
+            snapshot: self.self_type,
             unreachable_to_snap: self.unreachable_to_snap,
         }
     }
@@ -500,7 +497,7 @@ impl<'vir> TyPureBuilder<'vir> {
         match self.data {
             BuilderData::Domain(data) => {
                 let domain = self.vcx.mk_domain(
-                    self.domain_ident.name(),
+                    self.name,
                     &[],
                     self.vcx.alloc_slice(data.axioms.as_slice()),
                     self.vcx.alloc_slice(data.functions.as_slice()),
@@ -510,7 +507,7 @@ impl<'vir> TyPureBuilder<'vir> {
             }
             BuilderData::Adt(data) => {
                 let adt = self.vcx.mk_adt(
-                    self.domain_ident.name(),
+                    self.name,
                     &[],
                     self.vcx.alloc_slice(data.constructors.as_slice()),
                 );
@@ -522,7 +519,8 @@ impl<'vir> TyPureBuilder<'vir> {
                 });
                 TyPureEncLocalKind::Adt { adt, discr_fn }
             }
-            BuilderData::None => unreachable!("no builder data"),
+            // Natively-represented builtins (`Int`/`Real`) emit nothing.
+            BuilderData::None => TyPureEncLocalKind::None,
         }
     }
 }

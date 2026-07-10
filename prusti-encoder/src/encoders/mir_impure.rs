@@ -36,7 +36,7 @@ use prusti_rustc_interface::{
         mir,
         ty::{self, TyKind},
     },
-    span::{Span, def_id::DefId},
+    span::{Span, def_id::DefId, source_map::Spanned},
 };
 use prusti_utils::config;
 use rustc_hash::{FxHashMap, FxHashSet};
@@ -45,18 +45,17 @@ use vir::{CastType, CompType, LocalDeclData};
 
 use crate::encoders::{
     self, FunctionCallEnc, MirBuiltinUseCastEnc, MirBuiltinUseCastTask, MirPureEnc, MirPureEncTask,
-    PureKind, TyUseImpureEnc, WandEnc, WandEncTask,
+    PrustiBuiltin, PureKind, TyUseImpureEnc, WandEnc, WandEncTask,
     mir_fn::{CallTaskDescription, RustSignature, SpecBlockKind, SpecBlocks},
     mir_shared::{PureRvalueEnc, RustcIntrinsic},
     ty::{
         RustTyDecomposition,
-        generics::GParams,
         use_impure::TyUseImpure,
         use_pure::{TyUsePure, TyUsePureEnc},
     },
 };
 
-use super::{WandCallContext, WandEncOutput};
+use super::WandEncOutput;
 
 #[derive(Clone, Copy)]
 struct FromToVar<'vir> {
@@ -744,10 +743,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                                 }))
                                 .collect::<Result<Vec<_>, EncodeFullError<'vir, E>>>()?;
                         let (label_pre, label_post) = self.call_labels[&call.location().block];
-                        let call_ctx = WandCallContext {
-                            caller_substs,
-                            caller_g_params: GParams::from(self.def_id),
-                        };
+                        let call_ctx = self.gargs(caller_substs);
                         wands.apply_wands(&wand_args, label_pre, label_post, call_ctx, self);
                     }
                     _ => unreachable!(),
@@ -1849,62 +1845,31 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                     .expr
                     .expect_predicate();
                 self.vcx.with_span(terminator.source_info.span, |vcx| {
-                    // The bodiless `ptr_metadata` intrinsic is only lowered to
-                    // `UnOp::PtrMetadata` in optimized MIR; do the lowering here.
-                    let intrinsic = self.vcx.tcx().intrinsic(func_def_id);
-                    let intrinsic = intrinsic.and_then(RustcIntrinsic::from_intrinsic);
-                    if let Some(intrinsic) = intrinsic {
-                        let intrinsic_result =
-                            self.encode_intrinsic(intrinsic, caller_substs, args, &())?;
+                    let pure =
+                        self.pure_call_result(func_def_id, caller_substs, args, is_pure, span)?;
+                    if let Some((can_fail, pure)) = pure {
                         let return_ty = destination.ty(self.local_decls, self.vcx.tcx()).ty;
-                        let assign_stmt = self.ty_use_impure(return_ty).apply_method_assign(
-                            self.vcx,
-                            dest,
-                            intrinsic_result,
-                        );
-                        self.stmt(assign_stmt);
-                    } else if is_pure {
-                        let pure_func = self
-                            .deps
-                            .require_dep::<FunctionCallEnc>(CallTaskDescription::new(
-                                self.def_id,
-                                caller_substs,
-                                func_def_id,
-                            ))
-                            .unwrap();
-                        let snap_args = args
-                            .iter()
-                            .map(|arg| {
-                                self.vcx.with_span(arg.span, |_| {
-                                    self.encode_operand_snap(&arg.node, &()).unwrap()
-                                })
-                            })
-                            .collect::<Vec<_>>();
-                        let pure_func_app = pure_func.call_impure(snap_args);
-
-                        let return_ty = destination.ty(self.local_decls, self.vcx.tcx()).ty;
-                        let assign_stmt = self.ty_use_impure(return_ty).apply_method_assign(
-                            self.vcx,
-                            dest,
-                            pure_func_app,
-                        );
-
-                        vcx.handle_error(
-                            "application.precondition:assertion.false",
-                            move |reason_span_opt| {
-                                let mut error = PrustiError::verification(
-                                    "precondition might not hold",
-                                    span.into(),
-                                );
-                                if let Some(reason_span) = reason_span_opt {
-                                    error.add_note_mut(
-                                        "the failing precondition is here",
-                                        Some(reason_span.into()),
+                        let assign_stmt = self
+                            .ty_use_impure(return_ty)
+                            .apply_method_assign(self.vcx, dest, pure);
+                        if can_fail {
+                            vcx.handle_error(
+                                "application.precondition:assertion.false",
+                                move |reason_span_opt| {
+                                    let mut error = PrustiError::verification(
+                                        "precondition might not hold",
+                                        span.into(),
                                     );
-                                }
-                                Some(vec![error])
-                            },
-                        );
+                                    if let Some(reason_span) = reason_span_opt {
+                                        error.add_note_mut(
+                                            "the failing precondition is here",
+                                            Some(reason_span.into()),
+                                        );
+                                    }
+                                    Some(vec![error])
+                                },
+                            );
+                        }
                         self.stmt(assign_stmt);
                     } else {
                         let Ok(func_out) = self.deps.require_dep::<encoders::MethodCallEnc>(
@@ -2139,6 +2104,67 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         };
         assert!(self.current_terminator.replace(terminator).is_none());
         Ok(())
+    }
+
+    fn pure_call_result(
+        &mut self,
+        func_def_id: DefId,
+        caller_substs: ty::GenericArgsRef<'vir>,
+        args: &[Spanned<mir::Operand<'vir>>],
+        is_pure: bool,
+        span: Span,
+    ) -> Result<Option<(bool, vir::ExprSnap<'vir>)>, EncodeFullError<'vir, E>> {
+        // The bodiless `ptr_metadata` intrinsic is only lowered to
+        // `UnOp::PtrMetadata` in optimized MIR; do the lowering here.
+        let intrinsic = self.vcx.tcx().intrinsic(func_def_id);
+        let intrinsic = intrinsic.and_then(RustcIntrinsic::from_intrinsic);
+        Ok(if let Some(intrinsic) = intrinsic {
+            Some((
+                false,
+                self.encode_intrinsic(intrinsic, caller_substs, args, &())?,
+            ))
+        } else if let Some(builtin) = PrustiBuiltin::new(func_def_id, self.gargs(caller_substs)) {
+            // A `prusti_contracts` builtin used in executable code
+            // (e.g. `Int::from(2) + Int::from(3)`): encode it with
+            // the shared operand-based encoding and assign the
+            // resulting ghost snapshot into the destination.
+            Some((false, self
+                .encode_prusti_builtin(
+                    builtin,
+                    func_def_id,
+                    self.gargs(caller_substs),
+                    args,
+                    &(),
+                )?
+                .ok_or_else(|| {
+                    self.unsupported_rvalue(
+                        format!(
+                            "`prusti_contracts` builtin {builtin:?} cannot be used in executable code"
+                        ),
+                        span,
+                    )
+                })?))
+        } else if is_pure {
+            let pure_func = self
+                .deps
+                .require_dep::<FunctionCallEnc>(CallTaskDescription::new(
+                    self.def_id,
+                    caller_substs,
+                    func_def_id,
+                ))
+                .unwrap();
+            let snap_args = args
+                .iter()
+                .map(|arg| {
+                    self.vcx.with_span(arg.span, |_| {
+                        self.encode_operand_snap(&arg.node, &()).unwrap()
+                    })
+                })
+                .collect::<Vec<_>>();
+            Some((true, pure_func.call_impure(snap_args)))
+        } else {
+            None
+        })
     }
 }
 

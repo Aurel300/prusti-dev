@@ -22,7 +22,7 @@ pub(crate) fn ty_pure<'vir>(
     let discr_ty =
         deps.require_dep::<TyPureEnc>(RustTyDecomposition::from_prim_ty(data.discr).ty)?;
     let discr_prim = discr_ty.expect_primitive();
-    let discr_ty = (discr_ty.domain)();
+    let discr_ty = discr_ty.snapshot;
 
     let variants = data
         .variants

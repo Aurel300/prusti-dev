@@ -116,7 +116,7 @@ pub struct TyUseImpureEnumData<'vir> {
 /// This wrapper handles all the generic casts required (e.g. when fold/unfolding).
 pub type TyUseImpureEnc = TyUseEnc<Impure>;
 
-type TyUseImpureResult<'vir, T> = Result<T, EncodeFullError<'vir, TyUseImpureEnc>>;
+type EncResult<'vir, T> = Result<T, EncodeFullError<'vir, TyUseImpureEnc>>;
 
 impl TaskEncoder for TyUseImpureEnc {
     task_encoder::encoder_cache!(TyUseImpureEnc);
@@ -163,7 +163,7 @@ impl<'a, 'vir> TyUseImpureWalker<'a, 'vir> {
     fn new(
         deps: &'a mut TaskEncoderDependencies<'vir, TyUseImpureEnc>,
         args: GArgs<'vir>,
-    ) -> TyUseImpureResult<'vir, Self> {
+    ) -> EncResult<'vir, Self> {
         let args_t = deps.require_dep::<GArgsTyEnc>(args)?;
         Ok(Self { deps, args_t, args })
     }
@@ -172,7 +172,7 @@ impl<'a, 'vir> TyUseImpureWalker<'a, 'vir> {
         &mut self,
         ty: TyData<'vir, (RustTyDatas, ImpureTyDatas)>,
         maybe_inhabited: bool,
-    ) -> TyUseImpureResult<'vir, TyData<'vir, UseImpureTyDatas>> {
+    ) -> EncResult<'vir, TyData<'vir, UseImpureTyDatas>> {
         let specifics = match &ty.specifics {
             TySpecifics::Param(..) => TySpecifics::mk_param(()),
             TySpecifics::Opaque(..) => TySpecifics::mk_opaque(()),
@@ -231,7 +231,7 @@ impl<'a, 'vir> TyUseImpureWalker<'a, 'vir> {
         &mut self,
         inner: LazyRustTy<'vir>,
         params: GParams<'vir>,
-    ) -> TyUseImpureResult<'vir, FieldCaster<'vir>> {
+    ) -> EncResult<'vir, FieldCaster<'vir>> {
         let normalized = inner.decompose_compare_normalize(params, self.args);
         self.deps.require_dep::<GArgsCastEnc<Impure>>(normalized)
     }
@@ -240,7 +240,7 @@ impl<'a, 'vir> TyUseImpureWalker<'a, 'vir> {
         &mut self,
         inner: LazyRustTy<'vir>,
         params: GParams<'vir>,
-    ) -> TyUseImpureResult<'vir, GArgCaster<'vir, crate::encoders::Pure>> {
+    ) -> EncResult<'vir, GArgCaster<'vir, crate::encoders::Pure>> {
         let normalized = inner.decompose_compare_normalize(params, self.args);
         self.deps
             .require_dep::<GArgsCastEnc<crate::encoders::Pure>>(normalized)
@@ -251,7 +251,7 @@ impl<'a, 'vir> TyUseImpureWalker<'a, 'vir> {
         data: &ArrayData<'vir, (RustTyDatas, ImpureTyDatas)>,
         _ref_to_pred: PredicateIdn<'vir, (vir::Ref, vir::ManyTyVal, vir::ManyCSnap)>,
         params: GParams<'vir>,
-    ) -> TyUseImpureResult<'vir, ArrayData<'vir, UseImpureTyDatas>> {
+    ) -> EncResult<'vir, ArrayData<'vir, UseImpureTyDatas>> {
         let caster = self.encode_normalized(*data.0, params)?;
         let slice = data.slice;
         let data = TyUseImpureArrayData {
@@ -267,7 +267,7 @@ impl<'a, 'vir> TyUseImpureWalker<'a, 'vir> {
         data: &StructData<'vir, (RustTyDatas, ImpureTyDatas)>,
         ref_to_pred: PredicateIdn<'vir, (vir::Ref, vir::ManyTyVal, vir::ManyCSnap)>,
         params: GParams<'vir>,
-    ) -> TyUseImpureResult<'vir, StructData<'vir, UseImpureTyDatas>> {
+    ) -> EncResult<'vir, StructData<'vir, UseImpureTyDatas>> {
         let fields = data
             .fields
             .iter()
@@ -279,7 +279,7 @@ impl<'a, 'vir> TyUseImpureWalker<'a, 'vir> {
                     impure: *field.1,
                 })
             })
-            .collect::<TyUseImpureResult<'vir, Vec<_>>>()?;
+            .collect::<EncResult<'vir, Vec<_>>>()?;
         let data = TyUseImpureStructData {
             args: self.args_t,
             ref_to_pred,
@@ -292,7 +292,7 @@ impl<'a, 'vir> TyUseImpureWalker<'a, 'vir> {
         &mut self,
         data: &EnumData<'vir, (RustTyDatas, ImpureTyDatas)>,
         params: GParams<'vir>,
-    ) -> TyUseImpureResult<'vir, EnumData<'vir, UseImpureTyDatas>> {
+    ) -> EncResult<'vir, EnumData<'vir, UseImpureTyDatas>> {
         let variants = data
             .variants
             .iter()
@@ -301,7 +301,7 @@ impl<'a, 'vir> TyUseImpureWalker<'a, 'vir> {
                     self.encode_structlike(&variant.inner, variant.1.predicate, params)?;
                 Ok(VariantData::new((), structlike))
             })
-            .collect::<TyUseImpureResult<'vir, Vec<_>>>()?;
+            .collect::<EncResult<'vir, Vec<_>>>()?;
         let data = TyUseImpureEnumData {
             args: self.args_t,
             impure: *data.1,

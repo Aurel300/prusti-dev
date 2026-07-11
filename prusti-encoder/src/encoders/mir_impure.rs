@@ -1,5 +1,3 @@
-use std::collections::VecDeque;
-
 use itertools::Itertools;
 use pcg::{
     PcgOutput,
@@ -168,6 +166,10 @@ where
     pub tmp_ctr: usize,
     pub label_ctr: usize,
     pub call_labels: FxHashMap<mir::BasicBlock, (&'vir str, &'vir str)>,
+    /// Blocks whose call terminator was not encoded as an impure method call
+    /// (pure functions, intrinsics, `prusti_contracts` builtins) and thus
+    /// created no wand to apply on expiry.
+    pub wandless_calls: FxHashSet<mir::BasicBlock>,
     pub from_to_vars: FromToVars<'vir>,
 
     // for the current basic block
@@ -729,12 +731,11 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                         destination,
                         ..
                     } => {
-                        let (_, caller_substs, is_pure) = self.get_call_data(func);
-                        if is_pure {
-                            // The call was encoded as a pure function application, so
-                            // there is no wand to apply.
+                        // Calls not encoded as impure method calls do not create wands
+                        if self.wandless_calls.contains(&call.location().block) {
                             return Ok(());
                         }
+                        let (_, caller_substs, _) = self.get_call_data(func);
 
                         let (_, dest_snap, _, _) =
                             self.encode_place_with_snap((*destination).into());
@@ -1238,7 +1239,46 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
     }
 
     pub fn visit_body(&mut self, body: &mir::Body<'vir>) -> Result<(), EncodeFullError<'vir, E>> {
-        let mut queue = VecDeque::new();
+        /// A work-queue item, min-ordered by the block's reverse-postorder
+        /// index (ties broken by insertion order): every non-back-edge
+        /// predecessor of a block is then encoded before the block itself,
+        /// in particular both branches before their join. The borrow-expiry
+        /// handling relies on this: a call's `call_labels`/`wandless_calls`
+        /// entry must exist by the time an expiring borrow references the
+        /// call's block. `heads_hit` is payload, not part of the order.
+        struct WorkItem {
+            rpo_idx: usize,
+            seq: usize,
+            block: mir::BasicBlock,
+            heads_hit: FxHashSet<LoopId>,
+        }
+        impl PartialEq for WorkItem {
+            fn eq(&self, other: &Self) -> bool {
+                (self.rpo_idx, self.seq) == (other.rpo_idx, other.seq)
+            }
+        }
+        impl Eq for WorkItem {}
+        impl PartialOrd for WorkItem {
+            fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+                Some(self.cmp(other))
+            }
+        }
+        impl Ord for WorkItem {
+            fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+                // Reversed so that the max-heap `BinaryHeap` pops the minimum.
+                (other.rpo_idx, other.seq).cmp(&(self.rpo_idx, self.seq))
+            }
+        }
+
+        let rpo_idx: FxHashMap<mir::BasicBlock, usize> = body
+            .basic_blocks
+            .reverse_postorder()
+            .iter()
+            .enumerate()
+            .map(|(idx, block)| (*block, idx))
+            .collect();
+        let mut next_seq = 0..;
+        let mut queue = std::collections::BinaryHeap::new();
         let mut visited = FxHashSet::default();
 
         // In Prusti, we want to be able to support body invariants, i.e.,
@@ -1312,9 +1352,19 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 start_heads.insert(start_loop);
             }
         }
-        queue.push_back((mir::START_BLOCK, start_heads));
+        queue.push(WorkItem {
+            rpo_idx: rpo_idx[&mir::START_BLOCK],
+            seq: next_seq.next().unwrap(),
+            block: mir::START_BLOCK,
+            heads_hit: start_heads,
+        });
 
-        while let Some((block, mut heads_hit)) = queue.pop_front() {
+        while let Some(WorkItem {
+            block,
+            mut heads_hit,
+            ..
+        }) = queue.pop()
+        {
             let in_loops = self.loop_analysis().loops(block).collect::<FxHashSet<_>>();
 
             heads_hit.retain(|l| in_loops.contains(l));
@@ -1381,7 +1431,12 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             self.current_block_succs = None;
 
             for successor in body.basic_blocks.successors(block) {
-                queue.push_back((successor, heads_hit.clone()));
+                queue.push(WorkItem {
+                    rpo_idx: rpo_idx[&successor],
+                    seq: next_seq.next().unwrap(),
+                    block: successor,
+                    heads_hit: heads_hit.clone(),
+                });
             }
         }
         Ok(())
@@ -1840,10 +1895,11 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                     .encode_place(Place::from(*destination))
                     .expr
                     .expect_predicate();
-                self.vcx.with_span(terminator.source_info.span, |vcx| {
+                self.vcx.with_span(span, |vcx| {
                     let pure =
                         self.pure_call_result(func_def_id, caller_substs, args, is_pure, span)?;
                     if let Some((can_fail, pure)) = pure {
+                        self.wandless_calls.insert(self.current_block.unwrap());
                         let return_ty = destination.ty(self.local_decls, self.vcx.tcx()).ty;
                         let assign_stmt = self
                             .ty_use_impure(return_ty)
@@ -2127,22 +2183,27 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             // A `prusti_contracts` builtin used in executable code
             // (e.g. `Int::from(2) + Int::from(3)`): encode it with
             // the shared operand-based encoding and assign the
-            // resulting ghost snapshot into the destination.
-            let expr = self.encode_prusti_builtin(
-                builtin,
-                func_def_id,
-                self.gargs(caller_substs),
-                args,
-                &(),
-            )?;
-            // If `encode_prusti_builtin` returns `None`, it means that this
-            // builtin is only supported in pure code.
-            let expr = expr.ok_or_else(|| {
-                self.unsupported_rvalue(
-                    format!("`prusti_contracts` builtin {builtin:?} cannot be used in impure code"),
+            // resulting ghost snapshot into the destination. The
+            // spec-only builtins (those gated behind the `prusti`
+            // feature) are rejected.
+            if builtin.is_spec_only() {
+                return Err(self.unsupported_rvalue(
+                    format!(
+                        "`prusti_contracts` builtin {builtin:?} cannot be used in executable code"
+                    ),
                     span,
-                )
-            })?;
+                ));
+            }
+            let expr = self
+                .encode_prusti_builtin(
+                    builtin,
+                    func_def_id,
+                    self.gargs(caller_substs),
+                    args,
+                    span,
+                    &(),
+                )?
+                .unwrap();
             Some((false, expr))
         } else if is_pure {
             let pure_func = self
@@ -2171,6 +2232,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
 impl<'vir, 'enc, E: TaskEncoder> PureRvalueEnc<'vir> for ImpureEncVisitor<'vir, 'enc, E> {
     type Encoder = E;
     type EncodePlaceCtxt = ();
+    const PURE: bool = false;
     type ExprCurr = ();
     type ExprNext = !;
     fn def_id(&self) -> DefId {

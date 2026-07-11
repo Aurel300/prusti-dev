@@ -393,25 +393,6 @@ impl<'tcx> EnvQuery<'tcx> {
         did_crate_name.as_str() == crate_name
     }
 
-    /// Given a definition id `def_id`, returns
-    /// None if `def_id` is not an associated item within
-    /// an implementation; Some(ty_name) where `ty_name` is
-    /// the type name of the implementation if
-    /// `def_id` is an associated item.
-    pub fn find_impl_type_name(self, def_id: DefId) -> Option<String> {
-        self.tcx
-            .impl_of_assoc(def_id)
-            .map(|i| self.find_impl_self_type_name(i))
-    }
-
-    /// Given the `DefId` of an `impl` block, returns the name of its self type.
-    pub fn find_impl_self_type_name(self, impl_def_id: DefId) -> String {
-        self.tcx
-            .type_of(impl_def_id)
-            .instantiate_identity()
-            .to_string()
-    }
-
     /// Given a call to `called_def_id` from within `caller_def_id`, returns
     /// the `DefId` that will actually be called if known (i.e. if a trait
     /// method call actually resolves to a concrete implementation), as well as

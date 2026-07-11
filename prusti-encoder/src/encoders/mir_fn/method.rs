@@ -1,6 +1,9 @@
 use pcg::{borrow_checker::r#impl::NllBorrowCheckerImpl, borrow_pcg::FunctionData};
+use prusti_interface::PrustiError;
 use prusti_rustc_interface::{middle::mir, span::def_id::DefId};
-use task_encoder::{EncodeFullResult, OutputRefAny, TaskEncoder, TaskEncoderDependencies};
+use task_encoder::{
+    EncodeFullError, EncodeFullResult, OutputRefAny, TaskEncoder, TaskEncoderDependencies,
+};
 use vir::MethodIdn;
 
 use crate::{
@@ -286,6 +289,7 @@ impl TaskEncoder for MethodEnc {
                     tmp_ctr: 0,
                     label_ctr: 0,
                     call_labels: Default::default(),
+                    wandless_calls: Default::default(),
                     from_to_vars: Default::default(),
 
                     current_block: None,
@@ -298,33 +302,47 @@ impl TaskEncoder for MethodEnc {
                     current_terminator: None,
                     encoded_blocks,
                 };
-                // if we encountered an error/cycle during encoding, we don't emit a method body
-                if visitor.visit_body(body).is_ok() {
-                    start_stmts.extend(
-                        visitor
-                            .from_to_vars
-                            .decls()
-                            .map(|v| vcx.mk_local_decl_stmt(v, Some(vcx.mk_bool::<false>()))),
-                    );
-                    visitor.encoded_blocks[0] = vcx.mk_cfg_block(
-                        &vir::CfgBlockLabelData::Start,
-                        &[],
-                        vcx.alloc_slice(&start_stmts),
-                        vcx.mk_goto_stmt(&vir::CfgBlockLabelData::BasicBlock(0)),
-                    );
+                // if we encountered an error/cycle during encoding, we don't
+                // emit a method body; encoding errors additionally surface as
+                // early errors rather than silently degrading to a stub
+                match visitor.visit_body(body) {
+                    Ok(()) => {
+                        start_stmts.extend(
+                            visitor
+                                .from_to_vars
+                                .decls()
+                                .map(|v| vcx.mk_local_decl_stmt(v, Some(vcx.mk_bool::<false>()))),
+                        );
+                        visitor.encoded_blocks[0] = vcx.mk_cfg_block(
+                            &vir::CfgBlockLabelData::Start,
+                            &[],
+                            vcx.alloc_slice(&start_stmts),
+                            vcx.mk_goto_stmt(&vir::CfgBlockLabelData::BasicBlock(0)),
+                        );
 
-                    visitor.encoded_blocks.push(vcx.mk_cfg_block(
-                        vcx.alloc(vir::CfgBlockLabelData::End),
-                        &[],
-                        &[],
-                        vcx.alloc(vir::TerminatorStmtData::Exit),
-                    ));
+                        visitor.encoded_blocks.push(vcx.mk_cfg_block(
+                            vcx.alloc(vir::CfgBlockLabelData::End),
+                            &[],
+                            &[],
+                            vcx.alloc(vir::TerminatorStmtData::Exit),
+                        ));
 
-                    visitor.deps.check_cycle()?;
+                        visitor.deps.check_cycle()?;
 
-                    Some(visitor.encoded_blocks)
-                } else {
-                    None
+                        Some(visitor.encoded_blocks)
+                    }
+                    Err(EncodeFullError::AlreadyEncoded) => None,
+                    Err(err) => {
+                        vcx.emit_early_error(PrustiError::unsupported(
+                            format!(
+                                "cannot encode method body `{}`: {}",
+                                vcx.tcx().def_path_str(def_id),
+                                super::dep_error_message(&err),
+                            ),
+                            vcx.tcx().def_span(def_id).into(),
+                        ));
+                        None
+                    }
                 }
             } else {
                 None

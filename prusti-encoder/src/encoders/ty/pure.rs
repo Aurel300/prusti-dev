@@ -54,6 +54,10 @@ pub type TyPureBuiltin<'vir> = <PureTyDatas as TyDatas<'vir>>::BuiltinData;
 pub enum TyPureBuiltinData {
     Int,
     Real,
+    Set,
+    Multiset,
+    Seq,
+    Map,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -438,6 +442,20 @@ impl<'vir> TyPureBuilder<'vir> {
         let self_type = match &ty.specifics {
             TySpecifics::Builtin(RustBuiltinData::Int) => vir::TYPE_INT.upcast_ty(),
             TySpecifics::Builtin(RustBuiltinData::Real) => vir::TYPE_PERM.upcast_ty(),
+            // The collection builtins are encoded at their most generic
+            // instantiation, so the elements are generic snapshots.
+            TySpecifics::Builtin(RustBuiltinData::Set(_)) => {
+                vcx.mk_ty_set(vir::TYPE_PSNAP).upcast_ty()
+            }
+            TySpecifics::Builtin(RustBuiltinData::Multiset(_)) => {
+                vcx.mk_ty_multiset(vir::TYPE_PSNAP).upcast_ty()
+            }
+            TySpecifics::Builtin(RustBuiltinData::Seq(_)) => {
+                vcx.mk_ty_seq(vir::TYPE_PSNAP).upcast_ty()
+            }
+            TySpecifics::Builtin(RustBuiltinData::Map(..)) => {
+                vcx.mk_ty_map(vir::TYPE_PSNAP, vir::TYPE_PSNAP).upcast_ty()
+            }
             TySpecifics::Primitive(prim) if prim.is_bool() => vir::TYPE_BOOL.upcast_ty(),
             _ => DomainIdnSnap::new(name, 0)(),
         };

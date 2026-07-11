@@ -1410,6 +1410,17 @@ impl<'a> AstFactory<'a> {
         )
     }
 
+    pub fn lookup_map_with_pos(&self, map: Expr, key: Expr, pos: Position) -> Expr<'a> {
+        build_ast_node_with_pos!(
+            self,
+            Expr,
+            ast::MapLookup,
+            map.to_jobject(),
+            key.to_jobject(),
+            pos.to_jobject()
+        )
+    }
+
     pub fn map_contains(&self, map: Expr, key: Expr) -> Expr<'a> {
         build_ast_node!(
             self,
@@ -1422,6 +1433,14 @@ impl<'a> AstFactory<'a> {
 
     pub fn map_len(&self, map: Expr) -> Expr<'a> {
         build_ast_node!(self, Expr, ast::MapCardinality, map.to_jobject())
+    }
+
+    pub fn map_domain(&self, map: Expr) -> Expr<'a> {
+        build_ast_node!(self, Expr, ast::MapDomain, map.to_jobject())
+    }
+
+    pub fn map_range(&self, map: Expr) -> Expr<'a> {
+        build_ast_node!(self, Expr, ast::MapRange, map.to_jobject())
     }
 
     pub fn range_seq(&self, low: Expr, high: Expr) -> Expr<'a> {
@@ -1454,6 +1473,17 @@ impl<'a> AstFactory<'a> {
         )
     }
 
+    pub fn seq_index_with_pos(&self, seq: Expr, index: Expr, pos: Position) -> Expr<'a> {
+        build_ast_node_with_pos!(
+            self,
+            Expr,
+            ast::SeqIndex,
+            seq.to_jobject(),
+            index.to_jobject(),
+            pos.to_jobject()
+        )
+    }
+
     pub fn seq_take(&self, seq: Expr, num: Expr) -> Expr<'a> {
         build_ast_node!(self, Expr, ast::SeqTake, seq.to_jobject(), num.to_jobject())
     }
@@ -1480,6 +1510,24 @@ impl<'a> AstFactory<'a> {
             seq.to_jobject(),
             index.to_jobject(),
             elem.to_jobject()
+        )
+    }
+
+    pub fn seq_update_with_pos(
+        &self,
+        seq: Expr,
+        index: Expr,
+        elem: Expr,
+        pos: Position,
+    ) -> Expr<'a> {
+        build_ast_node_with_pos!(
+            self,
+            Expr,
+            ast::SeqUpdate,
+            seq.to_jobject(),
+            index.to_jobject(),
+            elem.to_jobject(),
+            pos.to_jobject()
         )
     }
 

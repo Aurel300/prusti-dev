@@ -225,13 +225,17 @@ impl<'tcx> TyDatas<'tcx> for RustTyDatas {
     type FieldData = RustFieldData<'tcx>;
     type EnumData = RustEnumData<'tcx>;
     type VariantData = RustVariantData;
-    type BuiltinData = RustBuiltinData;
+    type BuiltinData = RustBuiltinData<'tcx>;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum RustBuiltinData {
+pub enum RustBuiltinData<'tcx> {
     Int,
     Real,
+    Set(LazyRustTy<'tcx>),
+    Multiset(LazyRustTy<'tcx>),
+    Seq(LazyRustTy<'tcx>),
+    Map(LazyRustTy<'tcx>, LazyRustTy<'tcx>),
 }
 
 /// An internal representation of a `ty::Ty`. Contains all that we care about
@@ -668,6 +672,15 @@ impl<'tcx> TySpecifics<'tcx, RustTyDatas> {
             match adt.non_enum_variant().name.to_string().as_str() {
                 "Int" => Self::Builtin(RustBuiltinData::Int),
                 "Real" => Self::Builtin(RustBuiltinData::Real),
+                "Set" => Self::Builtin(RustBuiltinData::Set(LazyRustTy(Self::new_param_ty(0)))),
+                "Multiset" => {
+                    Self::Builtin(RustBuiltinData::Multiset(LazyRustTy(Self::new_param_ty(0))))
+                }
+                "Seq" => Self::Builtin(RustBuiltinData::Seq(LazyRustTy(Self::new_param_ty(0)))),
+                "Map" => Self::Builtin(RustBuiltinData::Map(
+                    LazyRustTy(Self::new_param_ty(0)),
+                    LazyRustTy(Self::new_param_ty(1)),
+                )),
                 // `Ghost<T>` is encoded as if it were `struct Ghost<T>(T)`
                 // (like `Box` above): the snapshot wraps the value of `T`.
                 "Ghost" => {

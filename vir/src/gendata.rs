@@ -34,8 +34,7 @@ impl<'vir, Curr, Next> BinOpGenData<'vir, Curr, Next> {
             | BinOpKind::CmpGt
             | BinOpKind::CmpLt
             | BinOpKind::CmpGe
-            | BinOpKind::CmpLe
-            | BinOpKind::SetIn => crate::TYPE_BOOL.upcast_ty(),
+            | BinOpKind::CmpLe => crate::TYPE_BOOL.upcast_ty(),
             BinOpKind::And | BinOpKind::Or | BinOpKind::Implies => crate::TYPE_BOOL.upcast_ty(),
             BinOpKind::Add | BinOpKind::Sub | BinOpKind::Mul | BinOpKind::Div | BinOpKind::Mod => {
                 crate::TYPE_INT.upcast_ty()
@@ -44,10 +43,45 @@ impl<'vir, Curr, Next> BinOpGenData<'vir, Curr, Next> {
             | BinOpKind::PermSub
             | BinOpKind::PermMul
             | BinOpKind::PermPermDiv => crate::TYPE_PERM.upcast_ty(),
-
-            BinOpKind::SetUnion => return self.lhs.ty(),
         };
         ty.as_dyn()
+    }
+}
+
+/// A binary operation on a native Viper collection (see
+/// [`CollectionBinOpKind`]). The collection operand determines the exact
+/// operation and the result type.
+#[derive(VirHash, VirReify, VirSerde)]
+pub struct CollectionBinOpGenData<'vir, Curr, Next> {
+    #[vir(reify_pass)]
+    pub kind: CollectionBinOpKind,
+    pub lhs: ExprGenDyn<'vir, Curr, Next>,
+    pub rhs: ExprGenDyn<'vir, Curr, Next>,
+}
+
+impl<'vir, Curr, Next> CollectionBinOpGenData<'vir, Curr, Next> {
+    pub fn ty(&self) -> TypeDyn<'vir> {
+        match self.kind {
+            CollectionBinOpKind::Contains => match self.rhs.ty().kind() {
+                TypeKind::Multiset(_) => crate::TYPE_INT.as_dyn(),
+                _ => crate::TYPE_BOOL.as_dyn(),
+            },
+            CollectionBinOpKind::Subset => crate::TYPE_BOOL.as_dyn(),
+            CollectionBinOpKind::Union
+            | CollectionBinOpKind::Intersection
+            | CollectionBinOpKind::Difference
+            | CollectionBinOpKind::Concat
+            | CollectionBinOpKind::Take
+            | CollectionBinOpKind::Drop => self.lhs.ty(),
+            CollectionBinOpKind::Index => match self.lhs.ty().kind() {
+                TypeKind::Seq(elem) => elem,
+                TypeKind::Map(_, val) => val,
+                kind => {
+                    typecheck_error!("`Index` on non-`Seq`/`Map` type {kind:?}");
+                    crate::TYPE_ERR.as_dyn()
+                }
+            },
+        }
     }
 }
 
@@ -79,11 +113,22 @@ pub struct TriggerGenData<'vir, Curr, Next> {
     pub exprs: &'vir [ExprGenDyn<'vir, Curr, Next>],
 }
 
+/// A literal of a native Viper collection (`Set`/`Multiset`/`Seq`/`Map`);
+/// which one is determined by `ty`. `Map` literals must be empty (maps are
+/// built up with [`CollectionUpdateGenData`]).
 #[derive(VirHash, VirReify, VirSerde)]
-pub struct SetLiteralGenData<'vir, Curr, Next> {
+pub struct CollectionLiteralGenData<'vir, Curr, Next> {
     pub values: &'vir [ExprGenDyn<'vir, Curr, Next>],
     #[vir(reify_pass, is_ref)]
     pub ty: TypeDyn<'vir>,
+}
+
+/// The native Viper map or sequence update `target[key := val]`.
+#[derive(VirHash, VirReify, VirSerde)]
+pub struct CollectionUpdateGenData<'vir, Curr, Next> {
+    pub target: ExprGenDyn<'vir, Curr, Next>,
+    pub key: ExprGenDyn<'vir, Curr, Next>,
+    pub val: ExprGenDyn<'vir, Curr, Next>,
 }
 
 #[derive(VirHash, VirReify, VirSerde)]
@@ -259,11 +304,19 @@ pub enum ExprKindGenData<'vir, Curr: 'vir, Next: 'vir> {
     Unfolding(UnfoldingGen<'vir, Curr, Next>),
     UnOp(UnOpGen<'vir, Curr, Next>),
     BinOp(BinOpGen<'vir, Curr, Next>),
+    CollectionBinOp(CollectionBinOpGen<'vir, Curr, Next>),
     // perm ops?
     // container ops?
     // map ops?
     // sequence, map, set, multiset literals
-    SetLiteral(SetLiteralGen<'vir, Curr, Next>),
+    CollectionLiteral(CollectionLiteralGen<'vir, Curr, Next>),
+    CollectionUpdate(CollectionUpdateGen<'vir, Curr, Next>),
+    /// The length/cardinality of a native Viper collection.
+    CollectionLen(ExprGenDyn<'vir, Curr, Next>),
+    /// The domain (key set) of a native Viper `Map`.
+    MapDomain(ExprGenDyn<'vir, Curr, Next>),
+    /// The range (value set) of a native Viper `Map`.
+    MapRange(ExprGenDyn<'vir, Curr, Next>),
     Ternary(TernaryGen<'vir, Curr, Next>),
     Exists(ExistsGen<'vir, Curr, Next>),
     Forall(ForallGen<'vir, Curr, Next>),
@@ -299,7 +352,24 @@ impl<'vir, Curr, Next> ExprKindGenData<'vir, Curr, Next> {
             ExprKindGenData::Unfolding(f) => f.expr.ty(),
             ExprKindGenData::UnOp(u) => u.expr.ty().as_dyn(),
             ExprKindGenData::BinOp(b) => b.ty().as_dyn(),
-            ExprKindGenData::SetLiteral(s) => s.ty.as_dyn(),
+            ExprKindGenData::CollectionBinOp(b) => b.ty(),
+            ExprKindGenData::CollectionLiteral(s) => s.ty.as_dyn(),
+            ExprKindGenData::CollectionUpdate(u) => u.target.ty(),
+            ExprKindGenData::CollectionLen(_) => crate::TYPE_INT.as_dyn(),
+            ExprKindGenData::MapDomain(m) => match m.ty().kind() {
+                TypeKind::Map(key, _) => with_vcx(|vcx| vcx.mk_ty_set(*key).as_dyn()),
+                kind => {
+                    typecheck_error!("`MapDomain` of non-`Map` type {kind:?}");
+                    crate::TYPE_ERR.as_dyn()
+                }
+            },
+            ExprKindGenData::MapRange(m) => match m.ty().kind() {
+                TypeKind::Map(_, val) => with_vcx(|vcx| vcx.mk_ty_set(*val).as_dyn()),
+                kind => {
+                    typecheck_error!("`MapRange` of non-`Map` type {kind:?}");
+                    crate::TYPE_ERR.as_dyn()
+                }
+            },
             ExprKindGenData::Ternary(t) => t.then.ty(),
             ExprKindGenData::Forall(_) => crate::TYPE_BOOL.as_dyn(),
             ExprKindGenData::Exists(_) => crate::TYPE_BOOL.as_dyn(),

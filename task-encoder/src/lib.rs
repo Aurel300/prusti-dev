@@ -151,7 +151,7 @@ pub trait TaskEncoder {
         F: FnOnce(&'vir CacheRef<'vir, Self>) -> R;
 
     /// Enters the given function with a reference to the trigger watchers for
-    /// this encoder: continuations registered via [`Self::on_task_requested`],
+    /// this encoder. These are continuations registered via [`Self::on_task_requested`],
     /// waiting for a task of this encoder to be requested.
     fn with_watchers<'vir, F, R>(f: F) -> R
     where
@@ -159,7 +159,7 @@ pub trait TaskEncoder {
         F: FnOnce(&'vir WatchersRef<'vir, Self>) -> R;
 
     /// Queues `f` to run in [`drain_triggers`] once the given task of this
-    /// encoder has been requested (enqueued, started, or encoded — not
+    /// encoder has been requested (enqueued, started, or encoded - not
     /// necessarily successfully). If it already has been, `f` is queued
     /// immediately. Continuations of tasks that are never requested do not
     /// run.
@@ -182,7 +182,7 @@ pub trait TaskEncoder {
                 watchers
                     .borrow_mut()
                     .entry(key)
-                    .or_insert_with(Vec::new)
+                    .or_default()
                     .push(f)
             });
         }
@@ -339,8 +339,8 @@ pub trait TaskEncoder {
                 },
                 None => {
                     // enqueue
-                    cache.insert(task_key.clone(), TaskEncoderCacheState::Enqueued);
                     triggers::fire_watchers::<Self>(&task_key);
+                    cache.insert(task_key.clone(), TaskEncoderCacheState::Enqueued);
                     None
                 }
             }

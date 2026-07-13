@@ -258,11 +258,11 @@ impl TaskEncoder for TraitImplEnc {
 /// (the check that a given instantiation of the trait's parameters matches
 /// this impl and that the impl's where-clauses hold) and its axioms (the
 /// resolution of its associated types and the bridging of the trait's
-/// abstract pre/post functions to the impl items' concrete specifications —
+/// abstract pre/post functions to the impl items' concrete specifications -
 /// how a call through the trait resolves to a concrete contract once the
 /// `Self` type is known). Unlike [`TraitImplEnc`], this is safe to run on
 /// foreign impls: it produces no proof obligations, so foreign impls are
-/// assumed — not re-verified — to be behavioral subtypes.
+/// assumed - not re-verified - to be behavioural subtypes.
 pub struct TraitImplConditionEnc;
 
 impl TaskEncoder for TraitImplConditionEnc {
@@ -270,9 +270,10 @@ impl TaskEncoder for TraitImplConditionEnc {
     const ENCODER_NAME: &'static str = "trait impl condition encoder";
 
     type TaskDescription<'vir> = DefId;
-    /// The implemented trait, the condition, and the axioms. Consumed (and
-    /// errors surfaced) by `TraitEnc::emit_outputs`, which disjoins the
-    /// conditions into each trait's `impl_fun` and emits the axiom domains.
+    /// The implemented trait, the condition, and the axioms. This encoder does
+    /// not have its own `emit_outputs`, instead the output is consumed (any
+    /// errors form here are reported there) by `TraitEnc::emit_outputs`, which
+    /// disjoins the conditions into each trait's `impl_fun` and emits the domains.
     type OutputFullLocal<'vir> = (DefId, vir::ExprBool<'vir>, Domain<'vir>);
 
     fn task_to_key<'vir>(task: &Self::TaskDescription<'vir>) -> Self::TaskKey<'vir> {

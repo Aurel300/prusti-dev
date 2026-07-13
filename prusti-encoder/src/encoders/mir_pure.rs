@@ -1267,13 +1267,14 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
     /// Shared encoding of the spec closures passed to the `forall`/`exists`/
     /// `spec_block` builtins: recursively encodes the closure body, reifying
     /// the closure itself (closure argument 1) and the given quantified
-    /// variables (closure arguments 2..).
+    /// variables (closure arguments 2.. - empty for `spec_block`).
+    // TODO: encode quantifier triggers.
     fn encode_spec_closure(
         &mut self,
         builtin_name: &str,
         closure_ty: ty::Ty<'vir>,
         closure_expr: ExprRet<'vir>,
-        qvar_exprs: &[vir::ExprGen<'vir, (), !, vir::Snap>],
+        qvar_exprs: &[vir::ExprSnap<'vir>],
     ) -> Result<ExprRet<'vir>, EncodeFullError<'vir, MirPureEnc>> {
         let (cl_kind, cl_def_id) = match closure_ty.kind() {
             TyKind::Closure(cl_def_id, cl_args) => (cl_args.as_closure().kind(), *cl_def_id),
@@ -1297,7 +1298,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
 
         // arguments to the closure are
         // - the closure itself
-        // - the qvars
+        // - the qvars (empty for `spec_block`)
         let mut reify_args = FxHashMap::default();
         reify_args.insert(1usize.into(), closure_ref);
         reify_args.extend(

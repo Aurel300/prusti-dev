@@ -68,6 +68,10 @@ impl TaskEncoder for TraitEnc {
                 program.add_domain(output.trait_domain);
                 let mut checks = conditions.remove(&output.trait_did).unwrap_or_default();
                 checks.push(output.unknown_type_check);
+                // TODO: putting the body in the postcondition will result in a
+                // matching loop for recursive definitions. We can avoid this by
+                // manually axiomatising the function, or by adding adt-based
+                // unfolding to Viper.
                 let ensures = vcx.mk_eq_expr(vcx.mk_result(vir::TYPE_BOOL), vcx.mk_disj(&checks));
                 let impl_fun = vcx.mk_function(
                     output.impl_fun_idn,

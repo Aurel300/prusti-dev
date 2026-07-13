@@ -2,8 +2,7 @@
 #![feature(associated_type_defaults)]
 
 use core::panic;
-use hashlink::LinkedHashMap;
-use prusti_rustc_interface::span::Span;
+use prusti_rustc_interface::{data_structures::fx::FxIndexMap, span::Span};
 use std::cell::RefCell;
 
 mod cache;

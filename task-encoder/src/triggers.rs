@@ -1,6 +1,6 @@
 use std::{cell::RefCell, collections::VecDeque};
 
-use hashlink::LinkedHashMap;
+use super::FxIndexMap;
 
 use crate::TaskEncoder;
 
@@ -10,10 +10,10 @@ use crate::TaskEncoder;
 pub(crate) type Continuation = Box<dyn FnOnce()>;
 
 /// Continuations waiting for a task of encoder `E` to be requested.
-type Watchers<'vir, E> = LinkedHashMap<<E as TaskEncoder>::TaskKey<'vir>, Vec<Continuation>>;
+type Watchers<'vir, E> = FxIndexMap<<E as TaskEncoder>::TaskKey<'vir>, Vec<Continuation>>;
 pub type WatchersRef<'vir, E> = RefCell<Watchers<'vir, E>>;
 
-type WatchersStatic<E> = LinkedHashMap<<E as TaskEncoder>::TaskKey<'static>, Vec<Continuation>>;
+type WatchersStatic<E> = FxIndexMap<<E as TaskEncoder>::TaskKey<'static>, Vec<Continuation>>;
 pub type WatchersStaticRef<E> = RefCell<WatchersStatic<E>>;
 
 thread_local! {
@@ -33,7 +33,7 @@ pub(crate) fn mk_continuation<'vir>(f: impl FnOnce() + 'vir) -> Continuation {
 /// Called when `key` first enters `E`'s cache: moves its waiting
 /// continuations to the pending queue.
 pub(crate) fn fire_watchers<'vir, E: TaskEncoder + 'vir + ?Sized>(key: &E::TaskKey<'vir>) {
-    let fired = E::with_watchers(|watchers| watchers.borrow_mut().remove(key));
+    let fired = E::with_watchers(|watchers| watchers.borrow_mut().swap_remove(key));
     if let Some(fired) = fired {
         PENDING.with(|pending| pending.borrow_mut().extend(fired));
     }

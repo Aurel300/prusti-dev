@@ -50,7 +50,7 @@ use crate::encoders::{
     mir_shared::{PureRvalueEnc, RustcIntrinsic},
     ty::{
         RustTyDecomposition,
-        generics::GParams,
+        generics::{GArgs, GParams},
         use_impure::TyUseImpure,
         use_pure::{TyUsePure, TyUsePureEnc},
     },
@@ -1161,10 +1161,8 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
     fn get_call_data(&self, func: &mir::Operand<'vir>) -> (DefId, ty::GenericArgsRef<'vir>, bool) {
         let func_ty = func.ty(self.body, self.vcx.tcx());
         let (func_def_id, caller_substs) = RustSignature::get_def_id_and_caller_substs(func_ty);
-        let is_pure = crate::encoders::is_function_pure(
-            func_def_id,
-            ty::List::identity_for_item(self.vcx.tcx(), func_def_id),
-        );
+        let is_pure =
+            crate::encoders::is_function_pure(func_def_id, GArgs::new(self.def_id, caller_substs));
         (func_def_id, caller_substs, is_pure)
     }
 

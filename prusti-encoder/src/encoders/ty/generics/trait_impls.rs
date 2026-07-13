@@ -92,11 +92,11 @@ impl TaskEncoder for TraitImplEnc {
 
                 let trait_item_is_pure = crate::encoders::is_function_pure(
                     trait_item_def_id,
-                    trait_item_context.rust_params(),
+                    GArgs::new(trait_item_context, trait_item_context.rust_params()),
                 );
                 let impl_item_is_pure = crate::encoders::is_function_pure(
                     impl_item_def_id,
-                    impl_item_context.rust_params(),
+                    GArgs::new(impl_item_context, impl_item_context.rust_params()),
                 );
 
                 let trait_item_has_body = is_function_with_body(vcx.tcx(), trait_item_def_id);
@@ -400,7 +400,7 @@ impl TaskEncoder for TraitImplConditionEnc {
 
                         let impl_item_is_pure = crate::encoders::is_function_pure(
                             impl_item_def_id,
-                            impl_item_context.rust_params(),
+                            GArgs::new(impl_item_context, impl_item_context.rust_params()),
                         );
                         let impl_item_has_body = is_function_with_body(vcx.tcx(), impl_item_def_id);
 

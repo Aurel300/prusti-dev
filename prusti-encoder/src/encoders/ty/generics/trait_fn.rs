@@ -11,7 +11,7 @@ use crate::{
         FunctionCallEnc, MirLocalDefEnc, MirLocalDefEncTask, MirSpecEnc,
         mir_fn::CallTaskDescription,
         pure::spec::MirSpecEncMode,
-        ty::generics::{GParams, GenericParamsEnc},
+        ty::generics::{GArgs, GParams, GenericParamsEnc},
     },
     trait_support::is_function_with_body,
 };
@@ -107,7 +107,10 @@ impl TaskEncoder for TraitFnEnc {
             let return_type = local_defs.snap_ty_return();
             let ref_args = vcx.alloc_slice(&vec![vir::TYPE_REF; arg_count]);
 
-            let is_pure = crate::encoders::is_function_pure(def_id, item_params.rust_params());
+            let is_pure = crate::encoders::is_function_pure(
+                def_id,
+                GArgs::new(item_params, item_params.rust_params()),
+            );
 
             let pre_func = FunctionIdn::new(
                 vir_format_identifier!(vcx, "{trait_name}_fn_pre_{item_name}"),

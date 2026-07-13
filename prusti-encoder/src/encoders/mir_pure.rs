@@ -4,7 +4,7 @@ use crate::encoders::{
     mir_shared::{PureRvalueEnc, RustcIntrinsic},
     ty::{
         RustTyDecomposition,
-        generics::GParams,
+        generics::{GArgs, GParams},
         interpretation::real::TyRealLocal,
         use_pure::{TyUsePure, TyUsePureEnc},
     },
@@ -846,10 +846,8 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                     // A fn call in pure can only be one of two kinds: a
                     // call to another pure function, or a call to a prusti
                     // builtin function.
-                    let is_pure = crate::encoders::is_function_pure(
-                        def_id,
-                        ty::List::identity_for_item(self.vcx.tcx(), def_id),
-                    );
+                    let is_pure =
+                        crate::encoders::is_function_pure(def_id, GArgs::new(self.def_id, arg_tys));
 
                     // The bodiless `ptr_metadata` intrinsic is only lowered to
                     // `UnOp::PtrMetadata` in optimized MIR; do the lowering here.

@@ -343,7 +343,6 @@ impl<'tcx> EnvQuery<'tcx> {
         proc_def_id: impl IntoParam<ProcedureDefId> + Debug,
         substs: GenericArgsRef<'tcx>,
     ) -> Option<ProcedureDefId> {
-        // TODO(tymap): remove this method?
         let proc_def_id = proc_def_id.into_param();
         let typing_env = ty::TypingEnv::post_analysis(self.tcx, caller_def_id.into_param());
         let impl_def_id = self.find_trait_impl_of_method_call(typing_env, proc_def_id, substs)?;

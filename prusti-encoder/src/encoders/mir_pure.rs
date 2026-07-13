@@ -856,7 +856,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                         )? {
                             Some(expr) => Ok(expr),
                             // The pure-only builtins (quantifiers, spec blocks,
-                            // mode markers) need this encoder's own context.
+                            // mode markers).
                             None => {
                                 self.encode_pure_only_builtin(builtin, arg_tys, args, &new_curr_ver)
                             }

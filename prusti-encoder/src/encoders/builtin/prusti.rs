@@ -373,7 +373,7 @@ impl TaskEncoder for PrustiBuiltinEnc {
                     .downcast_ty::<vir::Perm>()
                     .upcast_ty(),
                 PrustiBuiltin::IntFrom => {
-                    let prim = *e_input(deps, 0)?.expect_primitive();
+                    let prim = e_input(deps, 0)?.expect_primitive();
                     let val = prim.snap_to_prim(operands[0].downcast_ty());
                     val.downcast_ty::<vir::Int>().upcast_ty()
                 }

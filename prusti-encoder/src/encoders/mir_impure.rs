@@ -2128,22 +2128,22 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             // (e.g. `Int::from(2) + Int::from(3)`): encode it with
             // the shared operand-based encoding and assign the
             // resulting ghost snapshot into the destination.
-            Some((false, self
-                .encode_prusti_builtin(
-                    builtin,
-                    func_def_id,
-                    self.gargs(caller_substs),
-                    args,
-                    &(),
-                )?
-                .ok_or_else(|| {
-                    self.unsupported_rvalue(
-                        format!(
-                            "`prusti_contracts` builtin {builtin:?} cannot be used in executable code"
-                        ),
-                        span,
-                    )
-                })?))
+            let expr = self.encode_prusti_builtin(
+                builtin,
+                func_def_id,
+                self.gargs(caller_substs),
+                args,
+                &(),
+            )?;
+            // If `encode_prusti_builtin` returns `None`, it means that this
+            // builtin is only supported in pure code.
+            let expr = expr.ok_or_else(|| {
+                self.unsupported_rvalue(
+                    format!("`prusti_contracts` builtin {builtin:?} cannot be used in impure code"),
+                    span,
+                )
+            })?;
+            Some((false, expr))
         } else if is_pure {
             let pure_func = self
                 .deps

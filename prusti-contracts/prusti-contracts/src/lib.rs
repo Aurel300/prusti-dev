@@ -214,7 +214,7 @@ mod private {
     __dummy_trait_impls__!(Int: Add add, Sub sub, Mul mul, Div div, Rem rem);
 
     impl Neg for Int {
-        type Output = Int;
+        type Output = Self;
         fn neg(self) -> Self {
             panic!()
         }

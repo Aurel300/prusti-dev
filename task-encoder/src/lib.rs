@@ -179,11 +179,7 @@ pub trait TaskEncoder {
             triggers::queue(f);
         } else {
             Self::with_watchers(move |watchers| {
-                watchers
-                    .borrow_mut()
-                    .entry(key)
-                    .or_default()
-                    .push(f)
+                watchers.borrow_mut().entry(key).or_default().push(f)
             });
         }
     }

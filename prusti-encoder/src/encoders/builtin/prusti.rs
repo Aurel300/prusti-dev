@@ -92,8 +92,6 @@ pub enum NumOp {
     Div,
     Rem,
     Neg,
-    Eq,
-    Ne,
     Lt,
     Le,
     Gt,
@@ -123,11 +121,9 @@ pub enum PrustiBuiltin {
     Ghost(GhostOp),
     /// The `PartialEq` methods on the ghost types: snapshot equality behind
     /// the `&self`/`&other` receivers.
-    DerivedEq,
-    DerivedNe,
-    /// The `Clone` methods on the ghost types: snapshot identity behind the
-    /// `&self` receiver.
-    DerivedClone,
+    SnapEq,
+    SnapNe,
+    SnapClone,
     Seq(SeqOp),
     /// An operation on `Set` (`multiset: false`) or `Multiset` (`true`).
     AnySet {
@@ -176,6 +172,7 @@ impl PrustiBuiltin {
                     .and_then(|impl_def_id| {
                         Self::prusti_adt_name(tcx, tcx.type_of(impl_def_id).instantiate_identity())
                     });
+            let self_ty_name = self_ty_name.as_ref().map(|name| name.as_str());
             let rel_index = || {
                 args.args()[0]
                     .expect_const()
@@ -185,9 +182,15 @@ impl PrustiBuiltin {
                     .unwrap()
                     .to_target_usize(tcx) as usize
             };
-            Some(match self_ty_name.as_ref().map(|name| name.as_str()) {
-                // `Clone::clone` on any ghost type: snapshot identity.
-                Some(_) if item == "clone" => Self::DerivedClone,
+            // The methods defined on all ghost types, early return here.
+            match (self_ty_name, item) {
+                (Some(_), "eq") => return Some(Self::SnapEq),
+                (Some(_), "ne") => return Some(Self::SnapNe),
+                (Some(_), "clone") => return Some(Self::SnapClone),
+                (Some(_), "clone_from") => return None,
+                _ => (),
+            };
+            Some(match self_ty_name {
                 None => match item {
                     // TODO: how to handle this function?
                     "prusti_terminates_trusted" => return None,
@@ -207,13 +210,9 @@ impl PrustiBuiltin {
                 Some("Ghost") => match item {
                     "new" | "new_ref" => Self::Ghost(GhostOp::New),
                     "deref" => Self::Ghost(GhostOp::Deref),
-                    "eq" => Self::DerivedEq,
-                    "ne" => Self::DerivedNe,
                     other => todo!("unsupported `Ghost` function {other}"),
                 },
                 Some("Seq") => match item {
-                    "eq" => Self::DerivedEq,
-                    "ne" => Self::DerivedNe,
                     "new" => Self::Seq(SeqOp::Empty),
                     "single" | "single_ref" => Self::Seq(SeqOp::Single),
                     "append" => Self::Seq(SeqOp::Append),
@@ -225,28 +224,22 @@ impl PrustiBuiltin {
                 },
                 Some(name @ ("Set" | "Multiset")) => {
                     let multiset = name == "Multiset";
-                    match item {
-                        "eq" => Self::DerivedEq,
-                        "ne" => Self::DerivedNe,
-                        op => Self::AnySet {
-                            multiset,
-                            op: match op {
-                                "new" => AnySetOp::Empty,
-                                "single" | "single_ref" => AnySetOp::Single,
-                                "union" => AnySetOp::Union,
-                                "intersection" => AnySetOp::Intersection,
-                                "difference" => AnySetOp::Difference,
-                                "is_subset" => AnySetOp::IsSubset,
-                                "contains" => AnySetOp::Contains,
-                                "len" => AnySetOp::Len,
-                                other => todo!("unsupported set function {other}"),
-                            },
+                    Self::AnySet {
+                        multiset,
+                        op: match item {
+                            "new" => AnySetOp::Empty,
+                            "single" | "single_ref" => AnySetOp::Single,
+                            "union" => AnySetOp::Union,
+                            "intersection" => AnySetOp::Intersection,
+                            "difference" => AnySetOp::Difference,
+                            "is_subset" => AnySetOp::IsSubset,
+                            "contains" => AnySetOp::Contains,
+                            "len" => AnySetOp::Len,
+                            other => todo!("unsupported set function {other}"),
                         },
                     }
                 }
                 Some("Map") => match item {
-                    "eq" => Self::DerivedEq,
-                    "ne" => Self::DerivedNe,
                     "new" => Self::Map(MapOp::Empty),
                     "insert" => Self::Map(MapOp::Insert),
                     "len" => Self::Map(MapOp::Len),
@@ -269,7 +262,7 @@ impl PrustiBuiltin {
     /// These are forbidden in impure code, and should return an error.
     pub fn is_spec_only(&self) -> bool {
         match self {
-            Self::Spec(_) | Self::DerivedEq | Self::DerivedNe => true,
+            Self::Spec(_) | Self::SnapEq | Self::SnapNe => true,
             Self::Ghost(GhostOp::Deref) => true,
             Self::Seq(SeqOp::Contains) => true,
             Self::AnySet {
@@ -284,17 +277,7 @@ impl PrustiBuiltin {
             Self::Map(MapOp::Contains) => true,
             Self::Int(op) | Self::Real(op) => matches!(
                 op,
-                NumOp::Eq
-                    | NumOp::Ne
-                    | NumOp::Lt
-                    | NumOp::Le
-                    | NumOp::Gt
-                    | NumOp::Ge
-                    | NumOp::Cmp
-                    | NumOp::PartialCmp
-                    | NumOp::Max
-                    | NumOp::Min
-                    | NumOp::Clamp
+                NumOp::Lt | NumOp::Le | NumOp::Gt | NumOp::Ge | NumOp::Cmp | NumOp::PartialCmp
             ),
             _ => false,
         }
@@ -330,8 +313,6 @@ impl PrustiBuiltin {
             "div" => NumOp::Div,
             "rem" => NumOp::Rem,
             "neg" => NumOp::Neg,
-            "eq" => NumOp::Eq,
-            "ne" => NumOp::Ne,
             "lt" => NumOp::Lt,
             "le" => NumOp::Le,
             "gt" => NumOp::Gt,
@@ -490,16 +471,16 @@ impl TaskEncoder for PrustiBuiltinEnc {
                     unreachable!("pure-only builtin in `PrustiBuiltinEnc`: {builtin:?}")
                 }
                 PrustiBuiltin::Ghost(op) => ctxt.encode_ghost(op)?,
-                PrustiBuiltin::DerivedEq | PrustiBuiltin::DerivedNe => {
+                PrustiBuiltin::SnapEq | PrustiBuiltin::SnapNe => {
                     let bin_op = match builtin {
-                        PrustiBuiltin::DerivedEq => vir::BinOpKind::CmpEq,
-                        PrustiBuiltin::DerivedNe => vir::BinOpKind::CmpNe,
+                        PrustiBuiltin::SnapEq => vir::BinOpKind::CmpEq,
+                        PrustiBuiltin::SnapNe => vir::BinOpKind::CmpNe,
                         _ => unreachable!(),
                     };
                     let (lhs, rhs) = ctxt.deref_operands::<vir::Snap>()?;
                     ctxt.native_cmp(bin_op, lhs, rhs).upcast_ty()
                 }
-                PrustiBuiltin::DerivedClone => ctxt.deref_operand(0)?,
+                PrustiBuiltin::SnapClone => ctxt.deref_operand(0)?,
                 PrustiBuiltin::Seq(op) => ctxt.encode_seq(op)?,
                 PrustiBuiltin::AnySet { multiset, op } => ctxt.encode_any_set(multiset, op)?,
                 PrustiBuiltin::Map(op) => ctxt.encode_map(op)?,
@@ -943,11 +924,9 @@ impl<'enc, 'vir> BuiltinCtxt<'enc, 'vir> {
                     .downcast_ty::<T>()
                     .upcast_ty()
             }
-            NumOp::Eq | NumOp::Ne | NumOp::Lt | NumOp::Le | NumOp::Gt | NumOp::Ge => {
+            NumOp::Lt | NumOp::Le | NumOp::Gt | NumOp::Ge => {
                 let (v1, v2) = self.deref_operands::<T>()?;
                 let bin_op = match op {
-                    NumOp::Eq => vir::BinOpKind::CmpEq,
-                    NumOp::Ne => vir::BinOpKind::CmpNe,
                     NumOp::Lt => vir::BinOpKind::CmpLt,
                     NumOp::Le => vir::BinOpKind::CmpLe,
                     NumOp::Gt => vir::BinOpKind::CmpGt,
@@ -1456,14 +1435,8 @@ impl CollectionOpsEnc {
         i: vir::ExprInt<'vir>,
         seq: vir::ExprSeq<'vir>,
     ) -> vir::ExprBool<'vir> {
-        let lower = vcx
-            .mk_bin_op_expr(vir::BinOpKind::CmpLe, vcx.mk_uint::<0>(), i)
-            .downcast_ty::<vir::Bool>();
-        let upper = vcx
-            .mk_bin_op_expr(vir::BinOpKind::CmpLt, i, vcx.mk_collection_len_expr(seq))
-            .downcast_ty::<vir::Bool>();
-        vcx.mk_bin_op_expr(vir::BinOpKind::And, lower, upper)
-            .downcast_ty::<vir::Bool>()
+        let zero = vcx.mk_uint::<0>();
+        vir::expr! { vcx; ((zero) <= (i)) && ((i) < (|seq|)) }
     }
 
     // forall s, i :: { seq_lookup(s, i) }
@@ -1477,15 +1450,12 @@ impl CollectionOpsEnc {
         let s = vcx.mk_local_ex(s_decl);
         let i = vcx.mk_local_ex(i_decl);
         let sl = fn_idn(s, i);
-        let sl_eq = vcx.mk_eq_expr(sl, vcx.mk_seq_index_expr(s, i).downcast_ty());
+        let guard = Self::in_bounds(vcx, i, s);
         vcx.mk_domain_axiom(
             vir::ViperIdent::new("prusti_seq_lookup_native"),
-            vcx.mk_forall_expr(
-                vcx.alloc_slice(&[s_decl.as_dyn(), i_decl.as_dyn()]),
-                vcx.alloc_slice(&[vcx.mk_trigger(&[sl])]),
-                vcx.mk_bin_op_expr(vir::BinOpKind::Implies, Self::in_bounds(vcx, i, s), sl_eq)
-                    .downcast_ty(),
-            ),
+            vir::expr! { vcx;
+                forall [s_decl], [i_decl] :: {[sl]} (guard) ==> ((sl) == (((s)[i]) as PSnap))
+            },
         )
     }
 
@@ -1502,15 +1472,13 @@ impl CollectionOpsEnc {
         let i = vcx.mk_local_ex(i_decl);
         let v = vcx.mk_local_ex(v_decl);
         let su = fn_idn(s, i, v);
-        let su_eq = vcx.mk_eq_expr(su, vcx.mk_seq_update_expr(s, i, v));
+        let upd = vcx.mk_seq_update_expr(s, i, v);
+        let guard = Self::in_bounds(vcx, i, s);
         vcx.mk_domain_axiom(
             vir::ViperIdent::new("prusti_seq_update_native"),
-            vcx.mk_forall_expr(
-                vcx.alloc_slice(&[s_decl.as_dyn(), i_decl.as_dyn(), v_decl.as_dyn()]),
-                vcx.alloc_slice(&[vcx.mk_trigger(&[su])]),
-                vcx.mk_bin_op_expr(vir::BinOpKind::Implies, Self::in_bounds(vcx, i, s), su_eq)
-                    .downcast_ty(),
-            ),
+            vir::expr! { vcx;
+                forall [s_decl], [i_decl], [v_decl] :: {[su]} (guard) ==> ((su) == (upd))
+            },
         )
     }
 
@@ -1525,16 +1493,11 @@ impl CollectionOpsEnc {
         let m = vcx.mk_local_ex(m_decl);
         let k = vcx.mk_local_ex(k_decl);
         let ml = fn_idn(m, k);
-        let k_in_m = vcx.mk_map_contains_expr(m, k);
-        let ml_eq = vcx.mk_eq_expr(ml, vcx.mk_map_lookup_expr(m, k).downcast_ty());
         vcx.mk_domain_axiom(
             vir::ViperIdent::new("prusti_map_lookup_native"),
-            vcx.mk_forall_expr(
-                vcx.alloc_slice(&[m_decl.as_dyn(), k_decl.as_dyn()]),
-                vcx.alloc_slice(&[vcx.mk_trigger(&[ml])]),
-                vcx.mk_bin_op_expr(vir::BinOpKind::Implies, k_in_m, ml_eq)
-                    .downcast_ty(),
-            ),
+            vir::expr! { vcx;
+                forall [m_decl], [k_decl] :: {[ml]} ((k) in (m)) ==> ((ml) == (((m)[k]) as PSnap))
+            },
         )
     }
 
@@ -1555,39 +1518,18 @@ impl CollectionOpsEnc {
         let ms = fn_idn(m, s);
         let domain_axiom = vcx.mk_domain_axiom(
             vir::ViperIdent::new("prusti_map_setminus_domain"),
-            vcx.mk_forall_expr(
-                vcx.alloc_slice(&[m_decl.as_dyn(), s_decl.as_dyn()]),
-                vcx.alloc_slice(&[vcx.mk_trigger(&[ms])]),
-                vcx.mk_eq_expr(
-                    vcx.mk_map_domain_expr(ms),
-                    vcx.mk_set_difference_expr(vcx.mk_map_domain_expr(m), s)
-                        .downcast_ty(),
-                ),
-            ),
+            vir::expr! { vcx;
+                forall [m_decl], [s_decl] :: {[ms]}
+                    (domain(ms)) == (((domain(m)) setminus (s)) as Set)
+            },
         );
-        let not_in_s = vcx
-            .mk_unary_op_expr(vir::UnOpKind::Not, vcx.mk_set_in_expr(k, s).upcast_ty())
-            .downcast_ty::<vir::Bool>();
-        let guard = vcx
-            .mk_bin_op_expr(
-                vir::BinOpKind::And,
-                vcx.mk_map_contains_expr(m, k),
-                not_in_s,
-            )
-            .downcast_ty::<vir::Bool>();
         let ms_lookup = vcx.mk_map_lookup_expr(ms, k);
-        let lookup_eq = vcx.mk_eq_expr(
-            ms_lookup.downcast_ty::<vir::PSnap>(),
-            vcx.mk_map_lookup_expr(m, k).downcast_ty(),
-        );
         let lookup_axiom = vcx.mk_domain_axiom(
             vir::ViperIdent::new("prusti_map_setminus_lookup"),
-            vcx.mk_forall_expr(
-                vcx.alloc_slice(&[m_decl.as_dyn(), s_decl.as_dyn(), k_decl.as_dyn()]),
-                vcx.alloc_slice(&[vcx.mk_trigger(&[ms_lookup])]),
-                vcx.mk_bin_op_expr(vir::BinOpKind::Implies, guard, lookup_eq)
-                    .downcast_ty(),
-            ),
+            vir::expr! { vcx;
+                forall [m_decl], [s_decl], [k_decl] :: {[ms_lookup]}
+                    (((k) in (m)) && (!((k) in (s)))) ==> (((ms_lookup) as PSnap) == (((m)[k]) as PSnap))
+            },
         );
         vec![domain_axiom, lookup_axiom]
     }
@@ -1605,15 +1547,10 @@ impl CollectionOpsEnc {
         let s = vcx.mk_local_ex(s_decl);
         let lo = vcx.mk_local_ex(lo_decl);
         let hi = vcx.mk_local_ex(hi_decl);
-        let lo_lower = vcx
-            .mk_bin_op_expr(vir::BinOpKind::CmpLe, vcx.mk_uint::<0>(), lo)
-            .downcast_ty::<vir::Bool>();
-        let lo_le_hi = vcx
-            .mk_bin_op_expr(vir::BinOpKind::CmpLe, lo, hi)
-            .downcast_ty::<vir::Bool>();
-        let hi_upper = vcx
-            .mk_bin_op_expr(vir::BinOpKind::CmpLe, hi, vcx.mk_collection_len_expr(s))
-            .downcast_ty::<vir::Bool>();
+        let zero = vcx.mk_uint::<0>();
+        let lo_lower = vir::expr! { vcx; (zero) <= (lo) };
+        let lo_le_hi = vir::expr! { vcx; (lo) <= (hi) };
+        let hi_upper = vir::expr! { vcx; (hi) <= (|s|) };
         let body = vcx.mk_seq_drop_expr(vcx.mk_seq_take_expr(s, hi), lo);
         vcx.mk_function(
             fn_idn,

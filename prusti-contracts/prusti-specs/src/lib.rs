@@ -1111,7 +1111,7 @@ pub fn ghost(tokens: TokenStream) -> TokenStream {
             {
                 #begin
                 #[prusti::specs_version = #SPECS_VERSION]
-                let ghost_result = Ghost::new(#tokens);
+                let ghost_result = ::prusti_contracts::Ghost::new_ref(&{#tokens});
                 #end
                 ghost_result
             }

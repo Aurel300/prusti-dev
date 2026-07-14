@@ -549,14 +549,6 @@ impl<'tcx> VirCtxt<'tcx> {
         rhs: ExprGen<'vir, Curr, Next, T>,
     ) -> ExprGenPrim<'vir, Curr, Next> {
         assert!(kind != BinOpKind::CmpEq, "Use mk_eq_expr instead");
-        if lhs.ty() != rhs.ty() {
-            typecheck_error!(
-                "Type mismatch in binary operation {:?}. LHS type: {:?}, RHS type: {:?}",
-                kind,
-                lhs.ty(),
-                rhs.ty(),
-            );
-        }
         self.mk_bin_op_expr_inner(kind, lhs.as_dyn(), rhs.as_dyn())
             .downcast_ty()
     }
@@ -566,13 +558,6 @@ impl<'tcx> VirCtxt<'tcx> {
         lhs: ExprGen<'vir, Curr, Next, T>,
         rhs: ExprGen<'vir, Curr, Next, T>,
     ) -> ExprGenBool<'vir, Curr, Next> {
-        if lhs.ty() != rhs.ty() {
-            typecheck_error!(
-                "Type mismatch in equality expression. LHS type: {:?}, RHS type: {:?}",
-                lhs.ty(),
-                rhs.ty(),
-            );
-        }
         self.mk_bin_op_expr_inner(BinOpKind::CmpEq, lhs.as_dyn(), rhs.as_dyn())
             .downcast_ty()
     }
@@ -598,20 +583,33 @@ impl<'tcx> VirCtxt<'tcx> {
         .downcast_ty()
     }
 
-    pub fn mk_set_union_expr<'vir, Curr, Next>(
+    /// Membership test for a native `Set` (element in the set) or `Map` (key in
+    /// the map's domain), yielding a `Bool`. Backs the `expr!` macro's
+    /// `(x) in (c)` syntax; prefer the statically typed
+    /// [`Self::mk_set_in_expr`]/[`Self::mk_map_contains_expr`] when the
+    /// collection kind is known.
+    pub fn mk_contains_expr<'vir, Curr, Next, E: CompType, C: CompType>(
         &'vir self,
-        lhs: ExprGenSet<'vir, Curr, Next>,
-        rhs: ExprGenSet<'vir, Curr, Next>,
-    ) -> ExprGenSet<'vir, Curr, Next> {
-        if lhs.ty() != rhs.ty() {
+        elem: ExprGen<'vir, Curr, Next, E>,
+        collection: ExprGen<'vir, Curr, Next, C>,
+    ) -> ExprGenBool<'vir, Curr, Next> {
+        let valid = match collection.ty().kind() {
+            TypeKind::Set(elem_ty) | TypeKind::Map(elem_ty, _) => elem.ty().as_dyn() == *elem_ty,
+            _ => false,
+        };
+        if !valid {
             typecheck_error!(
-                "Type mismatch in set union expression. LHS type: {:?}, RHS type: {:?}",
-                lhs.ty(),
-                rhs.ty(),
+                "Invalid membership expression. Element type: {:?}, collection type: {:?}",
+                elem.ty(),
+                collection.ty(),
             );
         }
-        self.mk_collection_bin_op_expr_inner(CollectionBinOpKind::Union, lhs.as_dyn(), rhs.as_dyn())
-            .downcast_ty()
+        self.mk_collection_bin_op_expr_inner(
+            CollectionBinOpKind::Contains,
+            elem.as_dyn(),
+            collection.as_dyn(),
+        )
+        .downcast_ty()
     }
 
     /// A same-type binary set/multiset operation (union/intersection/
@@ -631,14 +629,6 @@ impl<'tcx> VirCtxt<'tcx> {
             );
         }
         self.mk_collection_bin_op_expr_inner(kind, lhs.as_dyn(), rhs.as_dyn())
-    }
-
-    pub fn mk_set_intersection_expr<'vir, Curr, Next, T: CompType>(
-        &'vir self,
-        lhs: ExprGen<'vir, Curr, Next, T>,
-        rhs: ExprGen<'vir, Curr, Next, T>,
-    ) -> ExprGenDyn<'vir, Curr, Next> {
-        self.mk_anyset_op_expr(CollectionBinOpKind::Intersection, lhs, rhs)
     }
 
     pub fn mk_set_difference_expr<'vir, Curr, Next, T: CompType>(
@@ -708,6 +698,35 @@ impl<'tcx> VirCtxt<'tcx> {
         self.mk_collection_bin_op_expr_inner(
             CollectionBinOpKind::Index,
             seq.as_dyn(),
+            index.as_dyn(),
+        )
+    }
+
+    /// Indexing into a native `Seq` (by an `Int` index) or `Map` (by a key),
+    /// yielding the dynamically typed element/value. Backs the `expr!` macro's
+    /// `(base)[index]` syntax; prefer the statically typed
+    /// [`Self::mk_seq_index_expr`]/[`Self::mk_map_lookup_expr`] when the
+    /// collection kind is known.
+    pub fn mk_index_expr<'vir, Curr, Next, B: CompType, I: CompType>(
+        &'vir self,
+        base: ExprGen<'vir, Curr, Next, B>,
+        index: ExprGen<'vir, Curr, Next, I>,
+    ) -> ExprGenDyn<'vir, Curr, Next> {
+        let valid = match base.ty().kind() {
+            TypeKind::Seq(_) => matches!(index.ty().kind(), TypeKind::Int),
+            TypeKind::Map(key_ty, _) => index.ty().as_dyn() == *key_ty,
+            _ => false,
+        };
+        if !valid {
+            typecheck_error!(
+                "Invalid indexing expression. Base type: {:?}, index type: {:?}",
+                base.ty(),
+                index.ty(),
+            );
+        }
+        self.mk_collection_bin_op_expr_inner(
+            CollectionBinOpKind::Index,
+            base.as_dyn(),
             index.as_dyn(),
         )
     }
@@ -883,6 +902,14 @@ impl<'tcx> VirCtxt<'tcx> {
         lhs: ExprGenDyn<'vir, Curr, Next>,
         rhs: ExprGenDyn<'vir, Curr, Next>,
     ) -> ExprGenDyn<'vir, Curr, Next> {
+        if lhs.ty() != rhs.ty() {
+            typecheck_error!(
+                "Type mismatch in binary operation {:?}. LHS type: {:?}, RHS type: {:?}",
+                kind,
+                lhs.ty(),
+                rhs.ty(),
+            );
+        }
         self.alloc(ExprGenData::new(self.alloc(ExprKindGenData::BinOp(
             self.alloc(BinOpGenData { kind, lhs, rhs }),
         ))))

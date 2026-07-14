@@ -444,16 +444,21 @@ impl<'vir> TyPureBuilder<'vir> {
             TySpecifics::Builtin(RustBuiltinData::Real) => vir::TYPE_PERM.upcast_ty(),
             // The collection builtins are encoded at their most generic
             // instantiation, so the elements are generic snapshots.
-            TySpecifics::Builtin(RustBuiltinData::Set(_)) => {
+            TySpecifics::Builtin(RustBuiltinData::Set(inner)) => {
+                assert!(inner.decompose(ty.params).ty.specifics.is_param());
                 vcx.mk_ty_set(vir::TYPE_PSNAP).upcast_ty()
             }
-            TySpecifics::Builtin(RustBuiltinData::Multiset(_)) => {
+            TySpecifics::Builtin(RustBuiltinData::Multiset(inner)) => {
+                assert!(inner.decompose(ty.params).ty.specifics.is_param());
                 vcx.mk_ty_multiset(vir::TYPE_PSNAP).upcast_ty()
             }
-            TySpecifics::Builtin(RustBuiltinData::Seq(_)) => {
+            TySpecifics::Builtin(RustBuiltinData::Seq(inner)) => {
+                assert!(inner.decompose(ty.params).ty.specifics.is_param());
                 vcx.mk_ty_seq(vir::TYPE_PSNAP).upcast_ty()
             }
-            TySpecifics::Builtin(RustBuiltinData::Map(..)) => {
+            TySpecifics::Builtin(RustBuiltinData::Map(inner1, inner2)) => {
+                assert!(inner1.decompose(ty.params).ty.specifics.is_param());
+                assert!(inner2.decompose(ty.params).ty.specifics.is_param());
                 vcx.mk_ty_map(vir::TYPE_PSNAP, vir::TYPE_PSNAP).upcast_ty()
             }
             TySpecifics::Primitive(prim) if prim.is_bool() => vir::TYPE_BOOL.upcast_ty(),

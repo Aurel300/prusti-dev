@@ -309,7 +309,7 @@ impl<'tcx> EnvQuery<'tcx> {
         // Selection runs in a fresh inference context: region variables from
         // the caller's context (e.g. borrowck'd MIR) do not affect which impl
         // matches and must be erased, while type/const inference variables
-        // would be dangling indices — a caller bug.
+        // would be dangling indices - a caller bug.
         assert!(
             !substs.has_non_region_infer(),
             "trait selection on substs with inference variables: {substs:?}"

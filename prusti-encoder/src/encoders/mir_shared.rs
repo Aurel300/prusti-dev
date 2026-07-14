@@ -202,14 +202,15 @@ pub(crate) trait PureRvalueEnc<'vir> {
         if matches!(builtin, PrustiBuiltin::Spec(_)) {
             return Ok(None);
         }
+        let is_pure = Self::PURE;
         let expr = self
             .deps()
             .require_dep::<PrustiBuiltinEnc>(PrustiBuiltinTask {
                 builtin,
                 def_id,
                 args: gargs,
-                is_pure: Self::PURE,
-                span,
+                is_pure,
+                span: Some(span).filter(|_| !is_pure),
             })?;
         let operands = args
             .iter()

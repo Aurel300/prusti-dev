@@ -360,10 +360,11 @@ pub struct PrustiBuiltinTask<'vir> {
     /// [`CollectionOpsEnc`] in pure code (where the precondition-free `f_`
     /// functions could never discharge it).
     pub is_pure: bool,
-    /// The call-site span: verification errors for the checked partial
-    /// operations are reported here, so it is part of the key (each call
-    /// site is encoded separately).
-    pub span: Span,
+    /// The call-site span (`is_none()`` iff `is_pure`). The returned expression
+    /// is partial iff `!is_pure`, therefore in this case we need to report
+    /// verification errors with this span (thus each impure call site is
+    /// encoded separately).
+    pub span: Option<Span>,
 }
 
 /// The operand snapshots filling the holes of a [`PrustiBuiltinExpr`].
@@ -433,6 +434,7 @@ impl TaskEncoder for PrustiBuiltinEnc {
             is_pure,
             span,
         } = *task_key;
+        assert_eq!(is_pure, span.is_none());
         vir::with_vcx(|vcx| {
             let tcx = vcx.tcx();
             let sig = tcx
@@ -463,7 +465,6 @@ impl TaskEncoder for PrustiBuiltinEnc {
                 sig,
                 args,
                 operands,
-                is_pure,
                 span,
             };
             let res: ExprRet<'vir, vir::Snap> = match builtin {
@@ -499,16 +500,11 @@ impl TaskEncoder for PrustiBuiltinEnc {
                 PrustiBuiltin::Real(op) => ctxt.encode_num::<vir::Perm>(op, true)?,
                 PrustiBuiltin::Float(op, fl) => {
                     let domain = ctxt.float_domain(fl)?;
+                    let operand = ctxt.operands[0].downcast_ty();
                     match op {
-                        FloatOp::IsNan => {
-                            domain.fp_is_nan.call()(ctxt.operands[0].downcast_ty()).upcast_ty()
-                        }
-                        FloatOp::IsInfinite => {
-                            domain.fp_is_infinite.call()(ctxt.operands[0].downcast_ty()).upcast_ty()
-                        }
-                        FloatOp::Abs => {
-                            domain.fp_abs.call()(ctxt.operands[0].downcast_ty()).upcast_ty()
-                        }
+                        FloatOp::IsNan => domain.fp_is_nan.call()(operand).upcast_ty(),
+                        FloatOp::IsInfinite => domain.fp_is_infinite.call()(operand).upcast_ty(),
+                        FloatOp::Abs => domain.fp_abs.call()(operand).upcast_ty(),
                     }
                 }
             };
@@ -526,8 +522,7 @@ struct BuiltinCtxt<'enc, 'vir> {
     sig: ty::FnSig<'vir>,
     args: GArgs<'vir>,
     operands: &'enc [ExprRet<'vir, vir::Snap>],
-    is_pure: bool,
-    span: Span,
+    span: Option<Span>,
 }
 
 impl<'enc, 'vir> BuiltinCtxt<'enc, 'vir> {
@@ -579,21 +574,16 @@ impl<'enc, 'vir> BuiltinCtxt<'enc, 'vir> {
                 let idx = self.index_to_int(self.operands[1], self.sig.inputs()[1])?;
                 let value = self.value_operand(2, Self::adt_type_arg(self.sig.inputs()[0], 0))?;
                 let val = seq.elem_caster().cast_to_callee_ctx(value);
-                if self.is_pure {
-                    let seq_update = self
-                        .deps
-                        .require_ref::<CollectionOpsEnc>(CollectionOp::SeqUpdate)?
-                        .expect_seq_update();
-                    seq_update.call()(self.operands[0].downcast_ty(), idx, val.downcast_ty())
-                        .upcast_ty()
-                } else {
+                if let Some(span) = self.span {
                     self.handle_partial_op_error(
                         "call.failed:seq.index.length",
                         "the update index may be out of bounds",
+                        span,
                     );
                     self.handle_partial_op_error(
                         "call.failed:seq.index.negative",
                         "the update index may be negative",
+                        span,
                     );
                     self.vcx
                         .mk_seq_update_expr(
@@ -601,6 +591,13 @@ impl<'enc, 'vir> BuiltinCtxt<'enc, 'vir> {
                             idx,
                             val.downcast_ty::<vir::PSnap>(),
                         )
+                        .upcast_ty()
+                } else {
+                    let seq_update = self
+                        .deps
+                        .require_ref::<CollectionOpsEnc>(CollectionOp::SeqUpdate)?
+                        .expect_seq_update();
+                    seq_update.call()(self.operands[0].downcast_ty(), idx, val.downcast_ty())
                         .upcast_ty()
                 }
             }
@@ -663,25 +660,27 @@ impl<'enc, 'vir> BuiltinCtxt<'enc, 'vir> {
                     // `s[i]`: the element, wrapped in the (single-field)
                     // `Ghost` struct of the output.
                     let idx = self.index_to_int(self.operands[1], self.sig.inputs()[1])?;
-                    let elem = if self.is_pure {
-                        let seq_lookup = self
-                            .deps
-                            .require_ref::<CollectionOpsEnc>(CollectionOp::SeqLookup)?
-                            .expect_seq_lookup();
-                        seq_lookup.call()(seq, idx).upcast_ty()
-                    } else {
+                    let elem = if let Some(span) = self.span {
                         self.handle_partial_op_error(
                             "call.failed:seq.index.length",
                             "the sequence index may be out of bounds",
+                            span,
                         );
                         self.handle_partial_op_error(
                             "call.failed:seq.index.negative",
                             "the sequence index may be negative",
+                            span,
                         );
                         self.vcx
                             .mk_seq_index_expr(seq, idx)
                             .downcast_ty::<vir::PSnap>()
                             .upcast_ty()
+                    } else {
+                        let seq_lookup = self
+                            .deps
+                            .require_ref::<CollectionOpsEnc>(CollectionOp::SeqLookup)?
+                            .expect_seq_lookup();
+                        seq_lookup.call()(seq, idx).upcast_ty()
                     };
                     let elem = seq_data.elem_caster().cast_to_caller_ctx(elem);
                     self.e_output_deref()?
@@ -704,20 +703,21 @@ impl<'enc, 'vir> BuiltinCtxt<'enc, 'vir> {
         start: ExprRet<'vir, vir::Int>,
         end: ExprRet<'vir, vir::Int>,
     ) -> EncResult<'vir, ExprRet<'vir, vir::Snap>> {
-        Ok(if self.is_pure {
-            self.vcx
-                .mk_seq_drop_expr(self.vcx.mk_seq_take_expr(seq, end), start)
-                .upcast_ty()
-        } else {
+        Ok(if let Some(span) = self.span {
             self.handle_partial_op_error(
                 "application.precondition:assertion.false",
                 "the range bounds may be out of bounds",
+                span,
             );
             let seq_slice = self
                 .deps
                 .require_ref::<CollectionOpsEnc>(CollectionOp::SeqSlice)?
                 .expect_seq_slice();
             seq_slice.call()(seq, start, end).upcast_ty()
+        } else {
+            self.vcx
+                .mk_seq_drop_expr(self.vcx.mk_seq_take_expr(seq, end), start)
+                .upcast_ty()
         })
     }
 
@@ -854,21 +854,22 @@ impl<'enc, 'vir> BuiltinCtxt<'enc, 'vir> {
                 let self_ = self.sig.inputs()[0].builtin_deref(false).unwrap();
                 let key = self.value_operand(1, Self::adt_type_arg(self_, 0))?;
                 let key = map_data.map_key_caster().cast_to_callee_ctx(key);
-                let val = if self.is_pure {
-                    let map_lookup = self
-                        .deps
-                        .require_ref::<CollectionOpsEnc>(CollectionOp::MapLookup)?
-                        .expect_map_lookup();
-                    map_lookup.call()(map, key.downcast_ty()).upcast_ty()
-                } else {
+                let val = if let Some(span) = self.span {
                     self.handle_partial_op_error(
                         "call.failed:map.key.contains",
                         "the map may not contain this key",
+                        span,
                     );
                     self.vcx
                         .mk_map_lookup_expr(map, key.downcast_ty::<vir::PSnap>())
                         .downcast_ty::<vir::PSnap>()
                         .upcast_ty()
+                } else {
+                    let map_lookup = self
+                        .deps
+                        .require_ref::<CollectionOpsEnc>(CollectionOp::MapLookup)?
+                        .expect_map_lookup();
+                    map_lookup.call()(map, key.downcast_ty()).upcast_ty()
                 };
                 let val = map_data.map_val_caster().cast_to_caller_ctx(val);
                 let val = self
@@ -989,10 +990,9 @@ impl<'enc, 'vir> BuiltinCtxt<'enc, 'vir> {
 
     /// Registers a backtranslation handler for the well-definedness
     /// obligation of a checked (impure-code) partial collection operation.
-    /// The handler attaches to the caller's current span — the call
+    /// The handler attaches to the caller's current span - the call
     /// statement, where Viper anchors these error positions.
-    fn handle_partial_op_error(&self, error_kind: &'static str, message: &'static str) {
-        let span = self.span;
+    fn handle_partial_op_error(&self, error_kind: &'static str, message: &'static str, span: Span) {
         self.vcx.handle_error(error_kind, move |_| {
             Some(vec![PrustiError::verification(message, span.into())])
         });
@@ -1024,14 +1024,10 @@ impl<'enc, 'vir> BuiltinCtxt<'enc, 'vir> {
                 .e_input_immref(i)?
                 .value_access(self.operands[i].downcast_ty()))
         } else {
-            Err(EncodeFullError::DependencyError(vec![(
-                PrustiBuiltinEnc::ENCODER_NAME,
-                format!(
-                    "`impl Value<T>` operand type `{input}` does not match \
-                    the expected value type `{expected}`"
-                ),
-                vec![self.span],
-            )]))
+            unreachable!(
+                "`impl Value<T>` operand type `{input}` does not match \
+                the expected value type `{expected}`"
+            )
         }
     }
 
@@ -1047,13 +1043,10 @@ impl<'enc, 'vir> BuiltinCtxt<'enc, 'vir> {
         if name.as_ref().map(|name| name.as_str()) == Some("Int") {
             Ok(snap.downcast_ty())
         } else {
-            if !matches!(ty.kind(), ty::TyKind::Int(_) | ty::TyKind::Uint(_)) {
-                return Err(EncodeFullError::DependencyError(vec![(
-                    PrustiBuiltinEnc::ENCODER_NAME,
-                    format!("unsupported sequence index type `{ty}`"),
-                    vec![self.span],
-                )]));
-            }
+            assert!(
+                matches!(ty.kind(), ty::TyKind::Int(_) | ty::TyKind::Uint(_)),
+                "unsupported sequence index type `{ty}`"
+            );
             let prim = *self.encode_ty(ty)?.expect_primitive();
             Ok(prim.snap_to_prim(snap.downcast_ty()).downcast_ty())
         }
@@ -1076,10 +1069,10 @@ impl<'enc, 'vir> BuiltinCtxt<'enc, 'vir> {
             EncodeFullError::DependencyError(vec![(
                 PrustiBuiltinEnc::ENCODER_NAME,
                 format!(
-                    "deref on maybe unsized `{:?}` not supported",
+                    "Ghost::deref on maybe unsized `{:?}` not supported",
                     Self::deref_opt(self.sig.output()).unwrap()
                 ),
-                Vec::new(),
+                self.span.into_iter().collect(),
             )])
         })?;
         Ok(self

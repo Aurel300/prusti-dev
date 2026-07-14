@@ -18,9 +18,9 @@ fn construction() {
     prusti_assert!(m.contains(&1));
     prusti_assert!(m.contains(&2));
     prusti_assert!(!m.contains(&3));
-    prusti_assert!(m[1] == 10);
+    prusti_assert!(*m[1] == 10);
     // Indexing accepts both `K` and `&K` (`Value<K>`).
-    prusti_assert!(m[&2] == 20);
+    prusti_assert!(*m[&2] == 20);
     prusti_assert!(m.contains(1));
     prusti_assert!(m.len() == Int::from(2));
 }
@@ -30,8 +30,8 @@ fn insert_overwrite() {
     let m = map![1 => 10];
     let m2 = m.insert(1, 11);
     prusti_assert!(m2.len() == Int::from(1));
-    prusti_assert!(m2[1] == 11);
-    prusti_assert!(m[1] == 10);
+    prusti_assert!(*m2[1] == 11);
+    prusti_assert!(*m[1] == 10);
 }
 
 // `keys` and `values` are the key and value sets.
@@ -53,7 +53,7 @@ fn setminus() {
     prusti_assert!(!r.contains(&1));
     prusti_assert!(!r.contains(&3));
     prusti_assert!(r.contains(&2));
-    prusti_assert!(r[2] == 20);
+    prusti_assert!(*r[2] == 20);
     prusti_assert!(r.keys() == set![2]);
     prusti_assert!(r.len() == Int::from(1));
     prusti_assert!(m.setminus(Set::new()) == m);
@@ -63,19 +63,19 @@ fn setminus() {
 // A map with `Int` values.
 fn map_of_int() {
     let m = map![1 => Int::from(100)];
-    prusti_assert!(m[1] == Int::from(100));
-    prusti_assert!(m[1] > Int::from(99));
+    prusti_assert!(*m[1] == Int::from(100));
+    prusti_assert!(*m[1] > Int::from(99));
 }
 
 // A map as a pure-function argument, related in the contract.
 #[pure]
 #[requires(m.contains(&0))]
 #[ensures(result == m[0])]
-fn get_zero(m: Map<i32, i32>) -> i32 {
+fn get_zero(m: Map<i32, i32>) -> Ghost<i32> {
     m[0]
 }
 
 fn use_boundary() {
     let m = map![0 => 7, 1 => 8];
-    prusti_assert!(get_zero(m) == 7);
+    prusti_assert!(*get_zero(m) == 7);
 }

@@ -114,7 +114,7 @@ mod private_shared {
         ($ty:ident: $($src:ty),*) => {$(
             impl From<$src> for $ty {
                 fn from(_: $src) -> Self {
-                    panic!()
+                    $ty(())
                 }
             }
         )*}
@@ -125,7 +125,7 @@ mod private_shared {
             impl core::ops::$trait for $ty {
                 type Output = Self;
                 fn $fun(self, _other: Self) -> Self {
-                    panic!()
+                    $ty(())
                 }
             }
         )*}
@@ -142,7 +142,7 @@ mod private_shared {
     impl Neg for Int {
         type Output = Int;
         fn neg(self) -> Self {
-            panic!()
+            Int(())
         }
     }
 
@@ -157,7 +157,7 @@ mod private_shared {
     impl Neg for Real {
         type Output = Real;
         fn neg(self) -> Self {
-            panic!()
+            Real(())
         }
     }
 
@@ -166,25 +166,25 @@ mod private_shared {
         ($ty:ident: $macro:ident, $concat:ident, $d:tt) => {
             impl<T: ?Sized> Clone for $ty<T> {
                 fn clone(&self) -> Self {
-                    panic!()
+                    $ty(PhantomData)
                 }
             }
             impl<T: ?Sized> Copy for $ty<T> {}
             impl<T: ?Sized> $ty<T> {
                 pub fn new() -> Self {
-                    panic!()
+                    $ty(PhantomData)
                 }
                 pub fn single(_: impl Value<T>) -> Self {
-                    panic!()
+                    $ty(PhantomData)
                 }
                 pub fn single_ref(_: &T) -> Self {
-                    panic!()
+                    $ty(PhantomData)
                 }
                 pub fn $concat(self, _: Self) -> Self {
-                    panic!()
+                    $ty(PhantomData)
                 }
                 pub fn len(self) -> Int {
-                    panic!()
+                    Int(())
                 }
             }
 
@@ -210,7 +210,7 @@ mod private_shared {
         where
             Int: From<I>,
         {
-            panic!()
+            Seq(PhantomData)
         }
     }
 
@@ -220,7 +220,7 @@ mod private_shared {
     {
         type Output = Ghost<T>;
         fn index(&self, _: I) -> &Self::Output {
-            panic!()
+            &Ghost(PhantomData)
         }
     }
 
@@ -230,7 +230,7 @@ mod private_shared {
     {
         type Output = Seq<T>;
         fn index(&self, _: Range<I>) -> &Self::Output {
-            panic!()
+            &Seq(PhantomData)
         }
     }
 
@@ -240,7 +240,7 @@ mod private_shared {
     {
         type Output = Seq<T>;
         fn index(&self, _: RangeFrom<I>) -> &Self::Output {
-            panic!()
+            &Seq(PhantomData)
         }
     }
 
@@ -250,7 +250,7 @@ mod private_shared {
     {
         type Output = Seq<T>;
         fn index(&self, _: RangeTo<I>) -> &Self::Output {
-            panic!()
+            &Seq(PhantomData)
         }
     }
 
@@ -261,10 +261,10 @@ mod private_shared {
 
     impl<T: ?Sized> Set<T> {
         pub fn intersection(self, _: Self) -> Self {
-            panic!()
+            Set(PhantomData)
         }
         pub fn difference(self, _: Self) -> Self {
-            panic!()
+            Set(PhantomData)
         }
     }
 
@@ -275,13 +275,13 @@ mod private_shared {
 
     impl<T: ?Sized> Multiset<T> {
         pub fn intersection(self, _: Self) -> Self {
-            panic!()
+            Multiset(PhantomData)
         }
         pub fn difference(self, _: Self) -> Self {
-            panic!()
+            Multiset(PhantomData)
         }
         pub fn contains(self, _: impl Value<T>) -> Int {
-            panic!()
+            Int(())
         }
     }
 
@@ -290,29 +290,29 @@ mod private_shared {
 
     impl<K: ?Sized, V: ?Sized> Clone for Map<K, V> {
         fn clone(&self) -> Self {
-            panic!()
+            Map(PhantomData, PhantomData)
         }
     }
     impl<K: ?Sized, V: ?Sized> Copy for Map<K, V> {}
 
     impl<K: ?Sized, V: ?Sized> Map<K, V> {
         pub fn new() -> Self {
-            panic!()
+            Map(PhantomData, PhantomData)
         }
         pub fn insert(self, _key: impl Value<K>, _val: impl Value<V>) -> Self {
-            panic!()
+            Map(PhantomData, PhantomData)
         }
         pub fn len(self) -> Int {
-            panic!()
+            Int(())
         }
         pub fn keys(self) -> Set<K> {
-            panic!()
+            Set(PhantomData)
         }
         pub fn values(self) -> Set<V> {
-            panic!()
+            Set(PhantomData)
         }
         pub fn setminus(self, _keys: Set<K>) -> Self {
-            panic!()
+            Map(PhantomData, PhantomData)
         }
     }
 
@@ -330,9 +330,9 @@ mod private_shared {
     }
 
     impl<I: Value<K>, K: ?Sized, V: ?Sized> core::ops::Index<I> for Map<K, V> {
-        type Output = V;
-        fn index(&self, _key: I) -> &V {
-            panic!()
+        type Output = Ghost<V>;
+        fn index(&self, _key: I) -> &Self::Output {
+            &Ghost(PhantomData)
         }
     }
 
@@ -342,17 +342,17 @@ mod private_shared {
 
     impl<T: ?Sized> Clone for Ghost<T> {
         fn clone(&self) -> Self {
-            panic!()
+            Ghost(PhantomData)
         }
     }
     impl<T: ?Sized> Copy for Ghost<T> {}
 
     impl<T: ?Sized> Ghost<T> {
         pub fn new(_: impl Value<T>) -> Self {
-            panic!()
+            Ghost(PhantomData)
         }
         pub fn new_ref(_: &T) -> Self {
-            panic!()
+            Ghost(PhantomData)
         }
     }
 }
@@ -560,37 +560,49 @@ mod private {
 /// in the "before expiration" context, just before the expiry of the borrow
 /// that the pledge is specifying.
 #[cfg(feature = "prusti")]
-pub fn before_expiry_start() {}
+pub fn before_expiry_start() {
+    panic!()
+}
 
 /// End of the context started with `before_expiry_start`.
 #[cfg(feature = "prusti")]
-pub fn before_expiry_end() {}
+pub fn before_expiry_end() {
+    panic!()
+}
 
 /// This function is used to mark the beginning of evaluation of expressions
 /// in the "old" context, that is at the beginning of the method call.
 #[cfg(feature = "prusti")]
-pub fn old_start() {}
+pub fn old_start() {
+    panic!()
+}
 
 /// End of the context started with `old_start`.
 #[cfg(feature = "prusti")]
-pub fn old_end() {}
+pub fn old_end() {
+    panic!()
+}
 
 /// This function is used to mark the beginning of evaluation of expressions
 /// in a given execution, when specifying a hyperproperty concerning multiple
 /// exeuctions.
 #[cfg(feature = "prusti")]
-pub fn rel_start<const E: usize>() {}
+pub fn rel_start<const E: usize>() {
+    panic!()
+}
 
 /// End of the context started with `rel_start`.
 #[cfg(feature = "prusti")]
-pub fn rel_end<const E: usize>() {}
+pub fn rel_end<const E: usize>() {
+    panic!()
+}
 
 /// Universal quantifier.
 ///
 /// This is a Prusti-internal representation of the `forall` syntax.
 #[cfg(feature = "prusti")]
 pub fn forall<T, A: core::marker::Tuple, F: Fn<A>>(_trigger_set: T, _closure: &F) -> bool {
-    true
+    panic!()
 }
 
 /// Existential quantifier.
@@ -598,7 +610,7 @@ pub fn forall<T, A: core::marker::Tuple, F: Fn<A>>(_trigger_set: T, _closure: &F
 /// This is a Prusti-internal representation of the `exists` syntax.
 #[cfg(feature = "prusti")]
 pub fn exists<T, A: core::marker::Tuple, F: Fn<A>>(_trigger_set: T, _closure: &F) -> bool {
-    true
+    panic!()
 }
 
 /// Specification block.
@@ -606,7 +618,7 @@ pub fn exists<T, A: core::marker::Tuple, F: Fn<A>>(_trigger_set: T, _closure: &F
 /// This is a Prusti-internal representation of `prusti_assert!` and others.
 #[cfg(feature = "prusti")]
 pub fn spec_block<A: core::marker::Tuple, F: Fn<A>>(_closure: &F) -> bool {
-    true
+    panic!()
 }
 
 /// Checks if a float is NaN

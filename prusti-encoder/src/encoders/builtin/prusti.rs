@@ -871,6 +871,11 @@ impl<'enc, 'vir> BuiltinCtxt<'enc, 'vir> {
                         .upcast_ty()
                 };
                 let val = map_data.map_val_caster().cast_to_caller_ctx(val);
+                let val = self
+                    .e_output_deref()?
+                    .expect_structlike()
+                    .field_snaps_to_snap(vec![val])
+                    .upcast_ty();
                 self.wrap_in_immref(val)?
             }
         })

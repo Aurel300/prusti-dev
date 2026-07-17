@@ -735,7 +735,7 @@ impl<'vir> DomainBuilder<'vir> {
         name: &str,
         args: A::Tys<'vir>,
         ret: Type<'vir, T>,
-        interpretation: Option<&'static str>,
+        interpretation: Option<&'vir str>,
     ) -> FunctionIdn<'vir, A, T> {
         let name = vir::vir_format!(self.vcx, "{}_{name}", self.name);
         let ident = FunctionIdn::new(vir::ViperIdent::new(name), args, ret);

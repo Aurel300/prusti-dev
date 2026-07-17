@@ -64,6 +64,7 @@ pub enum BinOpKind {
     PermSub,
     PermMul,
     PermPermDiv,
+    FractionalPerm,
     Mod,
     // Set ops
     SetUnion,

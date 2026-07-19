@@ -18,7 +18,7 @@ use pcg::{
     coupling::PcgCoupledEdgeKind,
     free_pcs::{RepackGuide, RepackOp},
     r#loop::{LoopAnalysis, LoopId},
-    pcg::{CapabilityKind, EvalStmtPhase, Pcg, PcgNode, PcgSuccessor},
+    pcg::{BodyWithBorrowckFacts, CapabilityKind, EvalStmtPhase, Pcg, PcgNode, PcgSuccessor},
     results::PcgBasicBlock,
     utils::{
         CompilerCtxt, HasPlace, Place, SnapshotLocation, display::DisplayWithCtxt,
@@ -271,6 +271,55 @@ impl<'vir, E: TaskEncoder> From<EncodeFullError<'vir, E>> for EncodeRvalueError<
 }
 
 impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
+    /// A visitor for encoding the body of the given method. Runs the PCG
+    /// analysis of the body; `pcg_creator` holds the analysis context and
+    /// must outlive the visitor.
+    pub(crate) fn new(
+        vcx: &'vir vir::VirCtxt<'vir>,
+        deps: &'enc mut TaskEncoderDependencies<'vir, E>,
+        def_id: DefId,
+        body_with_facts: &'enc BodyWithBorrowckFacts<'vir>,
+        pcg_creator: &'enc pcg::PcgCtxtCreator<'vir>,
+        local_defs: crate::encoders::MirLocalDefEncOutput<'vir>,
+        wands: WandEncOutput<'vir>,
+        encoded_blocks: Vec<vir::CfgBlock<'vir>>,
+    ) -> Self {
+        let pcg_ctxt = pcg_creator.new_nll_ctxt(body_with_facts);
+        pcg_ctxt.update_debug_visualization_metadata();
+        let fpcs_analysis = pcg::run_pcg(pcg_ctxt);
+        let body = &body_with_facts.body;
+        let spec_blocks = SpecBlocks::new(def_id, body, fpcs_analysis.analysis().loop_analysis());
+        ImpureEncVisitor {
+            vcx,
+            deps,
+            def_id,
+            local_decls: &body.local_decls,
+            fpcs_analysis,
+            local_defs,
+            spec_blocks,
+            body,
+
+            wands,
+
+            tmp_ctr: 0,
+            label_ctr: 0,
+            call_labels: Default::default(),
+            wandless_calls: Default::default(),
+            from_to_vars: Default::default(),
+
+            current_block: None,
+            current_block_pres: None,
+            current_block_succs: None,
+            current_block_label: None,
+            current_fpcs: None,
+
+            current_stmts: None,
+            current_terminator: None,
+
+            encoded_blocks,
+        }
+    }
+
     pub(crate) fn pcg_ctxt(&self) -> CompilerCtxt<'enc, 'vir> {
         self.fpcs_analysis.ctxt()
     }
@@ -351,7 +400,9 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             }
 
             mir::Rvalue::Aggregate(
-                box kind @ (mir::AggregateKind::Adt(..) | mir::AggregateKind::Tuple),
+                box kind @ (mir::AggregateKind::Adt(..)
+                | mir::AggregateKind::Tuple
+                | mir::AggregateKind::Closure(..)),
                 fields,
             ) => Ok(self
                 .encode_aggregate_snap(rvalue_ty, kind, fields, &())
@@ -1626,7 +1677,6 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                     SpecBlockKind::LoopInvariant => {
                         // nothing to do: loop invariants are handled elsewhere
                     }
-                    _ => unreachable!(),
                 }
             }
         }
@@ -1765,7 +1815,18 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         }
         self.current_fpcs = Some(current_fpcs);
 
-        let terminator = match &terminator.kind {
+        // A `ghost!` block's `if false` switch is encoded as an unconditional
+        // jump into the ghost arm (the inline ghost body); the runtime
+        // `ghost_erased` stand-in arm is skipped.
+        let ghost_goto = self
+            .spec_blocks
+            .ghost
+            .switches
+            .get(&location.block)
+            .map(|ghost| mir::TerminatorKind::Goto {
+                target: ghost.arm_block,
+            });
+        let terminator = match ghost_goto.as_ref().unwrap_or(&terminator.kind) {
             mir::TerminatorKind::Goto { target }
             | mir::TerminatorKind::FalseUnwind {
                 real_target: target,
@@ -1775,20 +1836,19 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 real_target: target,
                 ..
             } => {
-                const REAL_TARGET_SUCC_IDX: usize = 0;
-                // Ensure that the terminator succ that we use for the repacks is the correct one
-                assert_eq!(
-                    &self.current_fpcs.as_ref().unwrap().terminator.succs[REAL_TARGET_SUCC_IDX]
-                        .block(),
-                    target
-                );
                 let current_fpcs = self.current_fpcs.take().unwrap();
                 let borrows =
-                    current_fpcs.statements.last().unwrap().states[EvalStmtPhase::PostMain].clone();
-                self.pcs_succ(
-                    &borrows,
-                    &current_fpcs.terminator.succs[REAL_TARGET_SUCC_IDX],
-                )?;
+                    &current_fpcs.statements.last().unwrap().states[EvalStmtPhase::PostMain];
+                // The succ used for the repacks, found by block: the target is
+                // usually the terminator's only successor, but for a ghost
+                // switch the (second) `ghost_erased` successor is skipped.
+                let succ = current_fpcs
+                    .terminator
+                    .succs
+                    .iter()
+                    .find(|succ| &succ.block() == target)
+                    .unwrap();
+                self.pcs_succ(borrows, succ)?;
                 self.current_fpcs = Some(current_fpcs);
                 let set_flag = self.set_from_to_flag(location.block, *target);
                 self.stmt(set_flag);
@@ -2185,8 +2245,17 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             // the shared operand-based encoding and assign the
             // resulting ghost snapshot into the destination. The
             // spec-only builtins (those gated behind the `prusti`
-            // feature) are rejected.
-            if builtin.is_spec_only() {
+            // feature) are rejected, except in ghost code (the inline
+            // bodies of `ghost!` blocks), where all non-`Spec` builtins
+            // are allowed.
+            let in_ghost_code = self
+                .spec_blocks
+                .ghost
+                .code
+                .contains(&self.current_block.unwrap());
+            if builtin.is_spec_only()
+                && (!in_ghost_code || matches!(builtin, PrustiBuiltin::Spec(_)))
+            {
                 return Err(self.unsupported_rvalue(
                     format!(
                         "`prusti_contracts` builtin {builtin:?} cannot be used in executable code"

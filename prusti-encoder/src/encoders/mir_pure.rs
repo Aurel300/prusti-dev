@@ -1,6 +1,6 @@
 use crate::encoders::{
     FunctionCallEnc, Mode, PrustiBuiltin, SpecBuiltin, ViperTupleEnc,
-    mir_fn::{CallTaskDescription, RustSignature},
+    mir_fn::{CallTaskDescription, GhostBlocks, RustSignature},
     mir_shared::{PureRvalueEnc, RustcIntrinsic},
     ty::{
         RustTyDecomposition,
@@ -254,6 +254,9 @@ struct Enc<'vir: 'enc, 'enc> {
     context: GParams<'vir>,
     body: &'enc mir::Body<'vir>,
     rev_doms: rev_doms::ReverseDominators,
+    /// The `ghost!` blocks of the body (the same detection the impure
+    /// encoder uses, via `SpecBlocks`).
+    ghost: GhostBlocks,
     deps: &'enc mut TaskEncoderDependencies<'vir, MirPureEnc>,
     /// Always holds the next version to be used for a local.
     version_ctr: IndexVec<mir::Local, usize>,
@@ -353,6 +356,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
             context: GParams::new_maybe_extern(caller_def_id.unwrap_or(def_id), kind.extern_spec()),
             body,
             rev_doms,
+            ghost: GhostBlocks::new(def_id, body),
             deps,
             // visited: IndexVec::from_elem_n(false, body.basic_blocks.len()),
             version_ctr: IndexVec::from_elem_n(0, body.local_decls.len()),
@@ -622,6 +626,14 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
             }
 
             mir::TerminatorKind::SwitchInt { discr, targets } => {
+                // A `ghost!` block's `if false` switch: continue straight
+                // into the ghost arm (the inline ghost body); the runtime
+                // `ghost_erased` stand-in arm is skipped.
+                if let Some(ghost) = self.ghost.switches.get(&curr) {
+                    let rest_update = self.encode_cfg(&new_curr_ver, ghost.arm_block, join_point)?;
+                    return Ok(stmt_update.merge(rest_update));
+                }
+
                 // encode the discriminant operand
                 let discr_expr = self
                     .encode_operand_snap(discr, &new_curr_ver)?

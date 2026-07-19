@@ -38,6 +38,15 @@ pub enum SpecBuiltin {
 pub enum GhostOp {
     New,
     Deref,
+    /// `ghost_call(&closure, body)`, the `ghost!` block marker: the block's
+    /// value is `body` (evaluated inline in the block's dead arm, which the
+    /// encoders jump into; see `ghost_switches` in `SpecBlocks`), wrapped in
+    /// `Ghost`. The never-called closure operand only exists for the
+    /// compiler to check the body against `Fn` capture rules.
+    Call,
+    /// `ghost_erased()`, the runtime stand-in arm of a `ghost!` block; the
+    /// encoders skip it, so this is only reached by stray direct calls.
+    Erased,
 }
 
 /// The operations of the `Seq` builtin.
@@ -197,6 +206,8 @@ impl PrustiBuiltin {
                     "forall" => Self::Spec(SpecBuiltin::Forall),
                     "exists" => Self::Spec(SpecBuiltin::Exists),
                     "spec_block" => Self::Spec(SpecBuiltin::SpecBlock),
+                    "ghost_call" => Self::Ghost(GhostOp::Call),
+                    "ghost_erased" => Self::Ghost(GhostOp::Erased),
                     "old_start" => Self::Spec(SpecBuiltin::ModeStart(Mode::Old)),
                     "old_end" => Self::Spec(SpecBuiltin::ModeEnd(Mode::Old)),
                     "rel_start" => Self::Spec(SpecBuiltin::ModeStart(Mode::Rel(rel_index()))),
@@ -263,7 +274,11 @@ impl PrustiBuiltin {
     pub fn is_spec_only(&self) -> bool {
         match self {
             Self::Spec(_) | Self::SnapEq | Self::SnapNe => true,
-            Self::Ghost(GhostOp::Deref) => true,
+            // `Call`/`Erased` are legitimate only inside a `ghost!` block's
+            // dead arm, which is exempt from the spec-only rejection: a stray
+            // executable `ghost_call` (i.e. not from a `ghost!` block) would
+            // verify code whose runtime body is `unreachable!()`.
+            Self::Ghost(GhostOp::Deref | GhostOp::Call | GhostOp::Erased) => true,
             Self::Seq(SeqOp::Contains) => true,
             Self::AnySet {
                 op: AnySetOp::IsSubset,
@@ -542,6 +557,20 @@ impl<'enc, 'vir> BuiltinCtxt<'enc, 'vir> {
                 let ghost_snap = self.deref_operand(0)?;
                 let value = ghost.fields[0].read(ghost_snap);
                 self.wrap_in_immref(value)?
+            }
+            // The block's value is the inline body operand; the checker
+            // closure operand is ignored.
+            GhostOp::Call => self
+                .e_output()?
+                .expect_structlike()
+                .field_snaps_to_snap(vec![self.operands[1]])
+                .upcast_ty(),
+            GhostOp::Erased => {
+                return Err(EncodeFullError::DependencyError(vec![(
+                    PrustiBuiltinEnc::ENCODER_NAME,
+                    "`ghost_erased` outside of a `ghost!` block".to_string(),
+                    self.span.into_iter().collect(),
+                )]));
             }
         })
     }

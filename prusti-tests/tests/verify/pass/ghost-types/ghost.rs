@@ -14,12 +14,12 @@ fn new_and_eq() {
     prusti_assert!(Ghost::new(5u32) != Ghost::new(10u32));
 }
 
-// A `ghost!` block may reassign a ghost local; the new value is observed.
+// A `ghost!` block produces a `Ghost` of its body's value, which can rebind
+// (shadow) an earlier ghost local; the new value is observed.
 fn ghost_block() {
-    let mut x = Ghost::new(5u32);
-    ghost! {
-        x = Ghost::new(10);
-    };
+    let x = Ghost::new(5u32);
+    prusti_assert!(x == Ghost::new(5u32));
+    let x = ghost! { 10u32 };
     prusti_assert!(x == Ghost::new(10u32));
 }
 

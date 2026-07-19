@@ -1,6 +1,7 @@
 #![no_std]
 #![allow(internal_features)]
 #![cfg_attr(feature = "prusti", feature(unboxed_closures, tuple_trait))]
+#![feature(rustc_attrs)]
 #![feature(core_intrinsics)]
 #![feature(auto_traits)]
 #![feature(negative_impls)]
@@ -86,10 +87,6 @@ pub use prusti_contracts_proc_macros::model;
 /// A macro to add trait bounds on a generic type parameter and specifications
 /// which are active only when these bounds are satisfied for a call.
 pub use prusti_contracts_proc_macros::refine_spec;
-
-/// A macro for defining ghost blocks which will be left in for verification
-/// but omitted during compilation.
-pub use prusti_contracts_proc_macros::ghost;
 
 /// A macro to customize how a struct or enum should be printed in a counterexample
 pub use prusti_contracts_proc_macros::print_counterexample;
@@ -355,6 +352,27 @@ mod private_shared {
             Ghost(PhantomData)
         }
     }
+
+    /// Ghost block. Only emitted by the `ghost!` macro, in dead code: `_body`
+    /// is the ghost body inline (encoded for verification, never executed nor
+    /// codegened), while `_closure` duplicates it into a never-called `Fn`
+    /// closure purely so the compiler checks the body complies with `Fn`
+    /// capture rules (no mutation or consumption of outer variables).
+    #[doc(hidden)]
+    #[rustc_nounwind]
+    pub fn ghost_call<T, F: Fn() -> T>(_closure: &F, _body: T) -> Ghost<T> {
+        Ghost(PhantomData)
+    }
+
+    /// The runtime stand-in for a ghost block: constructs the `Ghost` ZST
+    /// without evaluating anything. Only emitted by the `ghost!` macro, on
+    /// the live path; its result type is inferred through the `if`/`else`
+    /// from the dead [`ghost_call`] arm.
+    #[doc(hidden)]
+    #[rustc_nounwind]
+    pub fn ghost_erased<T: ?Sized>() -> Ghost<T> {
+        Ghost(PhantomData)
+    }
 }
 
 #[cfg(not(feature = "prusti"))]
@@ -376,6 +394,26 @@ mod private {
         };
     }
 
+    /// A macro for defining ghost blocks which will be left in for
+    /// verification but omitted during compilation. This mirrors the
+    /// expansion under the `prusti` feature (minus the `prusti::` tool
+    /// attributes): the body is only type-checked, in dead code, so that
+    /// `let x = ghost! { .. }` still binds a `Ghost<T>` of the body's type.
+    /// Note: this is a declarative macro defined in this crate
+    /// because declarative macros can't be exported from
+    /// the `prusti-contracts-proc-macros` proc-macro crate.
+    /// See <https://github.com/rust-lang/rust/issues/40090>.
+    #[macro_export]
+    macro_rules! ghost {
+        ($($body:tt)*) => {
+            if false {
+                $crate::ghost_call(&|| { $($body)* }, { $($body)* })
+            } else {
+                $crate::ghost_erased()
+            }
+        };
+    }
+
     #[macro_export]
     macro_rules! prusti_assert_eq {
         ($left:expr, $right:expr $(,)?) => {};
@@ -393,6 +431,10 @@ mod private {
 
     /// A macro for defining a closure with a specification.
     pub use prusti_contracts_proc_macros::{closure, pure};
+
+    /// A macro for defining ghost blocks which will be left in for
+    /// verification but omitted during compilation.
+    pub use prusti_contracts_proc_macros::ghost;
 
     pub use super::private_shared::*;
 
@@ -560,12 +602,14 @@ mod private {
 /// in the "before expiration" context, just before the expiry of the borrow
 /// that the pledge is specifying.
 #[cfg(feature = "prusti")]
+#[rustc_nounwind]
 pub fn before_expiry_start() {
     panic!()
 }
 
 /// End of the context started with `before_expiry_start`.
 #[cfg(feature = "prusti")]
+#[rustc_nounwind]
 pub fn before_expiry_end() {
     panic!()
 }
@@ -573,12 +617,14 @@ pub fn before_expiry_end() {
 /// This function is used to mark the beginning of evaluation of expressions
 /// in the "old" context, that is at the beginning of the method call.
 #[cfg(feature = "prusti")]
+#[rustc_nounwind]
 pub fn old_start() {
     panic!()
 }
 
 /// End of the context started with `old_start`.
 #[cfg(feature = "prusti")]
+#[rustc_nounwind]
 pub fn old_end() {
     panic!()
 }
@@ -587,12 +633,14 @@ pub fn old_end() {
 /// in a given execution, when specifying a hyperproperty concerning multiple
 /// exeuctions.
 #[cfg(feature = "prusti")]
+#[rustc_nounwind]
 pub fn rel_start<const E: usize>() {
     panic!()
 }
 
 /// End of the context started with `rel_start`.
 #[cfg(feature = "prusti")]
+#[rustc_nounwind]
 pub fn rel_end<const E: usize>() {
     panic!()
 }
@@ -601,7 +649,11 @@ pub fn rel_end<const E: usize>() {
 ///
 /// This is a Prusti-internal representation of the `forall` syntax.
 #[cfg(feature = "prusti")]
-pub fn forall<T, A: core::marker::Tuple, F: Fn<A>>(_trigger_set: T, _closure: &F) -> bool {
+#[rustc_nounwind]
+pub fn forall<T, A: core::marker::Tuple, F: Fn<A, Output = bool>>(
+    _trigger_set: T,
+    _closure: &F,
+) -> bool {
     panic!()
 }
 
@@ -609,7 +661,11 @@ pub fn forall<T, A: core::marker::Tuple, F: Fn<A>>(_trigger_set: T, _closure: &F
 ///
 /// This is a Prusti-internal representation of the `exists` syntax.
 #[cfg(feature = "prusti")]
-pub fn exists<T, A: core::marker::Tuple, F: Fn<A>>(_trigger_set: T, _closure: &F) -> bool {
+#[rustc_nounwind]
+pub fn exists<T, A: core::marker::Tuple, F: Fn<A, Output = bool>>(
+    _trigger_set: T,
+    _closure: &F,
+) -> bool {
     panic!()
 }
 
@@ -617,7 +673,8 @@ pub fn exists<T, A: core::marker::Tuple, F: Fn<A>>(_trigger_set: T, _closure: &F
 ///
 /// This is a Prusti-internal representation of `prusti_assert!` and others.
 #[cfg(feature = "prusti")]
-pub fn spec_block<A: core::marker::Tuple, F: Fn<A>>(_closure: &F) -> bool {
+#[rustc_nounwind]
+pub fn spec_block<A: core::marker::Tuple, F: Fn<A, Output = bool>>(_closure: &F) {
     panic!()
 }
 

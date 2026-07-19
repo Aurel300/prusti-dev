@@ -69,8 +69,7 @@ impl GhostBlocks {
     /// Records the ghost block whose runtime stand-in arm is `erased_block`.
     fn visit_erased(&mut self, body: &mir::Body<'_>, erased_block: BasicBlock) {
         let switch_block = get_single_predecessor(&body.basic_blocks.predecessors()[erased_block]);
-        let mir::TerminatorKind::SwitchInt { targets, .. } =
-            &body[switch_block].terminator().kind
+        let mir::TerminatorKind::SwitchInt { targets, .. } = &body[switch_block].terminator().kind
         else {
             unreachable!("malformed ghost block: `ghost_erased` arm not guarded by a switch");
         };

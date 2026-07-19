@@ -10,7 +10,7 @@ use crate::{
     encoders::{
         Impure, ImpureEncVisitor, MirLocalDefEnc, MirLocalDefEncTask, MirSpecEnc, WandEnc,
         WandEncTask,
-        mir_fn::{CallTaskDescription, RustSignature},
+        mir_fn::{CallTaskDescription, RustSignature, SpecBlocks},
         pure::spec::MirSpecEncMode,
         ty::generics::{GArgCaster, GArgsCastEnc, GArgsTy, GArgsTyEnc, GParams, GenericParamsEnc},
     },
@@ -244,6 +244,11 @@ impl TaskEncoder for MethodEnc {
                     span,
                 )?;
 
+                let pcg_creator = pcg::PcgCtxtCreator::new(vcx.tcx());
+                let pcg_ctxt = pcg_creator.new_nll_ctxt(&body_with_facts);
+                let fpcs_analysis = pcg::run_pcg(pcg_ctxt);
+                pcg_ctxt.update_debug_visualization_metadata();
+
                 let block_count = body.basic_blocks.len();
 
                 let mut encoded_blocks = Vec::with_capacity(
@@ -265,18 +270,38 @@ impl TaskEncoder for MethodEnc {
                     vcx.mk_goto_stmt(&vir::CfgBlockLabelData::BasicBlock(0)),
                 ));
 
+                let spec_blocks =
+                    SpecBlocks::new(def_id, body, fpcs_analysis.analysis().loop_analysis());
+
                 deps.check_cycle()?;
-                let pcg_creator = pcg::PcgCtxtCreator::new(vcx.tcx());
-                let mut visitor = ImpureEncVisitor::new(
+                let mut visitor = ImpureEncVisitor {
                     vcx,
                     deps,
                     def_id,
-                    &body_with_facts,
-                    &pcg_creator,
+                    local_decls: &body.local_decls,
+                    fpcs_analysis,
                     local_defs,
+                    spec_blocks,
+                    body,
+
                     wands,
+
+                    tmp_ctr: 0,
+                    label_ctr: 0,
+                    call_labels: Default::default(),
+                    wandless_calls: Default::default(),
+                    from_to_vars: Default::default(),
+
+                    current_block: None,
+                    current_block_pres: None,
+                    current_block_succs: None,
+                    current_block_label: None,
+                    current_fpcs: None,
+
+                    current_stmts: None,
+                    current_terminator: None,
                     encoded_blocks,
-                );
+                };
                 // if we encountered an error/cycle during encoding, we don't
                 // emit a method body; encoding errors additionally surface as
                 // early errors rather than silently degrading to a stub

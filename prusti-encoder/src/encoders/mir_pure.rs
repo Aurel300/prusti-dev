@@ -630,7 +630,8 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                 // into the ghost arm (the inline ghost body); the runtime
                 // `ghost_erased` stand-in arm is skipped.
                 if let Some(ghost) = self.ghost.switches.get(&curr) {
-                    let rest_update = self.encode_cfg(&new_curr_ver, ghost.arm_block, join_point)?;
+                    let rest_update =
+                        self.encode_cfg(&new_curr_ver, ghost.arm_block, join_point)?;
                     return Ok(stmt_update.merge(rest_update));
                 }
 

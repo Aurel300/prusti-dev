@@ -18,7 +18,7 @@ use pcg::{
     coupling::PcgCoupledEdgeKind,
     free_pcs::{RepackGuide, RepackOp},
     r#loop::{LoopAnalysis, LoopId},
-    pcg::{BodyWithBorrowckFacts, CapabilityKind, EvalStmtPhase, Pcg, PcgNode, PcgSuccessor},
+    pcg::{CapabilityKind, EvalStmtPhase, Pcg, PcgNode, PcgSuccessor},
     results::PcgBasicBlock,
     utils::{
         CompilerCtxt, HasPlace, Place, SnapshotLocation, display::DisplayWithCtxt,
@@ -271,55 +271,6 @@ impl<'vir, E: TaskEncoder> From<EncodeFullError<'vir, E>> for EncodeRvalueError<
 }
 
 impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
-    /// A visitor for encoding the body of the given method. Runs the PCG
-    /// analysis of the body; `pcg_creator` holds the analysis context and
-    /// must outlive the visitor.
-    pub(crate) fn new(
-        vcx: &'vir vir::VirCtxt<'vir>,
-        deps: &'enc mut TaskEncoderDependencies<'vir, E>,
-        def_id: DefId,
-        body_with_facts: &'enc BodyWithBorrowckFacts<'vir>,
-        pcg_creator: &'enc pcg::PcgCtxtCreator<'vir>,
-        local_defs: crate::encoders::MirLocalDefEncOutput<'vir>,
-        wands: WandEncOutput<'vir>,
-        encoded_blocks: Vec<vir::CfgBlock<'vir>>,
-    ) -> Self {
-        let pcg_ctxt = pcg_creator.new_nll_ctxt(body_with_facts);
-        pcg_ctxt.update_debug_visualization_metadata();
-        let fpcs_analysis = pcg::run_pcg(pcg_ctxt);
-        let body = &body_with_facts.body;
-        let spec_blocks = SpecBlocks::new(def_id, body, fpcs_analysis.analysis().loop_analysis());
-        ImpureEncVisitor {
-            vcx,
-            deps,
-            def_id,
-            local_decls: &body.local_decls,
-            fpcs_analysis,
-            local_defs,
-            spec_blocks,
-            body,
-
-            wands,
-
-            tmp_ctr: 0,
-            label_ctr: 0,
-            call_labels: Default::default(),
-            wandless_calls: Default::default(),
-            from_to_vars: Default::default(),
-
-            current_block: None,
-            current_block_pres: None,
-            current_block_succs: None,
-            current_block_label: None,
-            current_fpcs: None,
-
-            current_stmts: None,
-            current_terminator: None,
-
-            encoded_blocks,
-        }
-    }
-
     pub(crate) fn pcg_ctxt(&self) -> CompilerCtxt<'enc, 'vir> {
         self.fpcs_analysis.ctxt()
     }

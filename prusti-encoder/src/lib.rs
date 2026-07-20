@@ -29,7 +29,7 @@ use crate::encoders::{
             trait_fn::TraitFnEnc,
             trait_impls::{TraitImplEnc, TraitImplItemEnc},
         },
-        interpretation::{bitvec::BitVecEnc, real::RealEnc},
+        interpretation::{bitvec::BitVecEnc, int_real_cast::IntRealCastEnc},
         lifted::{TyConstructorEnc, TypeOfEnc},
     },
 };
@@ -115,7 +115,7 @@ pub fn test_entrypoint<'tcx>(
     program.header("snapshots");
     crate::encoders::TyUsePureEnc::emit_outputs(&mut program);
     BitVecEnc::emit_outputs(&mut program);
-    RealEnc::emit_outputs(&mut program);
+    IntRealCastEnc::emit_outputs(&mut program);
 
     program.header("predicates");
     crate::encoders::TyUseImpureEnc::emit_outputs(&mut program);

@@ -382,13 +382,9 @@ impl<'tcx> TyData<'tcx, RustTyDatas> {
         // lifetimes, but `is_privately_uninhabited` ICEs on types that still
         // carry region artifacts (inference vars like `'?21` from the
         // panic/format machinery, or escaping bound/placeholder regions like
-        // `'^2`). So first make the type lifetime-free: erase free & inference
-        // regions, then replace any escaping bound regions with `'erased`. Only
-        // genuinely non-ground, *non-lifetime* features (type/const params or
-        // inference vars) can then still block the query, in which case we
-        // answer conservatively (possibly-inhabited).
+        // `'^2`). Therefore we first erase regions and type parameters.
         let maybe_inhabited = vir::with_vcx(|vcx| {
-            use prusti_rustc_interface::middle::ty::{FnMutDelegate, TypeVisitableExt};
+            use prusti_rustc_interface::middle::ty::FnMutDelegate;
             let tcx = vcx.tcx();
             let layout_ty = tcx.replace_escaping_bound_vars_uncached(
                 tcx.erase_regions(ty),
@@ -398,8 +394,7 @@ impl<'tcx> TyData<'tcx, RustTyDatas> {
                     consts: &mut |_| ty::Const::new_misc_error(tcx),
                 },
             );
-            let groundish = !layout_ty.has_infer() && !layout_ty.has_param();
-            !groundish || !layout_ty.is_privately_uninhabited(tcx, context.typing_env())
+            !layout_ty.is_privately_uninhabited(tcx, context.typing_env())
         });
         let data = RustTyData {
             name: symbol::Symbol::intern(&name),

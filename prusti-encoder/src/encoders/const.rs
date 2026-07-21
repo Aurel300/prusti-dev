@@ -247,16 +247,17 @@ impl ConstEnc {
         const_: ty::Const<'vir>,
         ty: ty::Ty<'vir>,
         context: impl Into<GParams<'vir>>,
-    ) -> Result<vir::ExprCSnap<'vir>, EncodeFullError<'vir, ConstEnc>> {
+    ) -> EncodeFullResult<'vir, Self> {
         let ty_decomp = RustTyDecomposition::from_ty(ty, context);
 
         match const_.kind() {
             ty::ConstKind::Param(param) => {
                 let params = deps.require_dep::<GenericParamsEnc>(ty_decomp.args.context())?;
-                Ok(params.const_expr(param))
+                Ok((Vec::new(), params.const_expr(param)))
             }
             ty::ConstKind::Value(val) => {
                 let val = vir::with_vcx(|vcx| vcx.tcx().valtree_to_const_val(val));
+                // TODO: Exchange DUMMY_SP here and below with an actual Span. Otherwise opaque functions will always start with const_1_0
                 let ty_ctxt_at = vir::with_vcx(|vcx| vcx.tcx().at(DUMMY_SP));
                 let (ecx, valtree) =
                     mk_eval_cx_for_const_val(ty_ctxt_at, TypingEnv::fully_monomorphized(), val, ty)
@@ -267,7 +268,8 @@ impl ConstEnc {
                     span: DUMMY_SP,
                     functions: Vec::new(),
                 };
-                enc.encode_const_val_tree(valtree, ty_decomp)
+                let expr = enc.encode_const_val_tree(valtree, ty_decomp)?;
+                Ok((enc.functions, expr))
             }
             k => todo!("const kind {k:?}"),
         }
@@ -354,10 +356,7 @@ impl TaskEncoder for ConstEnc {
                 const_,
                 ty,
                 context,
-            } => (
-                Vec::new(),
-                Self::encode_ty_const(deps, const_, ty, context)?,
-            ),
+            } => Self::encode_ty_const(deps, const_, ty, context)?,
             ConstEncTask::Mir {
                 const_,
                 encoding_depth,
@@ -395,9 +394,7 @@ impl TaskEncoder for ConstEnc {
                         todo!("const too generic")
                     }
                 })?,
-                mir::Const::Ty(ty, const_) => {
-                    (Vec::new(), Self::encode_ty_const(deps, const_, ty, def_id)?)
-                }
+                mir::Const::Ty(ty, const_) => Self::encode_ty_const(deps, const_, ty, def_id)?,
             },
         })
     }

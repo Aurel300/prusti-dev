@@ -8,10 +8,9 @@ use prusti_rustc_interface::{
             self, ConstValue,
             interpret::{GlobalAlloc, Scalar},
         },
-        ty,
-        ty::TypingEnv,
+        ty::{self, TypingEnv},
     },
-    span::{Span, def_id::DefId},
+    span::{DUMMY_SP, Span, def_id::DefId},
 };
 use task_encoder::{EncodeFullError, EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 use vir::{CastType, FunctionIdn};
@@ -20,7 +19,7 @@ use crate::encoders::{
     MirPureEnc, MirPureEncTask, PureKind,
     addr::RefDataEnc,
     ty::{
-        RustTyDecomposition, TySpecifics,
+        RustTyDecomposition,
         generics::{GParams, GenericParamsEnc},
         use_pure::{TyUsePure, TyUsePureEnc},
     },
@@ -30,7 +29,8 @@ use crate::encoders::{
 pub enum ConstEncTask<'vir> {
     Ty {
         const_: ty::Const<'vir>,
-        ty: RustTyDecomposition<'vir>,
+        ty: ty::Ty<'vir>,
+        context: GParams<'vir>,
     },
     Mir {
         const_: mir::Const<'vir>,
@@ -245,67 +245,32 @@ impl ConstEnc {
     fn encode_ty_const<'vir>(
         deps: &mut TaskEncoderDependencies<'vir, Self>,
         const_: ty::Const<'vir>,
-        ty: RustTyDecomposition<'vir>,
+        ty: ty::Ty<'vir>,
+        context: impl Into<GParams<'vir>>,
     ) -> Result<vir::ExprCSnap<'vir>, EncodeFullError<'vir, ConstEnc>> {
+        let ty_decomp = RustTyDecomposition::from_ty(ty, context);
+
         match const_.kind() {
             ty::ConstKind::Param(param) => {
-                let params = deps.require_dep::<GenericParamsEnc>(ty.args.context())?;
+                let params = deps.require_dep::<GenericParamsEnc>(ty_decomp.args.context())?;
                 Ok(params.const_expr(param))
             }
             ty::ConstKind::Value(val) => {
                 let val = vir::with_vcx(|vcx| vcx.tcx().valtree_to_const_val(val));
-                Self::encode_const_val_ty(deps, val, ty)
+                let ty_ctxt_at = vir::with_vcx(|vcx| vcx.tcx().at(DUMMY_SP));
+                let (ecx, valtree) =
+                    mk_eval_cx_for_const_val(ty_ctxt_at, TypingEnv::fully_monomorphized(), val, ty)
+                        .unwrap();
+                let mut enc = Enc {
+                    ecx: &ecx,
+                    deps,
+                    span: DUMMY_SP,
+                    functions: Vec::new(),
+                };
+                enc.encode_const_val_tree(valtree, ty_decomp)
             }
             k => todo!("const kind {k:?}"),
         }
-    }
-
-    fn encode_const_val_ty<'vir>(
-        deps: &mut TaskEncoderDependencies<'vir, Self>,
-        val: ConstValue,
-        ty: RustTyDecomposition<'vir>,
-    ) -> Result<vir::ExprCSnap<'vir>, EncodeFullError<'vir, ConstEnc>> {
-        let ty_enc = deps.require_dep::<TyUsePureEnc>(ty)?;
-        Ok(match val {
-            ConstValue::Scalar(s) => Self::encode_scalar_ty(deps, s, ty, ty_enc)?,
-            ConstValue::ZeroSized => {
-                let s = ty_enc.expect_structlike();
-                s.field_snaps_to_snap(Vec::new())
-            }
-            // Encode `&str` constants to an opaque domain. If we ever want to perform string reasoning
-            // we will need to revisit this encoding, but for the moment this allows assertions to avoid
-            // crashing Prusti.
-            ConstValue::Slice { meta, .. } => {
-                let kind = ty
-                    .ty
-                    .ref_data()
-                    .expect("slice constant should be a reference type");
-                let metadata_ty = kind.metadata.decompose_normalize(ty.args);
-                assert!(
-                    metadata_ty.ty.expect_primitive().is_usize(),
-                    "slice constant metadata should be a usize"
-                );
-                let ref_ty = ty_enc.expect_immref();
-
-                let metadata = deps
-                    .require_dep::<TyUsePureEnc>(metadata_ty)?
-                    .expect_primitive();
-                let inner_ty = kind.referent.decompose_normalize(ty.args);
-                let inner = deps.require_dep::<TyUsePureEnc>(inner_ty)?;
-                let TySpecifics::Opaque(inner) = &inner.specifics else {
-                    todo!("ConstValue::Slice: {ty:?}");
-                };
-                // first, we create the metadata and string snapshots
-                let meta =
-                    metadata.expr_from_bits(*metadata_ty.ty.expect_primitive(), meta as u128);
-                let meta = metadata.prim_to_snap(meta).upcast_ty();
-                // TODO: this should use `fresh_function` instead to get a different value for different constants!
-                let inner = (inner.arbitrary)().upcast_ty();
-                // wrap it in a ref
-                vir::with_vcx(|vcx| ref_ty.prim_to_snap(vcx.mk_null(), meta, inner))
-            }
-            ConstValue::Indirect { .. } => todo!("ConstValue::Indirect"),
-        })
     }
 
     fn encode_scalar_ty<'vir>(
@@ -385,9 +350,14 @@ impl TaskEncoder for ConstEnc {
     ) -> EncodeFullResult<'vir, Self> {
         deps.emit_output_ref(*task_key, ())?;
         Ok(match *task_key {
-            ConstEncTask::Ty { const_, ty } => {
-                (Vec::new(), Self::encode_ty_const(deps, const_, ty)?)
-            }
+            ConstEncTask::Ty {
+                const_,
+                ty,
+                context,
+            } => (
+                Vec::new(),
+                Self::encode_ty_const(deps, const_, ty, context)?,
+            ),
             ConstEncTask::Mir {
                 const_,
                 encoding_depth,
@@ -426,8 +396,7 @@ impl TaskEncoder for ConstEnc {
                     }
                 })?,
                 mir::Const::Ty(ty, const_) => {
-                    let ty = RustTyDecomposition::from_ty(ty, def_id);
-                    (Vec::new(), Self::encode_ty_const(deps, const_, ty)?)
+                    (Vec::new(), Self::encode_ty_const(deps, const_, ty, def_id)?)
                 }
             },
         })

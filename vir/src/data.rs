@@ -129,7 +129,9 @@ pub enum CollectionBinOpKind {
     Concat,
     /// `lhs[rhs]`: `Seq` indexing or `Map` lookup.
     Index,
-    /// `lhs[..rhs]`: the first `rhs` elements of the `Seq` `lhs`.
+    /// `lhs[..rhs]`: the first `rhs` elements of the `Seq` `lhs`. A
+    /// two-sided slice `s[a..b]` is not a single Viper operation; it is
+    /// composed as a `Take` followed by a `Drop`.
     Take,
     /// `lhs[rhs..]`: all but the first `rhs` elements of the `Seq` `lhs`.
     Drop,

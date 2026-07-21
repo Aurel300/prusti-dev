@@ -1,7 +1,6 @@
 #![no_std]
 #![allow(internal_features)]
 #![cfg_attr(feature = "prusti", feature(unboxed_closures, tuple_trait))]
-#![feature(rustc_attrs)]
 #![feature(core_intrinsics)]
 #![feature(auto_traits)]
 #![feature(negative_impls)]
@@ -97,7 +96,7 @@ pub use prusti_contracts_proc_macros::terminates;
 /// A macro to annotate body variant of a loop to prove termination
 pub use prusti_contracts_proc_macros::body_variant;
 
-/// Definitions for both the `prusti` and non-`prusti` compilation flags.
+/// Definitions for compilations both with and without the `prusti` flag.
 mod private_shared {
     use core::{marker::PhantomData, ops::*};
     /// A trait that allows passing in both `T` and `&T` to the functions of
@@ -128,8 +127,10 @@ mod private_shared {
         )*}
     }
 
-    /// a mathematical (unbounded) integer type
-    /// it should not be constructed from running rust code, hence the private unit inside
+    /// A mathematical (unbounded) integer type.
+    ///
+    /// It should not be constructed by executable Rust code, hence the
+    /// private unit inside.
     #[derive(Clone, Copy)]
     pub struct Int(());
 
@@ -143,8 +144,10 @@ mod private_shared {
         }
     }
 
-    /// a mathematical real type
-    /// it should not be constructed from running rust code, hence the private unit inside
+    /// A mathematical real number type.
+    ///
+    /// It should not be constructed by executable Rust code, hence the
+    /// private unit inside.
     #[derive(Clone, Copy)]
     pub struct Real(());
 
@@ -158,7 +161,9 @@ mod private_shared {
         }
     }
 
-    // Implements
+    // The `$d:tt` parameter must always be `$`; it is used to emit dollar
+    // tokens in the nested (literal) macro definition, which is otherwise
+    // impossible. See <https://stackoverflow.com/a/53971532>.
     macro_rules! __dummy_collection_impls__ {
         ($ty:ident: $macro:ident, $concat:ident, $d:tt) => {
             impl<T: ?Sized> Clone for $ty<T> {
@@ -197,7 +202,12 @@ mod private_shared {
         }
     }
 
-    /// A sequence type
+    /// A mathematical sequence type, usable only in specifications and ghost
+    /// code (aside from being passed around as an opaque value).
+    ///
+    /// All values are `Copy` and operations are functional: "modifications"
+    /// like [`Seq::update`] return a new sequence. The [`seq!`](crate::seq)
+    /// macro provides a convenience literal constructor.
     pub struct Seq<T: ?Sized>(PhantomData<T>);
 
     __dummy_collection_impls__!(Seq: seq, append, $);
@@ -251,7 +261,12 @@ mod private_shared {
         }
     }
 
-    /// A set type
+    /// A mathematical set type, usable only in specifications and ghost code
+    /// (aside from being passed around as an opaque value).
+    ///
+    /// All values are `Copy` and operations are functional: "modifications"
+    /// like [`Set::union`] return a new set. The [`set!`](crate::set) macro
+    /// provides a convenience literal constructor.
     pub struct Set<T: ?Sized>(PhantomData<T>);
 
     __dummy_collection_impls__!(Set: set, union, $);
@@ -265,7 +280,13 @@ mod private_shared {
         }
     }
 
-    /// A multiset type
+    /// A mathematical multiset type, usable only in specifications and ghost
+    /// code (aside from being passed around as an opaque value).
+    ///
+    /// All values are `Copy` and operations are functional: "modifications"
+    /// like [`Multiset::union`] return a new multiset. The
+    /// [`multiset!`](crate::multiset) macro provides a convenience literal
+    /// constructor.
     pub struct Multiset<T: ?Sized>(PhantomData<T>);
 
     __dummy_collection_impls__!(Multiset: multiset, union, $);
@@ -282,7 +303,12 @@ mod private_shared {
         }
     }
 
-    /// A map type
+    /// A mathematical map type, usable only in specifications and ghost code
+    /// (aside from being passed around as an opaque value).
+    ///
+    /// All values are `Copy` and operations are functional: "modifications"
+    /// like [`Map::insert`] return a new map. The [`map!`](crate::map) macro
+    /// provides a convenience literal constructor.
     pub struct Map<K: ?Sized, V: ?Sized>(PhantomData<K>, PhantomData<V>);
 
     impl<K: ?Sized, V: ?Sized> Clone for Map<K, V> {
@@ -316,7 +342,7 @@ mod private_shared {
     #[macro_export]
     macro_rules! map {
         ($($key:expr => $val:expr),*) => {
-            map!($crate::Map::new(), $($key => $val),*)
+            $crate::map!($crate::Map::new(), $($key => $val),*)
         };
         ($existing_map:expr, $($key:expr => $val:expr),*) => {
             $existing_map
@@ -333,8 +359,11 @@ mod private_shared {
         }
     }
 
-    // A type for holding the snapshot of a value (also used for e.g. ghost
-    // blocks).
+    /// A type holding the snapshot of a value of type `T`, usable only in
+    /// specifications and ghost code (aside from being passed around as an
+    /// opaque value). Produced by e.g. `ghost!` blocks and collection
+    /// indexing; the wrapped value can be recovered in specifications by
+    /// dereferencing.
     pub struct Ghost<T: ?Sized>(PhantomData<T>);
 
     impl<T: ?Sized> Clone for Ghost<T> {
@@ -359,7 +388,6 @@ mod private_shared {
     /// closure purely so the compiler checks the body complies with `Fn`
     /// capture rules (no mutation or consumption of outer variables).
     #[doc(hidden)]
-    #[rustc_nounwind]
     pub fn ghost_call<T, F: Fn() -> T>(_closure: &F, _body: T) -> Ghost<T> {
         Ghost(PhantomData)
     }
@@ -369,7 +397,6 @@ mod private_shared {
     /// the live path; its result type is inferred through the `if`/`else`
     /// from the dead [`ghost_call`] arm.
     #[doc(hidden)]
-    #[rustc_nounwind]
     pub fn ghost_erased<T: ?Sized>() -> Ghost<T> {
         Ghost(PhantomData)
     }
@@ -438,14 +465,9 @@ mod private {
 
     pub use super::private_shared::*;
 
-    /*
-    pub fn prusti_set_union_active_field<T>(_arg: T) {
-        unreachable!();
-    }
-    */
-
     // Generated by prusti macros, so does not need to be defined in the non-prusti case.
     #[pure]
+    #[doc(hidden)]
     pub fn prusti_terminates_trusted() -> Int {
         Int::from(1)
     }
@@ -470,8 +492,10 @@ mod private {
 
     // It should not be possible to get useful values (e.g. bool) in impure code
     // from these types (pure code is erased).
-    // Note: all `PartialEq` on these ghost types is as snapshot equality, even
-    // if the underlying type implements `PartialEq` differently!
+    // Note: `PartialEq` on all ghost types is *snapshot* equality of the
+    // entire value, even if the element type implements `PartialEq`
+    // differently: `seq![a] == seq![b]` does not invoke
+    // `PartialEq::eq(&a, &b)` but compares the snapshots of `a` and `b`.
 
     // Int
 
@@ -515,7 +539,7 @@ mod private {
 
     // Seq
 
-    /// Snapshot equality!
+    /// Snapshot equality (see the note above).
     impl<T: ?Sized> PartialEq for Seq<T> {
         fn eq(&self, _: &Self) -> bool {
             panic!()
@@ -531,7 +555,7 @@ mod private {
 
     // Set
 
-    /// Snapshot equality!
+    /// Snapshot equality (see the note above).
     impl<T: ?Sized> PartialEq for Set<T> {
         fn eq(&self, _: &Self) -> bool {
             panic!()
@@ -550,7 +574,7 @@ mod private {
 
     // Multiset
 
-    /// Snapshot equality!
+    /// Snapshot equality (see the note above).
     impl<T: ?Sized> PartialEq for Multiset<T> {
         fn eq(&self, _: &Self) -> bool {
             panic!()
@@ -566,7 +590,7 @@ mod private {
 
     // Map
 
-    /// Snapshot equality!
+    /// Snapshot equality (see the note above).
     impl<K: ?Sized, V: ?Sized> PartialEq for Map<K, V> {
         fn eq(&self, _: &Self) -> bool {
             panic!()
@@ -582,7 +606,7 @@ mod private {
 
     // Ghost
 
-    /// Snapshot equality!
+    /// Snapshot equality (see the note above).
     impl<T: ?Sized> PartialEq for Ghost<T> {
         fn eq(&self, _: &Self) -> bool {
             panic!()
@@ -602,14 +626,14 @@ mod private {
 /// in the "before expiration" context, just before the expiry of the borrow
 /// that the pledge is specifying.
 #[cfg(feature = "prusti")]
-#[rustc_nounwind]
+#[doc(hidden)]
 pub fn before_expiry_start() {
     panic!()
 }
 
 /// End of the context started with `before_expiry_start`.
 #[cfg(feature = "prusti")]
-#[rustc_nounwind]
+#[doc(hidden)]
 pub fn before_expiry_end() {
     panic!()
 }
@@ -617,14 +641,14 @@ pub fn before_expiry_end() {
 /// This function is used to mark the beginning of evaluation of expressions
 /// in the "old" context, that is at the beginning of the method call.
 #[cfg(feature = "prusti")]
-#[rustc_nounwind]
+#[doc(hidden)]
 pub fn old_start() {
     panic!()
 }
 
 /// End of the context started with `old_start`.
 #[cfg(feature = "prusti")]
-#[rustc_nounwind]
+#[doc(hidden)]
 pub fn old_end() {
     panic!()
 }
@@ -633,14 +657,14 @@ pub fn old_end() {
 /// in a given execution, when specifying a hyperproperty concerning multiple
 /// exeuctions.
 #[cfg(feature = "prusti")]
-#[rustc_nounwind]
+#[doc(hidden)]
 pub fn rel_start<const E: usize>() {
     panic!()
 }
 
 /// End of the context started with `rel_start`.
 #[cfg(feature = "prusti")]
-#[rustc_nounwind]
+#[doc(hidden)]
 pub fn rel_end<const E: usize>() {
     panic!()
 }
@@ -649,7 +673,6 @@ pub fn rel_end<const E: usize>() {
 ///
 /// This is a Prusti-internal representation of the `forall` syntax.
 #[cfg(feature = "prusti")]
-#[rustc_nounwind]
 pub fn forall<T, A: core::marker::Tuple, F: Fn<A, Output = bool>>(
     _trigger_set: T,
     _closure: &F,
@@ -661,7 +684,6 @@ pub fn forall<T, A: core::marker::Tuple, F: Fn<A, Output = bool>>(
 ///
 /// This is a Prusti-internal representation of the `exists` syntax.
 #[cfg(feature = "prusti")]
-#[rustc_nounwind]
 pub fn exists<T, A: core::marker::Tuple, F: Fn<A, Output = bool>>(
     _trigger_set: T,
     _closure: &F,
@@ -673,58 +695,79 @@ pub fn exists<T, A: core::marker::Tuple, F: Fn<A, Output = bool>>(
 ///
 /// This is a Prusti-internal representation of `prusti_assert!` and others.
 #[cfg(feature = "prusti")]
-#[rustc_nounwind]
+#[doc(hidden)]
 pub fn spec_block<A: core::marker::Tuple, F: Fn<A, Output = bool>>(_closure: &F) {
     panic!()
 }
 
-/// Checks if a float is NaN
+/// Prusti-internal: use `f16::is_nan` instead, which is pure and can also be used in specifications.
+#[doc(hidden)]
 pub fn f16_is_nan(fl: f16) -> bool {
     fl.is_nan()
 }
 
+/// Prusti-internal: use `f32::is_nan` instead, which is pure and can also be used in specifications.
+#[doc(hidden)]
 pub fn f32_is_nan(fl: f32) -> bool {
     fl.is_nan()
 }
 
+/// Prusti-internal: use `f64::is_nan` instead, which is pure and can also be used in specifications.
+#[doc(hidden)]
 pub fn f64_is_nan(fl: f64) -> bool {
     fl.is_nan()
 }
 
+/// Prusti-internal: use `f128::is_nan` instead, which is pure and can also be used in specifications.
+#[doc(hidden)]
 pub fn f128_is_nan(fl: f128) -> bool {
     fl.is_nan()
 }
 
-/// Checks if a float is infinite
+/// Prusti-internal: use `f16::is_infinite` instead, which is pure and can also be used in specifications.
+#[doc(hidden)]
 pub fn f16_is_infinite(fl: f16) -> bool {
     fl.is_infinite()
 }
 
+/// Prusti-internal: use `f32::is_infinite` instead, which is pure and can also be used in specifications.
+#[doc(hidden)]
 pub fn f32_is_infinite(fl: f32) -> bool {
     fl.is_infinite()
 }
 
+/// Prusti-internal: use `f64::is_infinite` instead, which is pure and can also be used in specifications.
+#[doc(hidden)]
 pub fn f64_is_infinite(fl: f64) -> bool {
     fl.is_infinite()
 }
 
+/// Prusti-internal: use `f128::is_infinite` instead, which is pure and can also be used in specifications.
+#[doc(hidden)]
 pub fn f128_is_infinite(fl: f128) -> bool {
     fl.is_infinite()
 }
 
-/// Returns the absolute value of a float
+/// Prusti-internal: use `f16::abs` instead, which is pure and can also be used in specifications.
+#[doc(hidden)]
 pub fn f16_abs(fl: f16) -> f16 {
     fl.abs()
 }
 
+/// Prusti-internal: use `f32::abs` instead, which is pure and can also be used in specifications.
+#[doc(hidden)]
 pub fn f32_abs(fl: f32) -> f32 {
     fl.abs()
 }
 
+/// Prusti-internal: use `f64::abs` instead, which is pure and can also be used in specifications.
+#[doc(hidden)]
 pub fn f64_abs(fl: f64) -> f64 {
     fl.abs()
 }
 
+/// Prusti-internal: use `f128::abs` instead, which is pure and can also be used in specifications.
+#[doc(hidden)]
 pub fn f128_abs(fl: f128) -> f128 {
     fl.abs()
 }

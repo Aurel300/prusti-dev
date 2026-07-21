@@ -47,7 +47,8 @@ pub type TyUsePureEnum<'vir> = EnumData<'vir, UsePureTyDatas>;
 #[derive(Debug, Clone, Copy)]
 pub struct TyUsePureBuiltinData<'vir> {
     pub pure: <PureTyDatas as TyDatas<'vir>>::BuiltinData,
-    /// `[elem, NoCast]` for `Set`/`Multiset`/`Seq`, `[key, val]` for `Map`.
+    /// `[elem, NoCast]` for `Set`/`Multiset`/`Seq`, `[key, val]` for `Map`,
+    /// and `[NoCast; 2]` for `Int`/`Real`.
     casters: [FieldCaster<'vir>; 2],
 }
 

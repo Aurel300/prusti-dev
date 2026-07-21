@@ -64,15 +64,48 @@ impl<'vir, Curr, Next> CollectionBinOpGenData<'vir, Curr, Next> {
         match self.kind {
             CollectionBinOpKind::Contains => match self.rhs.ty().kind() {
                 TypeKind::Multiset(_) => crate::TYPE_INT.as_dyn(),
-                _ => crate::TYPE_BOOL.as_dyn(),
+                TypeKind::Set(_) | TypeKind::Seq(_) | TypeKind::Map(..) => {
+                    crate::TYPE_BOOL.as_dyn()
+                }
+                kind => {
+                    typecheck_error!("`Contains` on non-collection type {kind:?}");
+                    crate::TYPE_ERR.as_dyn()
+                }
             },
-            CollectionBinOpKind::Subset => crate::TYPE_BOOL.as_dyn(),
+            CollectionBinOpKind::Subset => {
+                if !matches!(
+                    self.lhs.ty().kind(),
+                    TypeKind::Set(_) | TypeKind::Multiset(_)
+                ) {
+                    typecheck_error!("`Subset` on non-set type {:?}", self.lhs.ty().kind());
+                }
+                crate::TYPE_BOOL.as_dyn()
+            }
             CollectionBinOpKind::Union
             | CollectionBinOpKind::Intersection
-            | CollectionBinOpKind::Difference
-            | CollectionBinOpKind::Concat
-            | CollectionBinOpKind::Take
-            | CollectionBinOpKind::Drop => self.lhs.ty(),
+            | CollectionBinOpKind::Difference => {
+                if !matches!(
+                    self.lhs.ty().kind(),
+                    TypeKind::Set(_) | TypeKind::Multiset(_)
+                ) {
+                    typecheck_error!(
+                        "`{:?}` on non-set type {:?}",
+                        self.kind,
+                        self.lhs.ty().kind()
+                    );
+                }
+                self.lhs.ty()
+            }
+            CollectionBinOpKind::Concat | CollectionBinOpKind::Take | CollectionBinOpKind::Drop => {
+                if !matches!(self.lhs.ty().kind(), TypeKind::Seq(_)) {
+                    typecheck_error!(
+                        "`{:?}` on non-`Seq` type {:?}",
+                        self.kind,
+                        self.lhs.ty().kind()
+                    );
+                }
+                self.lhs.ty()
+            }
             CollectionBinOpKind::Index => match self.lhs.ty().kind() {
                 TypeKind::Seq(elem) => elem,
                 TypeKind::Map(_, val) => val,

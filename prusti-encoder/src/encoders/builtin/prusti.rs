@@ -341,7 +341,8 @@ impl PrustiBuiltin {
         }
     }
 
-    /// Returns the ADT name of a `prusti_contracts` type, if `ty` is an ADT from
+    /// Returns the ADT name of a `prusti_contracts` type, if `ty` is an
+    /// ADT from the `prusti_contracts` crate.
     fn prusti_adt_name<'tcx>(tcx: ty::TyCtxt<'tcx>, ty: ty::Ty<'tcx>) -> Option<Symbol> {
         match ty.kind() {
             ty::TyKind::Adt(adt, _)
@@ -375,7 +376,7 @@ pub struct PrustiBuiltinTask<'vir> {
     /// [`CollectionOpsEnc`] in pure code (where the precondition-free `f_`
     /// functions could never discharge it).
     pub is_pure: bool,
-    /// The call-site span (`is_none()`` iff `is_pure`). The returned expression
+    /// The call-site span (`is_none()` iff `is_pure`). The returned expression
     /// is partial iff `!is_pure`, therefore in this case we need to report
     /// verification errors with this span (thus each impure call site is
     /// encoded separately).
@@ -526,6 +527,10 @@ impl TaskEncoder for PrustiBuiltinEnc {
             Ok(((), PrustiBuiltinExpr(res)))
         })
     }
+
+    fn emit_outputs<'vir>(program: &mut task_encoder::Program<'vir>) {
+        CollectionOpsEnc::emit_outputs(program);
+    }
 }
 
 /// The per-task encoding context of [`PrustiBuiltinEnc`]: the values every
@@ -669,22 +674,21 @@ impl<'enc, 'vir> BuiltinCtxt<'enc, 'vir> {
                     let end = range.fields[1].read(range_snap);
                     let start = self.index_to_int(start, int_ty)?;
                     let end = self.index_to_int(end, int_ty)?;
-                    self.seq_slice(seq, start, end)?
+                    self.seq_slice(seq, Some(start), Some(end))?
                 } else if index_adt.is_some() && index_adt == lang.range_from_struct() {
                     // `s[a..]`
                     let int_ty = index_int_ty.unwrap();
                     let range = self.e_input(1)?.expect_structlike();
                     let start = range.fields[0].read(self.operands[1].downcast_ty());
                     let start = self.index_to_int(start, int_ty)?;
-                    let end = self.vcx.mk_collection_len_expr(seq);
-                    self.seq_slice(seq, start, end)?
+                    self.seq_slice(seq, Some(start), None)?
                 } else if index_adt.is_some() && index_adt == lang.range_to_struct() {
                     // `s[..b]`
                     let int_ty = index_int_ty.unwrap();
                     let range = self.e_input(1)?.expect_structlike();
                     let end = range.fields[0].read(self.operands[1].downcast_ty());
                     let end = self.index_to_int(end, int_ty)?;
-                    self.seq_slice(seq, self.vcx.mk_uint::<0>().lazy(), end)?
+                    self.seq_slice(seq, None, Some(end))?
                 } else {
                     // `s[i]`: the element, wrapped in the (single-field)
                     // `Ghost` struct of the output.
@@ -722,15 +726,17 @@ impl<'enc, 'vir> BuiltinCtxt<'enc, 'vir> {
         })
     }
 
-    /// A subsequence `seq[start..end]`. Slices in specs are total (the
-    /// native clamping take/drop); in impure code the bounds are *checked*
-    /// via the `prusti_seq_slice` precondition, matching Rust's panicking
-    /// slice semantics.
+    /// A subsequence `seq[start..end]`; a `None` bound is the corresponding
+    /// end of the sequence. Slices in specs are total (the native clamping
+    /// take/drop); in impure code the bounds are *checked* via the
+    /// `prusti_seq_slice_to`/`prusti_seq_slice_from` preconditions, matching
+    /// Rust's panicking slice semantics. Either way, only the given bounds
+    /// apply their operation.
     fn seq_slice(
         &mut self,
         seq: ExprRet<'vir, vir::Seq>,
-        start: ExprRet<'vir, vir::Int>,
-        end: ExprRet<'vir, vir::Int>,
+        start: Option<ExprRet<'vir, vir::Int>>,
+        end: Option<ExprRet<'vir, vir::Int>>,
     ) -> EncResult<'vir, ExprRet<'vir, vir::Snap>> {
         Ok(if let Some(span) = self.span {
             self.handle_partial_op_error(
@@ -738,15 +744,35 @@ impl<'enc, 'vir> BuiltinCtxt<'enc, 'vir> {
                 "the range bounds may be out of bounds",
                 span,
             );
-            let seq_slice = self
-                .deps
-                .require_ref::<CollectionOpsEnc>(CollectionOp::SeqSlice)?
-                .expect_seq_slice();
-            seq_slice.call()(seq, start, end).upcast_ty()
+            // A two-sided `s[a..b]` composes the checked slices: the inner
+            // `prusti_seq_slice_to` ensures `0 <= b <= |s|` and the outer
+            // `prusti_seq_slice_from` then ensures `0 <= a <= b`, together
+            // matching Rust's panicking condition.
+            let seq = match end {
+                Some(end) => {
+                    let seq_slice_to = self
+                        .deps
+                        .require_ref::<CollectionOpsEnc>(CollectionOp::SeqSliceTo)?
+                        .expect_seq_slice_to();
+                    seq_slice_to.call()(seq, end)
+                }
+                None => seq,
+            };
+            let seq = match start {
+                Some(start) => {
+                    let seq_slice_from = self
+                        .deps
+                        .require_ref::<CollectionOpsEnc>(CollectionOp::SeqSliceFrom)?
+                        .expect_seq_slice_from();
+                    seq_slice_from.call()(seq, start)
+                }
+                None => seq,
+            };
+            seq.upcast_ty()
         } else {
-            self.vcx
-                .mk_seq_drop_expr(self.vcx.mk_seq_take_expr(seq, end), start)
-                .upcast_ty()
+            let seq = end.map_or(seq, |end| self.vcx.mk_seq_take_expr(seq, end));
+            let seq = start.map_or(seq, |start| self.vcx.mk_seq_drop_expr(seq, start));
+            seq.upcast_ty()
         })
     }
 
@@ -1233,10 +1259,10 @@ impl<'enc, 'vir> BuiltinCtxt<'enc, 'vir> {
     }
 
     fn deref_opt(ty: ty::Ty<'vir>) -> Option<ty::Ty<'vir>> {
-        let ty::TyKind::Ref(_, referent, ty::Mutability::Not) = ty.kind() else {
-            return None;
-        };
-        Some(*referent)
+        match ty.kind() {
+            ty::TyKind::Ref(_, referent, ty::Mutability::Not) => Some(*referent),
+            _ => None,
+        }
     }
 
     /// The `idx`-th type argument of the ADT type `ty`.
@@ -1257,28 +1283,31 @@ impl<'enc, 'vir> BuiltinCtxt<'enc, 'vir> {
 ///   with them in bounds. Specs must use these since the `f_` encoding of a
 ///   pure function drops the precondition, so a partial operation in a
 ///   contract could never be proven well-formed.
-/// - `SeqSlice` is a *checked* slice for impure (ghost) code: a program
-///   function whose bounds precondition is verified at each application.
+/// - `SeqSliceFrom`/`SeqSliceTo` are *checked* slices (`s[a..]`/`s[..b]`)
+///   for impure (ghost) code: program functions whose bound precondition is
+///   verified at each application. A two-sided slice `s[a..b]` composes the
+///   two.
 /// - `MapSetminus` (key removal) has no native Viper correspondent at all;
 ///   it is total and axiomatized by its domain and its lookups.
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
-pub enum CollectionOp {
+enum CollectionOp {
     SeqLookup,
     SeqUpdate,
-    SeqSlice,
+    SeqSliceFrom,
+    SeqSliceTo,
     MapLookup,
     MapSetminus,
 }
 
-/// The typed identifier of a [`CollectionOp`]'s function. Only
-/// [`CollectionOpsEnc`] may construct these, since whoever hands out a
-/// `FunctionIdn` must guarantee that the function is also emitted; users
-/// obtain one by requiring the op from that encoder.
+/// The typed identifier of a [`CollectionOp`]'s function, obtained by
+/// requiring the op from [`CollectionOpsEnc`] (which guarantees the function
+/// is emitted).
 #[derive(Debug, Clone, Copy)]
-pub enum CollectionOpFn<'vir> {
+enum CollectionOpFn<'vir> {
     SeqLookup(FunctionIdn<'vir, (vir::Seq, vir::Int), vir::PSnap>),
     SeqUpdate(FunctionIdn<'vir, (vir::Seq, vir::Int, vir::PSnap), vir::Seq>),
-    SeqSlice(FunctionIdn<'vir, (vir::Seq, vir::Int, vir::Int), vir::Seq>),
+    SeqSliceFrom(FunctionIdn<'vir, (vir::Seq, vir::Int), vir::Seq>),
+    SeqSliceTo(FunctionIdn<'vir, (vir::Seq, vir::Int), vir::Seq>),
     MapLookup(FunctionIdn<'vir, (vir::Map, vir::PSnap), vir::PSnap>),
     MapSetminus(FunctionIdn<'vir, (vir::Map, vir::Set), vir::Map>),
 }
@@ -1302,10 +1331,17 @@ impl<'vir> CollectionOpFn<'vir> {
         }
     }
 
-    pub fn expect_seq_slice(self) -> FunctionIdn<'vir, (vir::Seq, vir::Int, vir::Int), vir::Seq> {
+    pub fn expect_seq_slice_from(self) -> FunctionIdn<'vir, (vir::Seq, vir::Int), vir::Seq> {
         match self {
-            Self::SeqSlice(fn_idn) => fn_idn,
-            other => panic!("expected `SeqSlice`, got {other:?}"),
+            Self::SeqSliceFrom(fn_idn) => fn_idn,
+            other => panic!("expected `SeqSliceFrom`, got {other:?}"),
+        }
+    }
+
+    pub fn expect_seq_slice_to(self) -> FunctionIdn<'vir, (vir::Seq, vir::Int), vir::Seq> {
+        match self {
+            Self::SeqSliceTo(fn_idn) => fn_idn,
+            other => panic!("expected `SeqSliceTo`, got {other:?}"),
         }
     }
 
@@ -1325,14 +1361,14 @@ impl<'vir> CollectionOpFn<'vir> {
 }
 
 #[derive(Clone)]
-pub enum CollectionOpOutput<'vir> {
+enum CollectionOpOutput<'vir> {
     /// The op's uninterpreted function and defining axioms; all members are
     /// merged into the single `PrustiCollectionOps` domain on emission.
     DomainMember(vir::DomainFunction<'vir>, Vec<vir::DomainAxiom<'vir>>),
     Function(vir::Function<'vir>),
 }
 
-pub struct CollectionOpsEnc;
+struct CollectionOpsEnc;
 
 impl TaskEncoder for CollectionOpsEnc {
     task_encoder::encoder_cache!(CollectionOpsEnc);
@@ -1380,15 +1416,30 @@ impl TaskEncoder for CollectionOpsEnc {
                         ),
                     )
                 }
-                CollectionOp::SeqSlice => {
+                CollectionOp::SeqSliceFrom => {
                     let fn_idn = FunctionIdn::new(
-                        vir::ViperIdent::new("prusti_seq_slice"),
-                        (seq_ty, vir::TYPE_INT, vir::TYPE_INT),
+                        vir::ViperIdent::new("prusti_seq_slice_from"),
+                        (seq_ty, vir::TYPE_INT),
                         seq_ty,
                     );
                     (
-                        CollectionOpFn::SeqSlice(fn_idn),
-                        CollectionOpOutput::Function(Self::seq_slice_function(vcx, fn_idn)),
+                        CollectionOpFn::SeqSliceFrom(fn_idn),
+                        CollectionOpOutput::Function(Self::seq_slice_one_sided_function(
+                            vcx, fn_idn, false,
+                        )),
+                    )
+                }
+                CollectionOp::SeqSliceTo => {
+                    let fn_idn = FunctionIdn::new(
+                        vir::ViperIdent::new("prusti_seq_slice_to"),
+                        (seq_ty, vir::TYPE_INT),
+                        seq_ty,
+                    );
+                    (
+                        CollectionOpFn::SeqSliceTo(fn_idn),
+                        CollectionOpOutput::Function(Self::seq_slice_one_sided_function(
+                            vcx, fn_idn, true,
+                        )),
                     )
                 }
                 CollectionOp::MapLookup => {
@@ -1564,25 +1615,30 @@ impl CollectionOpsEnc {
     // function prusti_seq_slice(s: Seq[s_Param], lo: Int, hi: Int): Seq[s_Param]
     //     requires 0 <= lo && lo <= hi && hi <= |s|
     // { drop(take(s, hi), lo) }
-    fn seq_slice_function<'vir>(
+    /// The one-sided checked slices: `prusti_seq_slice_to(s, i)` (`take`,
+    /// the native `s[..i]`) or `prusti_seq_slice_from(s, i)` (the native
+    /// `s[i..]`), with the bound checked by the precondition.
+    fn seq_slice_one_sided_function<'vir>(
         vcx: &'vir vir::VirCtxt<'vir>,
-        fn_idn: FunctionIdn<'vir, (vir::Seq, vir::Int, vir::Int), vir::Seq>,
+        fn_idn: FunctionIdn<'vir, (vir::Seq, vir::Int), vir::Seq>,
+        take: bool,
     ) -> vir::Function<'vir> {
         let s_decl = vcx.mk_local_decl("s", vcx.mk_ty_seq(vir::TYPE_PSNAP));
-        let lo_decl = vcx.mk_local_decl("lo", vir::TYPE_INT);
-        let hi_decl = vcx.mk_local_decl("hi", vir::TYPE_INT);
+        let i_decl = vcx.mk_local_decl("i", vir::TYPE_INT);
         let s = vcx.mk_local_ex(s_decl);
-        let lo = vcx.mk_local_ex(lo_decl);
-        let hi = vcx.mk_local_ex(hi_decl);
+        let i = vcx.mk_local_ex(i_decl);
         let zero = vcx.mk_uint::<0>();
-        let lo_lower = vir::expr! { vcx; (zero) <= (lo) };
-        let lo_le_hi = vir::expr! { vcx; (lo) <= (hi) };
-        let hi_upper = vir::expr! { vcx; (hi) <= (|s|) };
-        let body = vcx.mk_seq_drop_expr(vcx.mk_seq_take_expr(s, hi), lo);
+        let lower = vir::expr! { vcx; (zero) <= (i) };
+        let upper = vir::expr! { vcx; (i) <= (|s|) };
+        let body = if take {
+            vcx.mk_seq_take_expr(s, i)
+        } else {
+            vcx.mk_seq_drop_expr(s, i)
+        };
         vcx.mk_function(
             fn_idn,
-            (s_decl, lo_decl, hi_decl),
-            vcx.alloc_slice(&[lo_lower, lo_le_hi, hi_upper]),
+            (s_decl, i_decl),
+            vcx.alloc_slice(&[lower, upper]),
             &[],
             None,
             Some(body),

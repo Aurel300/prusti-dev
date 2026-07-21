@@ -733,7 +733,8 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                         destination,
                         ..
                     } => {
-                        // Calls not encoded as impure method calls do not create wands
+                        // Calls not encoded as impure method calls create no
+                        // wands (e.g., a Viper function application).
                         if self.wandless_calls.contains(&call.location().block) {
                             return Ok(());
                         }

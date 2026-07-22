@@ -167,15 +167,21 @@ impl TaskEncoder for TraitEnc {
             // trait's impls) is assembled in `emit_outputs`, once it is known
             // which impls are relevant.
             for impl_did in tcx.all_impls(*task_key) {
-                let self_ty = tcx.type_of(impl_did).instantiate_identity();
-                // A `impl<T> MyTrait for MyType<T, OtherType>` is only relevant
-                // if a) it is in the current crate (in which case it will be
-                // encoded by `TraitImplEnc`) or b) the `TyConstructorEnc` has
-                // been called with both `MyType` and `OtherType` (we guard on
-                // the conjunction of these below). This may still be overly
-                // eager in including impls since these two types could be used
-                // independently, but drastically improves the include-all-impls
-                // approach which pulls in many new never-used types.
+                // An `impl<T> MyTrait<ArgType> for MyType<T, OtherType>` is
+                // only relevant if a) it is in the current crate (in which
+                // case it will be encoded by `TraitImplEnc`) or b) the
+                // `TyConstructorEnc` has been called with `MyType`,
+                // `OtherType` and `ArgType` (we guard on the conjunction of
+                // these below). Gating on the trait args (not just the self
+                // type) is fail-closed: any site that states a dependence on
+                // this impl does so by applying `impl_fun` to type
+                // expressions for the full trait ref, and building those
+                // requests exactly the constructors gated on here. Without
+                // the arg gate, encoding one impl's condition constructs its
+                // arg types as a side effect, unlocking further impls
+                // transitively (e.g. `Array` alone would pull in every
+                // `core::arch` <-> `Simd` `From` impl).
+                let impl_trait_ref = tcx.impl_trait_ref(impl_did).unwrap().instantiate_identity();
                 let mut keys = Vec::new();
                 fn collect_ctor_keys<'vir>(
                     ty: ty::Ty<'vir>,
@@ -191,7 +197,9 @@ impl TaskEncoder for TraitEnc {
                         collect_ctor_keys(inner, ctx, out);
                     }
                 }
-                collect_ctor_keys(self_ty, impl_did, &mut keys);
+                for ty in impl_trait_ref.args.iter().filter_map(|arg| arg.as_type()) {
+                    collect_ctor_keys(ty, impl_did, &mut keys);
+                }
                 let span = tcx.def_span(impl_did);
                 TyConstructorEnc::on_all_requested(keys, move || {
                     let _ = TraitImplConditionEnc::encode(impl_did, false, span);

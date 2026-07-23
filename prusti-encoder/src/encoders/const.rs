@@ -10,7 +10,7 @@ use prusti_rustc_interface::{
         },
         ty::{self, TypingEnv},
     },
-    span::{DUMMY_SP, Span, def_id::DefId},
+    span::{DUMMY_SP, Span},
 };
 use task_encoder::{EncodeFullError, EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 use vir::{CastType, FunctionIdn};
@@ -34,8 +34,8 @@ pub enum ConstEncTask<'vir> {
     },
     Mir {
         const_: mir::Const<'vir>,
-        encoding_depth: usize, // current encoding depth
-        def_id: DefId,         // DefId of the current function
+        encoding_depth: usize,  // current encoding depth
+        context: GParams<'vir>, // generic context of the body the constant is in
         span: Span,
     },
 }
@@ -354,28 +354,30 @@ impl TaskEncoder for ConstEnc {
             ConstEncTask::Mir {
                 const_,
                 encoding_depth,
-                def_id,
+                context,
                 span,
             } => match const_ {
                 mir::Const::Val(val, ty) => {
-                    Self::encode_const_val(deps, val, ty, def_id.into(), Some(span))?
+                    Self::encode_const_val(deps, val, ty, context, Some(span))?
                 }
                 mir::Const::Unevaluated(uneval, ty) => vir::with_vcx(|vcx| {
-                    let resolved = {
-                        let typing_env = ty::TypingEnv::post_analysis(vcx.tcx(), def_id);
-                        vcx.tcx()
-                            .const_eval_resolve(typing_env, uneval, vcx.tcx().def_span(def_id))
-                    };
+                    let resolved = vcx
+                        .tcx()
+                        .const_eval_resolve(context.typing_env(), uneval, span);
                     if let Ok(val) = resolved {
-                        Self::encode_const_val(deps, val, ty, def_id.into(), Some(span))
+                        Self::encode_const_val(deps, val, ty, context, Some(span))
                     } else if let Some(promoted) = uneval.promoted {
+                        // The promoted MIR is encoded at identity substs, so
+                        // its types live in the generic context of the body it
+                        // was promoted out of (`uneval.def`): no caller
+                        // context is needed.
                         let task = MirPureEncTask {
                             encoding_depth: encoding_depth + 1,
                             parent_def_id: uneval.def,
                             param_env: vcx.tcx().param_env(uneval.def),
                             substs: ty::List::identity_for_item(vcx.tcx(), uneval.def),
                             kind: PureKind::Constant(promoted),
-                            caller_def_id: Some(def_id),
+                            caller_def_id: None,
                         };
                         let expr = deps.require_dep::<MirPureEnc>(task)?.expr;
                         use vir::Reify;
@@ -388,9 +390,7 @@ impl TaskEncoder for ConstEnc {
                         todo!("const too generic")
                     }
                 })?,
-                mir::Const::Ty(ty, const_) => {
-                    Self::encode_ty_const(deps, const_, ty, def_id.into())?
-                }
+                mir::Const::Ty(ty, const_) => Self::encode_ty_const(deps, const_, ty, context)?,
             },
         })
     }

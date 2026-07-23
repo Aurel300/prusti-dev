@@ -48,7 +48,7 @@ use crate::encoders::{
     mir_shared::{PureRvalueEnc, RustcIntrinsic},
     ty::{
         RustTyDecomposition,
-        generics::GArgs,
+        generics::{GArgs, GParams},
         use_impure::TyUseImpure,
         use_pure::{TyUsePure, TyUsePureEnc},
     },
@@ -665,8 +665,8 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                     return Ok(());
                 }
 
-                let rvalue_ty = RustTyDecomposition::from_ty(dst_ty, self.def_id());
-                let operand_ty = RustTyDecomposition::from_ty(src_ty, self.def_id());
+                let rvalue_ty = RustTyDecomposition::from_ty(dst_ty, self.context());
+                let operand_ty = RustTyDecomposition::from_ty(src_ty, self.context());
                 let cast_output =
                     self.deps()
                         .require_dep::<MirBuiltinUseCastEnc>(MirBuiltinUseCastTask::new(
@@ -2251,8 +2251,10 @@ impl<'vir, 'enc, E: TaskEncoder> PureRvalueEnc<'vir> for ImpureEncVisitor<'vir, 
     const PURE: bool = false;
     type ExprCurr = ();
     type ExprNext = !;
-    fn def_id(&self) -> DefId {
-        self.def_id
+    fn context(&self) -> GParams<'vir> {
+        // Impure bodies are encoded at identity substs, so the function's own
+        // context is the body's context.
+        self.def_id.into()
     }
 
     fn deps(&mut self) -> &mut TaskEncoderDependencies<'vir, Self::Encoder> {

@@ -15,6 +15,8 @@ pub enum BitVecSize {
 pub struct BitVecDomain<'vir> {
     pub domain: vir::DomainIdn<'vir, vir::CSnap>,
     pub from_int: FunctionIdn<'vir, vir::Prim, vir::CSnap>,
+    pub sbv_to_int: FunctionIdn<'vir, vir::CSnap, vir::Int>,
+    pub ubv_to_int: FunctionIdn<'vir, vir::CSnap, vir::Int>,
 }
 
 pub struct BitVecEnc;
@@ -76,7 +78,35 @@ impl TaskEncoder for BitVecEnc {
                 }),
             );
 
-            let functions = &[from_int_data];
+            let sbv_to_int_name = vir::vir_format!(vcx, "{}_sbv_to_int", domain_name);
+
+            let sbv_to_int = FunctionIdn::new(
+                ViperIdent::new(sbv_to_int_name),
+                self_type,
+                vir::TYPE_INT,
+            );
+
+            let sbv_to_int_data = vcx.mk_domain_function(
+                sbv_to_int,
+                false,
+                Some("bv2int"),
+            );
+
+            let ubv_to_int_name = vir::vir_format!(vcx, "{}_ubv_to_int", domain_name);
+
+            let ubv_to_int = FunctionIdn::new(
+                ViperIdent::new(ubv_to_int_name),
+                self_type,
+                vir::TYPE_INT,
+            );
+
+            let ubv_to_int_data = vcx.mk_domain_function(
+                ubv_to_int,
+                false,
+                Some("bv2nat"),
+            );
+
+            let functions = &[from_int_data, sbv_to_int_data, ubv_to_int_data];
 
             let domain_data = vcx.mk_domain::<(), !>(
                 domain_ident.name(),
@@ -133,6 +163,8 @@ impl TaskEncoder for BitVecEnc {
                 BitVecDomain {
                     domain: domain_ident,
                     from_int,
+                    sbv_to_int,
+                    ubv_to_int,
                 },
             ))
         })

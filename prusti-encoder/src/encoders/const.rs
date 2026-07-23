@@ -57,7 +57,10 @@ thread_local! {
 struct Enc<'enc, 'vir: 'enc> {
     deps: &'enc mut TaskEncoderDependencies<'vir, ConstEnc>,
     ecx: &'enc InterpCx<'vir, CompileTimeMachine<'vir>>,
-    span: Span,
+    /// Source location the constant originates from, used only to name the
+    /// emitted functions. Type-level constants lose their span (a monomorphized
+    /// valtree has no source location), so this is `None` for them.
+    span: Option<Span>,
     functions: Vec<vir::Function<'vir>>,
 }
 
@@ -215,18 +218,23 @@ impl<'enc, 'vir: 'enc> Enc<'enc, 'vir> {
                 v
             });
             // `source_callsite()` walks out of any macro expansion to the user's call site.
-            let span_pos = vcx
-                .tcx()
-                .sess
-                .source_map()
-                .lookup_char_pos(self.span.source_callsite().lo());
-            let idn = vir::vir_format_identifier!(
-                vcx,
-                "const_{}_{}_{}",
-                span_pos.line,
-                span_pos.col_display,
-                id,
-            );
+            let idn = match self.span {
+                Some(span) => {
+                    let span_pos = vcx
+                        .tcx()
+                        .sess
+                        .source_map()
+                        .lookup_char_pos(span.source_callsite().lo());
+                    vir::vir_format_identifier!(
+                        vcx,
+                        "const_{}_{}_{}",
+                        span_pos.line,
+                        span_pos.col_display,
+                        id,
+                    )
+                }
+                None => vir::vir_format_identifier!(vcx, "const_{id}"),
+            };
             let gen_snap_func_idn: FunctionIdn<'_, (), T> = FunctionIdn::new(idn, (), result_ty);
             self.functions.push(vcx.mk_function(
                 gen_snap_func_idn,
@@ -246,30 +254,19 @@ impl ConstEnc {
         deps: &mut TaskEncoderDependencies<'vir, Self>,
         const_: ty::Const<'vir>,
         ty: ty::Ty<'vir>,
-        context: impl Into<GParams<'vir>>,
+        context: GParams<'vir>,
     ) -> EncodeFullResult<'vir, Self> {
-        let ty_decomp = RustTyDecomposition::from_ty(ty, context);
-
         match const_.kind() {
             ty::ConstKind::Param(param) => {
+                let ty_decomp = RustTyDecomposition::from_ty(ty, context);
                 let params = deps.require_dep::<GenericParamsEnc>(ty_decomp.args.context())?;
                 Ok((Vec::new(), params.const_expr(param)))
             }
             ty::ConstKind::Value(val) => {
                 let val = vir::with_vcx(|vcx| vcx.tcx().valtree_to_const_val(val));
-                // TODO: Exchange DUMMY_SP here and below with an actual Span. Otherwise opaque functions will always start with const_1_0
-                let ty_ctxt_at = vir::with_vcx(|vcx| vcx.tcx().at(DUMMY_SP));
-                let (ecx, valtree) =
-                    mk_eval_cx_for_const_val(ty_ctxt_at, TypingEnv::fully_monomorphized(), val, ty)
-                        .unwrap();
-                let mut enc = Enc {
-                    ecx: &ecx,
-                    deps,
-                    span: DUMMY_SP,
-                    functions: Vec::new(),
-                };
-                let expr = enc.encode_const_val_tree(valtree, ty_decomp)?;
-                Ok((enc.functions, expr))
+                // Type-level constants carry no span, so the emitted functions
+                // are named from the counter alone.
+                Self::encode_const_val(deps, val, ty, context, None)
             }
             k => todo!("const kind {k:?}"),
         }
@@ -302,9 +299,11 @@ impl ConstEnc {
         val: ConstValue,
         ty: ty::Ty<'vir>,
         context: GParams<'vir>,
-        span: Span,
+        span: Option<Span>,
     ) -> EncodeFullResult<'vir, Self> {
-        let ty_ctxt_at = vir::with_vcx(|vcx| vcx.tcx().at(span));
+        // The span only steers const-eval diagnostics; the error itself is
+        // propagated, so a missing span (type-level constant) is fine here.
+        let ty_ctxt_at = vir::with_vcx(|vcx| vcx.tcx().at(span.unwrap_or(DUMMY_SP)));
         let (ecx, valtree) =
             mk_eval_cx_for_const_val(ty_ctxt_at, TypingEnv::fully_monomorphized(), val, ty)
                 .unwrap();
@@ -339,11 +338,6 @@ impl TaskEncoder for ConstEnc {
                 program.add_function(fun);
             }
         }
-        // reset the counter across compilations
-        CONST_CTR.with(|c| {
-            let v = c.get();
-            c.set(v + 1);
-        });
     }
 
     fn do_encode_full<'vir>(
@@ -364,7 +358,7 @@ impl TaskEncoder for ConstEnc {
                 span,
             } => match const_ {
                 mir::Const::Val(val, ty) => {
-                    Self::encode_const_val(deps, val, ty, def_id.into(), span)?
+                    Self::encode_const_val(deps, val, ty, def_id.into(), Some(span))?
                 }
                 mir::Const::Unevaluated(uneval, ty) => vir::with_vcx(|vcx| {
                     let resolved = {
@@ -373,7 +367,7 @@ impl TaskEncoder for ConstEnc {
                             .const_eval_resolve(typing_env, uneval, vcx.tcx().def_span(def_id))
                     };
                     if let Ok(val) = resolved {
-                        Self::encode_const_val(deps, val, ty, def_id.into(), span)
+                        Self::encode_const_val(deps, val, ty, def_id.into(), Some(span))
                     } else if let Some(promoted) = uneval.promoted {
                         let task = MirPureEncTask {
                             encoding_depth: encoding_depth + 1,
@@ -394,7 +388,9 @@ impl TaskEncoder for ConstEnc {
                         todo!("const too generic")
                     }
                 })?,
-                mir::Const::Ty(ty, const_) => Self::encode_ty_const(deps, const_, ty, def_id)?,
+                mir::Const::Ty(ty, const_) => {
+                    Self::encode_ty_const(deps, const_, ty, def_id.into())?
+                }
             },
         })
     }

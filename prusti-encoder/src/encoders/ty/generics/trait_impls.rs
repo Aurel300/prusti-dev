@@ -1,6 +1,7 @@
 use prusti_interface::PrustiError;
 use prusti_rustc_interface::{
     data_structures::fx::{FxIndexMap, FxIndexSet},
+    errors::MultiSpan,
     middle::{mir, ty},
     span::def_id::DefId,
 };
@@ -125,6 +126,11 @@ impl TaskEncoder for TraitImplEnc {
                 let mut pre_weaken_pres = impure_arg_preds.clone();
                 pre_weaken_pres.extend(trait_item_spec.pres.clone());
 
+                // Spans of the trait method's preconditions, to point the
+                // behavioral-subtyping error's hint at them.
+                let trait_pre_spans: Vec<_> =
+                    trait_item_spec.pres_with_spans().map(|(_, s)| s).collect();
+
                 methods.push(vcx.mk_method(
                     MethodIdn::<(vir::ManyRef, vir::ManyTyVal, vir::ManyCSnap)>::new(
                         vir_format_identifier!(vcx, "trait_{trait_name}_impl_{implementing_ty}_{idx}_fn_pre_weaken_{item_name}"),
@@ -138,11 +144,21 @@ impl TaskEncoder for TraitImplEnc {
                         vcx.mk_cfg_block(
                             &vir::CfgBlockLabelData::Start,
                             &[],
-                            vcx.alloc_slice(&impl_item_spec.pres.iter()
-                                .map(|pre| vcx.with_span(impl_span, |vcx| {
-                                    // TODO: make span point precisely to the precondition we cannot show
+                            vcx.alloc_slice(&impl_item_spec.pres_with_spans()
+                                .map(|(pre, pre_span)| vcx.with_span(pre_span, |vcx| {
+                                    let trait_pre_spans = trait_pre_spans.clone();
                                     vcx.handle_error("exhale.failed:assertion.false", move |_| {
-                                        Some(vec![PrustiError::verification("trait implementation is not a behavioral subtype (precondition is not weakened)", impl_span.into())])
+                                        let mut err = PrustiError::verification(
+                                            "the implementation's precondition is stronger than the trait method's",
+                                            pre_span.into(),
+                                        );
+                                        for trait_span in &trait_pre_spans {
+                                            err = err.add_note(
+                                                "the trait method's precondition is declared here",
+                                                Some(*trait_span),
+                                            );
+                                        }
+                                        Some(vec![err])
                                     });
                                     vcx.mk_exhale_stmt(pre)
                                 }))
@@ -153,7 +169,7 @@ impl TaskEncoder for TraitImplEnc {
                 ));
 
                 let mut post_strengthen_pres = impure_arg_preds;
-                post_strengthen_pres.extend(trait_item_spec.pres);
+                post_strengthen_pres.extend(trait_item_spec.pres.iter().copied());
 
                 // exceptionally, we also put the allocated result in the precondition
                 post_strengthen_pres.push(local_defs[mir::RETURN_PLACE].impure_pred);
@@ -183,11 +199,29 @@ impl TaskEncoder for TraitImplEnc {
                         ([local_defs[mir::RETURN_PLACE].impure_snap]) == ([pure_func_app])
                     }));
                 }
-                for post in trait_item_spec.posts {
+                // The failing exhale is a trait postcondition, but the problem
+                // is the impl's postcondition being too weak: point the error at
+                // the impl's postcondition(s) and hint at the trait's.
+                let impl_post_spans: Vec<_> =
+                    impl_item_spec.posts_with_spans().map(|(_, s)| s).collect();
+                for (post, trait_post_span) in trait_item_spec.posts_with_spans() {
+                    let impl_post_spans = impl_post_spans.clone();
                     vcx.with_span(impl_span, |vcx| {
-                        // TODO: make span point precisely to the postcondition we cannot show
                         vcx.handle_error("exhale.failed:assertion.false", move |_| {
-                            Some(vec![PrustiError::verification("trait implementation is not a behavioral subtype (postcondition is not strengthened)", impl_span.into())])
+                            let primary = if impl_post_spans.is_empty() {
+                                impl_span.into()
+                            } else {
+                                MultiSpan::from_spans(impl_post_spans.clone())
+                            };
+                            let err = PrustiError::verification(
+                                "the implementation's postcondition is weaker than the trait method's",
+                                primary,
+                            )
+                            .add_note(
+                                "the trait method's (stronger) postcondition is declared here",
+                                Some(trait_post_span),
+                            );
+                            Some(vec![err])
                         });
                         stmts.push(vcx.mk_exhale_stmt(post));
                     });

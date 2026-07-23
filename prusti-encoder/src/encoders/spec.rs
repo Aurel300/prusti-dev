@@ -74,17 +74,45 @@ pub fn kind_is_pure(
     def_id: DefId,
     kind: &SpecificationItem<typed::ProcedureSpecificationKind>,
 ) -> bool {
+    use typed::ProcedureSpecificationKind::*;
     kind.is_pure().unwrap_or_else(|err| {
         let typed::ProcedureSpecificationKindError::InvalidSpecKindRefinement(base, refined) = err;
         vir::with_vcx(|vcx| {
-            vcx.emit_early_error(prusti_interface::PrustiError::incorrect(
-                format!(
-                    "invalid specification refinement for `{}`: the trait declares the method as \
-                    {base:?} but the implementation refines it as {refined:?}",
-                    vcx.tcx().def_path_str(def_id),
+            let name = vcx.tcx().def_path_str(def_id);
+            let span = vcx.tcx().def_span(def_id).into();
+            let error = match (base, refined) {
+                (Pure, Impure) => {
+                    let mut error = prusti_interface::PrustiError::incorrect(
+                        format!("`{name}` implements a `#[pure]` trait method and so must itself be `#[pure]`"),
+                        span,
+                    )
+                    .set_help("add `#[pure]` to the implementation");
+                    // Point at the `#[pure]` in the trait definition (its
+                    // `specs_version` marker is spanned at the annotation), when
+                    // the trait method is available locally.
+                    if let Some(trait_item) = vcx
+                        .tcx()
+                        .opt_associated_item(def_id)
+                        .and_then(|item| item.trait_item_def_id)
+                    {
+                        let trait_attrs = vcx.tcx().get_all_attrs(trait_item);
+                        if let Some(pure_span) =
+                            prusti_interface::utils::prusti_attr_span(trait_attrs, "pure")
+                        {
+                            error = error.add_note(
+                                "the trait method is declared `#[pure]` here",
+                                Some(pure_span),
+                            );
+                        }
+                    }
+                    error
+                }
+                _ => prusti_interface::PrustiError::incorrect(
+                    format!("the specification of `{name}` is incompatible with the trait declaration"),
+                    span,
                 ),
-                vcx.tcx().def_span(def_id).into(),
-            ));
+            };
+            vcx.emit_early_error(error);
         });
         false
     })

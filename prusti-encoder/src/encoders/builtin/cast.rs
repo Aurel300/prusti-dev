@@ -6,9 +6,7 @@ use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 use vir::{CastType, FunctionIdn, MethodIdn};
 
 use crate::encoders::{
-    TyUseImpureEnc,
-    builtin::{MetadataCastEnc, ValueCastEnc},
-    ty::{
+    MirBuiltinUseCastEnc, MirBuiltinUseCastTask, TyUseImpureEnc, builtin::{MetadataCastEnc, ValueCastEnc}, ty::{
         LazyRustTy, RustTy, RustTyDecomposition, TySpecifics,
         generics::{GParams, GenericParamsEnc},
         use_pure::TyUsePureEnc,
@@ -28,9 +26,9 @@ pub(super) struct MirBuiltinCastEnc;
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub(super) struct MirBuiltinCastTask<'vir> {
-    pub(super) result_ty: RustTy<'vir>,
+    pub(super) result_ty: RustTyDecomposition<'vir>,
     pub(super) kind: mir::CastKind,
-    pub(super) operand_ty: RustTy<'vir>,
+    pub(super) operand_ty: RustTyDecomposition<'vir>,
 }
 
 /// The result of encoding a builtin cast.
@@ -83,12 +81,16 @@ impl TaskEncoder for MirBuiltinCastEnc {
             kind,
             operand_ty,
         } = *task_key;
-        let op_ty = RustTyDecomposition::identity(operand_ty);
+        let op_ty = RustTyDecomposition::identity(operand_ty.ty);
+        // println!("op args: {:?}", operand_ty);
         let op_ty = deps.require_dep::<TyUsePureEnc>(op_ty)?;
         let op_ty_snap = op_ty.snapshot.downcast_ty::<vir::CSnap>();
-        let res_ty = RustTyDecomposition::identity(result_ty);
+        let res_ty = RustTyDecomposition::identity(result_ty.ty);
+        // println!("res args: {:?}", res_ty.args);
         let res_ty = deps.require_dep::<TyUsePureEnc>(res_ty)?;
         let res_ty_snap = res_ty.snapshot.downcast_ty::<vir::CSnap>();
+
+        println!("{:?} -> {:?}", op_ty, res_ty);
 
         let name = match kind {
             mir::CastKind::PointerCoercion(ty::adjustment::PointerCoercion::Unsize, ..) => "unsize",
@@ -102,8 +104,8 @@ impl TaskEncoder for MirBuiltinCastEnc {
             vir::vir_format_identifier!(
                 vcx,
                 "mir_cast_{name}_{}_to_{}",
-                operand_ty.name(),
-                result_ty.name(),
+                operand_ty.ty.name(),
+                result_ty.ty.name(),
             )
         });
         vir::with_vcx(|vcx| {
@@ -113,8 +115,8 @@ impl TaskEncoder for MirBuiltinCastEnc {
                 mir::CastKind::IntToInt => {
                     let e_op_ty = op_ty.expect_primitive();
                     let e_res_ty = res_ty.expect_primitive();
-                    let result_kind = result_ty.expect_primitive().kind();
-                    let operand_kind = operand_ty.expect_primitive().kind();
+                    let result_kind = result_ty.ty.expect_primitive().kind();
+                    let operand_kind = operand_ty.ty.expect_primitive().kind();
 
                     // An integer `as` cast never panics: when every value of the
                     // source type is representable in the target the value is
@@ -182,6 +184,55 @@ impl TaskEncoder for MirBuiltinCastEnc {
                         GParams::empty_env(vcx.tcx().mk_args(&[u.into(), v.into()]))
                     };
                     let unsize_params = deps.require_dep::<GenericParamsEnc>(unsize_gparams)?;
+
+                    if let TySpecifics::StructLike(data) = &op_ty.specifics {
+                        let mut field_snaps = vec![];
+
+                            for (i, f) in operand_ty.ty.expect_structlike().fields.iter().enumerate() {
+                                if f.decompose_normalize(operand_ty.args) != f.decompose_normalize(result_ty.args) {
+                                    let inner_cast = deps.require_dep::<MirBuiltinUseCastEnc>(MirBuiltinUseCastTask::new(f.decompose_normalize(result_ty.args), kind, f.decompose_normalize(operand_ty.args)))?;
+                                    field_snaps.push(inner_cast.cast(data.fields[i].read(arg_ex).downcast_ty()).upcast_ty());
+                                } else {
+                                    field_snaps.push(data.fields[i].read(arg_ex));
+                                }
+                            }
+                            let expr = res_ty.expect_structlike().field_snaps_to_snap(field_snaps);
+
+                            let fn_idn = FunctionIdn::new(
+                                name,
+                                (
+                                    op_ty_snap,
+                                    unsize_params.ty_args(),
+                                    unsize_params.const_args(),
+                                ),
+                                res_ty_snap,
+                            );
+                            let function = vcx.mk_function(
+                                fn_idn,
+                                (
+                                    arg_decl,
+                                    unsize_params.ty_decls(),
+                                    unsize_params.const_decls(),
+                                ),
+                                &[],
+                                &[],
+                                None,
+                                Some(expr),
+                            );
+                            (
+                                MirBuiltinCastLocal {
+                                    cast: function,
+                                    unsize: None,
+                                    undo: None,
+                                },
+                                MirBuiltinCastOutput::Unsize {
+                                    cast: fn_idn,
+                                    unsize: None,
+                                    undo: None,
+                                },
+                            )
+                    } else {
+
                     let (is_mut, metadata, res_cons) = match &op_ty.specifics {
                         TySpecifics::ImmRef(data) => {
                             let res_data = res_ty.expect_immref();
@@ -213,6 +264,7 @@ impl TaskEncoder for MirBuiltinCastEnc {
                                 Err(res_cons),
                             )
                         }
+                        
                         _ => unreachable!(),
                     };
                     // `metadata_cast(old_metadata, U, V)` rewrites the (operand)
@@ -298,8 +350,8 @@ impl TaskEncoder for MirBuiltinCastEnc {
                             vir::vir_format_identifier!(
                                 vcx,
                                 "mir_unsize_{}_to_{}",
-                                operand_ty.name(),
-                                result_ty.name()
+                                operand_ty.ty.name(),
+                                result_ty.ty.name()
                             ),
                             (
                                 op_ty_snap,
@@ -311,8 +363,8 @@ impl TaskEncoder for MirBuiltinCastEnc {
                             vir::vir_format_identifier!(
                                 vcx,
                                 "mir_undo_unsize_{}_to_{}",
-                                operand_ty.name(),
-                                result_ty.name()
+                                operand_ty.ty.name(),
+                                result_ty.ty.name()
                             ),
                             (
                                 op_ty_snap,
@@ -366,6 +418,7 @@ impl TaskEncoder for MirBuiltinCastEnc {
                         },
                     )
                 }
+            }
                 _ => todo!("cast kind {kind:?}"),
             };
             Ok(output)

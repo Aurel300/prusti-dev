@@ -129,9 +129,9 @@ impl TaskEncoder for MirBuiltinUseCastEnc {
             operand_ty,
         } = *task_key;
         let task = MirBuiltinCastTask {
-            result_ty: result_ty.ty,
+            result_ty: result_ty,
             kind,
-            operand_ty: operand_ty.ty,
+            operand_ty: operand_ty,
         };
         let cast = deps.require_dep::<MirBuiltinCastEnc>(task)?;
         match cast {

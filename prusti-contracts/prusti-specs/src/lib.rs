@@ -625,6 +625,7 @@ pub fn refine_trait_spec(_attr: TokenStream, tokens: TokenStream) -> TokenStream
     impl_block.items = new_items;
     quote_spanned! {impl_block.span()=>
         #(#generated_spec_items)*
+        #[prusti::refine_trait_spec]
         #[prusti::specs_version = #SPECS_VERSION]
         #impl_block
     }

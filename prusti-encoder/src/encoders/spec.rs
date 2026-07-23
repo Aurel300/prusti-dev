@@ -3,7 +3,8 @@ use std::cell::RefCell;
 use prusti_interface::specs::{
     specifications::SpecQuery,
     typed::{
-        DefSpecificationMap, ExternSpecKind, Pledge, ProcedureSpecification, SpecificationItem,
+        self, DefSpecificationMap, ExternSpecKind, Pledge, ProcedureSpecification,
+        SpecificationItem,
     },
 };
 use prusti_rustc_interface::{middle::ty, span::def_id::DefId};
@@ -62,9 +63,31 @@ pub fn is_function_trusted(def_id: DefId) -> bool {
 pub fn is_function_pure<'tcx>(def_id: DefId, args: GArgs<'tcx>) -> bool {
     with_proc_spec(
         SpecQuery::GetProcKind(def_id, args.args()),
-        |proc_spec: &ProcedureSpecification| proc_spec.kind.is_pure().unwrap_or_default(),
+        |proc_spec: &ProcedureSpecification| kind_is_pure(def_id, &proc_spec.kind),
     )
     .unwrap_or_default()
+}
+
+/// `kind.is_pure()` with an invalid trait-to-impl kind refinement reported as
+/// a user error rather than silently treated as impure.
+pub fn kind_is_pure(
+    def_id: DefId,
+    kind: &SpecificationItem<typed::ProcedureSpecificationKind>,
+) -> bool {
+    kind.is_pure().unwrap_or_else(|err| {
+        let typed::ProcedureSpecificationKindError::InvalidSpecKindRefinement(base, refined) = err;
+        vir::with_vcx(|vcx| {
+            vcx.emit_early_error(prusti_interface::PrustiError::incorrect(
+                format!(
+                    "invalid specification refinement for `{}`: the trait declares the method as \
+                    {base:?} but the implementation refines it as {refined:?}",
+                    vcx.tcx().def_path_str(def_id),
+                ),
+                vcx.tcx().def_span(def_id).into(),
+            ));
+        });
+        false
+    })
 }
 
 pub fn is_type_trusted(ty: ty::Ty) -> bool {

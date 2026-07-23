@@ -126,6 +126,34 @@ impl<'a, 'tcx> SpecCollector<'a, 'tcx> {
         def_spec
     }
 
+    /// A trait implementation may only carry Prusti annotations if its `impl`
+    /// block is marked `#[refine_trait_spec]`. Without it, an annotated method
+    /// silently fails to refine the inherited trait spec (and would conflict
+    /// with a `#[pure]` trait method), so we reject it instead. Inherent impls
+    /// and trait items are unaffected.
+    fn check_trait_impl_refinement(&self, method_def_id: DefId, span: Span) {
+        let tcx = self.env.tcx();
+        let Some(impl_def_id) = tcx.impl_of_assoc(method_def_id) else {
+            return;
+        };
+        if tcx.impl_trait_ref(impl_def_id).is_none() {
+            return;
+        }
+        let Some(impl_local) = impl_def_id.as_local() else {
+            return;
+        };
+        let impl_attrs = self.env.query.get_local_attributes(impl_local);
+        if !has_prusti_attr(impl_attrs, "refine_trait_spec") {
+            PrustiError::incorrect(
+                "Prusti annotations on a trait implementation require the \
+                 `#[refine_trait_spec]` attribute on the `impl` block"
+                    .to_string(),
+                MultiSpan::from_span(span),
+            )
+            .emit(&self.env.diagnostic);
+        }
+    }
+
     fn determine_procedure_specs(&self, def_spec: &mut typed::DefSpecificationMap) {
         for (local_id, refs) in self.procedure_specs.iter() {
             let mut spec = SpecGraph::new(ProcedureSpecification::empty(local_id.to_def_id()));
@@ -539,6 +567,7 @@ impl<'a, 'tcx> intravisit::Visitor<'tcx> for SpecCollector<'a, 'tcx> {
 
             // Collect procedure specifications
             if let Some(procedure_spec_ref) = get_procedure_spec_ids(def_id, attrs) {
+                self.check_trait_impl_refinement(def_id, span);
                 self.procedure_specs.insert(local_id, procedure_spec_ref);
             }
 

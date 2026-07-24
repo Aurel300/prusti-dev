@@ -18,8 +18,8 @@ struct Struct;
 
 #[refine_trait_spec]
 impl Trait for Struct {
-    #[requires(x > 2)] //~ ERROR: the implementation's precondition is stronger than the trait method's
-    #[ensures(result >= 0)] //~ ERROR: the implementation's postcondition is weaker than the trait method's
+    #[requires(x > 2)] //~ ERROR: the implementation's precondition may be stronger than the trait method's
+    #[ensures(result >= 0)] //~ ERROR: the implementation's postcondition may be weaker than the trait method's
     #[ensures(result <= 99)]
     fn foo(&self, x: i32) -> i32 {
         10

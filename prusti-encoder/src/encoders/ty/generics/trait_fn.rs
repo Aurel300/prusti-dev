@@ -26,7 +26,9 @@ pub struct TraitFnEncOutputRef<'vir> {
     pub call_stub_impure: Option<MethodIdn<'vir, (vir::ManyRef, vir::ManyTyVal, vir::ManyCSnap)>>,
     pub call_stub_pure_caller:
         Option<FunctionIdn<'vir, (vir::ManySnap, vir::ManyTyVal, vir::ManyCSnap), vir::Snap>>,
-    pub call_stub_pure_function:
+    pub call_stub_pure_ref_fn:
+        Option<FunctionIdn<'vir, (vir::ManySnap, vir::ManyTyVal, vir::ManyCSnap), vir::Snap>>,
+    pub call_stub_pure_snap_fn:
         Option<FunctionIdn<'vir, (vir::ManySnap, vir::ManyTyVal, vir::ManyCSnap), vir::Snap>>,
 }
 
@@ -103,7 +105,7 @@ impl TaskEncoder for TraitFnEnc {
                 all_locals: false,
             })?;
             let arg_count = local_defs.arg_count + 1;
-            let arg_types = vcx.alloc_slice(&local_defs.snap_ty_args().collect::<Vec<_>>());
+            let arg_types = vcx.alloc_slice(&local_defs.ref_fn_ty_args().collect::<Vec<_>>());
             let return_type = local_defs.snap_ty_return();
             let ref_args = vcx.alloc_slice(&vec![vir::TYPE_REF; arg_count]);
 
@@ -155,9 +157,9 @@ impl TaskEncoder for TraitFnEnc {
                     return_type,
                 )
             });
-            let call_stub_pure_function = is_pure.then(|| {
+            let call_stub_pure_ref_fn = is_pure.then(|| {
                 FunctionIdn::new(
-                    vir_format_identifier!(vcx, "{trait_name}_fn_stub_{item_name}"),
+                    vir_format_identifier!(vcx, "{trait_name}_rfn_stub_{item_name}"),
                     (
                         arg_types,
                         item_generics.ty_args(),
@@ -166,6 +168,18 @@ impl TaskEncoder for TraitFnEnc {
                     return_type,
                 )
             });
+            let call_stub_pure_snap_fn = is_pure.then(|| {
+                FunctionIdn::new(
+                    vir_format_identifier!(vcx, "{trait_name}_sfn_stub_{item_name}"),
+                    (
+                        vcx.alloc_slice(&local_defs.snap_fn_ty_args().collect::<Vec<_>>()),
+                        item_generics.ty_args(),
+                        item_generics.const_args(),
+                    ),
+                    return_type,
+                )
+            });
+
             deps.emit_output_ref(
                 *task_key,
                 TraitFnEncOutputRef {
@@ -173,13 +187,14 @@ impl TaskEncoder for TraitFnEnc {
                     post_func,
                     call_stub_impure,
                     call_stub_pure_caller,
-                    call_stub_pure_function,
+                    call_stub_pure_ref_fn,
+                    call_stub_pure_snap_fn,
                 },
             )?;
             dom_funcs.push(vcx.mk_domain_function(pre_func, false, None));
             dom_funcs.push(vcx.mk_domain_function(post_func, false, None));
 
-            let func_args = local_defs.local_decl_args().collect::<Vec<_>>();
+            let func_args = local_defs.ref_fn_args().collect::<Vec<_>>();
             let func_arg_exprs = vcx.alloc_slice(
                 &func_args
                     .iter()
@@ -263,7 +278,7 @@ impl TaskEncoder for TraitFnEnc {
                     item_generics.ty_exprs(),
                     item_generics.const_exprs(),
                 ));
-                let wrapped_call = call_stub_pure_function.unwrap().call()(
+                let wrapped_call = call_stub_pure_ref_fn.unwrap().call()(
                     func_arg_exprs,
                     item_generics.ty_exprs(),
                     item_generics.const_exprs(),
@@ -281,7 +296,7 @@ impl TaskEncoder for TraitFnEnc {
                     Some(wrapped_call),
                 ));
                 funcs.push(vcx.mk_function(
-                    call_stub_pure_function.unwrap(),
+                    call_stub_pure_ref_fn.unwrap(),
                     (
                         &func_args,
                         item_generics.ty_decls(),

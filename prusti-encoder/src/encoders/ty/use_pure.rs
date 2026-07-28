@@ -306,11 +306,12 @@ impl<'a, 'vir> TyUsePureWalker<'a, 'vir> {
                 })
             })
             .collect::<EncResult<'vir, Vec<_>>>()?;
+        let struct_type = data.struct_type;
         let data = TyUsePureStructData {
             args: self.args_t,
             pure: *data.1,
         };
-        Ok(StructData::new(data, fields))
+        Ok(StructData::new(data, fields, struct_type))
     }
 
     fn encode_enumlike(

@@ -280,12 +280,13 @@ impl<'a, 'vir> TyUseImpureWalker<'a, 'vir> {
                 })
             })
             .collect::<EncResult<'vir, Vec<_>>>()?;
+        let struct_type = data.struct_type;
         let data = TyUseImpureStructData {
             args: self.args_t,
             ref_to_pred,
             impure: *data.1,
         };
-        Ok(StructData::new(data, fields))
+        Ok(StructData::new(data, fields, struct_type))
     }
 
     fn encode_enumlike(

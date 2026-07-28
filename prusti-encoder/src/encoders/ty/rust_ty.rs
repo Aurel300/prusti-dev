@@ -3,6 +3,8 @@ use std::ops::Deref;
 use prusti_interface::environment::EnvQuery;
 use prusti_rustc_interface::{abi, hir, index, middle::ty, span::symbol};
 
+use crate::encoders::ty::StructType::Generic;
+
 use super::{
     data::*,
     generics::{GArgs, GParams},
@@ -134,6 +136,10 @@ impl<'tcx> LazyRustTy<'tcx> {
     /// with arguments `<T>` (i.e. the `i32` from the context is lost).
     pub fn decompose(&self, params: GParams<'tcx>) -> RustTyDecomposition<'tcx> {
         RustTyDecomposition::from_ty(self.0, params)
+    }
+
+    pub fn ty(&self) -> ty::Ty<'tcx> {
+        self.0
     }
 
     /// Decomposes the field's type into a `RustTyDecomposition` (to be used
@@ -571,7 +577,7 @@ impl<'tcx> TySpecifics<'tcx, RustTyDatas> {
                         ty: LazyRustTy(Self::new_param_ty(i as u32)),
                     })
                     .collect::<Vec<_>>();
-                TySpecifics::mk_structlike((), fields)
+                TySpecifics::mk_structlike((), fields, Generic)
             }
             ty::TyKind::Array(_, _) => TySpecifics::ArrayLike(ArrayData {
                 slice: false,
@@ -628,7 +634,7 @@ impl<'tcx> TySpecifics<'tcx, RustTyDatas> {
                         })
                         .collect::<Vec<_>>()
                 });
-                TySpecifics::mk_structlike((), fields)
+                TySpecifics::mk_structlike((), fields, Generic)
             }
             ty::TyKind::Never => {
                 let data = vir::with_vcx(|vcx| RustEnumData {
@@ -651,14 +657,14 @@ impl<'tcx> TySpecifics<'tcx, RustTyDatas> {
     }
 
     fn from_adt(adt: ty::AdtDef<'tcx>) -> Self {
-        if adt.is_box() {
+        /*if adt.is_box() {
             let fields = vec![RustFieldData {
                 name: symbol::Symbol::intern("deref"),
                 fid: abi::FieldIdx::from_usize(0),
                 ty: LazyRustTy(Self::new_param_ty(0)),
             }];
             TySpecifics::mk_structlike((), fields)
-        } else if vir::with_vcx(|vcx| {
+        } else*/ if vir::with_vcx(|vcx| {
             vcx.tcx().lang_items().get(hir::LangItem::DynMetadata) == Some(adt.did())
         }) {
             // `DynMetadata<dyn Trait>` is the metadata of a `&dyn`/`*dyn`
@@ -689,7 +695,7 @@ impl<'tcx> TySpecifics<'tcx, RustTyDatas> {
                         fid: abi::FieldIdx::from_usize(0),
                         ty: LazyRustTy(Self::new_param_ty(0)),
                     }];
-                    TySpecifics::mk_structlike((), fields)
+                    TySpecifics::mk_structlike((), fields, Generic)
                 }
                 // TODO: support other builtins (e.g. `Seq`, `Map`, `Set`, etc.)
                 s => todo!("Unimplemented builtin {s}"),
@@ -714,7 +720,13 @@ impl<'tcx> TySpecifics<'tcx, RustTyDatas> {
 
     fn from_struct(variant: &ty::VariantDef) -> StructData<'tcx, RustTyDatas> {
         let fields = Self::from_fields(&variant.fields);
-        StructData::new((), fields)
+        let struct_type = match variant.name.to_string().as_str() {
+            "Box" => StructType::Box,
+            "Unique" => StructType::Unique,
+            "NonNull" => StructType::NonNull,
+            _ => Generic,
+        };
+        StructData::new((), fields, struct_type)
     }
 
     fn from_enum(adt: ty::AdtDef<'tcx>) -> EnumData<'tcx, RustTyDatas> {
@@ -733,7 +745,7 @@ impl<'tcx> TySpecifics<'tcx, RustTyDatas> {
                             vid,
                             discr_val: discr.val,
                         },
-                        StructData::new((), fields),
+                        StructData::new((), fields, Generic),
                     )
                 })
                 .collect::<Vec<_>>();

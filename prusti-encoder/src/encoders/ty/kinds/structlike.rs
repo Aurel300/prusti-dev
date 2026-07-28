@@ -71,6 +71,7 @@ pub(super) fn ty_pure_variant<'vir>(
             field_snaps_to_snap,
         },
         des,
+        data.struct_type
     ))
 }
 
@@ -160,7 +161,7 @@ pub(crate) fn ty_impure_variant<'vir>(
     let variant_snap_expr = data.1.field_snaps_to_snap.call()(snap_args.as_slice());
 
     Ok((
-        StructData::new((), field_accessors),
+        StructData::new((), field_accessors, data.struct_type),
         pred_owned,
         variant_snap_expr,
     ))

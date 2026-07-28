@@ -54,9 +54,18 @@ pub struct ArrayData<'vir, D: TyDatas<'vir>> {
     pub slice: bool,
 }
 
+#[derive(PartialEq, Eq, Hash, Debug, Clone, Copy)]
+pub enum StructType {
+    Box,
+    Unique,
+    NonNull,
+    Generic
+}
+
 pub struct StructData<'vir, D: TyDatas<'vir>> {
     pub data: D::StructData,
     pub fields: Vec<D::FieldData>,
+    pub struct_type: StructType
 }
 
 pub struct EnumData<'vir, D: TyDatas<'vir>> {
@@ -112,8 +121,8 @@ impl<'vir, D: TyDatas<'vir>> TySpecifics<'vir, D> {
         Self::Raw(data)
     }
 
-    pub fn mk_structlike(data: D::StructData, fields: Vec<D::FieldData>) -> Self {
-        Self::StructLike(StructData::new(data, fields))
+    pub fn mk_structlike(data: D::StructData, fields: Vec<D::FieldData>, struct_type: StructType) -> Self {
+        Self::StructLike(StructData::new(data, fields, struct_type))
     }
 
     pub fn mk_enumlike(data: D::EnumData, variants: Vec<VariantData<'vir, D>>) -> Self {
@@ -307,10 +316,12 @@ impl<'vir, D: TyDatas<'vir>> StructData<'vir, D> {
         other: &'vir StructData<'vir, D2>,
     ) -> StructData<'vir, (D, D2)> {
         assert_eq!(self.fields.len(), other.fields.len());
+        assert_eq!(self.struct_type, other.struct_type);
         let fields = self.fields.iter().zip(other.fields.iter());
         StructData {
             data: (&self.data, &other.data),
             fields: fields.collect(),
+            struct_type: self.struct_type
         }
     }
 }
@@ -350,22 +361,22 @@ impl<'vir, D1: TyDatas<'vir>, D2: TyDatas<'vir>> TyDatas<'vir> for (D1, D2) {
 // Deref implementations
 
 macro_rules! impls {
-    ($container:ident$( { $field:ident: $ty:ty })?) => {
+    ($container:ident$( { $($field:ident: $ty:ty),+ } )?) => {
 impl<'vir, D: TyDatas<'vir>> $container<'vir, D> {
-    pub fn new(data: D::$container $(, $field: $ty)?) -> Self {
-        Self { data, $($field,)? }
+    pub fn new(data: D::$container $(, $($field: $ty),+)?) -> Self {
+        Self { data, $($($field,)+)? }
     }
 }
 
 impl<'vir, D: TyDatas<'vir>> Debug for $container<'vir, D> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct(stringify!($container)).field("data", &self.data)$(.field(stringify!($field), &self.$field))?.finish()
+        f.debug_struct(stringify!($container)).field("data", &self.data)$($(.field(stringify!($field), &self.$field))+)?.finish()
     }
 }
 
 impl<'vir, D: TyDatas<'vir>> Clone for $container<'vir, D> {
     fn clone(&self) -> Self {
-        Self { data: self.data.clone(), $($field: self.$field.clone())? }
+        Self { data: self.data.clone(), $($($field: self.$field.clone(), )+)? }
     }
 }
 
@@ -386,7 +397,7 @@ where
     D::BuiltinData: PartialEq
 {
     fn eq(&self, other: &Self) -> bool {
-        self.data == other.data $(&& self.$field == other.$field)?
+        self.data == other.data $($(&& self.$field == other.$field)+)?
     }
 }
 
@@ -425,7 +436,7 @@ where
 {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.data.hash(state);
-        $(self.$field.hash(state);)?
+        $($(self.$field.hash(state);)+)?
     }
 }
 
@@ -455,7 +466,7 @@ impl<'vir, D: TyDatas<'vir>> $container<'vir, D> {
 impls!(TyData { specifics: TySpecifics<'vir, D> });
 impl_zip!(TyData.specifics);
 impls!(ArrayData { slice: bool });
-impls!(StructData { fields: Vec<D::FieldData> });
+impls!(StructData { fields: Vec<D::FieldData>, struct_type: StructType });
 impls!(EnumData { variants: Vec<VariantData<'vir, D>> });
 impls!(VariantData { inner: StructData<'vir, D> });
 impl_zip!(VariantData.inner);

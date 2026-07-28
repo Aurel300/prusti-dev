@@ -1239,13 +1239,14 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                             // TODO: this is unsound: a Box should be modelled
                             // with a Ref field rather than a field_access
                             // function.
-                            address: field_access[abi::FieldIdx::ZERO].field_ref(expr.address),
+                            address: field_access[abi::FieldIdx::ZERO].field_ref(field_access[abi::FieldIdx::ZERO].field_ref(field_access[abi::FieldIdx::ZERO].field_ref(expr.address))),
+                            //address: field_access[abi::FieldIdx::ZERO].field_ref(expr.address),
                             // TODO: also should have metadata
                             metadata: None,
                             snap: expr.snap.map(|snap| {
                                 let e_ty = self.ty_use_pure(place_ty.ty);
                                 let field_access = e_ty.expect_variant_opt(None);
-                                field_access[abi::FieldIdx::ZERO].read(snap.downcast_ty())
+                                field_access[abi::FieldIdx::ZERO].read(field_access[abi::FieldIdx::ZERO].read(field_access[abi::FieldIdx::ZERO].read(snap.downcast_ty()).downcast_ty()).downcast_ty())
                             }),
                         }
                     }

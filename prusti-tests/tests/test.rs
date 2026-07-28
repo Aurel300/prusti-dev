@@ -1,3 +1,4 @@
+ use prusti_contracts::*;
  //use std::ops::BitAnd;
 
 //  #[derive(Debug, PartialEq)]
@@ -30,10 +31,23 @@
 //     let v = vec![true, false, true];
 // }
 
+struct MyBox {
+    val: *mut i32
+}
+
+impl MyBox {
+    #[ensures(unsafe { *(result.val) === x })]
+    fn new(mut x: i32) -> Self {
+        MyBox {val: &raw mut x }
+    }
+}
+
 fn test() {
-    let boxed_array: Box<[i32; 3]> = Box::new([1, 2, 3]);
-    let boxed_slice: Box<[i32]> = boxed_array;
-    assert_eq!(&*boxed_slice, &[1, 2, 3]);
+    // let boxed_array: Box<[i32; 3]> = Box::new([1, 2, 3]);
+    // let boxed_slice: Box<[i32]> = boxed_array;
+    // assert_eq!(&*boxed_slice, &[1, 2, 3]);
+    let boxed_i32 = MyBox::new(5);
+    //assert_eq!(*boxed_i32, 5);
 }
 
 // fn test(x: &[i32; 3]) {

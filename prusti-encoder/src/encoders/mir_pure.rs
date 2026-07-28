@@ -966,9 +966,6 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                 // field projections of `null` which is also `null`.
                 let place_ref = encoded_place
                     .place_ref
-                    // TODO: this is a bit of a hack to use `null` if one does
-                    // e.g. `#[requires(x == y)]`, which creates a borrow of the
-                    // arguments which weren't borrows in the first place.
                     .unwrap_or_else(|| self.vcx.mk_null().lazy());
                 let metadata = encoded_place
                     .metadata

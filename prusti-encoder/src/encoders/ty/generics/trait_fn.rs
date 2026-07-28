@@ -28,8 +28,6 @@ pub struct TraitFnEncOutputRef<'vir> {
         Option<FunctionIdn<'vir, (vir::ManySnap, vir::ManyTyVal, vir::ManyCSnap), vir::Snap>>,
     pub call_stub_pure_ref_fn:
         Option<FunctionIdn<'vir, (vir::ManySnap, vir::ManyTyVal, vir::ManyCSnap), vir::Snap>>,
-    pub call_stub_pure_snap_fn:
-        Option<FunctionIdn<'vir, (vir::ManySnap, vir::ManyTyVal, vir::ManyCSnap), vir::Snap>>,
 }
 
 impl<'vir> OutputRefAny for TraitFnEncOutputRef<'vir> {}
@@ -168,17 +166,6 @@ impl TaskEncoder for TraitFnEnc {
                     return_type,
                 )
             });
-            let call_stub_pure_snap_fn = is_pure.then(|| {
-                FunctionIdn::new(
-                    vir_format_identifier!(vcx, "{trait_name}_sfn_stub_{item_name}"),
-                    (
-                        vcx.alloc_slice(&local_defs.snap_fn_ty_args().collect::<Vec<_>>()),
-                        item_generics.ty_args(),
-                        item_generics.const_args(),
-                    ),
-                    return_type,
-                )
-            });
 
             deps.emit_output_ref(
                 *task_key,
@@ -188,7 +175,6 @@ impl TaskEncoder for TraitFnEnc {
                     call_stub_impure,
                     call_stub_pure_caller,
                     call_stub_pure_ref_fn,
-                    call_stub_pure_snap_fn,
                 },
             )?;
             dom_funcs.push(vcx.mk_domain_function(pre_func, false, None));

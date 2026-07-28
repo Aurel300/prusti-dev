@@ -12,7 +12,8 @@ use vir::{CastType, HasType};
 
 use crate::{
     encoders::{
-        ty::{use_impure::TyUseImpure, use_pure::TyUsePure, RustTyDecomposition, TySpecifics}, TyUseImpureEnc, TyUsePureEnc
+        TyUseImpureEnc, TyUsePureEnc,
+        ty::{RustTyDecomposition, TySpecifics, use_impure::TyUseImpure, use_pure::TyUsePure},
     },
     trait_support::is_function_with_body,
 };
@@ -65,7 +66,8 @@ impl<'vir> MirLocalDefEncOutput<'vir> {
 
     pub fn snap_fn_ty_args(&self) -> impl Iterator<Item = vir::TypeSnap<'vir>> + '_ {
         self.args().map(|arg| {
-            arg.deref_snap
+            arg.target
+                .map(|target| target.deref_snap)
                 .unwrap_or(arg.local_snap)
                 .ty()
         })
@@ -73,7 +75,8 @@ impl<'vir> MirLocalDefEncOutput<'vir> {
 
     pub fn snap_fn_args(&self) -> impl Iterator<Item = vir::LocalDeclSnap<'vir>> + '_ {
         self.args().map(|arg| {
-            arg.deref_snap
+            arg.target
+                .map(|target| target.deref_snap)
                 .unwrap_or(arg.local_snap)
         })
     }
@@ -86,14 +89,21 @@ impl<'vir> MirLocalDefEncOutput<'vir> {
 pub type MirLocalDefEncError = ();
 
 #[derive(Clone, Copy)]
+pub struct LocalDefTarget<'vir> {
+    /// a local of the target's snapshot type
+    pub deref_snap: vir::LocalDeclSnap<'vir>,
+    /// the snapshot of `local_snap`'s target
+    pub deref_ex: vir::ExprSnap<'vir>,
+}
+
+#[derive(Clone, Copy)]
 pub struct LocalDef<'vir> {
     pub local: vir::LocalDeclRef<'vir>,
     pub local_snap: vir::LocalDeclSnap<'vir>,
     pub local_ex: vir::ExprRef<'vir>,
     pub impure_snap: vir::ExprSnap<'vir>,
     pub impure_pred: vir::ExprBool<'vir>,
-    pub deref_snap: Option<vir::LocalDeclSnap<'vir>>,
-    pub deref_ex: Option<vir::ExprSnap<'vir>>,
+    pub target: Option<LocalDefTarget<'vir>>,
 }
 
 fn should_encode_locals<'vir>(vcx: &vir::VirCtxt<'vir>, def_id: DefId) -> bool {
@@ -228,13 +238,16 @@ impl TaskEncoder for MirLocalDefEnc {
             let local_ex = vcx.mk_local_ex(local);
             let impure_snap = ty_impure.ref_to_snap(local_ex);
             let impure_pred = ty_impure.ref_to_pred(vcx, local_ex, None);
-            let (deref_snap, deref_ex) = match ty_pure.specifics {
+            let target = match ty_pure.specifics {
                 TySpecifics::ImmRef(data) => {
-                    let val_expr = data.value_access(vcx.mk_local_ex(local_snap).downcast_ty());
-                    let local_decl = vcx.mk_local_decl(snap_local, val_expr.ty());
-                    (Some(local_decl), Some(val_expr))
-                },
-                _ => (None, None),
+                    let deref_ex = data.value_access(vcx.mk_local_ex(local_snap).downcast_ty());
+                    let deref_snap = vcx.mk_local_decl(snap_local, deref_ex.ty());
+                    Some(LocalDefTarget {
+                        deref_snap,
+                        deref_ex,
+                    })
+                }
+                _ => None,
             };
             LocalDef {
                 local,
@@ -242,8 +255,7 @@ impl TaskEncoder for MirLocalDefEnc {
                 local_ex,
                 impure_snap,
                 impure_pred,
-                deref_snap,
-                deref_ex,
+                target,
             }
         }
 

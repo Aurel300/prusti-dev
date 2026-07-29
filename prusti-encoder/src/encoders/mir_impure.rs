@@ -19,7 +19,7 @@ use pcg::{
     free_pcs::{RepackGuide, RepackOp},
     r#loop::{LoopAnalysis, LoopId},
     pcg::{CapabilityKind, EvalStmtPhase, Pcg, PcgNode, PcgSuccessor},
-    results::PcgBasicBlock,
+    results::{PcgBasicBlock, PcgLocation},
     utils::{
         CompilerCtxt, HasPlace, Place, SnapshotLocation, display::DisplayWithCtxt,
         maybe_old::MaybeLabelledPlace,
@@ -467,15 +467,49 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
     /// TODO: clean this up
     fn collect_pcs_succ<'a>(
         &mut self,
-        state: &Pcg<'_, 'vir>,
+        cfpcs: &PcgLocation<'_, 'vir>,
         pcs: &'a PcgSuccessor<'_, 'vir>,
     ) -> Result<Vec<vir::Stmt<'vir>>, EncodeFullError<'vir, E>> {
         let current_stmts = self.current_stmts.take();
         self.current_stmts = Some(Vec::new());
-        let res = self.pcs_succ(state, pcs);
+        let res = self.pcs_succ(cfpcs, pcs);
         let new_stmts = self.current_stmts.take().unwrap();
         self.current_stmts = current_stmts;
         res.map(|()| new_stmts)
+    }
+
+    /// Emit the repacks of the terminator edge to `target` ([Self::pcs_succ]).
+    /// The succ is found by block: the target is usually the terminator's
+    /// only non-unwind successor, but for a ghost switch the (second)
+    /// `ghost_erased` successor is skipped.
+    fn pcs_succ_to(&mut self, target: mir::BasicBlock) -> Result<(), EncodeFullError<'vir, E>> {
+        let current_fpcs = self.current_fpcs.take().unwrap();
+        let cfpcs = current_fpcs.statements.last().unwrap();
+        let succ = current_fpcs
+            .terminator
+            .succs
+            .iter()
+            .find(|succ| succ.block() == target)
+            .unwrap();
+        let res = self.pcs_succ(cfpcs, succ);
+        self.current_fpcs = Some(current_fpcs);
+        res
+    }
+
+    /// [Self::collect_pcs_succ] for the `idx`-th successor: a `SwitchInt`
+    /// edge, identified by index since several values may share a target.
+    fn collect_pcs_succ_at(
+        &mut self,
+        idx: usize,
+        target: mir::BasicBlock,
+    ) -> Result<Vec<vir::Stmt<'vir>>, EncodeFullError<'vir, E>> {
+        let current_fpcs = self.current_fpcs.take().unwrap();
+        let cfpcs = current_fpcs.statements.last().unwrap();
+        let succ = &current_fpcs.terminator.succs[idx];
+        assert_eq!(succ.block(), target);
+        let res = self.collect_pcs_succ(cfpcs, succ);
+        self.current_fpcs = Some(current_fpcs);
+        res
     }
 
     pub(crate) fn block<Err>(
@@ -809,6 +843,20 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         }
         Ok(())
     }
+
+    /// Emit the repacks of `phase` at `location`.
+    fn pcg_phase_actions(
+        &mut self,
+        location: mir::Location,
+        phase: EvalStmtPhase,
+    ) -> EncodeResult<'vir, (), E> {
+        let current_fpcs = self.current_fpcs.take().unwrap();
+        let cfpcs = &current_fpcs.statements[location.statement_index];
+        self.pcg_actions(&cfpcs.states[phase], &cfpcs.actions(phase), false)?;
+        self.current_fpcs = Some(current_fpcs);
+        Ok(())
+    }
+
     fn borrow_action(
         &mut self,
         pcg: &Pcg<'_, 'vir>,
@@ -978,11 +1026,17 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
 
     fn pcs_succ<'a>(
         &mut self,
-        pcg_state: &Pcg<'_, 'vir>,
+        cfpcs: &PcgLocation<'_, 'vir>,
         succ: &'a PcgSuccessor<'_, 'vir>,
     ) -> Result<(), EncodeFullError<'vir, E>> {
+        // The terminator's deferred `PostMain` actions (e.g. the collapse
+        // re-packing owned places for the CFG join); see
+        // [Self::visit_terminator].
+        comment!(self, "PCG (T) {}", EvalStmtPhase::PostMain);
+        let post_main = &cfpcs.states[EvalStmtPhase::PostMain];
+        self.pcg_actions(post_main, &cfpcs.actions(EvalStmtPhase::PostMain), false)?;
         let edge_to_loop = self.loop_head_of(succ.block()).is_some();
-        self.pcg_actions(pcg_state, succ.actions(), edge_to_loop)
+        self.pcg_actions(post_main, succ.actions(), edge_to_loop)
     }
 
     fn encode_operand(
@@ -1651,26 +1705,21 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
 
             comment!(self, "[MIR] {location:?}: {statement:?}");
 
-            let current_fpcs = self.current_fpcs.take().unwrap();
-            let cfpcs = &current_fpcs.statements[location.statement_index];
-            for phase in EvalStmtPhase::phases() {
-                self.pcg_actions(&cfpcs.states[phase], &cfpcs.actions(phase), false)?;
-            }
-            self.current_fpcs = Some(current_fpcs);
-
-            // TODO: these should not be ignored, but should havoc the local instead
-            // This clears up the noise a bit, making sure StorageLive and other
-            // kinds do not show up in the comments.
-            // TODO: also make sure we don't ignore PCG annotations for these,
-            //   *if* the pcs calls for mid-statement are moved later.
-            const IGNORE_NOP_STMTS: bool = true;
-            if IGNORE_NOP_STMTS {
-                match &statement.kind {
-                    mir::StatementKind::StorageLive(..) | mir::StatementKind::StorageDead(..) => {
-                        return Ok(());
-                    }
-                    _ => {}
-                }
+            // `PostMain` is emitted after the statement's effect below.
+            // TODO: the operands are read lazily while encoding the effect,
+            //   which is wrong when an operand's place overlaps the
+            //   destination, whose predicate the `PreMain` weaken exhales.
+            //   MIR mostly materializes temporaries for such operands, but
+            //   `x /= y` lowers to `x = Div(copy x, move y)` (same for other
+            //   unchecked `op=` operators) and fails with insufficient
+            //   permission. Operands should instead be captured between the
+            //   `PreOperands` and `PostOperands` repacks.
+            for phase in [
+                EvalStmtPhase::PreOperands,
+                EvalStmtPhase::PostOperands,
+                EvalStmtPhase::PreMain,
+            ] {
+                self.pcg_phase_actions(location, phase)?;
             }
 
             let span = statement.source_info.span;
@@ -1739,6 +1788,8 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                     statement.kind
                 ),
             }
+
+            self.pcg_phase_actions(location, EvalStmtPhase::PostMain)?;
             Ok(())
         })
     }
@@ -1754,13 +1805,23 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         comment!(self, "[MIR] {location:?}: {:?}", terminator.kind);
         let span = terminator.source_info.span;
 
-        let current_fpcs = self.current_fpcs.take().unwrap();
-        let cfpcs = &current_fpcs.statements[location.statement_index];
-        for phase in EvalStmtPhase::phases() {
+        // `PostMain` is not emitted here: a terminator's operands are read
+        // after these phases' repacks (e.g. a `SwitchInt` discriminant that
+        // projects into an aggregate is read in the branch condition, relying
+        // on the `PreOperands` unfolds), while the `PostMain` actions re-pack
+        // owned places for the CFG join and thus may fold those operands'
+        // places away. They are instead emitted on each outgoing edge by
+        // [Self::pcs_succ], after the terminator's operands have been read.
+        // Terminators that do not go through [Self::pcs_succ] have no
+        // successor state to re-pack for.
+        for phase in [
+            EvalStmtPhase::PreOperands,
+            EvalStmtPhase::PostOperands,
+            EvalStmtPhase::PreMain,
+        ] {
             comment!(self, "PCG (T) {phase}");
-            self.pcg_actions(&cfpcs.states[phase], &cfpcs.actions(phase), false)?;
+            self.pcg_phase_actions(location, phase)?;
         }
-        self.current_fpcs = Some(current_fpcs);
 
         // A `ghost!` block's `if false` switch is encoded as an unconditional
         // jump into the ghost arm (the inline ghost body); the runtime
@@ -1783,20 +1844,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 real_target: target,
                 ..
             } => {
-                let current_fpcs = self.current_fpcs.take().unwrap();
-                let borrows =
-                    &current_fpcs.statements.last().unwrap().states[EvalStmtPhase::PostMain];
-                // The succ used for the repacks, found by block: the target is
-                // usually the terminator's only successor, but for a ghost
-                // switch the (second) `ghost_erased` successor is skipped.
-                let succ = current_fpcs
-                    .terminator
-                    .succs
-                    .iter()
-                    .find(|succ| &succ.block() == target)
-                    .unwrap();
-                self.pcs_succ(borrows, succ)?;
-                self.current_fpcs = Some(current_fpcs);
+                self.pcs_succ_to(*target)?;
                 let set_flag = self.set_from_to_flag(location.block, *target);
                 self.stmt(set_flag);
                 self.vcx
@@ -1811,17 +1859,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                         .iter()
                         .enumerate()
                         .map(|(idx, (value, target))| {
-                            assert_eq!(
-                                self.current_fpcs.as_ref().unwrap().terminator.succs[idx].block(),
-                                target
-                            );
-
-                            let current_fpcs = self.current_fpcs.take().unwrap();
-                            let borrows = &current_fpcs.statements.last().unwrap().states
-                                [EvalStmtPhase::PostMain];
-                            let mut extra_stmts = self
-                                .collect_pcs_succ(borrows, &current_fpcs.terminator.succs[idx])?;
-                            self.current_fpcs = Some(current_fpcs);
+                            let mut extra_stmts = self.collect_pcs_succ_at(idx, target)?;
                             extra_stmts.push(self.set_from_to_flag(location.block, target));
 
                             Ok(self.vcx.mk_goto_if_target(
@@ -1836,20 +1874,8 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                     self.current_block_succs.as_ref().unwrap()[&targets.otherwise()];
 
                 let otherwise_succ_idx = goto_targets.len();
-                assert_eq!(
-                    self.current_fpcs.as_ref().unwrap().terminator.succs[otherwise_succ_idx]
-                        .block(),
-                    targets.otherwise()
-                );
-
-                let current_fpcs = self.current_fpcs.take().unwrap();
-                let borrows =
-                    &current_fpcs.statements.last().unwrap().states[EvalStmtPhase::PostMain];
-                let mut otherwise_stmts = self.collect_pcs_succ(
-                    borrows,
-                    &current_fpcs.terminator.succs[otherwise_succ_idx],
-                )?;
-                self.current_fpcs = Some(current_fpcs);
+                let mut otherwise_stmts =
+                    self.collect_pcs_succ_at(otherwise_succ_idx, targets.otherwise())?;
                 otherwise_stmts.push(self.set_from_to_flag(location.block, targets.otherwise()));
 
                 let discr_ex = discr_ty
@@ -1975,23 +2001,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
 
                 match *target {
                     Some(target) => {
-                        const REAL_TARGET_SUCC_IDX: usize = 0;
-                        // Ensure that the terminator succ that we use for the repacks is the correct one
-                        assert_eq!(
-                            self.current_fpcs.as_ref().unwrap().terminator.succs
-                                [REAL_TARGET_SUCC_IDX]
-                                .block(),
-                            target
-                        );
-                        let current_fpcs = self.current_fpcs.take().unwrap();
-                        let borrows = current_fpcs.statements.last().unwrap().states
-                            [EvalStmtPhase::PostMain]
-                            .clone();
-                        self.pcs_succ(
-                            &borrows,
-                            &current_fpcs.terminator.succs[REAL_TARGET_SUCC_IDX],
-                        )?;
-                        self.current_fpcs = Some(current_fpcs);
+                        self.pcs_succ_to(target)?;
                         let set_flag = self.set_from_to_flag(location.block, target);
                         self.stmt(set_flag);
 
@@ -2020,25 +2030,8 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 target,
                 ..
             } => {
-                const REAL_TARGET_SUCC_IDX: usize = 0;
-                // Ensure that the terminator succ that we use for the repacks is the correct one
-                assert_eq!(
-                    &self.current_fpcs.as_ref().unwrap().terminator.succs[REAL_TARGET_SUCC_IDX]
-                        .block(),
-                    target,
-                );
-                let current_fpcs = self.current_fpcs.take().unwrap();
-                let borrows =
-                    current_fpcs.statements.last().unwrap().states[EvalStmtPhase::PostMain].clone();
-                self.pcs_succ(
-                    &borrows,
-                    &current_fpcs.terminator.succs[REAL_TARGET_SUCC_IDX],
-                )?;
-                self.current_fpcs = Some(current_fpcs);
-
                 let enc = self
-                    .encode_operand_snap(cond, &())
-                    .unwrap()
+                    .encode_operand_snap(cond, &())?
                     .downcast_ty::<vir::Bool>();
                 let expected = self
                     .vcx
@@ -2088,6 +2081,10 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 } else {
                     self.stmt(self.vcx.mk_inhale_stmt(assert));
                 }
+                // The check is the terminator's main effect, emitted before
+                // the deferred `PostMain` re-pack, which may fold the place
+                // the condition projects into.
+                self.pcs_succ_to(*target)?;
                 let set_flag = self.set_from_to_flag(location.block, *target);
                 self.stmt(set_flag);
                 self.vcx

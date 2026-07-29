@@ -1905,7 +1905,11 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             | mir::TerminatorKind::FalseEdge {
                 real_target: target,
                 ..
-            } => {
+            }
+            // A `Drop`'s semantics (releasing the dropped place's permission
+            // via a weaken exhale) are carried by the PCG statements, so only
+            // its goto remains to be encoded here.
+            | mir::TerminatorKind::Drop { target, .. } => {
                 self.pcs_succ_to(*target)?;
                 let set_flag = self.set_from_to_flag(location.block, *target);
                 self.stmt(set_flag);
@@ -2162,13 +2166,6 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 self.stmt(self.vcx.mk_exhale_stmt(self.vcx.mk_bool::<false>()));
                 self.vcx.mk_assume_false_stmt()
             }),
-
-            mir::TerminatorKind::Drop { target, .. } => {
-                let set_flag = self.set_from_to_flag(location.block, *target);
-                self.stmt(set_flag);
-                self.vcx
-                    .mk_goto_stmt(self.current_block_succs.as_ref().unwrap()[target])
-            }
 
             mir::TerminatorKind::UnwindResume | mir::TerminatorKind::UnwindTerminate(..) => {
                 self.vcx.with_span(span, |vcx| {

@@ -4,11 +4,13 @@ use core::cmp::PartialEq;
 
 #[extern_spec]
 trait PartialEq<Rhs> {
+    #[trusted]
     #[pure]
     // #[refine_spec(where Self: PureEq, [pure])]
     // #[refine_spec(where Self = Rhs, [ensures((*self === *other) ==> result)])]
     fn eq(&self, other: &Rhs) -> bool;
 
+    #[trusted]
     #[pure]
     // #[refine_spec(where Self: PureEq, [pure])]
     #[ensures(result == !self.eq(other))]
@@ -17,6 +19,7 @@ trait PartialEq<Rhs> {
 
 #[extern_spec]
 impl PartialEq for () {
+    #[trusted]
     #[pure]
     #[ensures(result)]
     fn eq(&self, _other: &()) -> bool;

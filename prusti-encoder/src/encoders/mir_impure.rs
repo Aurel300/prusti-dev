@@ -328,7 +328,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             }
 
             mir::Rvalue::BinaryOp(op, box (l, r)) => Ok(self
-                .encode_binop_snap(rvalue_ty, *op, l, r, operand_snaps)
+                .encode_binop_snap(rvalue_ty, *op, l, r, operand_snaps, span)
                 .map_err(EncodeRvalueError::from)?
                 .into()),
 

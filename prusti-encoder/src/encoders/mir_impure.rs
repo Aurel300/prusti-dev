@@ -215,6 +215,13 @@ macro_rules! comment {
 
 type EncodeResult<'vir, T, E> = Result<T, EncodeFullError<'vir, E>>;
 
+/// Snapshots of the current statement's operands, captured between the
+/// `PreOperands` and `PostOperands` repacks by
+/// [ImpureEncVisitor::capture_operand_snaps] and passed (as the
+/// [PureRvalueEnc::EncodePlaceCtxt]) only to the encoding of the statement's
+/// effect; all other operand reads (terminators, repack guides) pass `None`.
+type OperandSnaps<'vir> = Option<FxHashMap<mir::Place<'vir>, vir::ExprSnap<'vir>>>;
+
 struct EncodedRvalue<'vir> {
     /// A snapshot of the rvalue. This snapshot is guaranteed to be well-formed
     /// in the state *before* the Rvalue has been assigned to a place. For
@@ -300,30 +307,33 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         &mut self,
         rvalue: &mir::Rvalue<'vir>,
         span: Span,
+        operand_snaps: &OperandSnaps<'vir>,
     ) -> Result<EncodedRvalue<'vir>, EncodeRvalueError<'vir, E>> {
         let rvalue_ty = rvalue.ty(self.local_decls, self.vcx.tcx());
         match rvalue {
             mir::Rvalue::Use(op) => Ok(self
-                .encode_operand_snap(op, &())
+                .encode_operand_snap(op, operand_snaps)
                 .map_err(EncodeRvalueError::from)?
                 .into()),
             mir::Rvalue::Cast(cast_kind, operand, ty) => {
                 assert_eq!(*ty, rvalue_ty);
                 let (stmt, cast) = self
-                    .encode_cast_snap(rvalue_ty, *cast_kind, operand, &())
+                    .encode_cast_snap(rvalue_ty, *cast_kind, operand, operand_snaps)
                     .map_err(EncodeRvalueError::from)?;
                 self.stmts(stmt);
                 Ok(cast.into())
             }
-            mir::Rvalue::Len(place) => Ok(self.encode_len_snap((*place).into(), &())?.into()),
+            mir::Rvalue::Len(place) => {
+                Ok(self.encode_len_snap((*place).into(), operand_snaps)?.into())
+            }
 
             mir::Rvalue::BinaryOp(op, box (l, r)) => Ok(self
-                .encode_binop_snap(rvalue_ty, *op, l, r, &())
+                .encode_binop_snap(rvalue_ty, *op, l, r, operand_snaps)
                 .map_err(EncodeRvalueError::from)?
                 .into()),
 
             mir::Rvalue::UnaryOp(unop, operand) => Ok(self
-                .encode_unary_op_snap(rvalue_ty, *unop, operand, &())
+                .encode_unary_op_snap(rvalue_ty, *unop, operand, operand_snaps)
                 .map_err(EncodeRvalueError::from)?
                 .into()),
 
@@ -333,7 +343,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 let tmp_exp: vir::ExprCSnap<'vir> =
                     self.new_tmp(e_rvalue_ty.snapshot.downcast_ty());
                 for (idx, element) in elements.iter().enumerate() {
-                    let element_snap = self.encode_operand_snap(element, &())?;
+                    let element_snap = self.encode_operand_snap(element, operand_snaps)?;
                     self.stmt(
                         self.vcx.mk_inhale_stmt(
                             self.vcx.mk_eq_expr(
@@ -357,7 +367,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 | mir::AggregateKind::Closure(..)),
                 fields,
             ) => Ok(self
-                .encode_aggregate_snap(rvalue_ty, kind, fields, &())
+                .encode_aggregate_snap(rvalue_ty, kind, fields, operand_snaps)
                 .map_err(EncodeRvalueError::from)?
                 .into()),
 
@@ -366,7 +376,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 let al = e_rvalue_ty.expect_array();
                 let tmp_exp: vir::ExprCSnap<'vir> =
                     self.new_tmp(e_rvalue_ty.snapshot.downcast_ty());
-                let operand_snap = self.encode_operand_snap(operand, &())?;
+                let operand_snap = self.encode_operand_snap(operand, operand_snaps)?;
                 self.stmt(self.vcx.mk_inhale_stmt(vir::expr! {
                     forall idx: Int :: {[al.index(tmp_exp, idx)]}
                         ([al.index(tmp_exp, idx)]) == ([operand_snap])
@@ -560,7 +570,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             match expansion.expansion()[0].place().projection.last() {
                 Some(&mir::ProjectionElem::Index(index_local)) => {
                     let index = self
-                        .encode_operand_snap(&mir::Operand::Copy(index_local.into()), &())
+                        .encode_operand_snap(&mir::Operand::Copy(index_local.into()), &None)
                         .unwrap();
                     let usize_ty_out = self.ty_use_pure(self.vcx.tcx().types.usize);
                     Some(
@@ -946,7 +956,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 let index = guide.and_then(|guide| match guide {
                     RepackGuide::Index(index_local, _) => {
                         let index = self
-                            .encode_operand_snap(&mir::Operand::Copy(index_local.into()), &())
+                            .encode_operand_snap(&mir::Operand::Copy(index_local.into()), &None)
                             .unwrap();
                         let usize_ty_out = self.ty_use_pure(self.vcx.tcx().types.usize);
                         Some(
@@ -1053,7 +1063,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             }
             &mir::Operand::Copy(_source) => {
                 let ty_out = self.ty_use_impure(ty);
-                (self.encode_operand_snap(operand, &())?, ty_out)
+                (self.encode_operand_snap(operand, &None)?, ty_out)
             }
             mir::Operand::Constant(box constant) => {
                 let ty_out = self.ty_use_impure(ty);
@@ -1080,6 +1090,63 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 Ok(self.encode_constant_snap(constant)?.upcast_ty())
             }
         }
+    }
+
+    /// Read `operand`'s snapshot into a fresh temporary at the current
+    /// program point; a `Move` operand additionally consumes its place,
+    /// exhaling the place's predicate.
+    fn capture_operand_snap(
+        &mut self,
+        operand: &mir::Operand<'vir>,
+    ) -> EncodeResult<'vir, vir::ExprSnap<'vir>, E> {
+        match operand {
+            &mir::Operand::Copy(place) | &mir::Operand::Move(place) => {
+                let (result, snap_val, _, ty_out) = self.encode_place_with_snap(Place::from(place));
+                let tmp = self.new_tmp(ty_out.snapshot());
+                self.stmt(self.vcx.mk_pure_assign_stmt(tmp, snap_val));
+                if matches!(operand, mir::Operand::Move(_)) {
+                    self.stmt(self.vcx.mk_exhale_stmt(ty_out.ref_to_pred(
+                        self.vcx,
+                        result.expr.expect_predicate(),
+                        None,
+                    )));
+                }
+                Ok(tmp)
+            }
+            mir::Operand::Constant(box constant) => {
+                Ok(self.encode_constant_snap(constant)?.upcast_ty())
+            }
+        }
+    }
+
+    /// Read `statement`'s operands into an [OperandSnaps] map; see the call
+    /// site in [Self::visit_statement].
+    fn capture_operand_snaps(
+        &mut self,
+        statement: &mir::Statement<'vir>,
+        location: mir::Location,
+    ) -> EncodeResult<'vir, FxHashMap<mir::Place<'vir>, vir::ExprSnap<'vir>>, E> {
+        use mir::visit::Visitor;
+        struct OperandCollector<'vir>(Vec<mir::Operand<'vir>>);
+        impl<'vir> Visitor<'vir> for OperandCollector<'vir> {
+            fn visit_operand(&mut self, operand: &mir::Operand<'vir>, _location: mir::Location) {
+                if operand.place().is_some() {
+                    self.0.push(operand.clone());
+                }
+            }
+        }
+        let mut collector = OperandCollector(Vec::new());
+        collector.visit_statement(statement, location);
+        let mut snaps = FxHashMap::default();
+        for operand in &collector.0 {
+            let place = operand.place().unwrap();
+            if snaps.contains_key(&place) {
+                continue;
+            }
+            let snap = self.capture_operand_snap(operand)?;
+            snaps.insert(place, snap);
+        }
+        Ok(snaps)
     }
 
     pub(crate) fn encode_place(&mut self, place: Place<'vir>) -> EncodePlaceResult<'vir> {
@@ -1705,22 +1772,17 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
 
             comment!(self, "[MIR] {location:?}: {statement:?}");
 
-            // `PostMain` is emitted after the statement's effect below.
-            // TODO: the operands are read lazily while encoding the effect,
-            //   which is wrong when an operand's place overlaps the
-            //   destination, whose predicate the `PreMain` weaken exhales.
-            //   MIR mostly materializes temporaries for such operands, but
-            //   `x /= y` lowers to `x = Div(copy x, move y)` (same for other
-            //   unchecked `op=` operators) and fails with insufficient
-            //   permission. Operands should instead be captured between the
-            //   `PreOperands` and `PostOperands` repacks.
-            for phase in [
-                EvalStmtPhase::PreOperands,
-                EvalStmtPhase::PostOperands,
-                EvalStmtPhase::PreMain,
-            ] {
-                self.pcg_phase_actions(location, phase)?;
-            }
+            self.pcg_phase_actions(location, EvalStmtPhase::PreOperands)?;
+
+            // Read the statement's operands at their temporal position,
+            // between the `PreOperands` and `PostOperands` repacks. An
+            // operand's place may alias the destination, whose predicate the
+            // `PreMain` weaken exhales before the effect is encoded (`x /= y`
+            // lowers to `x = Div(copy x, move y)`).
+            let captured = Some(self.capture_operand_snaps(statement, location)?);
+
+            self.pcg_phase_actions(location, EvalStmtPhase::PostOperands)?;
+            self.pcg_phase_actions(location, EvalStmtPhase::PreMain)?;
 
             let span = statement.source_info.span;
 
@@ -1733,7 +1795,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                         .expect_predicate();
 
                     // The snapshot of the value that we are assigning.
-                    let rval_enc = self.encode_rvalue(rvalue, span);
+                    let rval_enc = self.encode_rvalue(rvalue, span, &captured);
 
                     match rval_enc {
                         Ok(rval_enc) => {
@@ -1879,7 +1941,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 otherwise_stmts.push(self.set_from_to_flag(location.block, targets.otherwise()));
 
                 let discr_ex = discr_ty
-                    .snap_to_prim(self.encode_operand_snap(discr, &()).unwrap().downcast_ty());
+                    .snap_to_prim(self.encode_operand_snap(discr, &None).unwrap().downcast_ty());
                 self.vcx.mk_goto_if_stmt(
                     discr_ex.as_dyn(), // self.vcx.mk_local_ex(discr_name),
                     goto_targets,
@@ -2031,7 +2093,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 ..
             } => {
                 let enc = self
-                    .encode_operand_snap(cond, &())?
+                    .encode_operand_snap(cond, &None)?
                     .downcast_ty::<vir::Bool>();
                 let expected = self
                     .vcx
@@ -2181,7 +2243,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         Ok(if let Some(intrinsic) = intrinsic {
             Some((
                 false,
-                self.encode_intrinsic(intrinsic, caller_substs, args, &())?,
+                self.encode_intrinsic(intrinsic, caller_substs, args, &None)?,
             ))
         } else if let Some(builtin) = PrustiBuiltin::new(func_def_id, self.gargs(caller_substs)) {
             // A `prusti_contracts` builtin used in executable code
@@ -2214,7 +2276,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                     self.gargs(caller_substs),
                     args,
                     span,
-                    &(),
+                    &None,
                 )?
                 .unwrap();
             Some((false, expr))
@@ -2231,7 +2293,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 .iter()
                 .map(|arg| {
                     self.vcx.with_span(arg.span, |_| {
-                        self.encode_operand_snap(&arg.node, &()).unwrap()
+                        self.encode_operand_snap(&arg.node, &None).unwrap()
                     })
                 })
                 .collect::<Vec<_>>();
@@ -2244,7 +2306,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
 
 impl<'vir, 'enc, E: TaskEncoder> PureRvalueEnc<'vir> for ImpureEncVisitor<'vir, 'enc, E> {
     type Encoder = E;
-    type EncodePlaceCtxt = ();
+    type EncodePlaceCtxt = OperandSnaps<'vir>;
     const PURE: bool = false;
     type ExprCurr = ();
     type ExprNext = !;
@@ -2274,26 +2336,23 @@ impl<'vir, 'enc, E: TaskEncoder> PureRvalueEnc<'vir> for ImpureEncVisitor<'vir, 
     fn encode_operand_snap(
         &mut self,
         operand: &mir::Operand<'vir>,
-        _ctxt: &Self::EncodePlaceCtxt,
+        operand_snaps: &Self::EncodePlaceCtxt,
     ) -> Result<vir::ExprSnap<'vir>, EncodeFullError<'vir, E>> {
+        // While a statement's effect is encoded, every place operand must
+        // have been captured by [Self::capture_operand_snaps]. In particular,
+        // `Move` operands were already consumed at capture time (snapshot
+        // temporary plus predicate exhale) and must not be consumed again.
+        if let Some(operand_snaps) = operand_snaps
+            && let Some(place) = operand.place()
+        {
+            let snap = operand_snaps.get(&place).unwrap_or_else(|| {
+                panic!("operand {operand:?} was not captured for the current statement")
+            });
+            return Ok(*snap);
+        }
         match operand {
-            &mir::Operand::Move(source) => {
-                let (result, snap_val, _, ty_out) =
-                    self.encode_place_with_snap(Place::from(source));
-
-                let tmp_exp = self.new_tmp(ty_out.snapshot());
-                self.stmt(self.vcx.mk_pure_assign_stmt(tmp_exp, snap_val));
-                self.stmt(self.vcx.mk_exhale_stmt(ty_out.ref_to_pred(
-                    self.vcx,
-                    result.expr.expect_predicate(),
-                    None,
-                )));
-                Ok(tmp_exp)
-            }
-            &mir::Operand::Copy(place) => Ok(self.encode_place_with_snap(place.into()).1),
-            mir::Operand::Constant(box constant) => {
-                Ok(self.encode_constant_snap(constant)?.upcast_ty())
-            }
+            mir::Operand::Move(_) => self.capture_operand_snap(operand),
+            _ => self.encode_operand_snap_immediate(operand),
         }
     }
 

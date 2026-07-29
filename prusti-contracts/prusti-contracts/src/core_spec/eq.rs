@@ -16,6 +16,13 @@ trait PartialEq<Rhs> {
 }
 
 #[extern_spec]
+impl PartialEq for () {
+    #[pure]
+    #[ensures(result)]
+    fn eq(&self, _other: &()) -> bool;
+}
+
+#[extern_spec]
 impl<T: PartialEq> PartialEq for Option<T> {
     #[pure]
     #[ensures(result == match (self, other) {

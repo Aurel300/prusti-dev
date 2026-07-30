@@ -2,6 +2,7 @@ use crate::encoders::{
     FunctionCallEnc, Mode, PrustiBuiltin, SpecBuiltin, ViperTupleEnc,
     mir_fn::{CallTaskDescription, GhostBlocks, RustSignature},
     mir_shared::{PureRvalueEnc, RustcIntrinsic},
+    pure::spec::MirSpecEncMode,
     ty::{
         RustTyDecomposition,
         generics::GParams,
@@ -54,7 +55,10 @@ pub struct MirPureEncOutput<'vir> {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum PureKind {
     Closure,
-    Spec(Option<ExternSpecKind>),
+    /// The specification of a function. The mode records how the arguments are
+    /// supplied, which decides whether their snapshots are deep (see
+    /// `Enc::impure_context`).
+    Spec(Option<ExternSpecKind>, MirSpecEncMode),
     Pure,
     Constant(mir::Promoted),
     SpecBlock(mir::BasicBlock),
@@ -63,7 +67,7 @@ pub enum PureKind {
 impl PureKind {
     fn extern_spec(&self) -> Option<ExternSpecKind> {
         match self {
-            PureKind::Spec(Some(kind)) => Some(*kind),
+            PureKind::Spec(Some(kind), _) => Some(*kind),
             _ => None,
         }
     }
@@ -124,7 +128,7 @@ impl TaskEncoder for MirPureEnc {
                 PureKind::Closure => vcx
                     .body_mut()
                     .get_closure_body(def_id, substs, caller_def_id),
-                PureKind::Spec(_) => vcx.body_mut().get_spec_body(def_id, substs, caller_def_id),
+                PureKind::Spec(..) => vcx.body_mut().get_spec_body(def_id, substs, caller_def_id),
                 PureKind::Pure => vcx
                     .body_mut()
                     .get_pure_fn_body(def_id, substs, caller_def_id),
@@ -366,7 +370,9 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
             rel0_mode: false,
             rel1_mode: false,
             before_expiry_mode: false,
-            impure_context: matches!(kind, PureKind::Spec(_)),
+            // Only an impure method's pre/post gets shallow argument
+            // snapshots; a pure function's spec is handed deep ones.
+            impure_context: matches!(kind, PureKind::Spec(_, MirSpecEncMode::Impure)),
         }
     }
 

@@ -1054,32 +1054,25 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
             mir::ProjectionElem::Deref => {
                 assert!(place_ty.variant_index.is_none());
                 match place_ty.ty.kind() {
-                    TyKind::Adt(adt, args) if adt.is_box() => {
-                        /*let proj_box =
-                            e_ty.expect_variant_opt(place_ty.variant_index)[abi::FieldIdx::ZERO];
-                        
-                        let proj_app = proj_box.read(proj_box.read(proj_box.read(encoded_place.snap.downcast_ty()).downcast_ty()).downcast_ty());
-                        let place_ref = encoded_place.place_ref.map(|pr| proj_box.field_ref(proj_box.field_ref(proj_box.field_ref(pr))));*/
-                        let ctx = GParams::empty_env(args);
-                        let rust_ty_box = RustTyDecomposition::from_ty(place_ty.ty, ctx).ty;
+                    TyKind::Adt(adt, _) if adt.is_box() => {
+                        let ty_task = RustTyDecomposition::from_ty(place_ty.ty, self.context);
+                        let rust_ty_box = ty_task.ty;
                         let e_ty_box = e_ty.expect_structlike();
-                        let ctx = GParams::empty_env(self.vcx.tcx().mk_args(&args[..1])); // only keep first generic of Box - this is the type of the embedded value
-                        let rust_ty_unique = rust_ty_box.expect_structlike().fields[0].decompose(ctx);
+                        let rust_ty_unique = rust_ty_box.expect_structlike().fields[0].decompose_normalize(ty_task.args);
                         let e_ty_unique = self.deps.require_dep::<TyUsePureEnc>(rust_ty_unique).unwrap().expect_structlike();
-                        let rust_ty_nonnull = rust_ty_unique.ty.expect_structlike().fields[0].decompose(ctx);
+                        let rust_ty_nonnull = rust_ty_unique.ty.expect_structlike().fields[0].decompose_normalize(ty_task.args);
                         let e_ty_nonnull = self.deps.require_dep::<TyUsePureEnc>(rust_ty_nonnull).unwrap().expect_structlike();
-                        let rust_ty_rawptr = rust_ty_nonnull.ty.expect_structlike().fields[0].decompose(ctx);
+                        let rust_ty_rawptr = rust_ty_nonnull.ty.expect_structlike().fields[0].decompose_normalize(ty_task.args);
                         let e_ty_rawptr = self.deps.require_dep::<TyUsePureEnc>(rust_ty_rawptr).unwrap().expect_raw();
-                        let rust_ty_inner = rust_ty_rawptr.ty.expect_raw().referent;
-                        let e_ty_inner = self.deps.require_dep::<TyUseImpureEnc>(rust_ty_inner.decompose(ctx)).unwrap();
                         let proj_box = e_ty_box.fields[0];
                         let proj_unique = e_ty_unique.fields[0];
+                        let proj_unique_snap = e_ty_unique.fields[2];
                         let proj_nonnull = e_ty_nonnull.fields[0];
 
                         let snap_rawptr = proj_nonnull.read(proj_unique.read(proj_box.read(encoded_place.snap.downcast_ty()).downcast_ty()).downcast_ty()).downcast_ty();
                         let metadata = e_ty_rawptr.metadata_access(snap_rawptr);
                         let addr_expr = e_ty_rawptr.address_access(snap_rawptr);
-                        let val_expr = e_ty_inner.ref_to_snap(addr_expr);
+                        let val_expr = proj_unique_snap.read(proj_box.read(encoded_place.snap.downcast_ty()).downcast_ty());
                         EncodedPlace::new(val_expr, Some(addr_expr)).with_metadata(metadata)
                     }
                     TyKind::Ref(.., ty::Mutability::Not) => {

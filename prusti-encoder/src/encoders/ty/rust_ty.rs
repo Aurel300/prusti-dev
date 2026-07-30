@@ -719,13 +719,16 @@ impl<'tcx> TySpecifics<'tcx, RustTyDatas> {
     }
 
     fn from_struct(variant: &ty::VariantDef) -> StructData<'tcx, RustTyDatas> {
-        let fields = Self::from_fields(&variant.fields);
+        let mut fields = Self::from_fields(&variant.fields);
         let struct_type = match variant.name.to_string().as_str() {
             "Box" => StructType::Box,
             "Unique" => StructType::Unique,
             "NonNull" => StructType::NonNull,
             _ => Generic,
         };
+        if struct_type == StructType::Unique {
+            fields.push(RustFieldData { name: symbol::Symbol::intern("data"), fid: abi::FieldIdx::from_u32(2), ty: LazyRustTy(Self::new_param_ty(0)) });
+        }
         StructData::new((), fields, struct_type)
     }
 

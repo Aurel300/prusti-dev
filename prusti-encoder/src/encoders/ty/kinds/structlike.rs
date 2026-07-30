@@ -1,11 +1,6 @@
 use crate::encoders::{
-    TyUseImpureEnc,
-    ty::{
-        RustTyDatas,
-        data::{StructData, TyData},
-        impure::{ImpureTyDatas, PredicateBuilder, TyImpureEnc, TyImpureFieldData},
-        pure::{AdtBuilder, PureTyDatas, TyPureEnc, TyPureFieldData, TyPureStructData},
-        use_pure::TyUsePureEnc,
+    TyUseImpureEnc, ty::{
+        RustTyDatas, RustTyDecomposition, StructType, data::{StructData, TyData}, impure::{ImpureTyDatas, PredicateBuilder, TyImpureEnc, TyImpureFieldData}, pure::{AdtBuilder, PureTyDatas, TyPureEnc, TyPureFieldData, TyPureStructData}, use_impure::TyUseImpure, use_pure::TyUsePureEnc,
     },
 };
 use task_encoder::{EncodeFullError, TaskEncoderDependencies};
@@ -127,8 +122,7 @@ pub(crate) fn ty_impure_variant<'vir>(
     if !prefix.is_empty() {
         pred_name = format!("{prefix}owned");
     }
-    let pred_expr = builder.vcx.mk_conj(
-        &fields
+    let mut pred_vec = fields
             .iter()
             .zip(&field_accessors)
             .map(|(field, TyImpureFieldData { ref_to_field_ref })| {
@@ -142,12 +136,8 @@ pub(crate) fn ty_impure_variant<'vir>(
                     None,
                 )
             })
-            .collect::<Vec<_>>(),
-    );
-    let pred_owned = builder.mk_predicate(&pred_name, Some(pred_expr));
-
-    // Ref-to-snap
-    let snap_args: Vec<&'vir vir::ExprGenData<'vir, (), !, vir::Snap>> = fields
+            .collect::<Vec<_>>();
+    let mut snap_args: Vec<&'vir vir::ExprGenData<'vir, (), !, vir::Snap>> = fields
         .iter()
         .zip(&field_accessors)
         .map(|(field, TyImpureFieldData { ref_to_field_ref })| {
@@ -158,6 +148,27 @@ pub(crate) fn ty_impure_variant<'vir>(
             ))
         })
         .collect::<Vec<_>>();
+    if data.struct_type == StructType::Unique {
+        let inner_ty = deps.require_dep::<TyUseImpureEnc>(RustTyDecomposition::from_ty(task_key.0.params.rust_params().type_at(0), task_key.0.params))?;
+        let nonnull = fields[0].expect_structlike();
+        let rawptr_ref = nonnull.fields[0].field_ref((field_accessors[0].ref_to_field_ref)(ref_self, builder.params.ty_exprs(), builder.params.const_exprs()));
+        let nonnull_ty = data.fields[0].0.decompose(task_key.0.params).ty.expect_structlike();
+        let rawptr_ty = nonnull_ty.fields[0].decompose(task_key.0.params);
+        let rawptr = deps.require_dep::<TyUsePureEnc>(rawptr_ty)?.expect_raw();
+        let rawptr_impure = deps.require_dep::<TyUseImpureEnc>(rawptr_ty)?;
+
+        let unfolding_expr = builder.vcx.mk_unfolding_expr(fields[0].ref_to_pred_app((field_accessors[0].ref_to_field_ref)(ref_self, builder.params.ty_exprs(), builder.params.const_exprs()), None), rawptr.address_access(rawptr_impure.ref_to_snap(rawptr_ref).downcast_ty()));
+
+        pred_vec[2] = inner_ty.ref_to_pred(builder.vcx, unfolding_expr, None);
+        snap_args[2] = inner_ty.ref_to_snap(unfolding_expr);
+        
+    }
+    let pred_expr = builder.vcx.mk_conj(
+        &pred_vec
+    );
+    let pred_owned = builder.mk_predicate(&pred_name, Some(pred_expr));
+
+    // Ref-to-snap
     let variant_snap_expr = data.1.field_snaps_to_snap.call()(snap_args.as_slice());
 
     Ok((

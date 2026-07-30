@@ -138,10 +138,6 @@ impl<'tcx> LazyRustTy<'tcx> {
         RustTyDecomposition::from_ty(self.0, params)
     }
 
-    pub fn ty(&self) -> ty::Ty<'tcx> {
-        self.0
-    }
-
     /// Decomposes the field's type into a `RustTyDecomposition` (to be used
     /// when recursing over the fields of a containing `RustTy`
     /// non-transparently, e.g. when predicates of fields should be added
@@ -657,14 +653,7 @@ impl<'tcx> TySpecifics<'tcx, RustTyDatas> {
     }
 
     fn from_adt(adt: ty::AdtDef<'tcx>) -> Self {
-        /*if adt.is_box() {
-            let fields = vec![RustFieldData {
-                name: symbol::Symbol::intern("deref"),
-                fid: abi::FieldIdx::from_usize(0),
-                ty: LazyRustTy(Self::new_param_ty(0)),
-            }];
-            TySpecifics::mk_structlike((), fields)
-        } else*/ if vir::with_vcx(|vcx| {
+        if vir::with_vcx(|vcx| {
             vcx.tcx().lang_items().get(hir::LangItem::DynMetadata) == Some(adt.did())
         }) {
             // `DynMetadata<dyn Trait>` is the metadata of a `&dyn`/`*dyn`
@@ -727,7 +716,11 @@ impl<'tcx> TySpecifics<'tcx, RustTyDatas> {
             _ => Generic,
         };
         if struct_type == StructType::Unique {
-            fields.push(RustFieldData { name: symbol::Symbol::intern("data"), fid: abi::FieldIdx::from_u32(2), ty: LazyRustTy(Self::new_param_ty(0)) });
+            fields.push(RustFieldData {
+                name: symbol::Symbol::intern("data"),
+                fid: abi::FieldIdx::from_u32(2),
+                ty: LazyRustTy(Self::new_param_ty(0)),
+            });
         }
         StructData::new((), fields, struct_type)
     }

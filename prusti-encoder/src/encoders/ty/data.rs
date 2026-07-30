@@ -59,13 +59,13 @@ pub enum StructType {
     Box,
     Unique,
     NonNull,
-    Generic
+    Generic,
 }
 
 pub struct StructData<'vir, D: TyDatas<'vir>> {
     pub data: D::StructData,
     pub fields: Vec<D::FieldData>,
-    pub struct_type: StructType
+    pub struct_type: StructType,
 }
 
 pub struct EnumData<'vir, D: TyDatas<'vir>> {
@@ -121,7 +121,11 @@ impl<'vir, D: TyDatas<'vir>> TySpecifics<'vir, D> {
         Self::Raw(data)
     }
 
-    pub fn mk_structlike(data: D::StructData, fields: Vec<D::FieldData>, struct_type: StructType) -> Self {
+    pub fn mk_structlike(
+        data: D::StructData,
+        fields: Vec<D::FieldData>,
+        struct_type: StructType,
+    ) -> Self {
         Self::StructLike(StructData::new(data, fields, struct_type))
     }
 
@@ -321,7 +325,7 @@ impl<'vir, D: TyDatas<'vir>> StructData<'vir, D> {
         StructData {
             data: (&self.data, &other.data),
             fields: fields.collect(),
-            struct_type: self.struct_type
+            struct_type: self.struct_type,
         }
     }
 }

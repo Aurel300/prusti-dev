@@ -27,7 +27,6 @@ use pcg::{
 };
 use prusti_interface::PrustiError;
 use prusti_rustc_interface::{
-    abi,
     data_structures::graph::Successors,
     index::Idx,
     middle::{
@@ -1234,33 +1233,56 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 let e_ty = self.ty_use_impure(place_ty.ty);
                 match place_ty.ty.kind() {
                     ty::TyKind::Adt(adt, _) if adt.is_box() => {
-
                         let ty_task = RustTyDecomposition::from_ty(place_ty.ty, self.def_id);
                         let rust_ty_box = ty_task.ty;
-                        let rust_ty_unique = rust_ty_box.expect_structlike().fields[0].decompose_normalize(ty_task.args);
-                        let e_ty_unique = self.deps.require_dep::<TyUsePureEnc>(rust_ty_unique).unwrap().expect_structlike();
-                        let rust_ty_nonnull = rust_ty_unique.ty.expect_structlike().fields[0].decompose_normalize(ty_task.args);
-                        let e_ty_nonnull = self.deps.require_dep::<TyUsePureEnc>(rust_ty_nonnull).unwrap().expect_structlike();
-                        let rust_ty_rawptr = rust_ty_nonnull.ty.expect_structlike().fields[0].decompose_normalize(ty_task.args);
-                        let e_ty_rawptr = self.deps.require_dep::<TyUsePureEnc>(rust_ty_rawptr).unwrap().expect_raw();
+                        let rust_ty_unique = rust_ty_box.expect_structlike().fields[0]
+                            .decompose_normalize(ty_task.args);
+                        let e_ty_unique = self
+                            .deps
+                            .require_dep::<TyUsePureEnc>(rust_ty_unique)
+                            .unwrap()
+                            .expect_structlike();
+                        let rust_ty_nonnull = rust_ty_unique.ty.expect_structlike().fields[0]
+                            .decompose_normalize(ty_task.args);
+                        let e_ty_nonnull = self
+                            .deps
+                            .require_dep::<TyUsePureEnc>(rust_ty_nonnull)
+                            .unwrap()
+                            .expect_structlike();
+                        let rust_ty_rawptr = rust_ty_nonnull.ty.expect_structlike().fields[0]
+                            .decompose_normalize(ty_task.args);
+                        let e_ty_rawptr = self
+                            .deps
+                            .require_dep::<TyUsePureEnc>(rust_ty_rawptr)
+                            .unwrap()
+                            .expect_raw();
                         let rust_ty_inner = rust_ty_rawptr.ty.expect_raw().referent;
-                        let e_ty_inner = self.deps.require_dep::<TyUseImpureEnc>(rust_ty_inner.decompose_normalize(ty_task.args)).unwrap();
+                        let e_ty_inner = self
+                            .deps
+                            .require_dep::<TyUseImpureEnc>(
+                                rust_ty_inner.decompose_normalize(ty_task.args),
+                            )
+                            .unwrap();
                         let p_ty = self.ty_use_pure(place_ty.ty).expect_structlike();
                         let proj_box = p_ty.fields[0];
                         let proj_unique = e_ty_unique.fields[0];
                         let proj_nonnull = e_ty_nonnull.fields[0];
 
-                        let snap = expr
-                            .snap
-                            .unwrap_or_else(|| e_ty.ref_to_snap(expr.address));
+                        let snap = expr.snap.unwrap_or_else(|| e_ty.ref_to_snap(expr.address));
 
-                        let snap_rawptr = proj_nonnull.read(proj_unique.read(proj_box.read(snap.downcast_ty()).downcast_ty()).downcast_ty()).downcast_ty();
+                        let snap_rawptr = proj_nonnull
+                            .read(
+                                proj_unique
+                                    .read(proj_box.read(snap.downcast_ty()).downcast_ty())
+                                    .downcast_ty(),
+                            )
+                            .downcast_ty();
 
                         let addr_expr = e_ty_rawptr.address_access(snap_rawptr);
                         PlaceExpr {
                             address: addr_expr,
                             metadata: Some(e_ty_rawptr.metadata_access(snap_rawptr)),
-                            snap: Some(e_ty_inner.ref_to_snap(addr_expr))
+                            snap: Some(e_ty_inner.ref_to_snap(addr_expr)),
                         }
                     }
                     ty::TyKind::Ref(_, _, ty::Mutability::Not) => {

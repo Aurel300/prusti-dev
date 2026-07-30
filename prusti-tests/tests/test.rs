@@ -1,5 +1,5 @@
- use prusti_contracts::*;
- //use std::ops::BitAnd;
+use prusti_contracts::*;
+//use std::ops::BitAnd;
 
 //  #[derive(Debug, PartialEq)]
 //  struct BooleanVector(Vec<bool>);

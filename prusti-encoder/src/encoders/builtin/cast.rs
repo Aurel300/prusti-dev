@@ -2,14 +2,16 @@ use prusti_rustc_interface::{
     middle::{mir, ty},
     span::symbol,
 };
-use prusti_rustc_interface::middle::{query::IntoQueryParam, ty::TypingEnv};
-use prusti_rustc_interface::type_ir::EarlyBinder;
 use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 use vir::{CastType, FunctionIdn, MethodIdn};
 
 use crate::encoders::{
-    MirBuiltinUseCastEnc, MirBuiltinUseCastTask, TyUseImpureEnc, builtin::{MetadataCastEnc, ValueCastEnc}, ty::{
-        LazyRustTy, RustTy, RustTyDecomposition, StructType, TySpecifics, generics::{GArgs, GArgsTyEnc, GParams, GenericParamsEnc}, use_pure::TyUsePureEnc,
+    MirBuiltinUseCastEnc, MirBuiltinUseCastTask, TyUseImpureEnc,
+    builtin::{MetadataCastEnc, ValueCastEnc},
+    ty::{
+        LazyRustTy, RustTy, RustTyDecomposition, StructType, TySpecifics,
+        generics::{GArgs, GParams, GenericParamsEnc},
+        use_pure::TyUsePureEnc,
     },
 };
 
@@ -61,7 +63,7 @@ pub(super) struct MirBuiltinCastLocal<'vir> {
 pub enum UnsizeCoercionResult<T, U, V> {
     ImmRef(T),
     MutRef(U),
-    Raw(V)
+    Raw(V),
 }
 
 impl TaskEncoder for MirBuiltinCastEnc {
@@ -186,271 +188,285 @@ impl TaskEncoder for MirBuiltinCastEnc {
                         let u = ty::Ty::new_param(vcx.tcx(), 0, symbol::Symbol::intern("U"));
                         let v = ty::Ty::new_param(vcx.tcx(), 1, symbol::Symbol::intern("V"));
                         //let v0 = ty::Ty::new_param(vcx.tcx(), 0, symbol::Symbol::intern("V"));
-                        (GParams::empty_env(vcx.tcx().mk_args(&[u.into(), v.into()])),
-                        GParams::empty_env(vcx.tcx().mk_args(&[u.into()])),
-                        GParams::empty_env(vcx.tcx().mk_args(&[v.into()])))
+                        (
+                            GParams::empty_env(vcx.tcx().mk_args(&[u.into(), v.into()])),
+                            GParams::empty_env(vcx.tcx().mk_args(&[u.into()])),
+                            GParams::empty_env(vcx.tcx().mk_args(&[v.into()])),
+                        )
                     };
                     let unsize_params = deps.require_dep::<GenericParamsEnc>(unsize_gparams)?;
 
                     println!("{:?} -> {:?}", op_ty.specifics, res_ty.specifics);
 
                     if let TySpecifics::StructLike(data) = &op_ty.specifics {
-
                         let f = operand_ty.expect_structlike().fields[0];
 
                         let args_op = GArgs::new(unsize_gparams, unsize_gparams_u.rust_params());
                         let args_res = GArgs::new(unsize_gparams, unsize_gparams_v.rust_params());
 
                         let inner_cast = match data.struct_type {
-                            StructType::Box | StructType::Unique | StructType::NonNull => deps.require_dep::<MirBuiltinUseCastEnc>(MirBuiltinUseCastTask::new(f.decompose_normalize(args_res), kind, f.decompose_normalize(args_op)))?,
+                            StructType::Box | StructType::Unique | StructType::NonNull => {
+                                deps.require_dep::<MirBuiltinUseCastEnc>(
+                                    MirBuiltinUseCastTask::new(
+                                        f.decompose_normalize(args_res),
+                                        kind,
+                                        f.decompose_normalize(args_op),
+                                    ),
+                                )?
+                            }
                             _ => todo!("Unsize coercions of structs are not supported yet"),
                         };
 
-                        let mut field_snaps = vec!(inner_cast.cast(data.fields[0].read(arg_ex).downcast_ty()).upcast_ty());
+                        let mut field_snaps = vec![
+                            inner_cast
+                                .cast(data.fields[0].read(arg_ex).downcast_ty())
+                                .upcast_ty(),
+                        ];
 
-                        for i in 1 .. operand_ty.expect_structlike().fields.len() {
+                        for i in 1..operand_ty.expect_structlike().fields.len() {
                             field_snaps.push(data.fields[i].read(arg_ex));
                         }
 
                         let expr = res_ty.expect_structlike().field_snaps_to_snap(field_snaps);
 
-                            let fn_idn = FunctionIdn::new(
-                                name,
+                        let fn_idn = FunctionIdn::new(
+                            name,
+                            (
+                                op_ty_snap,
+                                unsize_params.ty_args(),
+                                unsize_params.const_args(),
+                            ),
+                            res_ty_snap,
+                        );
+                        let function = vcx.mk_function(
+                            fn_idn,
+                            (
+                                arg_decl,
+                                unsize_params.ty_decls(),
+                                unsize_params.const_decls(),
+                            ),
+                            &[],
+                            &[],
+                            None,
+                            Some(expr),
+                        );
+                        (
+                            MirBuiltinCastLocal {
+                                cast: function,
+                                unsize: None,
+                                undo: None,
+                            },
+                            MirBuiltinCastOutput::Unsize {
+                                cast: fn_idn,
+                                unsize: None,
+                                undo: None,
+                            },
+                        )
+                    } else {
+                        println!("{:?}", op_ty.specifics);
+                        let (is_mut, metadata, res_cons) = match &op_ty.specifics {
+                            TySpecifics::ImmRef(data) => {
+                                let res_data = res_ty.expect_immref();
+                                let res_cons = |metadata| {
+                                    res_data.prim_to_snap(
+                                        data.deref_access(arg_ex),
+                                        metadata,
+                                        data.value_access(arg_ex),
+                                    )
+                                };
+                                (
+                                    false,
+                                    data.metadata_access(arg_ex).downcast_ty(),
+                                    UnsizeCoercionResult::ImmRef(res_cons),
+                                )
+                            }
+                            TySpecifics::MutRef(data) => {
+                                let res_data = res_ty.expect_mutref();
+                                let res_cons = |metadata| {
+                                    res_data.prim_to_snap(
+                                        data.deref_access(arg_ex),
+                                        metadata,
+                                        data.value_access(arg_ex),
+                                    )
+                                };
+                                (
+                                    true,
+                                    data.metadata_access(arg_ex).downcast_ty(),
+                                    UnsizeCoercionResult::MutRef(res_cons),
+                                )
+                            }
+                            TySpecifics::Raw(data) => {
+                                println!("RAW");
+                                let res_data = res_ty.expect_raw();
+                                let res_cons = |metadata| {
+                                    res_data.prim_to_snap(data.address_access(arg_ex), metadata)
+                                };
+                                (
+                                    false,
+                                    data.metadata_access(arg_ex).downcast_ty(),
+                                    UnsizeCoercionResult::Raw(res_cons),
+                                )
+                            }
+
+                            _ => unreachable!(),
+                        };
+                        // `metadata_cast(old_metadata, U, V)` rewrites the (operand)
+                        // metadata for the result referent type `V` (e.g. a thin unit
+                        // metadata becomes a slice length, or a `dyn` vtable).
+                        let metadata_cast = deps.require_dep::<MetadataCastEnc>(())?;
+                        let metadata = metadata_cast(
+                            metadata,
+                            unsize_params.ty_exprs()[0],
+                            unsize_params.ty_exprs()[1],
+                        );
+                        let expr = match res_cons {
+                            UnsizeCoercionResult::ImmRef(res_cons) => {
+                                res_cons(metadata.upcast_ty())
+                            }
+                            UnsizeCoercionResult::MutRef(res_cons) => {
+                                res_cons(metadata.upcast_ty())
+                            }
+                            UnsizeCoercionResult::Raw(res_cons) => res_cons(metadata.upcast_ty()),
+                        };
+                        let fn_idn = FunctionIdn::new(
+                            name,
+                            (
+                                op_ty_snap,
+                                unsize_params.ty_args(),
+                                unsize_params.const_args(),
+                            ),
+                            res_ty_snap,
+                        );
+                        let function = vcx.mk_function(
+                            fn_idn,
+                            (
+                                arg_decl,
+                                unsize_params.ty_decls(),
+                                unsize_params.const_decls(),
+                            ),
+                            &[],
+                            &[],
+                            None,
+                            Some(expr),
+                        );
+                        // For `&mut` coercions, generate the side-effecting
+                        // `unsize`/`undo` methods that move the (generic) `p_Param`
+                        // predicate of the referent between the operand and result type
+                        // at the same address (the coercion preserves it). The methods
+                        // are declared over the fresh `[U, V]` type params
+                        // (`unsize_params`), which `MirBuiltinUseCastEnc` instantiates
+                        // with the operand referent `U` and result referent `V`.
+                        // `new_param_ty(i).decompose(unsize_gparams)` builds a `Param`
+                        // decomposition whose arg is `unsize_gparams`' `i`th type
+                        // variable, so `ref_to_pred`/`ref_to_snap` yield
+                        // `p_Param(addr, U)` / `p_Param(addr, V)` directly; the referent
+                        // snapshot is transferred via `value_cast` (whose concrete-type
+                        // axioms are added in `MirBuiltinUseCastEnc`).
+                        let (unsize_method, undo_method, unsize_idn, undo_idn) = if is_mut {
+                            let u_impure = deps.require_dep::<TyUseImpureEnc>(
+                                LazyRustTy::new_param_ty(0).decompose(unsize_gparams),
+                            )?;
+                            let v_impure = deps.require_dep::<TyUseImpureEnc>(
+                                LazyRustTy::new_param_ty(1).decompose(unsize_gparams),
+                            )?;
+                            let value_cast = deps.require_dep::<ValueCastEnc>(())?;
+
+                            let src_mutref = op_ty.expect_mutref();
+                            let src_decl = vcx.mk_local_decl("src", op_ty_snap);
+                            let src_ex = vcx.mk_local_ex(src_decl);
+                            let addr = src_mutref.deref_access(src_ex);
+
+                            let u = unsize_params.ty_exprs()[0];
+                            let v = unsize_params.ty_exprs()[1];
+                            let u_pred = u_impure.ref_to_pred(vcx, addr, None);
+                            let v_pred = v_impure.ref_to_pred(vcx, addr, None);
+                            let u_snap = u_impure.ref_to_snap(addr).downcast_ty::<vir::PSnap>();
+                            let v_snap = v_impure.ref_to_snap(addr).downcast_ty::<vir::PSnap>();
+
+                            // `unsize`: operand referent `U` -> result referent `V`; the
+                            // new `V` value is `value_cast(old(U), U, V)`. `undo` is the
+                            // *reverse* equation: the old `V` value is `value_cast` of the
+                            // recovered `U` value, `old(V) == value_cast(U, U, V)`. Both
+                            // use the same `value_cast` direction (`U, V`), so a single
+                            // axiom per coercion (added in `MirBuiltinUseCastEnc`) suffices.
+                            let unsize_value =
+                                vcx.mk_eq_expr(v_snap, value_cast(vcx.mk_old_expr(u_snap), u, v));
+                            let undo_value =
+                                vcx.mk_eq_expr(vcx.mk_old_expr(v_snap), value_cast(u_snap, u, v));
+
+                            let unsize_idn = MethodIdn::new(
+                                vir::vir_format_identifier!(
+                                    vcx,
+                                    "mir_unsize_{}_to_{}",
+                                    operand_ty.name(),
+                                    result_ty.name()
+                                ),
                                 (
                                     op_ty_snap,
                                     unsize_params.ty_args(),
                                     unsize_params.const_args(),
                                 ),
-                                res_ty_snap,
                             );
-                            let function = vcx.mk_function(
-                                fn_idn,
+                            let undo_idn = MethodIdn::new(
+                                vir::vir_format_identifier!(
+                                    vcx,
+                                    "mir_undo_unsize_{}_to_{}",
+                                    operand_ty.name(),
+                                    result_ty.name()
+                                ),
                                 (
-                                    arg_decl,
+                                    op_ty_snap,
+                                    unsize_params.ty_args(),
+                                    unsize_params.const_args(),
+                                ),
+                            );
+                            let unsize_method = vcx.mk_method(
+                                unsize_idn,
+                                (
+                                    src_decl,
                                     unsize_params.ty_decls(),
                                     unsize_params.const_decls(),
                                 ),
                                 &[],
-                                &[],
+                                vcx.alloc_slice(&[u_pred]),
+                                vcx.alloc_slice(&[v_pred, unsize_value]),
                                 None,
-                                Some(expr),
+                            );
+                            let undo_method = vcx.mk_method(
+                                undo_idn,
+                                (
+                                    src_decl,
+                                    unsize_params.ty_decls(),
+                                    unsize_params.const_decls(),
+                                ),
+                                &[],
+                                vcx.alloc_slice(&[v_pred]),
+                                vcx.alloc_slice(&[u_pred, undo_value]),
+                                None,
                             );
                             (
-                                MirBuiltinCastLocal {
-                                    cast: function,
-                                    unsize: None,
-                                    undo: None,
-                                },
-                                MirBuiltinCastOutput::Unsize {
-                                    cast: fn_idn,
-                                    unsize: None,
-                                    undo: None,
-                                },
+                                Some(unsize_method),
+                                Some(undo_method),
+                                Some(unsize_idn),
+                                Some(undo_idn),
                             )
-                    } else {
-                    println!("{:?}", op_ty.specifics);
-                    let (is_mut, metadata, res_cons) = match &op_ty.specifics {
-                        TySpecifics::ImmRef(data) => {
-                            let res_data = res_ty.expect_immref();
-                            let res_cons = |metadata| {
-                                res_data.prim_to_snap(
-                                    data.deref_access(arg_ex),
-                                    metadata,
-                                    data.value_access(arg_ex),
-                                )
-                            };
-                            (
-                                false,
-                                data.metadata_access(arg_ex).downcast_ty(),
-                                UnsizeCoercionResult::ImmRef(res_cons),
-                            )
-                        }
-                        TySpecifics::MutRef(data) => {
-                            let res_data = res_ty.expect_mutref();
-                            let res_cons = |metadata| {
-                                res_data.prim_to_snap(
-                                    data.deref_access(arg_ex),
-                                    metadata,
-                                    data.value_access(arg_ex),
-                                )
-                            };
-                            (
-                                true,
-                                data.metadata_access(arg_ex).downcast_ty(),
-                                UnsizeCoercionResult::MutRef(res_cons),
-                            )
-                        }
-                        TySpecifics::Raw(data) => {
-                            println!("RAW");
-                            let res_data = res_ty.expect_raw();
-                            let res_cons = |metadata| {
-                                res_data.prim_to_snap(
-                                    data.address_access(arg_ex),
-                                    metadata,
-                                )
-                            };
-                            (
-                                false,
-                                data.metadata_access(arg_ex).downcast_ty(),
-                                UnsizeCoercionResult::Raw(res_cons),
-                            )
-                        }
-                        
-                        _ => unreachable!(),
-                    };
-                    // `metadata_cast(old_metadata, U, V)` rewrites the (operand)
-                    // metadata for the result referent type `V` (e.g. a thin unit
-                    // metadata becomes a slice length, or a `dyn` vtable).
-                    let metadata_cast = deps.require_dep::<MetadataCastEnc>(())?;
-                    let metadata = metadata_cast(
-                        metadata,
-                        unsize_params.ty_exprs()[0],
-                        unsize_params.ty_exprs()[1],
-                    );
-                    let expr = match res_cons {
-                        UnsizeCoercionResult::ImmRef(res_cons) => res_cons(metadata.upcast_ty()),
-                        UnsizeCoercionResult::MutRef(res_cons) => res_cons(metadata.upcast_ty()),
-                        UnsizeCoercionResult::Raw(res_cons) => res_cons(metadata.upcast_ty()),
-                    };
-                    let fn_idn = FunctionIdn::new(
-                        name,
+                        } else {
+                            (None, None, None, None)
+                        };
                         (
-                            op_ty_snap,
-                            unsize_params.ty_args(),
-                            unsize_params.const_args(),
-                        ),
-                        res_ty_snap,
-                    );
-                    let function = vcx.mk_function(
-                        fn_idn,
-                        (
-                            arg_decl,
-                            unsize_params.ty_decls(),
-                            unsize_params.const_decls(),
-                        ),
-                        &[],
-                        &[],
-                        None,
-                        Some(expr),
-                    );
-                    // For `&mut` coercions, generate the side-effecting
-                    // `unsize`/`undo` methods that move the (generic) `p_Param`
-                    // predicate of the referent between the operand and result type
-                    // at the same address (the coercion preserves it). The methods
-                    // are declared over the fresh `[U, V]` type params
-                    // (`unsize_params`), which `MirBuiltinUseCastEnc` instantiates
-                    // with the operand referent `U` and result referent `V`.
-                    // `new_param_ty(i).decompose(unsize_gparams)` builds a `Param`
-                    // decomposition whose arg is `unsize_gparams`' `i`th type
-                    // variable, so `ref_to_pred`/`ref_to_snap` yield
-                    // `p_Param(addr, U)` / `p_Param(addr, V)` directly; the referent
-                    // snapshot is transferred via `value_cast` (whose concrete-type
-                    // axioms are added in `MirBuiltinUseCastEnc`).
-                    let (unsize_method, undo_method, unsize_idn, undo_idn) = if is_mut {
-                        let u_impure = deps.require_dep::<TyUseImpureEnc>(
-                            LazyRustTy::new_param_ty(0).decompose(unsize_gparams),
-                        )?;
-                        let v_impure = deps.require_dep::<TyUseImpureEnc>(
-                            LazyRustTy::new_param_ty(1).decompose(unsize_gparams),
-                        )?;
-                        let value_cast = deps.require_dep::<ValueCastEnc>(())?;
-
-                        let src_mutref = op_ty.expect_mutref();
-                        let src_decl = vcx.mk_local_decl("src", op_ty_snap);
-                        let src_ex = vcx.mk_local_ex(src_decl);
-                        let addr = src_mutref.deref_access(src_ex);
-
-                        let u = unsize_params.ty_exprs()[0];
-                        let v = unsize_params.ty_exprs()[1];
-                        let u_pred = u_impure.ref_to_pred(vcx, addr, None);
-                        let v_pred = v_impure.ref_to_pred(vcx, addr, None);
-                        let u_snap = u_impure.ref_to_snap(addr).downcast_ty::<vir::PSnap>();
-                        let v_snap = v_impure.ref_to_snap(addr).downcast_ty::<vir::PSnap>();
-
-                        // `unsize`: operand referent `U` -> result referent `V`; the
-                        // new `V` value is `value_cast(old(U), U, V)`. `undo` is the
-                        // *reverse* equation: the old `V` value is `value_cast` of the
-                        // recovered `U` value, `old(V) == value_cast(U, U, V)`. Both
-                        // use the same `value_cast` direction (`U, V`), so a single
-                        // axiom per coercion (added in `MirBuiltinUseCastEnc`) suffices.
-                        let unsize_value =
-                            vcx.mk_eq_expr(v_snap, value_cast(vcx.mk_old_expr(u_snap), u, v));
-                        let undo_value =
-                            vcx.mk_eq_expr(vcx.mk_old_expr(v_snap), value_cast(u_snap, u, v));
-
-                        let unsize_idn = MethodIdn::new(
-                            vir::vir_format_identifier!(
-                                vcx,
-                                "mir_unsize_{}_to_{}",
-                                operand_ty.name(),
-                                result_ty.name()
-                            ),
-                            (
-                                op_ty_snap,
-                                unsize_params.ty_args(),
-                                unsize_params.const_args(),
-                            ),
-                        );
-                        let undo_idn = MethodIdn::new(
-                            vir::vir_format_identifier!(
-                                vcx,
-                                "mir_undo_unsize_{}_to_{}",
-                                operand_ty.name(),
-                                result_ty.name()
-                            ),
-                            (
-                                op_ty_snap,
-                                unsize_params.ty_args(),
-                                unsize_params.const_args(),
-                            ),
-                        );
-                        let unsize_method = vcx.mk_method(
-                            unsize_idn,
-                            (
-                                src_decl,
-                                unsize_params.ty_decls(),
-                                unsize_params.const_decls(),
-                            ),
-                            &[],
-                            vcx.alloc_slice(&[u_pred]),
-                            vcx.alloc_slice(&[v_pred, unsize_value]),
-                            None,
-                        );
-                        let undo_method = vcx.mk_method(
-                            undo_idn,
-                            (
-                                src_decl,
-                                unsize_params.ty_decls(),
-                                unsize_params.const_decls(),
-                            ),
-                            &[],
-                            vcx.alloc_slice(&[v_pred]),
-                            vcx.alloc_slice(&[u_pred, undo_value]),
-                            None,
-                        );
-                        (
-                            Some(unsize_method),
-                            Some(undo_method),
-                            Some(unsize_idn),
-                            Some(undo_idn),
+                            MirBuiltinCastLocal {
+                                cast: function,
+                                unsize: unsize_method,
+                                undo: undo_method,
+                            },
+                            MirBuiltinCastOutput::Unsize {
+                                cast: fn_idn,
+                                unsize: unsize_idn,
+                                undo: undo_idn,
+                            },
                         )
-                    } else {
-                        (None, None, None, None)
-                    };
-                    (
-                        MirBuiltinCastLocal {
-                            cast: function,
-                            unsize: unsize_method,
-                            undo: undo_method,
-                        },
-                        MirBuiltinCastOutput::Unsize {
-                            cast: fn_idn,
-                            unsize: unsize_idn,
-                            undo: undo_idn,
-                        },
-                    )
+                    }
                 }
-            }
                 _ => todo!("cast kind {kind:?}"),
             };
             Ok(output)

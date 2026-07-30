@@ -147,7 +147,11 @@ impl TaskEncoder for MirBuiltinUseCastEnc {
                 let result_generics = deps.require_dep::<GArgsTyEnc>(result_ty.args)?;
                 let generics = vir::with_vcx(|vcx| {
                     GArgsTy::new(
-                        if op_generics.get_ty::<(), !>().len() > 0 { vcx.alloc_slice(&[op_generics.get_ty()[0], result_generics.get_ty()[0]]) } else { vcx.alloc_slice(&[]) },
+                        if !op_generics.get_ty::<(), !>().is_empty() {
+                            vcx.alloc_slice(&[op_generics.get_ty()[0], result_generics.get_ty()[0]])
+                        } else {
+                            vcx.alloc_slice(&[])
+                        },
                         &[],
                     )
                 });
@@ -157,8 +161,8 @@ impl TaskEncoder for MirBuiltinUseCastEnc {
                     undo,
                     generics,
                 };
-                if let TySpecifics::StructLike(..) = &operand_ty.ty.specifics {}
-                else {
+                if let TySpecifics::StructLike(..) = &operand_ty.ty.specifics {
+                } else {
                     // Recover the operand/result referent (`[T; N]` / `[T]`) structure by
                     // normalizing the reference's (generic `p_Param`) referent type
                     // against the reference's args.

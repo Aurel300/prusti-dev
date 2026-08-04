@@ -1248,11 +1248,6 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                             .deps
                             .require_dep::<TyUseImpureEnc>(rust_ty_unique)
                             .unwrap();
-                        let e_ty_unique_pure = self
-                            .deps
-                            .require_dep::<TyUsePureEnc>(rust_ty_unique)
-                            .unwrap()
-                            .expect_structlike();
                         let e_ty_unique = e_ty_unique_impure.expect_structlike();
                         let rust_ty_nonnull = rust_ty_unique.ty.expect_structlike().fields[0]
                             .decompose_normalize(ty_task.args);
@@ -1272,17 +1267,10 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                             .unwrap()
                             .expect_raw();
                         let rust_ty_inner = rust_ty_rawptr.ty.expect_raw().referent;
-                        let normalized = rust_ty_inner
-                            .decompose_compare_normalize(ty_task.ty.params, ty_task.args);
-                        let caster = self
-                            .deps
-                            .require_dep::<crate::GArgsCastEnc<crate::Pure>>(normalized)
-                            .unwrap();
 
                         let p_ty = self.ty_use_impure(place_ty.ty).expect_structlike();
                         let proj_box = p_ty.fields[0];
                         let proj_unique = e_ty_unique.fields[0];
-                        let proj_unique_data = e_ty_unique_pure.fields[2];
 
                         let proj_nonnull = e_ty_nonnull.expect_structlike().fields[0];
 
@@ -1305,13 +1293,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                         PlaceExpr {
                             address: addr_expr,
                             metadata: Some(e_ty_rawptr_pure.metadata_access(snap_rawptr)),
-                            snap: Some(
-                                proj_unique_data.read(
-                                    e_ty_unique_impure
-                                        .ref_to_snap(proj_box.field_ref(expr.address))
-                                        .downcast_ty(),
-                                ),
-                            ),
+                            snap: None,
                         }
                     }
                     ty::TyKind::Ref(_, _, ty::Mutability::Not) => {

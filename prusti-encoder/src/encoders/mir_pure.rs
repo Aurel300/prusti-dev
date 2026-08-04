@@ -328,11 +328,9 @@ impl<'vir: 'enc, 'enc> PureRvalueEnc<'vir> for Enc<'vir, 'enc> {
     ) -> Result<ExprRet<'vir>, EncodeFullError<'vir, Self::Encoder>> {
         Ok(match operand {
             mir::Operand::Copy(place) | mir::Operand::Move(place) => {
-                
                 (self.encode_place_snap((*place).into(), curr_ver)) as _
             }
             mir::Operand::Constant(box constant) => {
-                
                 (self.encode_constant_snap(constant)?.upcast_ty().lift()) as _
             }
         })

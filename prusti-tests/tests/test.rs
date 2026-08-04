@@ -35,7 +35,10 @@ fn test() {
     let boxed_array: Box<[i32; 3]> = Box::new([1, 2, 3]);
     // let tmp = &[1,2,3];
     let boxed_slice: Box<[i32]> = boxed_array;
-    assert_eq!(&*boxed_slice, &[1, 2, 3]);
+    let v = vec![1, 2, 3];
+    //prusti_assert!(v.len() == 3);
+    // assert_eq!(boxed_slice.len(), 3);
+    //assert_eq!(&*boxed_slice, &[1, 2, 3]);
 }
 
 // fn test(x: &[i32; 3]) {

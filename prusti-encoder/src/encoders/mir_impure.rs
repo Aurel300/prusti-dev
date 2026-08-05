@@ -1125,7 +1125,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         &mut self,
         statement: &mir::Statement<'vir>,
         location: mir::Location,
-    ) -> EncodeResult<'vir, FxHashMap<mir::Place<'vir>, vir::ExprSnap<'vir>>, E> {
+    ) -> EncodeResult<'vir, OperandSnaps<'vir>, E> {
         use mir::visit::Visitor;
         struct OperandCollector<'vir>(Vec<mir::Operand<'vir>>);
         impl<'vir> Visitor<'vir> for OperandCollector<'vir> {
@@ -1146,7 +1146,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             let snap = self.capture_operand_snap(operand)?;
             snaps.insert(place, snap);
         }
-        Ok(snaps)
+        Ok(Some(snaps))
     }
 
     pub(crate) fn encode_place(&mut self, place: Place<'vir>) -> EncodePlaceResult<'vir> {
@@ -1779,7 +1779,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             // operand's place may alias the destination, whose predicate the
             // `PreMain` weaken exhales before the effect is encoded (`x /= y`
             // lowers to `x = Div(copy x, move y)`).
-            let captured = Some(self.capture_operand_snaps(statement, location)?);
+            let captured = self.capture_operand_snaps(statement, location)?;
 
             self.pcg_phase_actions(location, EvalStmtPhase::PostOperands)?;
             self.pcg_phase_actions(location, EvalStmtPhase::PreMain)?;

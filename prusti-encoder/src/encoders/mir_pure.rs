@@ -545,10 +545,12 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
 
         let update = self.encode_cfg(&init.versions, start, end)?;
 
-        // do we ever panic here? if yes, return the `unreachable_to_snap` expr.
-        let res = init
-            .merge(update)
-            .expect("function unconditionally terminates with unreachable");
+        // The body may unconditionally terminate with `unreachable` (e.g. a
+        // `match` on an uninhabited type): its result is the unreachable snapshot.
+        let Some(res) = init.merge(update) else {
+            let result_ty = self.body.local_decls[result_local].ty;
+            return Ok(self.ty_use(result_ty).unreachable_to_snap());
+        };
         let ret_version = res.versions.get(&result_local).copied().unwrap_or(v0);
         self.versions_used.insert((result_local, ret_version.index));
 

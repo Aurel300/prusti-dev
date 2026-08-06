@@ -54,7 +54,7 @@ use crate::encoders::{
     mir_fn::{CallTaskDescription, RustSignature, SpecBlockKind, SpecBlocks},
     mir_shared::{PureRvalueEnc, RustcIntrinsic},
     ty::{
-        RustTyDecomposition, TyEnc,
+        RustTyDecomposition,
         use_impure::TyUseImpure,
         use_pure::{TyUsePure, TyUsePureEnc},
     },
@@ -1248,46 +1248,39 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                             .deps
                             .require_dep::<TyUseImpureEnc>(rust_ty_unique)
                             .unwrap();
-                        let e_ty_unique = e_ty_unique_impure.expect_structlike();
                         let rust_ty_nonnull = rust_ty_unique.ty.expect_structlike().fields[0]
                             .decompose_normalize(ty_task.args);
-                        let e_ty_nonnull = self
+                        let e_ty_nonnull_pure = self
+                            .deps
+                            .require_dep::<TyUsePureEnc>(rust_ty_nonnull)
+                            .unwrap();
+                        let e_ty_nonnull_impure = self
                             .deps
                             .require_dep::<TyUseImpureEnc>(rust_ty_nonnull)
                             .unwrap();
                         let rust_ty_rawptr = rust_ty_nonnull.ty.expect_structlike().fields[0]
                             .decompose_normalize(ty_task.args);
-                        let e_ty_rawptr = self
-                            .deps
-                            .require_dep::<TyUseImpureEnc>(rust_ty_rawptr)
-                            .unwrap();
                         let e_ty_rawptr_pure = self
                             .deps
                             .require_dep::<TyUsePureEnc>(rust_ty_rawptr)
                             .unwrap()
                             .expect_raw();
-                        let rust_ty_inner = rust_ty_rawptr.ty.expect_raw().referent;
 
                         let p_ty = self.ty_use_impure(place_ty.ty).expect_structlike();
                         let proj_box = p_ty.fields[0];
-                        let proj_unique = e_ty_unique.fields[0];
+                        let proj_unique = e_ty_unique_impure.expect_structlike().fields[0];
 
-                        let proj_nonnull = e_ty_nonnull.expect_structlike().fields[0];
+                        let proj_nonnull = e_ty_nonnull_pure.expect_structlike().fields[0];
 
-                        let ref_rawptr = proj_nonnull
-                            .field_ref(proj_unique.field_ref(proj_box.field_ref(expr.address)));
-                        let snap_rawptr_expr = e_ty_rawptr.ref_to_snap(ref_rawptr).downcast_ty();
-                        let snap_rawptr = self.vcx.mk_unfolding_expr(
-                            e_ty_unique_impure
-                                .ref_to_pred_app(proj_box.field_ref(expr.address), None),
-                            self.vcx.mk_unfolding_expr(
-                                e_ty_nonnull.ref_to_pred_app(
-                                    proj_unique.field_ref(proj_box.field_ref(expr.address)),
-                                    None,
-                                ),
-                                snap_rawptr_expr,
-                            ),
-                        );
+                        let snap_rawptr = proj_nonnull
+                            .read(
+                                e_ty_nonnull_impure
+                                    .ref_to_snap(
+                                        proj_unique.field_ref(proj_box.field_ref(expr.address)),
+                                    )
+                                    .downcast_ty(),
+                            )
+                            .downcast_ty();
 
                         let addr_expr = e_ty_rawptr_pure.address_access(snap_rawptr);
                         PlaceExpr {

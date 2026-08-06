@@ -3,10 +3,11 @@ use task_encoder::{EncodeFullError, EncodeFullResult, TaskEncoder, TaskEncoderDe
 use vir::{CastType, PredicateIdn};
 
 use crate::encoders::{
-    Impure,
+    Impure, TyUsePureEnc,
     ty::{
         LazyRustTy, RustTyDatas,
         generics::{GArgs, GArgsCastEnc, GArgsTyEnc, GParams},
+        use_pure::{TyUsePureRaw, UsePureTyDatas},
     },
 };
 
@@ -90,11 +91,26 @@ pub struct TyUseImpureArrayData<'vir> {
 }
 
 #[derive(Debug, Clone, Copy)]
+pub enum TyUseImpureStructType<'vir> {
+    Box {
+        unique_ptr: &'vir TyUseImpureStruct<'vir>,
+    },
+    Unique {
+        nonnull_ptr: &'vir TyData<'vir, UseImpureTyDatas>,
+        nonnull_pure: &'vir TyData<'vir, UsePureTyDatas>,
+        rawptr: &'vir TyUsePureRaw<'vir>,
+        inner_caster: GArgCaster<'vir, Impure>,
+    },
+    Generic,
+}
+
+#[derive(Debug, Clone, Copy)]
 pub struct TyUseImpureStructData<'vir> {
     args: GArgsTy<'vir>,
     ref_to_pred: PredicateIdn<'vir, (vir::Ref, vir::ManyTyVal, vir::ManyCSnap)>,
     #[allow(dead_code)]
     impure: <ImpureTyDatas as TyDatas<'vir>>::StructData,
+    struct_type: TyUseImpureStructType<'vir>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -281,10 +297,36 @@ impl<'a, 'vir> TyUseImpureWalker<'a, 'vir> {
             })
             .collect::<EncResult<'vir, Vec<_>>>()?;
         let struct_type = data.struct_type;
+        let impure_struct_type = match struct_type {
+            super::StructType::Box => {
+                let inner = self.deps.require_dep::<TyUseImpureEnc>(
+                    data.fields[0].0.ty().decompose_normalize(self.args),
+                )?;
+                TyUseImpureStructType::Box {
+                    unique_ptr: inner.expect_structlike(),
+                }
+            }
+            super::StructType::Unique => {
+                let nonnull = data.fields[0].0.ty().decompose_normalize(self.args);
+                let nonnull_impure = self.deps.require_dep::<TyUseImpureEnc>(nonnull)?;
+                let nonnull_pure = self.deps.require_dep::<TyUsePureEnc>(nonnull)?;
+                let raw = nonnull.ty.expect_structlike().fields[0].decompose_normalize(self.args);
+                let raw_pure = self.deps.require_dep::<TyUsePureEnc>(raw)?;
+                let caster = self.encode_normalized(data.fields[2].0.ty(), params)?;
+                TyUseImpureStructType::Unique {
+                    nonnull_ptr: nonnull_impure,
+                    nonnull_pure,
+                    rawptr: raw_pure.expect_raw(),
+                    inner_caster: caster,
+                }
+            }
+            _ => TyUseImpureStructType::Generic,
+        };
         let data = TyUseImpureStructData {
             args: self.args_t,
             ref_to_pred,
             impure: *data.1,
+            struct_type: impure_struct_type,
         };
         Ok(StructData::new(data, fields, struct_type))
     }
@@ -495,7 +537,33 @@ impl<'vir> TyUseImpureStruct<'vir> {
     ) -> impl Iterator<Item = vir::Stmt<'vir>> + '_ {
         let pred_app = self.ref_to_pred_app(self_ref, perm);
         let fold = vir::with_vcx(|vcx| vcx.mk_fold_stmt(pred_app));
-        self.cast_to_callee_ctx(self_ref).chain([fold])
+        let mut stmts = vec![];
+        if let TyUseImpureStructType::Box { unique_ptr } = self.data.struct_type {
+            let unique_ptr_ref = self.fields[0].field_ref(self_ref);
+            let unique_pred_app = unique_ptr.ref_to_pred_app(unique_ptr_ref, perm);
+            let unique_fold = vir::with_vcx(|vcx| vcx.mk_fold_stmt(unique_pred_app));
+            let (nonnull_ptr, nonnull_pure, rawptr, inner_caster) =
+                match unique_ptr.data.struct_type {
+                    TyUseImpureStructType::Unique {
+                        nonnull_ptr,
+                        nonnull_pure,
+                        rawptr,
+                        inner_caster,
+                    } => (nonnull_ptr, nonnull_pure, rawptr, inner_caster),
+                    _ => unreachable!("expected unique pointer struct type"),
+                };
+            let nonnull_ptr_ref = unique_ptr.fields[0].field_ref(unique_ptr_ref);
+            let nonnull_snap = nonnull_ptr.data.ref_to_snap(nonnull_ptr_ref);
+            let rawptr_snap =
+                nonnull_pure.expect_structlike().fields[0].read(nonnull_snap.downcast_ty());
+            let rawptr_deref = rawptr.address_access(rawptr_snap.downcast_ty());
+            let inner_cast = inner_caster.cast_to_callee_ctx(rawptr_deref);
+
+            stmts.extend([inner_cast.unwrap(), unique_fold]);
+        }
+        stmts.extend(self.cast_to_callee_ctx(self_ref));
+        stmts.push(fold);
+        stmts.into_iter()
     }
 
     /// Unfold the predicate (including generic casts).
@@ -506,9 +574,32 @@ impl<'vir> TyUseImpureStruct<'vir> {
     ) -> impl Iterator<Item = vir::Stmt<'vir>> + '_ {
         let pred_app = self.ref_to_pred_app(self_ref, perm);
         let unfold = vir::with_vcx(|vcx| vcx.mk_unfold_stmt(pred_app));
-        [unfold]
-            .into_iter()
-            .chain(self.cast_to_caller_ctx(self_ref))
+        let mut stmts = vec![unfold];
+        stmts.extend(self.cast_to_caller_ctx(self_ref));
+        if let TyUseImpureStructType::Box { unique_ptr } = self.data.struct_type {
+            let unique_ptr_ref = self.fields[0].field_ref(self_ref);
+            let unique_pred_app = unique_ptr.ref_to_pred_app(unique_ptr_ref, perm);
+            let unique_unfold = vir::with_vcx(|vcx| vcx.mk_unfold_stmt(unique_pred_app));
+            let (nonnull_ptr, nonnull_pure, rawptr, inner_caster) =
+                match unique_ptr.data.struct_type {
+                    TyUseImpureStructType::Unique {
+                        nonnull_ptr,
+                        nonnull_pure,
+                        rawptr,
+                        inner_caster,
+                    } => (nonnull_ptr, nonnull_pure, rawptr, inner_caster),
+                    _ => unreachable!("expected unique pointer struct type"),
+                };
+            let nonnull_ptr_ref = unique_ptr.fields[0].field_ref(unique_ptr_ref);
+            let nonnull_snap = nonnull_ptr.data.ref_to_snap(nonnull_ptr_ref);
+            let rawptr_snap =
+                nonnull_pure.expect_structlike().fields[0].read(nonnull_snap.downcast_ty());
+            let rawptr_deref = rawptr.address_access(rawptr_snap.downcast_ty());
+            let inner_cast = inner_caster.cast_to_caller_ctx(rawptr_deref);
+
+            stmts.extend([unique_unfold, inner_cast.unwrap()]);
+        }
+        stmts.into_iter()
     }
 
     fn cast_to_caller_ctx(

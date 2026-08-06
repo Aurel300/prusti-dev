@@ -1284,10 +1284,25 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                             .downcast_ty();
 
                         let addr_expr = e_ty_rawptr_pure.address_access(snap_rawptr);
+
+                        let p_ty_pure = self.ty_use_pure(place_ty.ty).expect_structlike();
+                        let proj_box_pure = p_ty_pure.fields[0];
+                        let e_ty_unique_pure = self
+                            .deps
+                            .require_dep::<TyUsePureEnc>(rust_ty_unique)
+                            .unwrap();
+                        let proj_unique_pure = e_ty_unique_pure.expect_structlike().fields[2];
+
                         PlaceExpr {
                             address: addr_expr,
                             metadata: Some(e_ty_rawptr_pure.metadata_access(snap_rawptr)),
-                            snap: None,
+                            // if the Box is behind an immutable reference, we do not unfold the predicate and therefore
+                            // use the snapshot representation
+                            snap: expr.snap.map(|snap| {
+                                proj_unique_pure
+                                    .read(proj_box_pure.read(snap.downcast_ty()).downcast_ty())
+                                    .downcast_ty()
+                            }),
                         }
                     }
                     ty::TyKind::Ref(_, _, ty::Mutability::Not) => {

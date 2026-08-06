@@ -539,6 +539,8 @@ impl<'vir> TyUseImpureStruct<'vir> {
         let fold = vir::with_vcx(|vcx| vcx.mk_fold_stmt(pred_app));
         let mut stmts = vec![];
         if let TyUseImpureStructType::Box { unique_ptr } = self.data.struct_type {
+            // if the struct is a Box we also need to fold the unique pointer.
+            // folding the unique pointer means accessing its snapshot to retrieve the pointee
             let unique_ptr_ref = self.fields[0].field_ref(self_ref);
             let unique_pred_app = unique_ptr.ref_to_pred_app(unique_ptr_ref, perm);
             let unique_fold = vir::with_vcx(|vcx| vcx.mk_fold_stmt(unique_pred_app));
@@ -577,6 +579,8 @@ impl<'vir> TyUseImpureStruct<'vir> {
         let mut stmts = vec![unfold];
         stmts.extend(self.cast_to_caller_ctx(self_ref));
         if let TyUseImpureStructType::Box { unique_ptr } = self.data.struct_type {
+            // if the struct is a Box we also need to unfold the unique pointer.
+            // unfolding the unique pointer means accessing its snapshot to retrieve the pointee
             let unique_ptr_ref = self.fields[0].field_ref(self_ref);
             let unique_pred_app = unique_ptr.ref_to_pred_app(unique_ptr_ref, perm);
             let unique_unfold = vir::with_vcx(|vcx| vcx.mk_unfold_stmt(unique_pred_app));

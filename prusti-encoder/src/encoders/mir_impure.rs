@@ -1240,6 +1240,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 let e_ty = self.ty_use_impure(place_ty.ty);
                 match place_ty.ty.kind() {
                     ty::TyKind::Adt(adt, _) if adt.is_box() => {
+                        // if the place is a Box, we need to follow the chain Box -> Unique -> NonNull -> RawPtr to get the raw pointer to the value
                         let ty_task = RustTyDecomposition::from_ty(place_ty.ty, self.def_id);
                         let rust_ty_box = ty_task.ty;
                         let rust_ty_unique = rust_ty_box.expect_structlike().fields[0]

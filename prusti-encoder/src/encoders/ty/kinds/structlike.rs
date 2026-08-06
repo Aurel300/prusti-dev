@@ -154,6 +154,7 @@ pub(crate) fn ty_impure_variant<'vir>(
         })
         .collect::<Vec<_>>();
     if data.struct_type == StructType::Unique {
+        // the predicate for a unique pointer should also hold permission to the pointee
         let inner_ty = deps.require_dep::<TyUseImpureEnc>(RustTyDecomposition::from_ty(
             task_key.0.params.rust_params().type_at(0),
             task_key.0.params,
@@ -184,7 +185,8 @@ pub(crate) fn ty_impure_variant<'vir>(
             ),
             rawptr.address_access(rawptr_impure.ref_to_snap(rawptr_ref).downcast_ty()),
         );
-
+        // instead of the unique snapshot's ghost field that encodes the pointee's snapshot directly, we want to hold permission
+        // to access the pointee through the wrapped raw pointer
         pred_vec[2] = inner_ty.ref_to_pred(builder.vcx, unfolding_expr, None);
         snap_args[2] = inner_ty.ref_to_snap(unfolding_expr);
     }

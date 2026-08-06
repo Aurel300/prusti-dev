@@ -496,38 +496,52 @@ fn generate_expression_closure(
     }
 }
 
+/// Expands the `closure!` macro: returns the closure itself, with its specs
+/// embedded as `closure_spec_*` marker calls in dead `if false { return .. }`
+/// blocks inside the body (the `return` makes the argument moves diverge, so
+/// they cannot affect the body). For
+///
+/// ```ignore
+/// closure!(#[requires(P)] #[ensures(Q)] |a: A, b| body)
+/// ```
+///
+/// the macro expands to
+///
+/// ```ignore
+/// {
+///     #[prusti::closure]
+///     #[prusti::specs_version = "..."]
+///     let _prusti_closure = |a: A, b| {
+///         let prusti_closure_args = ::core::marker::PhantomData;    // mixed-site hygiene
+///         if false {
+///             return closure_spec_pre((a, b), #[prusti::spec_only] |a: A, b| -> bool { P });
+///         }
+///         if false {
+///             return closure_spec_args((a, b, None.unwrap()), prusti_closure_args);
+///         }
+///         let result = body;
+///         if false {
+///             return closure_spec_post((None.unwrap(), None.unwrap(), result), prusti_closure_args, #[prusti::spec_only] |a: A, b, result| -> bool { Q });
+///         }
+///         result
+///     };
+///     _prusti_closure
+/// }
+/// ```
+///
+/// The spec closures take the closure's arguments (plus `result` for
+/// postconditions) as a flat parameter list; their parameter types are
+/// deduced from the markers' `Fn<Args>` bound against the actual argument
+/// tuple, so no type annotations are required (any the user wrote are
+/// forwarded). `closure_spec_args` unifies the `PhantomData` binding
+/// carrying the argument (and result) types from the closure entry to the
+/// postcondition; tuple slots whose values are unavailable at the
+/// respective marker are filled with `None.unwrap()`, which mints a fresh
+/// inference variable (a `!`-typed stand-in such as `unreachable!()` wouldn't
+/// work as it doesn't coerce at that point and would pin the slot to `!`).
 pub fn closure(tokens: TokenStream) -> TokenStream {
     let cl_spec: ClosureWithSpec = handle_result!(syn::parse(tokens.into()));
     let callsite_span = Span::call_site();
-
-    let mut rewriter = rewriter::AstRewriter::new();
-
-    let mut preconds: Vec<(SpecificationId, syn::Expr)> = vec![];
-    let mut postconds: Vec<(SpecificationId, syn::Expr)> = vec![];
-
-    let mut cl_annotations = TokenStream::new();
-
-    for r in cl_spec.pres {
-        let spec_id = rewriter.generate_spec_id();
-        let precond =
-            handle_result!(rewriter.process_closure_assertion(spec_id, r.to_token_stream(),));
-        preconds.push((spec_id, precond));
-        let spec_id_str = spec_id.to_string();
-        cl_annotations.extend(quote_spanned! {callsite_span=>
-            #[prusti::pre_spec_id_ref = #spec_id_str]
-        });
-    }
-
-    for e in cl_spec.posts {
-        let spec_id = rewriter.generate_spec_id();
-        let postcond =
-            handle_result!(rewriter.process_closure_assertion(spec_id, e.to_token_stream(),));
-        postconds.push((spec_id, postcond));
-        let spec_id_str = spec_id.to_string();
-        cl_annotations.extend(quote_spanned! {callsite_span=>
-            #[prusti::post_spec_id_ref = #spec_id_str]
-        });
-    }
 
     let syn::ExprClosure {
         attrs,
@@ -541,43 +555,142 @@ pub fn closure(tokens: TokenStream) -> TokenStream {
         body,
     } = cl_spec.cl;
 
-    let output_type: syn::Type = match output {
-        syn::ReturnType::Default => {
-            return syn::Error::new(output.span(), "closure must specify return type")
-                .to_compile_error();
-        }
-        syn::ReturnType::Type(_, ref ty) => (**ty).clone(),
-    };
-
-    let (spec_toks_pre, spec_toks_post) =
-        handle_result!(rewriter.process_closure(inputs.clone(), output_type, preconds, postconds,));
-
     let mut attrs_ts = TokenStream::new();
     for a in attrs {
-        attrs_ts.extend(a.into_token_stream());
+        match a.path.get_ident() {
+            Some(ident) if ident == "pure" => {
+                attrs_ts.extend(quote_spanned! {a.span()=> #[prusti::pure] });
+            }
+            Some(ident) if ident == "trusted" => {
+                attrs_ts.extend(quote_spanned! {a.span()=> #[prusti::trusted] });
+            }
+            // Reject other specification attributes rather than forwarding
+            // them (they would be silently ignored on the `let` binding).
+            Some(ident) if SpecAttributeKind::try_from(ident.to_string()).is_ok() => {
+                return syn::Error::new(
+                    a.span(),
+                    format!("`{ident}` is not supported on `closure!`"),
+                )
+                .to_compile_error();
+            }
+            _ => attrs_ts.extend(a.into_token_stream()),
+        }
     }
+
+    let conjoin = |exprs: Vec<syn::Expr>| -> syn::Result<Option<TokenStream>> {
+        let mut conj: Option<TokenStream> = None;
+        for expr in exprs {
+            let expr = parse_prusti(expr.to_token_stream())?;
+            conj = Some(match conj {
+                None => quote_spanned! {callsite_span=> (#expr) },
+                Some(acc) => quote_spanned! {callsite_span=> #acc && (#expr) },
+            });
+        }
+        Ok(conj)
+    };
+    let pre = handle_result!(conjoin(cl_spec.pres));
+    let post = handle_result!(conjoin(cl_spec.posts));
+
+    let mut arg_idents: Vec<syn::Ident> = vec![];
+    let mut arg_types: Vec<TokenStream> = vec![];
+    if pre.is_some() || post.is_some() {
+        for input in &inputs {
+            let (pat, ty) = match input {
+                syn::Pat::Type(pat_type) => (&*pat_type.pat, pat_type.ty.to_token_stream()),
+                other => (other, quote_spanned! {callsite_span=> _ }),
+            };
+            match pat {
+                syn::Pat::Ident(pat_ident) if pat_ident.ident != "result" => {
+                    arg_idents.push(pat_ident.ident.clone());
+                    arg_types.push(ty);
+                }
+                syn::Pat::Ident(_) => {
+                    return syn::Error::new(
+                        input.span(),
+                        "closure parameters may not be named `result`",
+                    )
+                    .to_compile_error();
+                }
+                _ => {
+                    return syn::Error::new(
+                        input.span(),
+                        "closure parameters must be named to attach specifications",
+                    )
+                    .to_compile_error();
+                }
+            }
+        }
+    }
+
+    let anys = arg_idents
+        .iter()
+        .map(|_| quote_spanned! {callsite_span=> ::core::option::Option::None.unwrap() })
+        .collect::<Vec<_>>();
+    let result_param = match &output {
+        syn::ReturnType::Type(_, ty) => quote_spanned! {callsite_span=> result: #ty },
+        syn::ReturnType::Default => quote_spanned! {callsite_span=> result },
+    };
+
+    // Hygienic: user code inside the closure body cannot refer to this binding.
+    let args_ident = syn::Ident::new("prusti_closure_args", Span::mixed_site());
+
+    let pre_stmt = pre.map(|pre| {
+        quote_spanned! {callsite_span=>
+            #[allow(unused_must_use, unused_variables, unused_braces, unused_parens)]
+            if false {
+                return ::prusti_contracts::closure_spec_pre(
+                    (#(#arg_idents,)*),
+                    #[prusti::spec_only]
+                    |#(#arg_idents: #arg_types),*| -> bool { #pre },
+                );
+            }
+        }
+    });
+
+    let new_body = if let Some(post) = post {
+        quote_spanned! {callsite_span=>
+            {
+                let #args_ident = ::core::marker::PhantomData;
+                #pre_stmt
+                #[allow(unused_must_use, unused_braces, unused_parens)]
+                if false {
+                    return ::prusti_contracts::closure_spec_args(
+                        (#(#arg_idents,)* ::core::option::Option::None.unwrap(),),
+                        #args_ident,
+                    );
+                }
+                let result = #body;
+                #[allow(unused_must_use, unused_variables, unused_braces, unused_parens)]
+                if false {
+                    return ::prusti_contracts::closure_spec_post(
+                        (#(#anys,)* result,),
+                        #args_ident,
+                        #[prusti::spec_only]
+                        |#(#arg_idents: #arg_types,)* #result_param| -> bool { #post },
+                    );
+                }
+                result
+            }
+        }
+    } else {
+        quote_spanned! {callsite_span=>
+            {
+                #pre_stmt
+                #body
+            }
+        }
+    };
 
     quote_spanned! {callsite_span=>
         {
             #[allow(unused_variables, unused_braces, unused_parens)]
             #[prusti::closure]
             #[prusti::specs_version = #SPECS_VERSION]
-            #cl_annotations #attrs_ts
+            #attrs_ts
             let _prusti_closure =
                 #asyncness #movability #capture
                 #or1_token #inputs #or2_token #output
-                {
-                    #[allow(unused_must_use, unused_braces, unused_parens)]
-                    if false {
-                        #spec_toks_pre
-                    }
-                    let result = #body ;
-                    #[allow(unused_must_use, unused_braces, unused_parens)]
-                    if false {
-                        #spec_toks_post
-                    }
-                    result
-                };
+                #new_body;
             _prusti_closure
         }
     }

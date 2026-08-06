@@ -1773,12 +1773,12 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             self.pcg_phase_actions(location, EvalStmtPhase::PostOperands)?;
             self.pcg_phase_actions(location, EvalStmtPhase::PreMain)?;
 
-            // Assignments to the hidden locals of specification-only arms
+            // Assignments to the locals only serving specification-only arms
             // (necessarily scaffolding stores) are not encoded, since the
             // locals are not declared.
             if let mir::StatementKind::Assign(box (dest, _)) = &statement.kind
                 && let Some(local) = dest.as_local()
-                && self.spec_blocks.spec_arms.hidden_locals.contains(&local)
+                && self.spec_blocks.spec_arms.spec_only_locals.contains(&local)
             {
                 return Ok(());
             }

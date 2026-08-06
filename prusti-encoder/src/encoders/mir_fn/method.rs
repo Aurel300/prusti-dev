@@ -251,7 +251,7 @@ impl TaskEncoder for MethodEnc {
                 );
                 let mut start_stmts = Vec::new();
                 for local in (arg_count..body.local_decls.len()).map(mir::Local::from) {
-                    // Hidden locals have no definition.
+                    // Spec-only locals have no definition.
                     let Some(local_def) = local_defs.get(local) else {
                         continue;
                     };

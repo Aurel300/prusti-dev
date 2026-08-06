@@ -82,7 +82,7 @@ impl GhostBlocks {
         );
 
         // The ghost arm's blocks (the inline ghost body).
-        dominated_region(body, arm_block, &mut self.code);
+        dominated_blocks(body, arm_block, &mut self.code);
     }
 }
 
@@ -103,11 +103,11 @@ fn get_sibling(targets: &mir::SwitchTargets, arm_block: BasicBlock) -> BasicBloc
     sibling
 }
 
-/// Collects the arm region into `out`: everything reachable from (and still
-/// dominated by) the arm entry. The dominance requirement keeps blocks
-/// shared with live code out of the region (the join both arms continue to,
-/// and cleanup blocks that calls outside the arm also unwind to).
-fn dominated_region(body: &mir::Body<'_>, arm_entry: BasicBlock, out: &mut FxHashSet<BasicBlock>) {
+/// Collects the arm's blocks into `out`: everything reachable from (and
+/// still dominated by) the arm entry. The dominance requirement keeps blocks
+/// shared with live code out (the join both arms continue to, and cleanup
+/// blocks that calls outside the arm also unwind to).
+fn dominated_blocks(body: &mir::Body<'_>, arm_entry: BasicBlock, out: &mut FxHashSet<BasicBlock>) {
     let doms = body.basic_blocks.dominators();
     let mut queue = vec![arm_entry];
     while let Some(block) = queue.pop() {
@@ -124,8 +124,8 @@ fn dominated_region(body: &mir::Body<'_>, arm_entry: BasicBlock, out: &mut FxHas
 /// The arms are invisible in the encoding: each guarding switch is encoded
 /// as an unconditional jump to the live target (the continuation, or the
 /// inline ghost body), the arm's blocks are never encoded, and neither are
-/// the [hidden locals](Self::hidden_locals) nor the (constant) assignments
-/// to them.
+/// the [spec-only locals](Self::spec_only_locals) nor the (constant)
+/// assignments to them.
 #[derive(Clone, Default)]
 pub struct SpecArms {
     /// The live target, keyed by the block whose `if false` switch guards
@@ -138,10 +138,10 @@ pub struct SpecArms {
     /// [scaffolding](Self::scaffolding), whose stores are skipped. Neither
     /// their declarations (and hence types) nor the assignments to them are
     /// encoded.
-    pub hidden_locals: FxHashSet<mir::Local>,
+    pub spec_only_locals: FxHashSet<mir::Local>,
     /// The arms' scaffolding locals, each identified by its structural
-    /// anchor: the switch discriminants (the operands of the rewired
-    /// switches; their `const false` stores are their only encodable
+    /// anchor: the switch discriminants (the operands of the switches
+    /// encoded as gotos; their `const false` stores are their only encodable
     /// mention) and the unit values of the arms' `if` statements (stored
     /// `const ()` in the live continuations, kept only when nothing else
     /// uses them: a live unit local in the same block is not scaffolding).
@@ -174,20 +174,20 @@ impl SpecArms {
         for block in &arms.blocks {
             for statement in &body[*block].statements {
                 if let mir::StatementKind::Assign(box (dest, _)) = &statement.kind {
-                    arms.hidden_locals.extend(dest.as_local());
+                    arms.spec_only_locals.extend(dest.as_local());
                 }
             }
             if let mir::TerminatorKind::Call { destination, .. } = &body[*block].terminator().kind {
-                arms.hidden_locals.extend(destination.as_local());
+                arms.spec_only_locals.extend(destination.as_local());
             }
         }
-        arms.hidden_locals.remove(&mir::RETURN_PLACE);
+        arms.spec_only_locals.remove(&mir::RETURN_PLACE);
         for ghost_block in ghost.switches.values() {
             if let mir::TerminatorKind::Call { destination, .. } =
                 &body[ghost_block.erased_block].terminator().kind
                 && let Some(local) = destination.as_local()
             {
-                arms.hidden_locals.remove(&local);
+                arms.spec_only_locals.remove(&local);
             }
         }
 
@@ -218,9 +218,11 @@ impl SpecArms {
         // Sanity check: nothing encoded outside the arms may use an
         // arm-assigned or scaffolding local.
         assert!(
-            arms.hidden_locals.is_disjoint(&used),
+            arms.spec_only_locals.is_disjoint(&used),
             "spec-only arm locals leak into encoded code: {:?}",
-            arms.hidden_locals.intersection(&used).collect::<Vec<_>>()
+            arms.spec_only_locals
+                .intersection(&used)
+                .collect::<Vec<_>>()
         );
         assert!(
             arms.scaffolding.is_disjoint(&used),
@@ -229,11 +231,11 @@ impl SpecArms {
         );
 
         // The locals without any encoded use.
-        let hidden = (body.arg_count + 1..body.local_decls.len())
+        let unused = (body.arg_count + 1..body.local_decls.len())
             .map(mir::Local::from)
             .filter(|local| !used.contains(local))
             .collect::<Vec<_>>();
-        arms.hidden_locals.extend(hidden);
+        arms.spec_only_locals.extend(unused);
         arms
     }
 
@@ -247,22 +249,18 @@ impl SpecArms {
         // Walk up the single-predecessor chain to the guarding `if false`
         // switch; the chain block below it is the arm entry.
         let mut arm_entry = marker_block;
-        let switch_block = loop {
+        let (switch_block, discr, targets) = loop {
             let pred = get_single_predecessor(&body.basic_blocks.predecessors()[arm_entry]);
-            if let mir::TerminatorKind::SwitchInt { .. } = body[pred].terminator().kind {
-                break pred;
+            if let mir::TerminatorKind::SwitchInt { discr, targets } = &body[pred].terminator().kind
+            {
+                break (pred, discr, targets);
             }
             arm_entry = pred;
-        };
-        let mir::TerminatorKind::SwitchInt { discr, targets } =
-            &body[switch_block].terminator().kind
-        else {
-            unreachable!();
         };
         let live_target = get_sibling(targets, arm_entry);
         self.switches.insert(switch_block, live_target);
 
-        // The switch discriminant is read only by the rewired switch.
+        // The switch is encoded as a goto, so its discriminant is never read.
         if let Some(local) = discr.place().and_then(|place| place.as_local()) {
             self.scaffolding.insert(local);
         }
@@ -281,7 +279,7 @@ impl SpecArms {
             }
         }
 
-        dominated_region(body, arm_entry, &mut self.blocks);
+        dominated_blocks(body, arm_entry, &mut self.blocks);
     }
 
     /// Records a `ghost!` block's runtime stand-in arm: the switch jumps
@@ -298,7 +296,7 @@ impl SpecArms {
         if let Some(local) = discr.place().and_then(|place| place.as_local()) {
             self.scaffolding.insert(local);
         }
-        dominated_region(body, ghost.erased_block, &mut self.blocks);
+        dominated_blocks(body, ghost.erased_block, &mut self.blocks);
     }
 }
 
@@ -385,7 +383,7 @@ impl SpecBlocksBase {
 }
 
 /// Memoizes [SpecBlocksBase] per `DefId`; required by both `MethodEnc` (for
-/// the full [SpecBlocks]) and `MirLocalDefEnc` (for the hidden locals).
+/// the full [SpecBlocks]) and `MirLocalDefEnc` (for the spec-only locals).
 pub struct SpecBlocksEnc;
 
 impl TaskEncoder for SpecBlocksEnc {
@@ -609,7 +607,7 @@ impl<'enc, 'vir> mir::visit::Visitor<'vir> for UsedLocals<'enc> {
     }
 
     fn visit_terminator(&mut self, terminator: &mir::Terminator<'vir>, location: mir::Location) {
-        // A rewired switch is encoded as a bare goto: its discriminant
+        // A guarding switch is encoded as a bare goto: its discriminant
         // operand is not used.
         if !self.arms.switches.contains_key(&location.block) {
             self.super_terminator(terminator, location);

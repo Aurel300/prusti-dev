@@ -25,15 +25,15 @@ impl task_encoder::OutputRefAny for MirLocalDefEncOutputRef {}
 
 #[derive(Clone, Copy)]
 pub struct MirLocalDefEncOutput<'vir> {
-    /// The definitions of the locals; `None` for the hidden locals of
+    /// The definitions of the locals; `None` for the locals only serving
     /// specification-only arms, which are invisible in the encoding.
     locals: &'vir IndexVec<mir::Local, Option<LocalDef<'vir>>>,
     pub arg_count: usize,
 }
 
 impl<'vir> MirLocalDefEncOutput<'vir> {
-    /// Returns the definition of the given local, or `None` if the local is
-    /// hidden (only serves specification-only arms).
+    /// Returns the definition of the given local, or `None` if the local
+    /// only serves specification-only arms.
     pub fn get(&self, local: mir::Local) -> Option<LocalDef<'vir>> {
         self.locals[local]
     }
@@ -208,18 +208,18 @@ impl TaskEncoder for MirLocalDefEnc {
                 // Locals only serving specification-only arms are never
                 // used in the encoding; give them no definition so that
                 // their types are not encoded. Arguments and the return
-                // place are never hidden, so args-only tasks skip the
-                // analysis.
-                let hidden_locals = if task_key.all_locals() {
+                // place never serve only a spec arm, so args-only tasks skip
+                // the analysis.
+                let spec_only_locals = if task_key.all_locals() {
                     deps.require_dep::<crate::encoders::mir_fn::SpecBlocksEnc>(task_key.def_id())?
                         .spec_arms
-                        .hidden_locals
+                        .spec_only_locals
                 } else {
                     Default::default()
                 };
                 let locals = IndexVec::from_fn_n(
                     |local: mir::Local| {
-                        if hidden_locals.contains(&local) {
+                        if spec_only_locals.contains(&local) {
                             return None;
                         }
                         let rust_ty = body.local_decls[local].ty;
@@ -283,6 +283,6 @@ impl<'vir> Index<mir::Local> for MirLocalDefEncOutput<'vir> {
     fn index(&self, index: mir::Local) -> &Self::Output {
         self.locals[index]
             .as_ref()
-            .unwrap_or_else(|| panic!("hidden local {index:?} has no definition"))
+            .unwrap_or_else(|| panic!("spec-only local {index:?} has no definition"))
     }
 }

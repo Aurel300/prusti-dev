@@ -185,7 +185,6 @@ impl TaskEncoder for MirBuiltinCastEnc {
                     let (unsize_gparams, unsize_gparams_u, unsize_gparams_v) = {
                         let u = ty::Ty::new_param(vcx.tcx(), 0, symbol::Symbol::intern("U"));
                         let v = ty::Ty::new_param(vcx.tcx(), 1, symbol::Symbol::intern("V"));
-                        //let v0 = ty::Ty::new_param(vcx.tcx(), 0, symbol::Symbol::intern("V"));
                         (
                             GParams::empty_env(vcx.tcx().mk_args(&[u.into(), v.into()])),
                             GParams::empty_env(vcx.tcx().mk_args(&[u.into()])),

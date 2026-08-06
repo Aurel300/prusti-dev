@@ -130,7 +130,7 @@ impl TaskEncoder for MirPureEnc {
                     let substs = vcx.tcx().mk_args(gargs.args());
                     vcx.body_mut().get_spec_body(def_id, substs, Some(context))
                 }
-                PureKind::Pure => vcx.body_mut().get_pure_fn_body(def_id, identity, None),
+                PureKind::Pure => crate::encoders::pure_body(def_id),
                 PureKind::Constant(promoted) => {
                     vcx.body_mut().get_promoted_constant_body(def_id, promoted)
                 }

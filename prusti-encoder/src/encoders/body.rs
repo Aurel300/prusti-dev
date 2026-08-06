@@ -36,6 +36,19 @@ pub fn impure_body_with_facts<'vir>(def_id: DefId) -> Option<BodyWithBorrowckFac
     vir::with_vcx(|vcx| Some(vcx.body_mut().get_impure_fn_body_with_facts(def_id)))
 }
 
+/// The MIR body of the pure function `def_id`. Only the bodies of functions
+/// whose specification marks them pure are preloaded (they must be exported
+/// across crates); a local function is pure by inheritance from the trait
+/// method it implements, so its body is taken like any other local body.
+pub fn pure_body<'vir>(def_id: DefId) -> MirBody<'vir> {
+    impure_body(def_id).unwrap_or_else(|| {
+        vir::with_vcx(|vcx| {
+            let substs = ty::GenericArgs::identity_for_item(vcx.tcx(), def_id);
+            vcx.body_mut().get_pure_fn_body(def_id, substs, None)
+        })
+    })
+}
+
 /// The MIR body of the specification `def_id`, taken generically (i.e. with
 /// its own parameters, see [instantiated_spec_body] for the exception).
 pub fn spec_body<'vir>(def_id: DefId) -> MirBody<'vir> {

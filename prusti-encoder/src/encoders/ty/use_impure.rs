@@ -93,12 +93,12 @@ pub struct TyUseImpureArrayData<'vir> {
 #[derive(Debug, Clone, Copy)]
 pub enum TyUseImpureStructType<'vir> {
     Box {
-        unique_ptr: &'vir TyUseImpureStruct<'vir>,
+        unique_impure: &'vir TyUseImpureStruct<'vir>,
     },
     Unique {
-        nonnull_ptr: &'vir TyData<'vir, UseImpureTyDatas>,
+        nonnull_impure: &'vir TyData<'vir, UseImpureTyDatas>,
         nonnull_pure: &'vir TyData<'vir, UsePureTyDatas>,
-        rawptr: &'vir TyUsePureRaw<'vir>,
+        rawptr_pure: &'vir TyUsePureRaw<'vir>,
         inner_caster: GArgCaster<'vir, Impure>,
     },
     Generic,
@@ -303,7 +303,7 @@ impl<'a, 'vir> TyUseImpureWalker<'a, 'vir> {
                     data.fields[0].0.ty().decompose_normalize(self.args),
                 )?;
                 TyUseImpureStructType::Box {
-                    unique_ptr: inner.expect_structlike(),
+                    unique_impure: inner.expect_structlike(),
                 }
             }
             super::StructType::Unique => {
@@ -314,9 +314,9 @@ impl<'a, 'vir> TyUseImpureWalker<'a, 'vir> {
                 let raw_pure = self.deps.require_dep::<TyUsePureEnc>(raw)?;
                 let caster = self.encode_normalized(data.fields[2].0.ty(), params)?;
                 TyUseImpureStructType::Unique {
-                    nonnull_ptr: nonnull_impure,
+                    nonnull_impure,
                     nonnull_pure,
-                    rawptr: raw_pure.expect_raw(),
+                    rawptr_pure: raw_pure.expect_raw(),
                     inner_caster: caster,
                 }
             }
@@ -529,6 +529,64 @@ impl<'vir> TyUseImpureStruct<'vir> {
         (self.ref_to_pred)(self_ref, self.args.get_ty(), self.args.get_const())(perm)
     }
 
+    /// If this is a struct containing a unique pointer, get the address of the pointee.
+    pub fn get_wrapped_addr_from_addr<Curr, Next>(
+        &self,
+        addr: vir::ExprGenRef<'vir, Curr, Next>,
+    ) -> vir::ExprGenRef<'vir, Curr, Next> {
+        match self.data.struct_type {
+            TyUseImpureStructType::Box { unique_impure } => {
+                unique_impure.get_wrapped_addr_from_addr(self.fields[0].field_ref(addr))
+            }
+            TyUseImpureStructType::Unique {
+                nonnull_impure,
+                nonnull_pure,
+                rawptr_pure,
+                ..
+            } => rawptr_pure.address_access(
+                nonnull_pure.expect_structlike().fields[0]
+                    .read(
+                        nonnull_impure
+                            .ref_to_snap(self.fields[0].field_ref(addr))
+                            .downcast_ty(),
+                    )
+                    .downcast_ty(),
+            ),
+            TyUseImpureStructType::Generic => {
+                unreachable!("Cannot get the wrapped address of a generic struct")
+            }
+        }
+    }
+
+    /// If this is a struct containing a unique pointer, get the metdata of the rawptr.
+    pub fn get_wrapped_metadata_from_addr<Curr, Next>(
+        &self,
+        addr: vir::ExprGenRef<'vir, Curr, Next>,
+    ) -> vir::ExprGenSnap<'vir, Curr, Next> {
+        match self.data.struct_type {
+            TyUseImpureStructType::Box { unique_impure } => {
+                unique_impure.get_wrapped_metadata_from_addr(self.fields[0].field_ref(addr))
+            }
+            TyUseImpureStructType::Unique {
+                nonnull_impure,
+                nonnull_pure,
+                rawptr_pure,
+                ..
+            } => rawptr_pure.metadata_access(
+                nonnull_pure.expect_structlike().fields[0]
+                    .read(
+                        nonnull_impure
+                            .ref_to_snap(self.fields[0].field_ref(addr))
+                            .downcast_ty(),
+                    )
+                    .downcast_ty(),
+            ),
+            TyUseImpureStructType::Generic => {
+                unreachable!("Cannot get the wrapped address of a generic struct")
+            }
+        }
+    }
+
     /// Fold the predicate (including generic casts).
     fn fold(
         &self,
@@ -538,32 +596,30 @@ impl<'vir> TyUseImpureStruct<'vir> {
         let pred_app = self.ref_to_pred_app(self_ref, perm);
         let fold = vir::with_vcx(|vcx| vcx.mk_fold_stmt(pred_app));
         let mut stmts = vec![];
-        if let TyUseImpureStructType::Box { unique_ptr } = self.data.struct_type {
+        if let TyUseImpureStructType::Box { unique_impure } = self.data.struct_type {
             // if the struct is a Box we also need to fold the unique pointer.
-            // folding the unique pointer means accessing its snapshot to retrieve the pointee
             let unique_ptr_ref = self.fields[0].field_ref(self_ref);
-            let unique_pred_app = unique_ptr.ref_to_pred_app(unique_ptr_ref, perm);
-            let unique_fold = vir::with_vcx(|vcx| vcx.mk_fold_stmt(unique_pred_app));
-            let (nonnull_ptr, nonnull_pure, rawptr, inner_caster) =
-                match unique_ptr.data.struct_type {
-                    TyUseImpureStructType::Unique {
-                        nonnull_ptr,
-                        nonnull_pure,
-                        rawptr,
-                        inner_caster,
-                    } => (nonnull_ptr, nonnull_pure, rawptr, inner_caster),
-                    _ => unreachable!("expected unique pointer struct type"),
-                };
-            let nonnull_ptr_ref = unique_ptr.fields[0].field_ref(unique_ptr_ref);
-            let nonnull_snap = nonnull_ptr.data.ref_to_snap(nonnull_ptr_ref);
+            stmts.extend(unique_impure.fold(unique_ptr_ref, perm));
+        }
+        if let TyUseImpureStructType::Unique {
+            nonnull_impure,
+            nonnull_pure,
+            rawptr_pure,
+            inner_caster,
+        } = self.data.struct_type
+        {
+            // folding the unique pointer means accessing its snapshot to retrieve the pointee to perform a cast
+            let nonnull_ptr_ref = self.fields[0].field_ref(self_ref);
+            let nonnull_snap = nonnull_impure.data.ref_to_snap(nonnull_ptr_ref);
             let rawptr_snap =
                 nonnull_pure.expect_structlike().fields[0].read(nonnull_snap.downcast_ty());
-            let rawptr_deref = rawptr.address_access(rawptr_snap.downcast_ty());
+            let rawptr_deref = rawptr_pure.address_access(rawptr_snap.downcast_ty());
             let inner_cast = inner_caster.cast_to_callee_ctx(rawptr_deref);
-
-            stmts.extend([inner_cast.unwrap(), unique_fold]);
+            stmts.push(inner_cast.unwrap());
+        } else {
+            // we manually create the right type of cast
+            stmts.extend(self.cast_to_callee_ctx(self_ref));
         }
-        stmts.extend(self.cast_to_callee_ctx(self_ref));
         stmts.push(fold);
         stmts.into_iter()
     }
@@ -577,31 +633,29 @@ impl<'vir> TyUseImpureStruct<'vir> {
         let pred_app = self.ref_to_pred_app(self_ref, perm);
         let unfold = vir::with_vcx(|vcx| vcx.mk_unfold_stmt(pred_app));
         let mut stmts = vec![unfold];
-        stmts.extend(self.cast_to_caller_ctx(self_ref));
-        if let TyUseImpureStructType::Box { unique_ptr } = self.data.struct_type {
-            // if the struct is a Box we also need to unfold the unique pointer.
-            // unfolding the unique pointer means accessing its snapshot to retrieve the pointee
-            let unique_ptr_ref = self.fields[0].field_ref(self_ref);
-            let unique_pred_app = unique_ptr.ref_to_pred_app(unique_ptr_ref, perm);
-            let unique_unfold = vir::with_vcx(|vcx| vcx.mk_unfold_stmt(unique_pred_app));
-            let (nonnull_ptr, nonnull_pure, rawptr, inner_caster) =
-                match unique_ptr.data.struct_type {
-                    TyUseImpureStructType::Unique {
-                        nonnull_ptr,
-                        nonnull_pure,
-                        rawptr,
-                        inner_caster,
-                    } => (nonnull_ptr, nonnull_pure, rawptr, inner_caster),
-                    _ => unreachable!("expected unique pointer struct type"),
-                };
-            let nonnull_ptr_ref = unique_ptr.fields[0].field_ref(unique_ptr_ref);
-            let nonnull_snap = nonnull_ptr.data.ref_to_snap(nonnull_ptr_ref);
+        if let TyUseImpureStructType::Unique {
+            nonnull_impure,
+            nonnull_pure,
+            rawptr_pure,
+            inner_caster,
+        } = self.data.struct_type
+        {
+            // unfolding the unique pointer means accessing its snapshot to retrieve the pointee to perform a cast
+            let nonnull_ptr_ref = self.fields[0].field_ref(self_ref);
+            let nonnull_snap = nonnull_impure.data.ref_to_snap(nonnull_ptr_ref);
             let rawptr_snap =
                 nonnull_pure.expect_structlike().fields[0].read(nonnull_snap.downcast_ty());
-            let rawptr_deref = rawptr.address_access(rawptr_snap.downcast_ty());
+            let rawptr_deref = rawptr_pure.address_access(rawptr_snap.downcast_ty());
             let inner_cast = inner_caster.cast_to_caller_ctx(rawptr_deref);
-
-            stmts.extend([unique_unfold, inner_cast.unwrap()]);
+            stmts.push(inner_cast.unwrap());
+        } else {
+            // we manually create the right type of cast
+            stmts.extend(self.cast_to_caller_ctx(self_ref));
+        }
+        if let TyUseImpureStructType::Box { unique_impure } = self.data.struct_type {
+            // if the struct is a Box we also need to unfold the unique pointer.
+            let unique_ptr_ref = self.fields[0].field_ref(self_ref);
+            stmts.extend(unique_impure.unfold(unique_ptr_ref, perm));
         }
         stmts.into_iter()
     }

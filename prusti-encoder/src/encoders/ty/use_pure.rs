@@ -1,3 +1,5 @@
+use std::unreachable;
+
 use task_encoder::{EncodeFullError, EncodeFullResult, TaskEncoder};
 use vir::CastType;
 
@@ -114,10 +116,23 @@ pub struct TyUsePureField<'vir> {
 }
 
 #[derive(Debug, Clone, Copy)]
+pub enum TyUsePureStructType<'vir> {
+    Box {
+        unique_pure: &'vir TyUsePureStruct<'vir>,
+    },
+    Unique {
+        nonnull_pure: &'vir TyData<'vir, UsePureTyDatas>,
+        rawptr_pure: &'vir TyUsePureRaw<'vir>,
+    },
+    Generic,
+}
+
+#[derive(Debug, Clone, Copy)]
 pub struct TyUsePureStructData<'vir> {
     #[allow(dead_code)]
     args: GArgsTy<'vir>,
     pure: <PureTyDatas as TyDatas<'vir>>::StructData,
+    struct_type: TyUsePureStructType<'vir>,
 }
 
 /// Encodes a type into the snapshot representation. Takes an arbitrary Rust
@@ -307,9 +322,31 @@ impl<'a, 'vir> TyUsePureWalker<'a, 'vir> {
             })
             .collect::<EncResult<'vir, Vec<_>>>()?;
         let struct_type = data.struct_type;
+        let pure_struct_type = match struct_type {
+            super::StructType::Box => {
+                let inner_pure = self.deps.require_dep::<TyUsePureEnc>(
+                    data.fields[0].0.ty().decompose_normalize(self.args),
+                )?;
+                TyUsePureStructType::Box {
+                    unique_pure: inner_pure.expect_structlike(),
+                }
+            }
+            super::StructType::Unique => {
+                let nonnull = data.fields[0].0.ty().decompose_normalize(self.args);
+                let nonnull_pure = self.deps.require_dep::<TyUsePureEnc>(nonnull)?;
+                let raw = nonnull.ty.expect_structlike().fields[0].decompose_normalize(self.args);
+                let raw_pure = self.deps.require_dep::<TyUsePureEnc>(raw)?;
+                TyUsePureStructType::Unique {
+                    nonnull_pure,
+                    rawptr_pure: raw_pure.expect_raw(),
+                }
+            }
+            _ => TyUsePureStructType::Generic,
+        };
         let data = TyUsePureStructData {
             args: self.args_t,
             pure: *data.1,
+            struct_type: pure_struct_type,
         };
         Ok(StructData::new(data, fields, struct_type))
     }
@@ -522,6 +559,66 @@ impl<'vir> TyUsePureArray<'vir> {
 }
 
 impl<'vir> TyUsePureStruct<'vir> {
+    /// If this is a struct containing a unique pointer, get the address of the pointee.
+    pub fn get_wrapped_addr_from_snap<Curr, Next>(
+        &self,
+        snap: vir::ExprGenCSnap<'vir, Curr, Next>,
+    ) -> vir::ExprGenRef<'vir, Curr, Next> {
+        match self.data.struct_type {
+            TyUsePureStructType::Box { unique_pure } => {
+                unique_pure.get_wrapped_addr_from_snap(self.fields[0].read(snap).downcast_ty())
+            }
+            TyUsePureStructType::Unique {
+                nonnull_pure,
+                rawptr_pure,
+            } => rawptr_pure.address_access(
+                nonnull_pure.expect_structlike().fields[0]
+                    .read(self.fields[0].read(snap).downcast_ty())
+                    .downcast_ty(),
+            ),
+            TyUsePureStructType::Generic => {
+                unreachable!("Cannot get the wrapped address of a generic struct")
+            }
+        }
+    }
+
+    /// If this is a struct containing a unique pointer, get the metadata of the rawptr.
+    pub fn get_wrapped_metadata_from_snap<Curr, Next>(
+        &self,
+        snap: vir::ExprGenCSnap<'vir, Curr, Next>,
+    ) -> vir::ExprGenSnap<'vir, Curr, Next> {
+        match self.data.struct_type {
+            TyUsePureStructType::Box { unique_pure } => {
+                unique_pure.get_wrapped_metadata_from_snap(self.fields[0].read(snap).downcast_ty())
+            }
+            TyUsePureStructType::Unique {
+                nonnull_pure,
+                rawptr_pure,
+            } => rawptr_pure.metadata_access(
+                nonnull_pure.expect_structlike().fields[0]
+                    .read(self.fields[0].read(snap).downcast_ty())
+                    .downcast_ty(),
+            ),
+            TyUsePureStructType::Generic => {
+                unreachable!("Cannot get the wrapped address of a generic struct")
+            }
+        }
+    }
+
+    /// If this is a struct containing a unique pointer, get the value of the pointee.
+    pub fn get_wrapped_value_from_snap<Curr, Next>(
+        &self,
+        snap: vir::ExprGenCSnap<'vir, Curr, Next>,
+    ) -> vir::ExprGenSnap<'vir, Curr, Next> {
+        match self.data.struct_type {
+            TyUsePureStructType::Box { unique_pure } => {
+                unique_pure.get_wrapped_value_from_snap(self.fields[0].read(snap).downcast_ty())
+            }
+            TyUsePureStructType::Unique { .. } => self.fields[2].read(snap),
+            TyUsePureStructType::Generic => snap.upcast_ty(),
+        }
+    }
+
     pub fn field_snaps_to_snap<Curr, Next>(
         &self,
         mut snaps: Vec<vir::ExprGenSnap<'vir, Curr, Next>>,

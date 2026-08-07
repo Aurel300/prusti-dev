@@ -1241,79 +1241,25 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 match place_ty.ty.kind() {
                     ty::TyKind::Adt(adt, _) if adt.is_box() => {
                         // if the place is a Box, we need to follow the chain Box -> Unique -> NonNull -> RawPtr to get the raw pointer to the value
-                        let ty_task = RustTyDecomposition::from_ty(place_ty.ty, self.def_id);
-                        let rust_ty_box = ty_task.ty;
-                        let rust_ty_unique = rust_ty_box.expect_structlike().fields[0]
-                            .decompose_normalize(ty_task.args);
-                        let e_ty_unique_impure = self
-                            .deps
-                            .require_dep::<TyUseImpureEnc>(rust_ty_unique)
-                            .unwrap();
-                        let rust_ty_nonnull = rust_ty_unique.ty.expect_structlike().fields[0]
-                            .decompose_normalize(ty_task.args);
-                        let e_ty_nonnull_pure = self
-                            .deps
-                            .require_dep::<TyUsePureEnc>(rust_ty_nonnull)
-                            .unwrap();
-                        let e_ty_nonnull_impure = self
-                            .deps
-                            .require_dep::<TyUseImpureEnc>(rust_ty_nonnull)
-                            .unwrap();
-                        let rust_ty_rawptr = rust_ty_nonnull.ty.expect_structlike().fields[0]
-                            .decompose_normalize(ty_task.args);
-                        let e_ty_rawptr_pure = self
-                            .deps
-                            .require_dep::<TyUsePureEnc>(rust_ty_rawptr)
-                            .unwrap()
-                            .expect_raw();
-
-                        let p_ty = self.ty_use_impure(place_ty.ty).expect_structlike();
-                        let proj_box = p_ty.fields[0];
-                        let proj_unique = e_ty_unique_impure.expect_structlike().fields[0];
-
-                        let proj_nonnull = e_ty_nonnull_pure.expect_structlike().fields[0];
-
-                        let p_ty_pure = self.ty_use_pure(place_ty.ty).expect_structlike();
-                        let proj_box_pure = p_ty_pure.fields[0];
-                        let e_ty_unique_pure = self
-                            .deps
-                            .require_dep::<TyUsePureEnc>(rust_ty_unique)
-                            .unwrap();
-                        let proj_unique_pure = e_ty_unique_pure.expect_structlike().fields[2];
-                        let proj_unique_pure_to_nonnull =
-                            e_ty_unique_pure.expect_structlike().fields[0];
-
-                        let snap_rawptr = match expr.snap {
-                            None => proj_nonnull
-                                .read(
-                                    e_ty_nonnull_impure
-                                        .ref_to_snap(
-                                            proj_unique.field_ref(proj_box.field_ref(expr.address)),
-                                        )
-                                        .downcast_ty(),
-                                )
-                                .downcast_ty(),
-                            Some(snap) => proj_nonnull
-                                .read(
-                                    proj_unique_pure_to_nonnull
-                                        .read(proj_box_pure.read(snap.downcast_ty()).downcast_ty())
-                                        .downcast_ty(),
-                                )
-                                .downcast_ty(),
+                        let pure = self.ty_use_pure(place_ty.ty).expect_structlike();
+                        let impure = self.ty_use_impure(place_ty.ty).expect_structlike();
+                        let (addr, metadata, snap) = match expr.snap {
+                            None => (
+                                impure.get_wrapped_addr_from_addr(expr.address),
+                                impure.get_wrapped_metadata_from_addr(expr.address),
+                                None,
+                            ),
+                            Some(snap) => (
+                                pure.get_wrapped_addr_from_snap(snap.downcast_ty()),
+                                pure.get_wrapped_metadata_from_snap(snap.downcast_ty()),
+                                Some(pure.get_wrapped_value_from_snap(snap.downcast_ty())),
+                            ),
                         };
 
-                        let addr_expr = e_ty_rawptr_pure.address_access(snap_rawptr);
-
                         PlaceExpr {
-                            address: addr_expr,
-                            metadata: Some(e_ty_rawptr_pure.metadata_access(snap_rawptr)),
-                            // if the Box is behind an immutable reference, we do not unfold the predicate and therefore
-                            // use the snapshot representation
-                            snap: expr.snap.map(|snap| {
-                                proj_unique_pure
-                                    .read(proj_box_pure.read(snap.downcast_ty()).downcast_ty())
-                                    .downcast_ty()
-                            }),
+                            address: addr,
+                            metadata: Some(metadata),
+                            snap,
                         }
                     }
                     ty::TyKind::Ref(_, _, ty::Mutability::Not) => {

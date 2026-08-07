@@ -1280,7 +1280,8 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                             .require_dep::<TyUsePureEnc>(rust_ty_unique)
                             .unwrap();
                         let proj_unique_pure = e_ty_unique_pure.expect_structlike().fields[2];
-                        let proj_unique_pure_to_nonnull = e_ty_unique_pure.expect_structlike().fields[0];
+                        let proj_unique_pure_to_nonnull =
+                            e_ty_unique_pure.expect_structlike().fields[0];
 
                         let snap_rawptr = match expr.snap {
                             None => proj_nonnull
@@ -1293,7 +1294,12 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                                 )
                                 .downcast_ty(),
                             Some(snap) => proj_nonnull
-                                .read(proj_unique_pure_to_nonnull.read(proj_box_pure.read(snap.downcast_ty()).downcast_ty()).downcast_ty()).downcast_ty()
+                                .read(
+                                    proj_unique_pure_to_nonnull
+                                        .read(proj_box_pure.read(snap.downcast_ty()).downcast_ty())
+                                        .downcast_ty(),
+                                )
+                                .downcast_ty(),
                         };
 
                         let addr_expr = e_ty_rawptr_pure.address_access(snap_rawptr);

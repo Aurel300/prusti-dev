@@ -129,7 +129,7 @@ impl<'vir> OutputRefAny for FunctionEncOutputRef<'vir> {}
 struct FunctionEncOutput<'vir> {
     caller: vir::Function<'vir>,
     function: vir::Function<'vir>,
-    snap_fn: vir::Function<'vir>,
+    stripped_fn: vir::Function<'vir>,
 }
 
 #[derive(Clone, Debug)]
@@ -264,7 +264,7 @@ impl TaskEncoder for FunctionEnc {
                 Some(wrapped_call),
             );
 
-            let snap_fn_args = local_defs
+            let stripped_fn_args = local_defs
                 .args()
                 .map(|arg| match arg.ty_pure.specifics {
                     TySpecifics::ImmRef(data) => {
@@ -277,19 +277,19 @@ impl TaskEncoder for FunctionEnc {
                 })
                 .collect::<Vec<_>>();
 
-            let snap_fn_ident =
+            let stripped_fn_ident =
                 vir::vir_format_identifier!(vcx, "sf_{}", vcx.tcx().def_path_str(def_id));
-            let snap_fn_ref: FunctionIdn<
+            let stripped_fn_ref: FunctionIdn<
                 'vir,
                 (vir::ManySnap, vir::ManyTyVal, vir::ManyCSnap),
                 vir::Snap,
             > = FunctionIdn::new(
-                snap_fn_ident,
+                stripped_fn_ident,
                 (arg_types, generics.ty_args(), generics.const_args()),
                 return_type,
             );
-            let snap_fn_call = snap_fn_ref.call()(
-                vcx.alloc_slice(&snap_fn_args),
+            let stripped_fn_call = stripped_fn_ref.call()(
+                vcx.alloc_slice(&stripped_fn_args),
                 generics.ty_exprs(),
                 generics.const_exprs(),
             );
@@ -300,10 +300,10 @@ impl TaskEncoder for FunctionEnc {
                 &[],
                 vcx.alloc_slice(&posts),
                 None,
-                Some(snap_fn_call),
+                Some(stripped_fn_call),
             );
-            let snap_fn = vcx.mk_function(
-                snap_fn_ref,
+            let stripped_fn = vcx.mk_function(
+                stripped_fn_ref,
                 (&func_args, generics.ty_decls(), generics.const_decls()),
                 &[],
                 &[],
@@ -314,7 +314,7 @@ impl TaskEncoder for FunctionEnc {
                 FunctionEncOutput {
                     caller,
                     function,
-                    snap_fn,
+                    stripped_fn,
                 },
                 (),
             ))
@@ -325,7 +325,7 @@ impl TaskEncoder for FunctionEnc {
         for output in Self::all_outputs_local_no_errors(program) {
             program.add_function(output.caller);
             program.add_function(output.function);
-            program.add_function(output.snap_fn);
+            program.add_function(output.stripped_fn);
         }
     }
 }

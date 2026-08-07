@@ -1273,18 +1273,6 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
 
                         let proj_nonnull = e_ty_nonnull_pure.expect_structlike().fields[0];
 
-                        let snap_rawptr = proj_nonnull
-                            .read(
-                                e_ty_nonnull_impure
-                                    .ref_to_snap(
-                                        proj_unique.field_ref(proj_box.field_ref(expr.address)),
-                                    )
-                                    .downcast_ty(),
-                            )
-                            .downcast_ty();
-
-                        let addr_expr = e_ty_rawptr_pure.address_access(snap_rawptr);
-
                         let p_ty_pure = self.ty_use_pure(place_ty.ty).expect_structlike();
                         let proj_box_pure = p_ty_pure.fields[0];
                         let e_ty_unique_pure = self
@@ -1292,6 +1280,23 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                             .require_dep::<TyUsePureEnc>(rust_ty_unique)
                             .unwrap();
                         let proj_unique_pure = e_ty_unique_pure.expect_structlike().fields[2];
+                        let proj_unique_pure_to_nonnull = e_ty_unique_pure.expect_structlike().fields[0];
+
+                        let snap_rawptr = match expr.snap {
+                            None => proj_nonnull
+                                .read(
+                                    e_ty_nonnull_impure
+                                        .ref_to_snap(
+                                            proj_unique.field_ref(proj_box.field_ref(expr.address)),
+                                        )
+                                        .downcast_ty(),
+                                )
+                                .downcast_ty(),
+                            Some(snap) => proj_nonnull
+                                .read(proj_unique_pure_to_nonnull.read(proj_box_pure.read(snap.downcast_ty()).downcast_ty()).downcast_ty()).downcast_ty()
+                        };
+
+                        let addr_expr = e_ty_rawptr_pure.address_access(snap_rawptr);
 
                         PlaceExpr {
                             address: addr_expr,

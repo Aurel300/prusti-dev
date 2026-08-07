@@ -85,6 +85,7 @@ pub struct LocalDef<'vir> {
     pub local_snap: vir::LocalDeclSnap<'vir>,
     pub local_ex: vir::ExprRef<'vir>,
     pub impure_snap: vir::ExprSnap<'vir>,
+    pub inhabited: vir::ExprBool<'vir>,
     pub impure_pred: vir::ExprBool<'vir>,
 }
 
@@ -186,12 +187,14 @@ impl TaskEncoder for MirLocalDefEnc {
             let local_snap = vcx.mk_local_decl(snap_local, ty.snapshot());
             let local_ex = vcx.mk_local_ex(local);
             let impure_snap = ty.ref_to_snap(local_ex);
+            let inhabited = ty.inhabited();
             let impure_pred = ty.ref_to_pred(vcx, local_ex, None);
             LocalDef {
                 local,
                 local_snap,
                 local_ex,
                 impure_snap,
+                inhabited,
                 impure_pred,
             }
         }

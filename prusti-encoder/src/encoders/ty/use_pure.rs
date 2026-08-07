@@ -7,6 +7,7 @@ use crate::encoders::{
     ty::{
         LazyRustTy, RustTyDatas,
         generics::{GArgs, GArgsCastEnc, GArgsTyEnc, GParams},
+        use_inhabited::{TyUseInhabitedEnc, TyUseInhabitedRef},
     },
 };
 
@@ -140,6 +141,10 @@ type EncResult<'vir, T> = Result<T, EncodeFullError<'vir, TyUsePureEnc>>;
 pub struct TyUsePureRef<'vir> {
     pub snapshot: vir::TypeSnap<'vir>,
     args: GArgsTy<'vir>,
+    // This is part of the pure type-use interface even though its current
+    // callers only need either the snapshot or inhabitedness, not both.
+    #[allow(dead_code)]
+    inhabited: TyUseInhabitedRef<'vir>,
     ty_pure_ref: TyPureRef<'vir>,
 }
 
@@ -169,9 +174,11 @@ impl TaskEncoder for TyUsePureEnc {
     ) -> EncodeFullResult<'vir, Self> {
         let ty_pure_ref = deps.require_ref::<TyPureEnc>(task_key.ty)?;
         let args = deps.require_dep::<GArgsTyEnc>(task_key.args)?;
+        let inhabited = deps.require_ref::<TyUseInhabitedEnc>(*task_key)?;
         let snapshot = ty_pure_ref.snapshot;
         let inner = TyUsePureRef {
             args,
+            inhabited,
             snapshot,
             ty_pure_ref,
         };
@@ -349,6 +356,11 @@ impl<'a, 'vir> TyUsePureWalker<'a, 'vir> {
 }
 
 impl<'vir> TyUsePureRef<'vir> {
+    #[allow(dead_code)]
+    pub fn inhabited<Curr, Next>(&self) -> vir::ExprGenBool<'vir, Curr, Next> {
+        self.inhabited.inhabited()
+    }
+
     pub fn unreachable_to_snap<Curr, Next>(&self) -> vir::ExprGenSnap<'vir, Curr, Next> {
         self.ty_pure_ref.unreachable_to_snap.call()(self.args.get_ty(), self.args.get_const())
     }

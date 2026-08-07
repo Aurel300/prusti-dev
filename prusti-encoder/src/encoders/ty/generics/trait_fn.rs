@@ -290,6 +290,10 @@ impl TaskEncoder for TraitFnEnc {
                     item_generics.ty_exprs(),
                     item_generics.const_exprs(),
                 ));
+                // If the call succeeds, then its return type is definitely inhabited
+                // We need this postcondition to generate impure wrapper fns
+                // See tests/verify/pass/extern-spec/module-arg.rs
+                stub_posts.push(local_defs.ret().inhabited);
                 let wrapped_call = call_stub_pure_function.unwrap().call()(
                     func_arg_exprs,
                     item_generics.ty_exprs(),

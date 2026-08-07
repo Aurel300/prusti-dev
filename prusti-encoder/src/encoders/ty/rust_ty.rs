@@ -12,20 +12,12 @@ use super::{
 pub struct RustTyDecomposition<'tcx> {
     pub ty: RustTy<'tcx>,
     pub args: GArgs<'tcx>,
-    /// Whether this (concrete) type might be inhabited. `None` when this was
-    /// created in `RustTyDecomposition::identity` from a `RustTy` where we
-    /// cannot know the value.
-    pub maybe_inhabited: Option<bool>,
 }
 
 impl<'tcx> RustTyDecomposition<'tcx> {
-    fn new(ty: RustTy<'tcx>, args: GArgs<'tcx>, maybe_inhabited: Option<bool>) -> Self {
+    fn new(ty: RustTy<'tcx>, args: GArgs<'tcx>) -> Self {
         ty.params.check(args.args());
-        RustTyDecomposition {
-            ty,
-            args,
-            maybe_inhabited,
-        }
+        RustTyDecomposition { ty, args }
     }
 
     /// Decomposes a rustc `ty::Ty` into the core type used to generate a Viper
@@ -69,13 +61,11 @@ impl<'tcx> RustTyDecomposition<'tcx> {
         TyData::<'tcx, RustTyDatas>::from_prim_ty(ty)
     }
 
-    /// When you only have a `RustTy<'tcx>` but you want to use the
-    /// `TyUsePureEnc`. We cannot determine `maybe_inhabited` so it
-    /// is left `None`; the pure encoder never reads it, and passing
-    /// this decomposition to `TyUseImpureEnc` will panic.
+    /// When you only have a `RustTy<'tcx>` but you want to use one of the
+    /// type-use encoders.
     pub fn identity(ty: RustTy<'tcx>) -> Self {
         let args = GArgs::new(ty.params, ty.params.rust_params());
-        Self::new(ty, args, None)
+        Self::new(ty, args)
     }
 
     pub fn param() -> RustTy<'tcx> {
@@ -374,38 +364,17 @@ impl<'tcx> TyData<'tcx, RustTyDatas> {
         // Param generics).
         let ty = context.normalize(ty);
 
-        let name = Self::ty_name(ty);
+        let short_name = Self::ty_name(ty);
+        let name = Self::type_name(ty, &short_name);
         let (params, args) = Self::identity_for_ty(ty, context.is_trait_extern_spec());
         let args = GArgs::new(context, args);
         let specifics = TySpecifics::from_ty(ty);
-        // Whether the type might be inhabited. This is independent of
-        // lifetimes, but `is_privately_uninhabited` ICEs on types that still
-        // carry region artifacts (inference vars like `'?21` from the
-        // panic/format machinery, or escaping bound/placeholder regions like
-        // `'^2`). Therefore we first erase regions and type parameters.
-        let maybe_inhabited = vir::with_vcx(|vcx| {
-            use prusti_rustc_interface::middle::ty::FnMutDelegate;
-            let tcx = vcx.tcx();
-            let layout_ty = tcx.replace_escaping_bound_vars_uncached(
-                tcx.erase_regions(ty),
-                FnMutDelegate {
-                    regions: &mut |_| tcx.lifetimes.re_erased,
-                    types: &mut |_| ty::Ty::new_misc_error(tcx),
-                    consts: &mut |_| ty::Const::new_misc_error(tcx),
-                },
-            );
-            !layout_ty.is_privately_uninhabited(tcx, context.typing_env())
-        });
         let data = RustTyData {
             name: symbol::Symbol::intern(&name),
             params,
             special: RustTySpecial::from_ty(ty),
         };
-        RustTyDecomposition::new(
-            Self::new(data, specifics).alloc(),
-            args,
-            Some(maybe_inhabited),
-        )
+        RustTyDecomposition::new(Self::new(data, specifics).alloc(), args)
     }
 
     fn from_prim_ty(ty: ty::Ty<'tcx>) -> RustTyDecomposition<'tcx> {
@@ -418,7 +387,7 @@ impl<'tcx> TyData<'tcx, RustTyDatas> {
             special: RustTySpecial::None,
         };
         let specifics = TySpecifics::from_prim_ty(ty);
-        RustTyDecomposition::new(Self::new(data, specifics).alloc(), args, Some(true))
+        RustTyDecomposition::new(Self::new(data, specifics).alloc(), args)
     }
 
     fn ty_name(ty: ty::Ty<'tcx>) -> String {
@@ -458,6 +427,20 @@ impl<'tcx> TyData<'tcx, RustTyDatas> {
                 vir::with_vcx(|vcx| vcx.tcx().item_name(*def_id).to_ident_string())
             }
             other => unimplemented!("ty_name for {:?}", other),
+        }
+    }
+
+    fn type_name(ty: ty::Ty<'tcx>, fallback: &str) -> String {
+        let def_path_name = |def_id| {
+            vir::with_vcx(|vcx| {
+                let path = vcx.tcx().def_path_str(def_id);
+                vir::ViperIdent::sanitize(vcx, &path).to_str().to_owned()
+            })
+        };
+        match ty.kind() {
+            ty::TyKind::Adt(adt, _) => def_path_name(adt.did()),
+            ty::TyKind::Foreign(def_id) | ty::TyKind::Closure(def_id, _) => def_path_name(*def_id),
+            _ => fallback.to_owned(),
         }
     }
 

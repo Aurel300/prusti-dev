@@ -187,7 +187,7 @@ impl TaskEncoder for MirBuiltinCastEnc {
                             let res_data = res_ty.expect_immref();
                             let res_cons = |metadata| {
                                 res_data.prim_to_snap(
-                                    data.deref_access(arg_ex),
+                                    data.addr_access(arg_ex),
                                     metadata,
                                     data.value_access(arg_ex),
                                 )

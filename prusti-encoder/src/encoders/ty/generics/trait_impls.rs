@@ -430,7 +430,7 @@ impl TaskEncoder for TraitImplConditionEnc {
                                 def_id: impl_item_def_id,
                                 all_locals: false,
                             })?;
-                        let func_args = local_defs.ref_fn_args().collect::<Vec<_>>();
+                        let func_args = local_defs.local_decl_args().collect::<Vec<_>>();
                         let func_ret = local_defs.local_decl_ret();
 
                         let impl_item_is_pure = crate::encoders::is_function_pure(

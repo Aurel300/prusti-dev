@@ -1081,7 +1081,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                         let snap = encoded_place.snap.downcast_ty();
                         let metadata = e_ty.metadata_access(snap);
                         let val_expr = e_ty.value_access(snap);
-                        let ref_expr = e_ty.deref_access(snap);
+                        let ref_expr = e_ty.addr_access(snap);
                         EncodedPlace::new(val_expr, Some(ref_expr)).with_metadata(metadata)
                     }
                     TyKind::Ref(.., ty::Mutability::Mut) => {

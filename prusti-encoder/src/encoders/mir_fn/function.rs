@@ -1,16 +1,12 @@
 use prusti_interface::PrustiError;
 use prusti_rustc_interface::{middle::ty, span::def_id::DefId};
 use task_encoder::{EncodeFullResult, OutputRefAny, TaskEncoder, TaskEncoderDependencies};
-use vir::{FunctionIdn, Reify};
+use vir::{CastType, FunctionIdn, HasType, Reify};
 
 use crate::{
     encoders::{
-        MirLocalDefEnc, MirLocalDefEncTask, MirPureEnc, MirPureEncTask, MirSpecEnc, Pure, PureKind,
-        mir_fn::{CallTaskDescription, RustSignature},
-        pure::spec::MirSpecEncMode,
-        ty::generics::{GArgCaster, GArgsCastEnc, GArgsTy, GArgsTyEnc, GParams, GenericParamsEnc},
-    },
-    trait_support::is_function_with_body,
+        MirLocalDefEnc, MirLocalDefEncTask, MirPureEnc, MirPureEncTask, MirSpecEnc, Pure, PureKind, mir_fn::{CallTaskDescription, RustSignature}, pure::spec::MirSpecEncMode, ty::{TySpecifics, generics::{GArgCaster, GArgsCastEnc, GArgsTy, GArgsTyEnc, GParams, GenericParamsEnc}},
+    }, trait_support::is_function_with_body,
 };
 
 // Function wrapper
@@ -26,12 +22,12 @@ pub struct FunctionCallEncOutput<'vir> {
 }
 
 impl<'vir> FunctionCallEncOutput<'vir> {
-    /// Calls the definitional function `rf_`, used in pure/spec contexts.
+    /// Calls the definitional function `f_`, used in pure/spec contexts.
     pub fn call_pure<Curr, Next>(
         &self,
         args: Vec<vir::ExprGenSnap<'vir, Curr, Next>>,
     ) -> vir::ExprGenSnap<'vir, Curr, Next> {
-        self.call_casted(self.function.ref_fn_ref, args)
+        self.call_casted(self.function.function_ref, args)
     }
 
     /// Calls the caller wrapper `cf_`, used when encoding impure assignments.
@@ -75,7 +71,7 @@ impl TaskEncoder for FunctionCallEnc {
         let function_ref = if let Some(assoc_enc) = assoc_enc {
             FunctionEncOutputRef {
                 caller_ref: assoc_enc.call_stub_pure_caller.unwrap(),
-                ref_fn_ref: assoc_enc.call_stub_pure_ref_fn.unwrap(),
+                function_ref: assoc_enc.call_stub_pure_function.unwrap(),
             }
         } else {
             deps.require_ref::<FunctionEnc>(task_key.callee)?
@@ -117,7 +113,7 @@ struct FunctionEnc;
 #[derive(Debug, Clone)]
 struct FunctionEncOutputRef<'vir> {
     caller_ref: FunctionIdn<'vir, (vir::ManySnap, vir::ManyTyVal, vir::ManyCSnap), vir::Snap>,
-    ref_fn_ref: FunctionIdn<'vir, (vir::ManySnap, vir::ManyTyVal, vir::ManyCSnap), vir::Snap>,
+    function_ref: FunctionIdn<'vir, (vir::ManySnap, vir::ManyTyVal, vir::ManyCSnap), vir::Snap>,
 }
 
 impl<'vir> OutputRefAny for FunctionEncOutputRef<'vir> {}
@@ -125,7 +121,7 @@ impl<'vir> OutputRefAny for FunctionEncOutputRef<'vir> {}
 #[derive(Debug, Clone, Copy)]
 struct FunctionEncOutput<'vir> {
     caller: vir::Function<'vir>,
-    ref_fn: vir::Function<'vir>,
+    function: vir::Function<'vir>,
     snap_fn: vir::Function<'vir>,
 }
 
@@ -162,9 +158,9 @@ impl TaskEncoder for FunctionEnc {
 
             let caller_ident =
                 vir::vir_format_identifier!(vcx, "cf_{}", vcx.tcx().def_path_str(def_id));
-            let ref_fn_ident =
-                vir::vir_format_identifier!(vcx, "rf_{}", vcx.tcx().def_path_str(def_id));
-            let arg_types = vcx.alloc_slice(&local_defs.ref_fn_ty_args().collect::<Vec<_>>());
+            let function_ident =
+                vir::vir_format_identifier!(vcx, "f_{}", vcx.tcx().def_path_str(def_id));
+            let arg_types = vcx.alloc_slice(&local_defs.snap_ty_args().collect::<Vec<_>>());
             let return_type = local_defs.snap_ty_return();
             let params = GParams::from(def_id);
             let generics = deps.require_dep::<GenericParamsEnc>(params)?;
@@ -173,8 +169,8 @@ impl TaskEncoder for FunctionEnc {
                 (arg_types, generics.ty_args(), generics.const_args()),
                 return_type,
             );
-            let ref_fn_ref = FunctionIdn::new(
-                ref_fn_ident,
+            let function_ref = FunctionIdn::new(
+                function_ident,
                 (arg_types, generics.ty_args(), generics.const_args()),
                 return_type,
             );
@@ -182,7 +178,7 @@ impl TaskEncoder for FunctionEnc {
                 def_id,
                 FunctionEncOutputRef {
                     caller_ref,
-                    ref_fn_ref,
+                    function_ref,
                 },
             )?;
 
@@ -242,12 +238,12 @@ impl TaskEncoder for FunctionEnc {
                 })
                 .collect::<Vec<_>>();
 
-            let func_args = local_defs.ref_fn_args().collect::<Vec<_>>();
+            let func_args = local_defs.local_decl_args().collect::<Vec<_>>();
             let wrapped_call_args = func_args
                 .iter()
                 .map(|arg| vcx.mk_local_ex(arg))
                 .collect::<Vec<_>>();
-            let wrapped_call = ref_fn_ref.call()(
+            let wrapped_call = function_ref.call()(
                 &wrapped_call_args,
                 generics.ty_exprs(),
                 generics.const_exprs(),
@@ -261,6 +257,37 @@ impl TaskEncoder for FunctionEnc {
                 Some(wrapped_call),
             );
 
+            #[derive(Clone, Copy)]
+            pub struct LocalDefTarget<'vir> {
+                /// a local of the target's snapshot type
+                pub deref_snap: vir::LocalDeclSnap<'vir>,
+                /// the snapshot of `local_snap`'s target
+                pub deref_ex: vir::ExprSnap<'vir>,
+            }
+
+            let snap_fn_args = local_defs.args().map(|arg| {
+                let target = match arg.ty_pure.specifics {
+                    TySpecifics::ImmRef(data) => {
+                        let deref_ex = data.value_access(vcx.mk_local_ex(arg.local_snap).downcast_ty());
+                        let deref_snap = vcx.mk_local_decl(arg.local_snap.name, deref_ex.ty());
+                        Some(LocalDefTarget {
+                            deref_snap,
+                            deref_ex,
+                        })
+                    }
+                    _ => None,
+                };
+                (target, target
+                    .map(|target| target.deref_snap)
+                    .unwrap_or(arg.local_snap))
+            }).collect::<Vec<_>>();
+            let snap_fn_args = vcx.alloc_slice(&snap_fn_args);
+
+            let snap_fn_ty_args = snap_fn_args.iter()
+                .map(|(_, arg)| arg.ty())
+                .collect::<Vec<_>>();
+            let snap_fn_ty_args = vcx.alloc_slice(&snap_fn_ty_args);
+
             let snap_fn_ident =
                 vir::vir_format_identifier!(vcx, "sf_{}", vcx.tcx().def_path_str(def_id));
             let snap_fn_ref: FunctionIdn<
@@ -270,23 +297,21 @@ impl TaskEncoder for FunctionEnc {
             > = FunctionIdn::new(
                 snap_fn_ident,
                 (
-                    vcx.alloc_slice(&local_defs.snap_fn_ty_args().collect::<Vec<_>>()),
+                    snap_fn_ty_args,
                     generics.ty_args(),
                     generics.const_args(),
                 ),
                 return_type,
             );
             let snap_fn_call = snap_fn_ref.call()(
-                vcx.alloc_slice(
-                    &local_defs
-                        .args()
-                        .map(|arg| {
-                            arg.target
-                                .map(|target| target.deref_ex)
-                                .unwrap_or(vcx.mk_local_ex(arg.local_snap))
-                        })
-                        .collect::<Vec<_>>(),
-                ),
+                vcx.alloc_slice(&snap_fn_args.iter()
+                    .zip(local_defs.args())
+                    .map(|((target, _), arg)| {
+                        target
+                            .map(|target| target.deref_ex)
+                            .unwrap_or(vcx.mk_local_ex(arg.local_snap))
+                    })
+                    .collect::<Vec<_>>()),
                 generics.ty_exprs(),
                 generics.const_exprs(),
             );
@@ -298,8 +323,8 @@ impl TaskEncoder for FunctionEnc {
                 vcx.mk_bool::<true>(),
             ));
 
-            let ref_fn = vcx.mk_function(
-                ref_fn_ref,
+            let function = vcx.mk_function(
+                function_ref,
                 (&func_args, generics.ty_decls(), generics.const_decls()),
                 &[],
                 vcx.alloc_slice(&posts),
@@ -309,7 +334,7 @@ impl TaskEncoder for FunctionEnc {
             let snap_fn = vcx.mk_function(
                 snap_fn_ref,
                 (
-                    &local_defs.snap_fn_args().collect::<Vec<_>>(),
+                    vcx.alloc_slice(&snap_fn_args.iter().map(|(_, arg)| *arg).collect::<Vec<_>>()),
                     generics.ty_decls(),
                     generics.const_decls(),
                 ),
@@ -321,7 +346,7 @@ impl TaskEncoder for FunctionEnc {
             Ok((
                 FunctionEncOutput {
                     caller,
-                    ref_fn,
+                    function,
                     snap_fn,
                 },
                 (),
@@ -332,7 +357,7 @@ impl TaskEncoder for FunctionEnc {
     fn emit_outputs<'vir>(program: &mut task_encoder::Program<'vir>) {
         for output in Self::all_outputs_local_no_errors(program) {
             program.add_function(output.caller);
-            program.add_function(output.ref_fn);
+            program.add_function(output.function);
             program.add_function(output.snap_fn);
         }
     }

@@ -364,8 +364,7 @@ impl<'tcx> TyData<'tcx, RustTyDatas> {
         // Param generics).
         let ty = context.normalize(ty);
 
-        let short_name = Self::ty_name(ty);
-        let name = Self::type_name(ty, &short_name);
+        let name = Self::ty_name(ty);
         let (params, args) = Self::identity_for_ty(ty, context.is_trait_extern_spec());
         let args = GArgs::new(context, args);
         let specifics = TySpecifics::from_ty(ty);
@@ -391,12 +390,17 @@ impl<'tcx> TyData<'tcx, RustTyDatas> {
     }
 
     fn ty_name(ty: ty::Ty<'tcx>) -> String {
+        let def_id_name = |def_id| {
+            vir::with_vcx(|vcx| {
+                vir::ViperIdent::from_def_id(vcx, def_id)
+                    .to_str()
+                    .to_owned()
+            })
+        };
         match ty.kind() {
             _ if ty.is_primitive() => Self::prim_ty_name(ty),
             ty::TyKind::Str => String::from("Str"),
-            ty::TyKind::Adt(adt, _) => {
-                vir::with_vcx(|vcx| vcx.tcx().item_name(adt.did()).to_ident_string())
-            }
+            ty::TyKind::Adt(adt, _) => def_id_name(adt.did()),
             ty::TyKind::Tuple(params) => format!("{}_Tuple", params.len()),
             ty::TyKind::Never => String::from("Never"),
             ty::TyKind::Ref(_, _, ty::Mutability::Not) => String::from("Ref_immutable"),
@@ -404,43 +408,13 @@ impl<'tcx> TyData<'tcx, RustTyDatas> {
             ty::TyKind::RawPtr(_, ty::Mutability::Not) => String::from("RawPtr_immutable"),
             ty::TyKind::RawPtr(_, ty::Mutability::Mut) => String::from("RawPtr_mutable"),
             ty::TyKind::Param(_) | ty::TyKind::Alias(..) => String::from("Param"),
-            ty::TyKind::Closure(def_id, _) => vir::with_vcx(|vcx| {
-                // Asking for the item_name of a closure triggers an ICE in
-                // the compiler, so name it after its nearest non-closure
-                // ancestor (closures can nest, e.g. a quantifier's closure
-                // inside an assertion's closure).
-                let mut def_id = *def_id;
-                let mut key = vcx.tcx().def_key(def_id);
-                let mut name = String::new();
-                while let hir::definitions::DefPathData::Closure = key.disambiguated_data.data {
-                    name = format!("_Closure_{}{name}", key.disambiguated_data.disambiguator);
-                    def_id.index = key.parent.unwrap();
-                    key = vcx.tcx().def_key(def_id);
-                }
-                format!("{}{name}", vcx.tcx().item_name(def_id).to_ident_string())
-            }),
+            ty::TyKind::Closure(def_id, _) => def_id_name(*def_id),
             ty::TyKind::FnPtr(..) => String::from("FnPtr"),
             ty::TyKind::Array(..) => String::from("Array"),
             ty::TyKind::Slice(..) => String::from("Slice"),
             ty::TyKind::Dynamic(..) => String::from("Dyn"),
-            ty::TyKind::Foreign(def_id) | ty::TyKind::FnDef(def_id, _) => {
-                vir::with_vcx(|vcx| vcx.tcx().item_name(*def_id).to_ident_string())
-            }
+            ty::TyKind::Foreign(def_id) | ty::TyKind::FnDef(def_id, _) => def_id_name(*def_id),
             other => unimplemented!("ty_name for {:?}", other),
-        }
-    }
-
-    fn type_name(ty: ty::Ty<'tcx>, fallback: &str) -> String {
-        let def_path_name = |def_id| {
-            vir::with_vcx(|vcx| {
-                let path = vcx.tcx().def_path_str(def_id);
-                vir::ViperIdent::sanitize(vcx, &path).to_str().to_owned()
-            })
-        };
-        match ty.kind() {
-            ty::TyKind::Adt(adt, _) => def_path_name(adt.did()),
-            ty::TyKind::Foreign(def_id) | ty::TyKind::Closure(def_id, _) => def_path_name(*def_id),
-            _ => fallback.to_owned(),
         }
     }
 

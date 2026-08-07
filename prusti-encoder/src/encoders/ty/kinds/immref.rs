@@ -19,6 +19,9 @@ pub(crate) fn ty_pure<'vir>(
     let ty = data.metadata.decompose(task_key.params);
     let metadata = deps.require_ref::<TyUsePureEnc>(ty)?.snapshot.downcast_ty();
 
+    let dummy_metadata =
+        builder.function("dummy_metadata", (), vir::TYPE_PSNAP, (), &[], &[], None);
+
     let ty = data.referent.decompose(task_key.params);
     let referent = deps.require_ref::<TyUsePureEnc>(ty)?.snapshot.downcast_ty();
 
@@ -29,6 +32,7 @@ pub(crate) fn ty_pure<'vir>(
         prim_to_snap: field_snaps_to_snap,
         deref_access: field_access[0].downcast_ty(),
         metadata_access: field_access[1].downcast_ty(),
+        dummy_metadata,
         value_access: field_access[2].downcast_ty(),
     })
 }

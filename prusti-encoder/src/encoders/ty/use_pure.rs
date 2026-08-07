@@ -392,6 +392,12 @@ impl<'vir> TyUsePureImmRef<'vir> {
             .cast_to_caller_ctx(metadata.upcast_ty())
     }
 
+    pub fn dummy_metadata<Curr, Next>(&self) -> vir::ExprGenSnap<'vir, Curr, Next> {
+        let metadata = self.pure.dummy_metadata.call()();
+        self.metadata_caster
+            .cast_to_caller_ctx(metadata.upcast_ty())
+    }
+
     pub fn value_access<Curr, Next>(
         &self,
         snap: vir::ExprGenCSnap<'vir, Curr, Next>,

@@ -12,8 +12,10 @@ use vir::HasType;
 
 use crate::{
     encoders::{
-        TyUseImpureEnc, TyUsePureEnc, ty::{RustTyDecomposition, use_impure::TyUseImpure, use_pure::TyUsePure},
-    }, trait_support::is_function_with_body,
+        TyUseImpureEnc, TyUsePureEnc,
+        ty::{RustTyDecomposition, use_impure::TyUseImpure, use_pure::TyUsePure},
+    },
+    trait_support::is_function_with_body,
 };
 
 pub struct MirLocalDefEnc;
@@ -76,7 +78,6 @@ pub struct LocalDef<'vir> {
     pub local_ex: vir::ExprRef<'vir>,
     pub impure_snap: vir::ExprSnap<'vir>,
     pub impure_pred: vir::ExprBool<'vir>,
-    pub ty_impure: TyUseImpure<'vir>,
     pub ty_pure: TyUsePure<'vir>,
 }
 
@@ -218,7 +219,6 @@ impl TaskEncoder for MirLocalDefEnc {
                 local_ex,
                 impure_snap,
                 impure_pred,
-                ty_impure,
                 ty_pure,
             }
         }

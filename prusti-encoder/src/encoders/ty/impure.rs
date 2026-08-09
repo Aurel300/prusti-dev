@@ -21,6 +21,7 @@ impl<'vir> TyDatas<'vir> for ImpureTyDatas {
     type ImmRefData = TyImpureImmRefData;
     type MutRefData = TyImpureMutRefData<'vir>;
     type RawData = TyImpureRawData;
+    type UniqueData = TyImpureUniqueData;
     type FieldData = TyImpureFieldData<'vir>;
     type StructData = ();
     type VariantData = TyImpureVariantData<'vir>;
@@ -35,6 +36,7 @@ pub type TyImpurePrimitive<'vir> = <ImpureTyDatas as TyDatas<'vir>>::PrimitiveDa
 pub type TyImpureImmRef<'vir> = <ImpureTyDatas as TyDatas<'vir>>::ImmRefData;
 pub type TyImpureMutRef<'vir> = <ImpureTyDatas as TyDatas<'vir>>::MutRefData;
 pub type TyImpureRaw<'vir> = <ImpureTyDatas as TyDatas<'vir>>::RawData;
+pub type TyImpureUnique<'vir> = <ImpureTyDatas as TyDatas<'vir>>::UniqueData;
 pub type TyImpureBuiltin<'vir> = <ImpureTyDatas as TyDatas<'vir>>::BuiltinData;
 
 #[derive(Debug, Clone, Copy)]
@@ -42,6 +44,9 @@ pub struct TyImpureImmRefData {}
 
 #[derive(Debug, Clone, Copy)]
 pub struct TyImpureRawData {}
+
+#[derive(Debug, Clone, Copy)]
+pub struct TyImpureUniqueData {}
 
 #[derive(Debug, Clone, Copy)]
 pub struct TyImpureMutRefData<'vir> {
@@ -190,7 +195,10 @@ impl TaskEncoder for TyImpureEnc {
                 ),
                 TySpecifics::Raw(raw) => {
                     TySpecifics::Raw(super::kinds::raw::ty_impure(&ty, raw, deps, &mut builder)?)
-                }
+                },
+                TySpecifics::Unique(unique) => {
+                    TySpecifics::Unique(super::kinds::unique::ty_impure(&ty, unique, deps, &mut builder)?)
+                },
                 TySpecifics::StructLike(structlike) => TySpecifics::StructLike(
                     super::kinds::structlike::ty_impure(&ty, structlike, deps, &mut builder)?,
                 ),

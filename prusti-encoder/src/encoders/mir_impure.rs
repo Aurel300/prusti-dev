@@ -1234,19 +1234,15 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 let e_ty = self.ty_use_impure(place_ty.ty);
                 match place_ty.ty.kind() {
                     ty::TyKind::Adt(adt, _) if adt.is_box() => {
-                        let field_access = e_ty.expect_variant_opt(None);
+                        let snap = expr
+                            .snap
+                            .unwrap_or_else(|| e_ty.ref_to_snap(expr.address))
+                            .downcast_ty();
+                        let p_ty = self.ty_use_pure(place_ty.ty).expect_unique();
                         PlaceExpr {
-                            // TODO: this is unsound: a Box should be modelled
-                            // with a Ref field rather than a field_access
-                            // function.
-                            address: field_access[abi::FieldIdx::ZERO].field_ref(expr.address),
-                            // TODO: also should have metadata
-                            metadata: None,
-                            snap: expr.snap.map(|snap| {
-                                let e_ty = self.ty_use_pure(place_ty.ty);
-                                let field_access = e_ty.expect_variant_opt(None);
-                                field_access[abi::FieldIdx::ZERO].read(snap.downcast_ty())
-                            }),
+                            address: p_ty.address_access(snap),
+                            metadata: Some(p_ty.metadata_access(snap)),
+                            snap: if expr.snap.is_none() { None } else { Some(p_ty.value_access(snap)) }
                         }
                     }
                     ty::TyKind::Ref(_, _, ty::Mutability::Not) => {

@@ -34,6 +34,7 @@ impl<'vir> TyDatas<'vir> for PureTyDatas {
     type ImmRefData = TyPureImmRefData<'vir>;
     type MutRefData = TyPureMutRefData<'vir>;
     type RawData = TyPureRawData<'vir>;
+    type UniqueData = TyPureUniqueData<'vir>;
     type FieldData = TyPureFieldData<'vir>;
     type StructData = TyPureStructData<'vir>;
     type VariantData = TyPureVariantData<'vir>;
@@ -48,6 +49,7 @@ pub type TyPurePrimitive<'vir> = <PureTyDatas as TyDatas<'vir>>::PrimitiveData;
 pub type TyPureImmRef<'vir> = <PureTyDatas as TyDatas<'vir>>::ImmRefData;
 pub type TyPureMutRef<'vir> = <PureTyDatas as TyDatas<'vir>>::MutRefData;
 pub type TyPureRaw<'vir> = <PureTyDatas as TyDatas<'vir>>::RawData;
+pub type TyPureUnique<'vir> = <PureTyDatas as TyDatas<'vir>>::UniqueData;
 pub type TyPureBuiltin<'vir> = <PureTyDatas as TyDatas<'vir>>::BuiltinData;
 
 #[derive(Debug, Clone, Copy)]
@@ -75,6 +77,18 @@ pub struct TyPureRawData<'vir> {
     pub(super) address_access: AdtDestructor<'vir, vir::CSnap, vir::Ref>,
     /// Function to access the pointer metadata (fat pointer).
     pub(super) metadata_access: AdtDestructor<'vir, vir::CSnap, vir::PSnap>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct TyPureUniqueData<'vir> {
+    /// Construct the snapshot from an address and pointer metadata.
+    pub(super) prim_to_snap: FunctionIdn<'vir, (vir::Ref, vir::PSnap, vir::PSnap), vir::CSnap>,
+    /// Function to access the pointer address.
+    pub(super) address_access: AdtDestructor<'vir, vir::CSnap, vir::Ref>,
+    /// Function to access the pointer metadata (fat pointer).
+    pub(super) metadata_access: AdtDestructor<'vir, vir::CSnap, vir::PSnap>,
+    /// Function to access the pointer value.
+    pub(super) value_access: AdtDestructor<'vir, vir::CSnap, vir::PSnap>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -301,6 +315,10 @@ impl TaskEncoder for TyPureEnc {
                 TySpecifics::Raw(raw) => {
                     let builder = builder.set_adt_builder();
                     TySpecifics::Raw(super::kinds::raw::ty_pure(task_key, raw, deps, builder)?)
+                }
+                TySpecifics::Unique(unique) => {
+                    let builder = builder.set_adt_builder();
+                    TySpecifics::Unique(super::kinds::unique::ty_pure(task_key, unique, deps, builder)?)
                 }
                 TySpecifics::StructLike(structlike) => {
                     let builder = builder.set_adt_builder();

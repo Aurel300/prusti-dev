@@ -1066,11 +1066,9 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                 assert!(place_ty.variant_index.is_none());
                 match place_ty.ty.kind() {
                     TyKind::Adt(adt, _) if adt.is_box() => {
-                        let proj =
-                            e_ty.expect_variant_opt(place_ty.variant_index)[abi::FieldIdx::ZERO];
-                        let proj_app = proj.read(encoded_place.snap.downcast_ty());
-                        let place_ref = encoded_place.place_ref.map(|pr| proj.field_ref(pr));
-                        EncodedPlace::new(proj_app, place_ref)
+                        let e_ty = e_ty.expect_unique();
+                        let snap = encoded_place.snap.downcast_ty();
+                        EncodedPlace::new(e_ty.value_access(snap), encoded_place.place_ref).with_metadata(e_ty.metadata_access(snap))
                     }
                     TyKind::Ref(.., ty::Mutability::Not) => {
                         let e_ty = e_ty.expect_immref();

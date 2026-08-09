@@ -28,6 +28,7 @@ impl<'vir> TyDatas<'vir> for UseImpureTyDatas {
     type ImmRefData = TyUseImpureImmRef<'vir>;
     type MutRefData = TyUseImpureMutRef<'vir>;
     type RawData = TyUseImpureRaw<'vir>;
+    type UniqueData = TyUseImpureUnique<'vir>;
     type FieldData = TyUseImpureField<'vir>;
     type StructData = TyUseImpureStructData<'vir>;
     type VariantData = ();
@@ -78,6 +79,14 @@ pub struct TyUseImpureRaw<'vir> {
     args: GArgsTy<'vir>,
     #[allow(dead_code)]
     impure: <ImpureTyDatas as TyDatas<'vir>>::RawData,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct TyUseImpureUnique<'vir> {
+    referent_caster: FieldCaster<'vir>,
+    metadata_caster: GArgCaster<'vir, crate::encoders::Pure>,
+    args: GArgsTy<'vir>,
+    impure: <ImpureTyDatas as TyDatas<'vir>>::UniqueData,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -201,6 +210,16 @@ impl<'a, 'vir> TyUseImpureWalker<'a, 'vir> {
             TySpecifics::Raw(data) => {
                 let metadata_caster = self.encode_normalized_pure(data.0.metadata, ty.0.params)?;
                 TySpecifics::mk_raw(TyUseImpureRaw {
+                    metadata_caster,
+                    args: self.args_t,
+                    impure: *data.1,
+                })
+            }
+            TySpecifics::Unique(data) => {
+                let referent_caster = self.encode_normalized(data.0.referent, ty.0.params)?;
+                let metadata_caster = self.encode_normalized_pure(data.0.metadata, ty.0.params)?;
+                TySpecifics::mk_unique(TyUseImpureUnique {
+                    referent_caster,
                     metadata_caster,
                     args: self.args_t,
                     impure: *data.1,
@@ -403,7 +422,7 @@ impl<'vir> TyData<'vir, UseImpureTyDatas> {
                     })])
                     .collect()
             }
-            TySpecifics::ImmRef(..) | TySpecifics::Raw(..) => Vec::new(),
+            TySpecifics::ImmRef(..) | TySpecifics::Raw(..) | TySpecifics::Unique(..) => Vec::new(),
             TySpecifics::MutRef(data) => data.fold(self_ref, label).into_iter().collect(),
             TySpecifics::StructLike(data) => data.fold(self_ref, perm).collect(),
             TySpecifics::EnumLike(..) => {
@@ -454,7 +473,7 @@ impl<'vir> TyData<'vir, UseImpureTyDatas> {
                 )
                 .collect()
             }
-            TySpecifics::ImmRef(..) | TySpecifics::Raw(..) => Vec::new(),
+            TySpecifics::ImmRef(..) | TySpecifics::Raw(..) | TySpecifics::Unique(..) => Vec::new(),
             TySpecifics::MutRef(data) => data.unfold(self_ref, old).into_iter().collect(),
             TySpecifics::StructLike(data) => data.unfold(self_ref, perm).collect(),
             TySpecifics::EnumLike(..) => {

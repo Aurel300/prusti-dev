@@ -10,3 +10,4 @@ pub mod primitive;
 pub mod raw;
 pub mod structlike;
 pub mod builtin;
+pub mod unique;

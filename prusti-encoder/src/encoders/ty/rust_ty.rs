@@ -221,6 +221,7 @@ impl<'tcx> TyDatas<'tcx> for RustTyDatas {
     /// encoded conservatively as their own `Raw` kind: the snapshot exposes the
     /// address and pointer metadata without reasoning about the pointee.
     type RawData = RefData<'tcx>;
+    type UniqueData = RefData<'tcx>;
     type StructData = ();
     type FieldData = RustFieldData<'tcx>;
     type EnumData = RustEnumData<'tcx>;
@@ -248,6 +249,7 @@ pub type RustPrimitive<'tcx> = <RustTyDatas as TyDatas<'tcx>>::PrimitiveData;
 pub type RustImmRef<'tcx> = <RustTyDatas as TyDatas<'tcx>>::ImmRefData;
 pub type RustMutRef<'tcx> = <RustTyDatas as TyDatas<'tcx>>::MutRefData;
 pub type RustRaw<'tcx> = <RustTyDatas as TyDatas<'tcx>>::RawData;
+pub type RustUnique<'tcx> = <RustTyDatas as TyDatas<'tcx>>::UniqueData;
 pub type RustBuiltin<'tcx> = <RustTyDatas as TyDatas<'tcx>>::BuiltinData;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -560,7 +562,19 @@ impl<'tcx> TySpecifics<'tcx, RustTyDatas> {
         }
 
         match ty.kind() {
-            ty::TyKind::Adt(adt, _) => Self::from_adt(*adt),
+            ty::TyKind::Adt(adt, _) => {
+                if adt.is_box() {
+                    let referent = Self::new_param_ty(0);
+                    TySpecifics::mk_unique(RefData {
+                        metadata: LazyRustTy(vir::with_vcx(|vcx| {
+                            pointee_metadata_projection(vcx.tcx(), referent)
+                        })),
+                        referent: LazyRustTy(referent),
+                    })
+                } else {
+                    Self::from_adt(*adt)
+                }
+            },
             ty::TyKind::Tuple(args) => {
                 let fields = args
                     .iter()
@@ -651,14 +665,7 @@ impl<'tcx> TySpecifics<'tcx, RustTyDatas> {
     }
 
     fn from_adt(adt: ty::AdtDef<'tcx>) -> Self {
-        if adt.is_box() {
-            let fields = vec![RustFieldData {
-                name: symbol::Symbol::intern("deref"),
-                fid: abi::FieldIdx::from_usize(0),
-                ty: LazyRustTy(Self::new_param_ty(0)),
-            }];
-            TySpecifics::mk_structlike((), fields)
-        } else if vir::with_vcx(|vcx| {
+        if vir::with_vcx(|vcx| {
             vcx.tcx().lang_items().get(hir::LangItem::DynMetadata) == Some(adt.did())
         }) {
             // `DynMetadata<dyn Trait>` is the metadata of a `&dyn`/`*dyn`

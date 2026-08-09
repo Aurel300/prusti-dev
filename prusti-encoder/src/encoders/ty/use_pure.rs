@@ -29,6 +29,7 @@ impl<'vir> TyDatas<'vir> for UsePureTyDatas {
     type ImmRefData = TyUsePureImmRef<'vir>;
     type MutRefData = TyUsePureMutRef<'vir>;
     type RawData = TyUsePureRaw<'vir>;
+    type UniqueData = TyUsePureUnique<'vir>;
     type FieldData = TyUsePureField<'vir>;
     type StructData = TyUsePureStructData<'vir>;
     type VariantData = <PureTyDatas as TyDatas<'vir>>::VariantData;
@@ -95,6 +96,13 @@ pub struct TyUsePureMutRef<'vir> {
     referent_caster: FieldCaster<'vir>,
     metadata_caster: FieldCaster<'vir>,
     pure: <PureTyDatas as TyDatas<'vir>>::MutRefData,
+}
+
+#[derive(Debug, Clone)]
+pub struct TyUsePureUnique<'vir> {
+    referent_caster: FieldCaster<'vir>,
+    metadata_caster: FieldCaster<'vir>,
+    pure: <PureTyDatas as TyDatas<'vir>>::UniqueData,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -211,6 +219,15 @@ impl<'a, 'vir> TyUsePureWalker<'a, 'vir> {
                 TySpecifics::mk_raw(TyUsePureRaw {
                     metadata_caster,
                     pure: **raw_domain,
+                })
+            }
+            TySpecifics::Unique((data, ref_domain)) => {
+                let referent_caster = self.encode_normalized(data.referent, ty.0.params)?;
+                let metadata_caster = self.encode_normalized(data.metadata, ty.0.params)?;
+                TySpecifics::mk_unique(TyUsePureUnique {
+                    referent_caster,
+                    metadata_caster,
+                    pure: **ref_domain,
                 })
             }
             TySpecifics::Primitive(data) => TySpecifics::mk_primitive(*data.1),
@@ -428,6 +445,32 @@ impl<'vir> TyUsePureRaw<'vir> {
         let metadata = self.pure.metadata_access.call()(snap);
         self.metadata_caster
             .cast_to_caller_ctx(metadata.upcast_ty())
+    }
+}
+
+impl<'vir> TyUsePureUnique<'vir> {
+    pub fn address_access<Curr, Next>(
+        &self,
+        snap: vir::ExprGenCSnap<'vir, Curr, Next>,
+    ) -> vir::ExprGenRef<'vir, Curr, Next> {
+        self.pure.address_access.call()(snap)
+    }
+
+    pub fn metadata_access<Curr, Next>(
+        &self,
+        snap: vir::ExprGenCSnap<'vir, Curr, Next>,
+    ) -> vir::ExprGenSnap<'vir, Curr, Next> {
+        let metadata = self.pure.metadata_access.call()(snap);
+        self.metadata_caster
+            .cast_to_caller_ctx(metadata.upcast_ty())
+    }
+
+    pub fn value_access<Curr, Next>(
+        &self,
+        snap: vir::ExprGenCSnap<'vir, Curr, Next>,
+    ) -> vir::ExprGenSnap<'vir, Curr, Next> {
+        let value = self.pure.value_access.call()(snap);
+        self.referent_caster.cast_to_caller_ctx(value.upcast_ty())
     }
 }
 

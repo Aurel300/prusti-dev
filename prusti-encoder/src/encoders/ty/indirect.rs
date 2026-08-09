@@ -118,6 +118,7 @@ impl TaskEncoder for IndirectPredicatesEnc {
                 TySpecifics::Primitive(_)
                 | TySpecifics::ImmRef(_)
                 | TySpecifics::Raw(_)
+                | TySpecifics::Unique(_)
                 | TySpecifics::Builtin(_) => (),
                 // TODO: it's not valid to have nothing for these. We should fix
                 // this by using an opaque predicate to represent potential

@@ -19,11 +19,15 @@ pub(crate) fn ty_pure<'vir>(
     let ty = data.metadata.decompose(task_key.params);
     let metadata = deps.require_ref::<TyUsePureEnc>(ty)?.snapshot.downcast_ty();
 
+    // let dummy_metadata_fn = builder.function("dummy_metadata", vir::TyVal, vir::TYPE_PSNAP, (), &[], &[], None);
+
     let dummy_metadata =
         builder.function("dummy_metadata", (), vir::TYPE_PSNAP, (), &[], &[], None);
 
     let ty = data.referent.decompose(task_key.params);
     let referent = deps.require_ref::<TyUsePureEnc>(ty)?.snapshot.downcast_ty();
+    println!("referent: {:?}", referent);
+    // let foo = dummy_metadata_fn.call()(ty.);
 
     let (field_snaps_to_snap, field_access) =
         builder.constructor("", (vir::TYPE_REF, metadata, referent), None);

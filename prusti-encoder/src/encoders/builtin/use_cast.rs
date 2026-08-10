@@ -173,6 +173,9 @@ impl TaskEncoder for MirBuiltinUseCastEnc {
                     (TySpecifics::Raw(od), TySpecifics::Raw(rd)) => {
                         (od.referent, rd.referent, false)
                     }
+                    (TySpecifics::Unique(od), TySpecifics::Unique(rd)) => {
+                        (od.referent, rd.referent, false)
+                    }
                     // `MirBuiltinCastOutput::Unsize` should only happen for
                     // reference/pointer types, do not expect other types here.
                     _ => unreachable!(

@@ -449,6 +449,17 @@ impl<'vir> TyUsePureRaw<'vir> {
 }
 
 impl<'vir> TyUsePureUnique<'vir> {
+    pub fn prim_to_snap<Curr, Next>(
+        &self,
+        ref_: vir::ExprGenRef<'vir, Curr, Next>,
+        metadata: vir::ExprGenSnap<'vir, Curr, Next>,
+        inner: vir::ExprGenSnap<'vir, Curr, Next>,
+    ) -> vir::ExprGenCSnap<'vir, Curr, Next> {
+        let metadata = self.metadata_caster.cast_to_callee_ctx(metadata);
+        let inner = self.referent_caster.cast_to_callee_ctx(inner);
+        self.pure.prim_to_snap.call()(ref_, metadata.downcast_ty(), inner.downcast_ty())
+    }
+
     pub fn address_access<Curr, Next>(
         &self,
         snap: vir::ExprGenCSnap<'vir, Curr, Next>,

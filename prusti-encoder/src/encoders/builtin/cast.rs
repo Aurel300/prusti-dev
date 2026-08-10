@@ -60,6 +60,12 @@ pub(super) struct MirBuiltinCastLocal<'vir> {
     undo: Option<vir::Method<'vir>>,
 }
 
+pub enum UnsizeCoercionResult<T, U, V> {
+    ImmRef(T),
+    MutRef(U),
+    Unique(V),
+}
+
 impl TaskEncoder for MirBuiltinCastEnc {
     task_encoder::encoder_cache!(MirBuiltinCastEnc);
     const ENCODER_NAME: &'static str = "MIR builtin cast encoder";
@@ -186,6 +192,24 @@ impl TaskEncoder for MirBuiltinCastEnc {
                     let v = unsize_params.ty_exprs()[1];
                     let value_cast = deps.require_dep::<ValueCastEnc>(())?;
                     let (is_mut, metadata, res_cons) = match &op_ty.specifics {
+                        TySpecifics::Unique(data) => {
+                            let res_data = res_ty.expect_unique();
+                            let value =
+                                value_cast(data.value_access(arg_ex).downcast_ty(), u, v)
+                                        .upcast_ty();
+                            let res_cons = |metadata| {
+                                res_data.prim_to_snap(
+                                    data.address_access(arg_ex),
+                                    metadata,
+                                    value,
+                                )
+                            };
+                            (
+                                false,
+                                data.metadata_access(arg_ex).downcast_ty(),
+                                UnsizeCoercionResult::Unique(res_cons),
+                            )
+                        }
                         TySpecifics::ImmRef(data) => {
                             let res_data = res_ty.expect_immref();
                             let value = value_cast(data.value_access(arg_ex).downcast_ty(), u, v)
@@ -196,7 +220,7 @@ impl TaskEncoder for MirBuiltinCastEnc {
                             (
                                 false,
                                 data.metadata_access(arg_ex).downcast_ty(),
-                                Ok(res_cons),
+                                UnsizeCoercionResult::ImmRef(res_cons),
                             )
                         }
                         TySpecifics::MutRef(data) => {
@@ -211,7 +235,7 @@ impl TaskEncoder for MirBuiltinCastEnc {
                             (
                                 true,
                                 data.metadata_access(arg_ex).downcast_ty(),
-                                Err(res_cons),
+                                UnsizeCoercionResult::MutRef(res_cons),
                             )
                         }
                         _ => unreachable!(),
@@ -226,8 +250,9 @@ impl TaskEncoder for MirBuiltinCastEnc {
                         unsize_params.ty_exprs()[1],
                     );
                     let expr = match res_cons {
-                        Ok(res_cons) => res_cons(metadata.upcast_ty()),
-                        Err(res_cons) => res_cons(metadata.upcast_ty()),
+                        UnsizeCoercionResult::ImmRef(res_cons) => res_cons(metadata.upcast_ty()),
+                        UnsizeCoercionResult::MutRef(res_cons) => res_cons(metadata.upcast_ty()),
+                        UnsizeCoercionResult::Unique(res_cons) => res_cons(metadata.upcast_ty()),
                     };
                     let fn_idn = FunctionIdn::new(
                         name,

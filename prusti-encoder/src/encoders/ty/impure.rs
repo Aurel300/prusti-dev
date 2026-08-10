@@ -21,7 +21,7 @@ impl<'vir> TyDatas<'vir> for ImpureTyDatas {
     type ImmRefData = TyImpureImmRefData;
     type MutRefData = TyImpureMutRefData<'vir>;
     type RawData = TyImpureRawData;
-    type UniqueData = TyImpureUniqueData;
+    type UniqueData = TyImpureUniqueData<'vir>;
     type FieldData = TyImpureFieldData<'vir>;
     type StructData = ();
     type VariantData = TyImpureVariantData<'vir>;
@@ -46,7 +46,10 @@ pub struct TyImpureImmRefData {}
 pub struct TyImpureRawData {}
 
 #[derive(Debug, Clone, Copy)]
-pub struct TyImpureUniqueData {}
+pub struct TyImpureUniqueData<'vir> {
+    pub addr_fun: vir::FunctionIdn<'vir, vir::Ref, vir::Ref>,
+    pub metadata_field: vir::Field<'vir, vir::Snap>
+}
 
 #[derive(Debug, Clone, Copy)]
 pub struct TyImpureMutRefData<'vir> {

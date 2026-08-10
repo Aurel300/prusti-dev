@@ -422,12 +422,17 @@ impl<'vir> TyData<'vir, UseImpureTyDatas> {
                     })])
                     .collect()
             }
-            TySpecifics::ImmRef(..) | TySpecifics::Raw(..) | TySpecifics::Unique(..) => Vec::new(),
+            TySpecifics::ImmRef(..) | TySpecifics::Raw(..) => Vec::new(),
             TySpecifics::MutRef(data) => data.fold(self_ref, label).into_iter().collect(),
             TySpecifics::StructLike(data) => data.fold(self_ref, perm).collect(),
             TySpecifics::EnumLike(..) => {
                 let pred_app = self.ref_to_pred_app(self_ref, perm);
                 vec![vir::with_vcx(|vcx| vcx.mk_fold_stmt(pred_app))]
+            }
+            TySpecifics::Unique(..) => {
+                let pred_app = self.ref_to_pred_app(self_ref, perm);
+                let cast = self.expect_unique().referent_caster.cast_to_callee_ctx(self.expect_unique().addr_ref(self_ref)).unwrap();
+                vec![cast, vir::with_vcx(|vcx| vcx.mk_fold_stmt(pred_app))]
             }
         }
     }
@@ -473,14 +478,35 @@ impl<'vir> TyData<'vir, UseImpureTyDatas> {
                 )
                 .collect()
             }
-            TySpecifics::ImmRef(..) | TySpecifics::Raw(..) | TySpecifics::Unique(..) => Vec::new(),
+            TySpecifics::ImmRef(..) | TySpecifics::Raw(..) => Vec::new(),
             TySpecifics::MutRef(data) => data.unfold(self_ref, old).into_iter().collect(),
             TySpecifics::StructLike(data) => data.unfold(self_ref, perm).collect(),
             TySpecifics::EnumLike(..) => {
                 let pred_app = self.ref_to_pred_app(self_ref, perm);
                 vec![vir::with_vcx(|vcx| vcx.mk_unfold_stmt(pred_app))]
             }
+            TySpecifics::Unique(..) => {
+                let pred_app = self.ref_to_pred_app(self_ref, perm);
+                let cast = self.expect_unique().referent_caster.cast_to_caller_ctx(self.expect_unique().addr_ref(self_ref)).unwrap();
+                vec![vir::with_vcx(|vcx| vcx.mk_unfold_stmt(pred_app)), cast]
+            }
         }
+    }
+}
+
+impl<'vir> TyUseImpureUnique<'vir> {
+    pub fn addr_ref(
+        &self,
+        self_ref: vir::ExprRef<'vir>
+    ) -> vir::ExprRef<'vir> {
+        (self.impure.addr_fun)(self_ref)
+    }
+
+    pub fn metadata_snap(
+        &self,
+        self_ref: vir::ExprRef<'vir>
+    ) -> vir::ExprSnap<'vir> {
+        self.metadata_caster.cast_to_caller_ctx(vir::with_vcx(|vcx| vcx.mk_field_expr(self_ref, self.impure.metadata_field)))
     }
 }
 

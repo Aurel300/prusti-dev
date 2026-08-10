@@ -1234,15 +1234,21 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 let e_ty = self.ty_use_impure(place_ty.ty);
                 match place_ty.ty.kind() {
                     ty::TyKind::Adt(adt, _) if adt.is_box() => {
-                        let snap = expr
-                            .snap
-                            .unwrap_or_else(|| e_ty.ref_to_snap(expr.address))
-                            .downcast_ty();
                         let p_ty = self.ty_use_pure(place_ty.ty).expect_unique();
-                        PlaceExpr {
-                            address: p_ty.address_access(snap),
-                            metadata: Some(p_ty.metadata_access(snap)),
-                            snap: if expr.snap.is_none() { None } else { Some(p_ty.value_access(snap)) }
+                        match expr.snap {
+                            None => PlaceExpr {
+                                address: e_ty.expect_unique().addr_ref(expr.address),
+                                metadata: Some(e_ty.expect_unique().metadata_snap(expr.address)),
+                                snap: None
+                            },
+                            Some(snap) => {
+                                let snap = snap.downcast_ty();
+                                PlaceExpr {
+                                    address: p_ty.address_access(snap),
+                                    metadata: Some(p_ty.metadata_access(snap)),
+                                    snap: Some(p_ty.value_access(snap))
+                                }
+                            }
                         }
                     }
                     ty::TyKind::Ref(_, _, ty::Mutability::Not) => {

@@ -33,8 +33,6 @@ pub(crate) fn ty_impure<'vir>(
     deps: &mut TaskEncoderDependencies<'vir, TyImpureEnc>,
     builder: &mut PredicateBuilder<'vir>,
 ) -> Result<TyImpureUnique<'vir>, EncodeFullError<'vir, TyImpureEnc>> {
-    let snap_type = builder.csnap_type();
-
     let metadata_type = data.0.metadata.decompose(task_key.0.params);
     let metadata_impure = deps.require_dep::<TyUseImpureEnc>(metadata_type)?;
     let inner_type = data.0.referent.decompose(task_key.0.params);
@@ -69,5 +67,8 @@ pub(crate) fn ty_impure<'vir>(
     // Ref-to-snap
     builder.mk_snap_function(Some(vir::expr! { [cons] }));
 
-    Ok(TyImpureUniqueData {})
+    Ok(TyImpureUniqueData {
+        addr_fun,
+        metadata_field
+    })
 }

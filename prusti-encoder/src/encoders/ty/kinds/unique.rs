@@ -63,15 +63,19 @@ pub(crate) fn ty_impure<'vir>(
         None,
     );
 
+    let addr = (addr_fun)(ref_self);
+    let addr_snap = inner_impure.ref_to_snap(addr);
+    let val = builder.vcx.mk_field_expr(ref_self, value_field);
+
     let addr_predicate = builder
         .vcx
-        .mk_predicate_app_expr(inner_impure.ref_to_pred_app((addr_fun)(ref_self), None));
+        .mk_predicate_app_expr(inner_impure.ref_to_pred_app(addr, None));
 
     // main predicate
     builder.mk_predicate(
         "",
         Some(vir::expr! {
-           ([addr_predicate]) && ((acc((ref_self).[metadata_field])) && (acc((ref_self).[value_field])))
+           ([addr_predicate]) && ((acc((ref_self).[metadata_field])) && ((acc((ref_self).[value_field])) && (([addr_snap]) == ([val]))))
         }),
     );
 

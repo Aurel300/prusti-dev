@@ -4,7 +4,7 @@ use prusti_rustc_interface::{
     span::def_id::DefId,
 };
 use task_encoder::{EncodeFullResult, OutputRefAny, TaskEncoder, TaskEncoderDependencies};
-use vir::{FunctionIdn, MethodIdn, vir_format_identifier};
+use vir::{FunctionIdn, MethodIdn, ViperIdent, vir_format_identifier};
 
 use crate::{
     encoders::{
@@ -89,7 +89,7 @@ impl TaskEncoder for TraitFnEnc {
                 .trait_container(tcx)
                 .expect("task key should be the associated item of a trait");
 
-            let trait_name = vcx.alloc_str(tcx.item_name(trait_def_id).as_str());
+            let trait_name = ViperIdent::from_def_id(vcx, trait_def_id);
 
             let mut axioms = Vec::new();
             let mut funcs = Vec::new();
@@ -99,7 +99,7 @@ impl TaskEncoder for TraitFnEnc {
             // item_generics also includes parameters of trait itself
             let item_params = GParams::from(def_id);
             let item_generics = deps.require_dep::<GenericParamsEnc>(item_params)?;
-            let item_name = tcx.item_name(def_id);
+            let item_name = ViperIdent::from_def_id(vcx, def_id);
 
             let local_defs = deps.require_dep::<MirLocalDefEnc>(MirLocalDefEncTask::Local {
                 def_id,

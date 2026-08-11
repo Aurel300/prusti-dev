@@ -62,7 +62,12 @@ pub fn test_entrypoint<'tcx>(
     procedures: Option<Vec<DefId>>,
     env_diagnostic: &EnvDiagnostic<'tcx>,
 ) -> request::RequestWithContext {
-    vir::init_vcx(vir::VirCtxt::new(tcx, body, def_spec));
+    let ident_style = if config::short_viper_names() {
+        vir::IdentStyle::ItemName
+    } else {
+        vir::IdentStyle::DefPath
+    };
+    vir::init_vcx(vir::VirCtxt::new(tcx, body, def_spec, ident_style));
     SELECTIVE_TASKS.with(|selective_tasks| {
         if let Some(procs) = procedures {
             selective_tasks

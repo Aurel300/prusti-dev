@@ -14,24 +14,25 @@ struct List {
 #[pure]
 #[ensures(result > 0)]
 fn len(head: &List) -> usize {
-    match head.next {
+    match &head.next {
         None => 1,
-        Some(box ref tail) => 1 + len(tail)
+        Some(tail) => 1 + len(&tail)
     }
 }
 
 #[pure]
-#[requires(0 <= index && index < len(head))]
+#[requires(index < len(head))]
 fn lookup(head: &List, index: usize) -> u32 {
     if index == 0 {
         head.value
     } else {
-        match head.next {
-            Some(box ref tail) => lookup(tail, index - 1),
+        match &head.next {
+            Some(tail) => {prusti_assert!(len(&head) == 1 + len(&tail)); lookup(&tail, index - 1)},
             None => unreachable!()
         }
     }
 }
+
 
 #[ensures(len(&result) == old(len(&tail)) + 1)]
 #[ensures(lookup(&result, 0) == old(x))]

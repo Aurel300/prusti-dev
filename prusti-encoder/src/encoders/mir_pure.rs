@@ -1068,7 +1068,16 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                     TyKind::Adt(adt, _) if adt.is_box() => {
                         let e_ty = e_ty.expect_unique();
                         let snap = encoded_place.snap.downcast_ty();
-                        EncodedPlace::new(e_ty.value_access(snap), encoded_place.place_ref).with_metadata(e_ty.metadata_access(snap))
+                        let metadata_ty =
+                            place_ty.ty.pointee_metadata_ty_or_projection(self.vcx.tcx());
+                        let metadata_ty = self.context.normalize(metadata_ty);
+                        let metadata = if metadata_ty.is_unit() {
+                            self.expect_thin_ptr_metadata(place_ty.ty)
+                        } else {
+                            e_ty.metadata_access(snap)
+                        };
+                        EncodedPlace::new(e_ty.value_access(snap), encoded_place.place_ref)
+                            .with_metadata(metadata)
                     }
                     TyKind::Ref(.., ty::Mutability::Not) => {
                         let e_ty = e_ty.expect_immref();

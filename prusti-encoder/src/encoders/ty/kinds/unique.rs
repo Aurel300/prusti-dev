@@ -50,7 +50,6 @@ pub(crate) fn ty_impure<'vir>(
 
     // fields
     let metadata_field = builder.field("metadata", metadata_impure.snapshot().ty());
-    let value_field = builder.field("value", inner_impure.snapshot().ty());
 
     // functions
     let addr_fun: FunctionIdn<'vir, vir::Ref, vir::Ref> = builder.function(
@@ -63,19 +62,15 @@ pub(crate) fn ty_impure<'vir>(
         None,
     );
 
-    let addr = (addr_fun)(ref_self);
-    let addr_snap = inner_impure.ref_to_snap(addr);
-    let val = builder.vcx.mk_field_expr(ref_self, value_field);
-
     let addr_predicate = builder
         .vcx
-        .mk_predicate_app_expr(inner_impure.ref_to_pred_app(addr, None));
+        .mk_predicate_app_expr(inner_impure.ref_to_pred_app((addr_fun)(ref_self), None));
 
     // main predicate
     builder.mk_predicate(
         "",
         Some(vir::expr! {
-           ([addr_predicate]) && ((acc((ref_self).[metadata_field])) && ((acc((ref_self).[value_field])) && (([addr_snap]) == ([val]))))
+           ([addr_predicate]) && (acc((ref_self).[metadata_field]))
         }),
     );
 
@@ -84,9 +79,7 @@ pub(crate) fn ty_impure<'vir>(
         builder
             .vcx
             .mk_field_expr(ref_self, metadata_field.downcast_ty()),
-        builder
-            .vcx
-            .mk_field_expr(ref_self, value_field.downcast_ty()),
+        inner_impure.ref_to_snap((addr_fun)(ref_self)).downcast_ty(),
     );
 
     // Ref-to-snap

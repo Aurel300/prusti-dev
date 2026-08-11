@@ -48,7 +48,7 @@ pub struct TyImpureRawData {}
 #[derive(Debug, Clone, Copy)]
 pub struct TyImpureUniqueData<'vir> {
     pub addr_fun: vir::FunctionIdn<'vir, vir::Ref, vir::Ref>,
-    pub metadata_field: vir::Field<'vir, vir::Snap>
+    pub metadata_field: vir::Field<'vir, vir::Snap>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -198,10 +198,10 @@ impl TaskEncoder for TyImpureEnc {
                 ),
                 TySpecifics::Raw(raw) => {
                     TySpecifics::Raw(super::kinds::raw::ty_impure(&ty, raw, deps, &mut builder)?)
-                },
-                TySpecifics::Unique(unique) => {
-                    TySpecifics::Unique(super::kinds::unique::ty_impure(&ty, unique, deps, &mut builder)?)
-                },
+                }
+                TySpecifics::Unique(unique) => TySpecifics::Unique(
+                    super::kinds::unique::ty_impure(&ty, unique, deps, &mut builder)?,
+                ),
                 TySpecifics::StructLike(structlike) => TySpecifics::StructLike(
                     super::kinds::structlike::ty_impure(&ty, structlike, deps, &mut builder)?,
                 ),

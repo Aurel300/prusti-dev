@@ -1,7 +1,15 @@
 use task_encoder::{EncodeFullError, TaskEncoderDependencies};
 use vir::{CastType, FunctionIdn, HasType};
 
-use crate::encoders::{TyUseImpureEnc, TyUsePureEnc, ty::{RustTyDatas, RustUnique, data::TyData, impure::{PredicateBuilder, TyImpureEnc, TyImpureUnique, TyImpureUniqueData}, pure::{AdtBuilder, PureTyDatas, TyPureEnc, TyPureUnique, TyPureUniqueData}}};
+use crate::encoders::{
+    TyUseImpureEnc, TyUsePureEnc,
+    ty::{
+        RustTyDatas, RustUnique,
+        data::TyData,
+        impure::{PredicateBuilder, TyImpureEnc, TyImpureUnique, TyImpureUniqueData},
+        pure::{AdtBuilder, PureTyDatas, TyPureEnc, TyPureUnique, TyPureUniqueData},
+    },
+};
 
 pub(crate) fn ty_pure<'vir>(
     task_key: &TyData<'vir, RustTyDatas>,
@@ -26,7 +34,6 @@ pub(crate) fn ty_pure<'vir>(
     })
 }
 
-
 pub(crate) fn ty_impure<'vir>(
     task_key: &TyData<'vir, (RustTyDatas, PureTyDatas)>,
     data: &(&RustUnique<'vir>, &TyPureUnique<'vir>),
@@ -46,13 +53,19 @@ pub(crate) fn ty_impure<'vir>(
     let value_field = builder.field("value", inner_impure.snapshot().ty());
 
     // functions
-    let addr_fun: FunctionIdn<'vir, vir::Ref, vir::Ref> = builder.function("address", ref_self_decl.ty, vir::TYPE_REF, (ref_self_decl,), &[],
+    let addr_fun: FunctionIdn<'vir, vir::Ref, vir::Ref> = builder.function(
+        "address",
+        ref_self_decl.ty,
+        vir::TYPE_REF,
+        (ref_self_decl,),
+        &[],
         &[vir::expr! { ((ref_self) == (null)) == ((result: Ref) == (null)) }],
-        None);
-
-    let addr_predicate = builder.vcx.mk_predicate_app_expr(
-        inner_impure.ref_to_pred_app((addr_fun)(ref_self), None)
+        None,
     );
+
+    let addr_predicate = builder
+        .vcx
+        .mk_predicate_app_expr(inner_impure.ref_to_pred_app((addr_fun)(ref_self), None));
 
     // main predicate
     builder.mk_predicate(
@@ -62,13 +75,21 @@ pub(crate) fn ty_impure<'vir>(
         }),
     );
 
-    let cons = (data.1.prim_to_snap)((addr_fun)(ref_self), builder.vcx.mk_field_expr(ref_self, metadata_field.downcast_ty()), builder.vcx.mk_field_expr(ref_self, value_field.downcast_ty()));
+    let cons = (data.1.prim_to_snap)(
+        (addr_fun)(ref_self),
+        builder
+            .vcx
+            .mk_field_expr(ref_self, metadata_field.downcast_ty()),
+        builder
+            .vcx
+            .mk_field_expr(ref_self, value_field.downcast_ty()),
+    );
 
     // Ref-to-snap
     builder.mk_snap_function(Some(vir::expr! { [cons] }));
 
     Ok(TyImpureUniqueData {
         addr_fun,
-        metadata_field
+        metadata_field,
     })
 }

@@ -13,7 +13,6 @@ use itertools::Itertools;
 use pcg::utils::Place;
 use prusti_interface::specs::typed::ExternSpecKind;
 use prusti_rustc_interface::{
-    abi,
     data_structures::graph::{self, Successors},
     index::IndexVec,
     middle::{
@@ -1068,8 +1067,9 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                     TyKind::Adt(adt, _) if adt.is_box() => {
                         let e_ty = e_ty.expect_unique();
                         let snap = encoded_place.snap.downcast_ty();
-                        let metadata_ty =
-                            place_ty.ty.pointee_metadata_ty_or_projection(self.vcx.tcx());
+                        let metadata_ty = place_ty
+                            .ty
+                            .pointee_metadata_ty_or_projection(self.vcx.tcx());
                         let metadata_ty = self.context.normalize(metadata_ty);
                         let metadata = if metadata_ty.is_unit() {
                             self.expect_thin_ptr_metadata(place_ty.ty)

@@ -574,7 +574,7 @@ impl<'tcx> TySpecifics<'tcx, RustTyDatas> {
                 } else {
                     Self::from_adt(*adt)
                 }
-            },
+            }
             ty::TyKind::Tuple(args) => {
                 let fields = args
                     .iter()

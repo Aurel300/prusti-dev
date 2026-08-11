@@ -85,7 +85,6 @@ pub struct TyUseImpureRaw<'vir> {
 pub struct TyUseImpureUnique<'vir> {
     referent_caster: FieldCaster<'vir>,
     metadata_caster: GArgCaster<'vir, crate::encoders::Pure>,
-    args: GArgsTy<'vir>,
     impure: <ImpureTyDatas as TyDatas<'vir>>::UniqueData,
 }
 
@@ -221,7 +220,6 @@ impl<'a, 'vir> TyUseImpureWalker<'a, 'vir> {
                 TySpecifics::mk_unique(TyUseImpureUnique {
                     referent_caster,
                     metadata_caster,
-                    args: self.args_t,
                     impure: *data.1,
                 })
             }
@@ -431,7 +429,11 @@ impl<'vir> TyData<'vir, UseImpureTyDatas> {
             }
             TySpecifics::Unique(..) => {
                 let pred_app = self.ref_to_pred_app(self_ref, perm);
-                let cast = self.expect_unique().referent_caster.cast_to_callee_ctx(self.expect_unique().addr_ref(self_ref)).unwrap();
+                let cast = self
+                    .expect_unique()
+                    .referent_caster
+                    .cast_to_callee_ctx(self.expect_unique().addr_ref(self_ref))
+                    .unwrap();
                 vec![cast, vir::with_vcx(|vcx| vcx.mk_fold_stmt(pred_app))]
             }
         }
@@ -487,7 +489,11 @@ impl<'vir> TyData<'vir, UseImpureTyDatas> {
             }
             TySpecifics::Unique(..) => {
                 let pred_app = self.ref_to_pred_app(self_ref, perm);
-                let cast = self.expect_unique().referent_caster.cast_to_caller_ctx(self.expect_unique().addr_ref(self_ref)).unwrap();
+                let cast = self
+                    .expect_unique()
+                    .referent_caster
+                    .cast_to_caller_ctx(self.expect_unique().addr_ref(self_ref))
+                    .unwrap();
                 vec![vir::with_vcx(|vcx| vcx.mk_unfold_stmt(pred_app)), cast]
             }
         }
@@ -495,18 +501,15 @@ impl<'vir> TyData<'vir, UseImpureTyDatas> {
 }
 
 impl<'vir> TyUseImpureUnique<'vir> {
-    pub fn addr_ref(
-        &self,
-        self_ref: vir::ExprRef<'vir>
-    ) -> vir::ExprRef<'vir> {
+    pub fn addr_ref(&self, self_ref: vir::ExprRef<'vir>) -> vir::ExprRef<'vir> {
         (self.impure.addr_fun)(self_ref)
     }
 
-    pub fn metadata_snap(
-        &self,
-        self_ref: vir::ExprRef<'vir>
-    ) -> vir::ExprSnap<'vir> {
-        self.metadata_caster.cast_to_caller_ctx(vir::with_vcx(|vcx| vcx.mk_field_expr(self_ref, self.impure.metadata_field)))
+    pub fn metadata_snap(&self, self_ref: vir::ExprRef<'vir>) -> vir::ExprSnap<'vir> {
+        self.metadata_caster
+            .cast_to_caller_ctx(vir::with_vcx(|vcx| {
+                vcx.mk_field_expr(self_ref, self.impure.metadata_field)
+            }))
     }
 }
 

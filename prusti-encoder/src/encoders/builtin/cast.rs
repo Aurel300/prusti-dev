@@ -194,15 +194,10 @@ impl TaskEncoder for MirBuiltinCastEnc {
                     let (is_mut, metadata, res_cons) = match &op_ty.specifics {
                         TySpecifics::Unique(data) => {
                             let res_data = res_ty.expect_unique();
-                            let value =
-                                value_cast(data.value_access(arg_ex).downcast_ty(), u, v)
-                                        .upcast_ty();
+                            let value = value_cast(data.value_access(arg_ex).downcast_ty(), u, v)
+                                .upcast_ty();
                             let res_cons = |metadata| {
-                                res_data.prim_to_snap(
-                                    data.address_access(arg_ex),
-                                    metadata,
-                                    value,
-                                )
+                                res_data.prim_to_snap(data.address_access(arg_ex), metadata, value)
                             };
                             (
                                 false,

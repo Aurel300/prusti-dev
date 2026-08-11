@@ -27,7 +27,6 @@ use pcg::{
 };
 use prusti_interface::PrustiError;
 use prusti_rustc_interface::{
-    abi,
     data_structures::graph::Successors,
     index::Idx,
     middle::{
@@ -1239,14 +1238,14 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                             None => PlaceExpr {
                                 address: e_ty.expect_unique().addr_ref(expr.address),
                                 metadata: Some(e_ty.expect_unique().metadata_snap(expr.address)),
-                                snap: None
+                                snap: None,
                             },
                             Some(snap) => {
                                 let snap = snap.downcast_ty();
                                 PlaceExpr {
                                     address: p_ty.address_access(snap),
                                     metadata: Some(p_ty.metadata_access(snap)),
-                                    snap: Some(p_ty.value_access(snap))
+                                    snap: Some(p_ty.value_access(snap)),
                                 }
                             }
                         }

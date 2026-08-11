@@ -318,7 +318,9 @@ impl TaskEncoder for TyPureEnc {
                 }
                 TySpecifics::Unique(unique) => {
                     let builder = builder.set_adt_builder();
-                    TySpecifics::Unique(super::kinds::unique::ty_pure(task_key, unique, deps, builder)?)
+                    TySpecifics::Unique(super::kinds::unique::ty_pure(
+                        task_key, unique, deps, builder,
+                    )?)
                 }
                 TySpecifics::StructLike(structlike) => {
                     let builder = builder.set_adt_builder();

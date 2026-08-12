@@ -585,11 +585,10 @@ impl<'enc, 'vir: 'enc> mir::visit::Visitor<'vir> for SpecVisitor<'enc, 'vir> {
                     if matches!(
                         item_name.as_str(),
                         "closure_spec_args" | "closure_spec_post"
-                    ) {
-                        if let Some(local) = args[1].node.place().and_then(|place| place.as_local())
-                        {
-                            self.phantom_operands.push(local);
-                        }
+                    ) && let Some(local) =
+                        args[1].node.place().and_then(|place| place.as_local())
+                    {
+                        self.phantom_operands.push(local);
                     }
                     return;
                 }

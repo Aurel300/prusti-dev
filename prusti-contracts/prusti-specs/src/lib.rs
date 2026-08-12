@@ -578,15 +578,13 @@ pub fn closure(tokens: TokenStream) -> TokenStream {
     }
 
     let conjoin = |exprs: Vec<syn::Expr>| -> syn::Result<Option<TokenStream>> {
-        let mut conj: Option<TokenStream> = None;
-        for expr in exprs {
+        exprs.into_iter().try_fold(None, |conj, expr| {
             let expr = parse_prusti(expr.to_token_stream())?;
-            conj = Some(match conj {
+            Ok(Some(match conj {
                 None => quote_spanned! {callsite_span=> (#expr) },
                 Some(acc) => quote_spanned! {callsite_span=> #acc && (#expr) },
-            });
-        }
-        Ok(conj)
+            }))
+        })
     };
     let pre = handle_result!(conjoin(cl_spec.pres));
     let post = handle_result!(conjoin(cl_spec.posts));

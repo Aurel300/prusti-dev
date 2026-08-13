@@ -3,10 +3,13 @@
 // part of the function contract.
 use prusti_contracts::*;
 
+#[requires(**x >= 0)]
+#[ensures(**x == 5)]
 fn write_inner<'a, 'b>(x: &'a mut &'b mut i32) {
     **x = 5;
 }
 
+#[requires(**x > 0)]
 fn chained<'a, 'b>(x: &'a mut &'b mut i32) {
     write_inner(x);
     write_inner(x);

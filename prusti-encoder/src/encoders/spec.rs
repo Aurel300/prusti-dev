@@ -21,8 +21,11 @@ pub type SpecEncError = ();
 pub struct SpecEncOutput<'vir> {
     pub extern_spec: Option<ExternSpecKind>,
     pub pres: &'vir [DefId],
+    pub pres_inherited: bool,
     pub posts: &'vir [DefId],
+    pub posts_inherited: bool,
     pub pledges: &'vir [Pledge],
+    pub pledges_inherited: bool,
 }
 
 thread_local! {
@@ -204,7 +207,10 @@ impl TaskEncoder for SpecEnc {
                     (specs.extern_spec, pres, posts, pledges)
                 },
             )
-            .unwrap_or((None, &[], &[], &[]));
+            .unwrap_or((None, (&[], false), (&[], false), (&[], false)));
+            let (pres, pres_inherited) = pres;
+            let (posts, posts_inherited) = posts;
+            let (pledges, pledges_inherited) = pledges;
             let pledges = vcx.alloc_slice(
                 &pledges
                     .iter()
@@ -216,8 +222,11 @@ impl TaskEncoder for SpecEnc {
                 SpecEncOutput {
                     extern_spec,
                     pres,
+                    pres_inherited,
                     posts,
+                    posts_inherited,
                     pledges,
+                    pledges_inherited,
                 },
             ))
         })
@@ -227,12 +236,11 @@ impl TaskEncoder for SpecEnc {
 fn get_spec_items<'vir, T: Copy>(
     vcx: &'vir VirCtxt<'_>,
     spec: &SpecificationItem<Vec<T>>,
-) -> &'vir [T] {
+) -> (&'vir [T], bool) {
     match spec {
-        SpecificationItem::Inherent(items) | SpecificationItem::Inherited(items) => {
-            vcx.alloc_slice(items)
-        }
-        SpecificationItem::Empty => &[],
+        SpecificationItem::Inherent(items) => (vcx.alloc_slice(items), false),
+        SpecificationItem::Inherited(items) => (vcx.alloc_slice(items), true),
+        SpecificationItem::Empty => (&[], false),
         SpecificationItem::Refined(_from, to) => {
             // Here we ignore the original specs: to get to this branch, the
             // task key given to `SpecEnc` was the `DefId` of an trait method
@@ -242,7 +250,7 @@ fn get_spec_items<'vir, T: Copy>(
             // At callsites, `MethodCallEnc` will direct the call to the stub
             // method, which uses the `DefId` of the trait item for emitting
             // its specifications.
-            vcx.alloc_slice(to)
+            (vcx.alloc_slice(to), false)
         }
     }
 }

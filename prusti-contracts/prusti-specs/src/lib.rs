@@ -496,6 +496,135 @@ fn generate_expression_closure(
     }
 }
 
+/// Rejects `result` as a binding anywhere in a closure parameter pattern: it
+/// would collide with the postcondition closure's `result` parameter.
+fn check_no_result_binding(pat: &syn::Pat) -> syn::Result<()> {
+    struct FindResult(Option<Span>);
+    impl<'ast> syn::visit::Visit<'ast> for FindResult {
+        fn visit_pat_ident(&mut self, pat: &'ast syn::PatIdent) {
+            if self.0.is_none() && pat.ident == "result" {
+                self.0 = Some(pat.ident.span());
+            }
+            syn::visit::visit_pat_ident(self, pat);
+        }
+    }
+    let mut visitor = FindResult(None);
+    syn::visit::Visit::visit_pat(&mut visitor, pat);
+    match visitor.0 {
+        Some(span) => Err(syn::Error::new(
+            span,
+            "closure parameter bindings may not be named `result`",
+        )),
+        None => Ok(()),
+    }
+}
+
+/// The value of a closure parameter, rebuilt from its pattern's bindings for
+/// the `closure_spec_*` marker tuples. The value sits in dead code and only
+/// pins the spec closures' parameter types, but it must typecheck: a pattern
+/// without `..` and without `ref` bindings binds everything it matches, so
+/// its value can be rebuilt structurally (moving the bindings, which the
+/// diverging `return` permits).
+///
+/// `_` binds nothing, and nothing can mention it either, but the stand-in
+/// value must still typecheck at its position. In a structural position
+/// (a tuple slot, behind `&`, or the parameter itself) the expected type is
+/// whatever we build, so `()` serves. In a `pinned` position — the field of
+/// a struct the pattern names, or an array's element type, unified with the
+/// sibling elements — no stand-in can be right: the field's type is fixed
+/// by a definition this macro cannot see, so `()` mismatches a concrete
+/// field, while an inference variable (`None.unwrap()`) is unresolvable
+/// when `_` is all that constrains a generic one. Rejected, with the
+/// workaround of binding the value instead (a `_x` binding is exact in
+/// both cases).
+fn reconstruct_arg(pat: &syn::Pat, pinned: bool) -> syn::Result<TokenStream> {
+    let unsupported = |span, what: &str| {
+        syn::Error::new(
+            span,
+            format!(
+                "cannot attach specifications: the parameter's value cannot be rebuilt from {what}"
+            ),
+        )
+    };
+    match pat {
+        syn::Pat::Ident(pat_ident) => {
+            if let Some(by_ref) = &pat_ident.by_ref {
+                return Err(unsupported(by_ref.span(), "a `ref` binding"));
+            }
+            // An `x @ subpattern` binding names the whole value, whatever
+            // the subpattern is.
+            let ident = &pat_ident.ident;
+            Ok(quote_spanned! {ident.span()=> #ident })
+        }
+        syn::Pat::Wild(wild) if pinned => Err(unsupported(
+            wild.span(),
+            "a `_` inside a struct or array pattern (bind it instead, e.g. `_x`)",
+        )),
+        syn::Pat::Wild(wild) => Ok(quote_spanned! {wild.span()=> () }),
+        // A tuple (or reference) type is structural: if the position of the
+        // whole is pinned, so is each slot, and vice versa.
+        syn::Pat::Tuple(tuple) => {
+            let elems = tuple
+                .elems
+                .iter()
+                .map(|elem| reconstruct_arg(elem, pinned))
+                .collect::<syn::Result<Vec<_>>>()?;
+            Ok(quote_spanned! {tuple.span()=> (#(#elems,)*) })
+        }
+        syn::Pat::Reference(reference) => {
+            let mutability = &reference.mutability;
+            let value = reconstruct_arg(&reference.pat, pinned)?;
+            Ok(quote_spanned! {reference.span()=> &#mutability #value })
+        }
+        // A constructor is a nominal signature: its fields' types are fixed
+        // by the struct definition, whatever the position of the whole.
+        syn::Pat::TupleStruct(tuple_struct) => {
+            let path = &tuple_struct.path;
+            let elems = tuple_struct
+                .pat
+                .elems
+                .iter()
+                .map(|elem| reconstruct_arg(elem, true))
+                .collect::<syn::Result<Vec<_>>>()?;
+            Ok(quote_spanned! {tuple_struct.span()=> #path(#(#elems),*) })
+        }
+        syn::Pat::Struct(pat_struct) => {
+            if let Some(dot2) = &pat_struct.dot2_token {
+                return Err(unsupported(dot2.span(), "a `..` pattern"));
+            }
+            let path = &pat_struct.path;
+            let fields = pat_struct
+                .fields
+                .iter()
+                .map(|field| {
+                    let member = &field.member;
+                    let value = reconstruct_arg(&field.pat, true)?;
+                    Ok(quote_spanned! {field.span()=> #member: #value })
+                })
+                .collect::<syn::Result<Vec<_>>>()?;
+            Ok(quote_spanned! {pat_struct.span()=> #path { #(#fields),* } })
+        }
+        // In parameter position a slice pattern always matches an array: a
+        // slice-typed match would be refutable (the length is not statically
+        // known), and only irrefutable patterns are admitted. The arity is
+        // the pattern's, as `..` is rejected. The elements share one type,
+        // so each slot is pinned by its siblings.
+        syn::Pat::Slice(slice) => {
+            let elems = slice
+                .elems
+                .iter()
+                .map(|elem| reconstruct_arg(elem, true))
+                .collect::<syn::Result<Vec<_>>>()?;
+            Ok(quote_spanned! {slice.span()=> [#(#elems),*] })
+        }
+        // A unit struct: the path is the value.
+        syn::Pat::Path(path) => Ok(path.to_token_stream()),
+        syn::Pat::Type(pat_type) => reconstruct_arg(&pat_type.pat, pinned),
+        syn::Pat::Rest(rest) => Err(unsupported(rest.span(), "a `..` pattern")),
+        other => Err(unsupported(other.span(), "this kind of pattern")),
+    }
+}
+
 /// Expands the `closure!` macro: returns the closure itself, with its specs
 /// embedded as `closure_spec_*` marker calls in dead `if false { return .. }`
 /// blocks inside the body (the `return` makes the argument moves diverge, so
@@ -514,14 +643,14 @@ fn generate_expression_closure(
 ///     let _prusti_closure = |a: A, b| {
 ///         let prusti_closure_args = ::core::marker::PhantomData;    // mixed-site hygiene
 ///         if false {
-///             return closure_spec_pre((a, b), #[prusti::spec_only] |a: A, b| -> bool { P });
+///             return closure_spec_pre((a, b), #[prusti::spec_only] |a: _, b: _| -> bool { P });
 ///         }
 ///         if false {
 ///             return closure_spec_args((a, b, None.unwrap()), prusti_closure_args);
 ///         }
 ///         let result = body;
 ///         if false {
-///             return closure_spec_post((None.unwrap(), None.unwrap(), result), prusti_closure_args, #[prusti::spec_only] |a: A, b, result| -> bool { Q });
+///             return closure_spec_post((None.unwrap(), None.unwrap(), result), prusti_closure_args, #[prusti::spec_only] |a: _, b: _, result| -> bool { Q });
 ///         }
 ///         result
 ///     };
@@ -529,11 +658,14 @@ fn generate_expression_closure(
 /// }
 /// ```
 ///
-/// The spec closures take the closure's arguments (plus `result` for
-/// postconditions) as a flat parameter list; their parameter types are
-/// deduced from the markers' `Fn<Args>` bound against the actual argument
-/// tuple, so no type annotations are required (any the user wrote are
-/// forwarded). `closure_spec_args` unifies the `PhantomData` binding
+/// The spec closures take the closure's parameters (plus `result` for
+/// postconditions) as a flat list of the parameters' own patterns; their
+/// types are deduced from the markers' `Fn<Args>` bound against the actual
+/// argument tuple, never from annotations (see [reconstruct_arg]: a `_`
+/// slot's stand-in value deliberately fakes its type, so a user annotation
+/// must not be forwarded). The argument tuple holds each parameter's value,
+/// rebuilt from the pattern's bindings for parameters that destructure.
+/// `closure_spec_args` unifies the `PhantomData` binding
 /// carrying the argument (and result) types from the closure entry to the
 /// postcondition; tuple slots whose values are unavailable at the
 /// respective marker are filled with `None.unwrap()`, which mints a fresh
@@ -589,38 +721,27 @@ pub fn closure(tokens: TokenStream) -> TokenStream {
     let pre = handle_result!(conjoin(cl_spec.pres));
     let post = handle_result!(conjoin(cl_spec.posts));
 
-    let mut arg_idents: Vec<syn::Ident> = vec![];
-    let mut arg_types: Vec<TokenStream> = vec![];
+    // The spec closures' parameters (the closure's own patterns) and the
+    // parameters' values for the marker tuples (rebuilt from the patterns'
+    // bindings). The parameter types are deliberately left to inference:
+    // each is pinned by its value, and for a pattern with `_` slots the
+    // value's type differs from the closure's (the slots hold `()`), so a
+    // user annotation must not be forwarded.
+    let mut spec_params: Vec<TokenStream> = vec![];
+    let mut arg_values: Vec<TokenStream> = vec![];
     if pre.is_some() || post.is_some() {
         for input in &inputs {
-            let (pat, ty) = match input {
-                syn::Pat::Type(pat_type) => (&*pat_type.pat, pat_type.ty.to_token_stream()),
-                other => (other, quote_spanned! {callsite_span=> _ }),
+            let pat = match input {
+                syn::Pat::Type(pat_type) => &*pat_type.pat,
+                other => other,
             };
-            match pat {
-                syn::Pat::Ident(pat_ident) if pat_ident.ident != "result" => {
-                    arg_idents.push(pat_ident.ident.clone());
-                    arg_types.push(ty);
-                }
-                syn::Pat::Ident(_) => {
-                    return syn::Error::new(
-                        input.span(),
-                        "closure parameters may not be named `result`",
-                    )
-                    .to_compile_error();
-                }
-                _ => {
-                    return syn::Error::new(
-                        input.span(),
-                        "closure parameters must be named to attach specifications",
-                    )
-                    .to_compile_error();
-                }
-            }
+            handle_result!(check_no_result_binding(pat));
+            arg_values.push(handle_result!(reconstruct_arg(pat, false)));
+            spec_params.push(quote_spanned! {callsite_span=> #pat: _ });
         }
     }
 
-    let anys = arg_idents
+    let anys = arg_values
         .iter()
         .map(|_| quote_spanned! {callsite_span=> ::core::option::Option::None.unwrap() })
         .collect::<Vec<_>>();
@@ -637,9 +758,9 @@ pub fn closure(tokens: TokenStream) -> TokenStream {
             #[allow(unused_must_use, unused_variables, unused_braces, unused_parens)]
             if false {
                 return ::prusti_contracts::closure_spec_pre(
-                    (#(#arg_idents,)*),
+                    (#(#arg_values,)*),
                     #[prusti::spec_only]
-                    |#(#arg_idents: #arg_types),*| -> bool { #pre },
+                    |#(#spec_params),*| -> bool { #pre },
                 );
             }
         }
@@ -653,7 +774,7 @@ pub fn closure(tokens: TokenStream) -> TokenStream {
                 #[allow(unused_must_use, unused_braces, unused_parens)]
                 if false {
                     return ::prusti_contracts::closure_spec_args(
-                        (#(#arg_idents,)* ::core::option::Option::None.unwrap(),),
+                        (#(#arg_values,)* ::core::option::Option::None.unwrap(),),
                         #args_ident,
                     );
                 }
@@ -664,7 +785,7 @@ pub fn closure(tokens: TokenStream) -> TokenStream {
                         (#(#anys,)* result,),
                         #args_ident,
                         #[prusti::spec_only]
-                        |#(#arg_idents: #arg_types,)* #result_param| -> bool { #post },
+                        |#(#spec_params,)* #result_param| -> bool { #post },
                     );
                 }
                 result

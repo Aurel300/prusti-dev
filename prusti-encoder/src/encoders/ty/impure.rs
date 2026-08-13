@@ -3,12 +3,12 @@ use std::ops::{Deref, DerefMut};
 use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 use vir::{CastType, FunctionIdn, HasType, MethodIdn, PredicateIdn};
 
-use crate::encoders::{Impure, ty::use_impure::TyUseImpure};
+use crate::encoders::{Impure, UninitEnc, ty::use_impure::TyUseImpure};
 
 use super::{
-    RustTy, ViperTyDatas,
+    RustTy, RustTyDecomposition, ViperTyDatas,
     data::*,
-    generics::{GenericParams, GenericParamsEnc},
+    generics::{GenericParams, GenericParamsEnc, TyExprEnc},
     pure::*,
 };
 
@@ -57,6 +57,10 @@ pub struct TyImpureMutRefData<'vir> {
 pub struct TyImpureStructData<'vir> {
     /// The hardcoded extras when this struct is a `Box`.
     pub box_data: Option<TyImpureBoxData<'vir>>,
+    /// Exchange the struct's (or variant's) `Uninit` token for its fields'
+    /// tokens and back.
+    pub method_uninit_expand: MethodIdn<'vir, (vir::Ref, vir::ManyTyVal, vir::ManyCSnap)>,
+    pub method_uninit_collapse: MethodIdn<'vir, (vir::Ref, vir::ManyTyVal, vir::ManyCSnap)>,
 }
 
 /// The hardcoded extras of a `Box`: the pointer metadata, read out of the
@@ -117,6 +121,9 @@ pub struct TyImpureRef<'vir> {
     /// `TyImpureEncLocalRef::apply_method_assign`.
     pub(super) method_assign:
         MethodIdn<'vir, (vir::Ref, vir::ManyTyVal, vir::ManyCSnap, vir::Snap)>,
+    /// Exchanges the place's predicate for its `Uninit` token; see
+    /// `apply_method_drop`.
+    pub(super) method_drop: MethodIdn<'vir, (vir::Ref, vir::ManyTyVal, vir::ManyCSnap)>,
 }
 
 impl<'vir> task_encoder::OutputRefAny for TyImpureRef<'vir> {}
@@ -161,25 +168,39 @@ impl TaskEncoder for TyImpureEnc {
             let ref_self_decl = builder.ref_self_decl();
             let ref_self = vcx.mk_local_ex(ref_self_decl);
 
-            // assign method
+            // assign method; consumes the `Uninit` token
             let value_decl = vcx.mk_local_decl("value", snapshot);
             let value = vcx.mk_local_ex(value_decl);
+            let uninit_pre = builder.uninit_pred_expr(ref_self);
             let method_assign = builder.inner.method(
                 "assign",
                 (ref_self_decl.ty(), builder.params.ty_args(), builder.params.const_args(), snapshot),
                 &[],
                 (ref_self_decl, builder.params.ty_decls(), builder.params.const_decls(), value_decl),
-                &[],
+                &[uninit_pre],
                 &[
                     vir::expr! { [builder.ref_to_pred](ref_self, [..[builder.params.ty_exprs()]], [..[builder.params.const_exprs()]]) },
                     vir::expr! { ([builder.ref_to_snap](ref_self, [..[builder.params.ty_exprs()]], [..[builder.params.const_exprs()]])) == (value) },
                 ],
             );
 
+            // drop method; the reverse of assign
+            let method_drop = builder.inner.method(
+                "drop",
+                (ref_self_decl.ty(), builder.params.ty_args(), builder.params.const_args()),
+                &[],
+                (ref_self_decl, builder.params.ty_decls(), builder.params.const_decls()),
+                &[
+                    vir::expr! { [builder.ref_to_pred](ref_self, [..[builder.params.ty_exprs()]], [..[builder.params.const_exprs()]]) },
+                ],
+                &[uninit_pre],
+            );
+
             let data = TyImpureRef {
                 ref_to_pred: builder.ref_to_pred,
                 ref_to_snap: builder.ref_to_snap,
                 method_assign,
+                method_drop,
             };
             deps.emit_output_ref(*task_key, data)?;
 
@@ -247,6 +268,9 @@ pub(crate) struct PredicateBuilder<'vir> {
     pub(super) ref_to_pred: PredicateIdn<'vir, (vir::Ref, vir::ManyTyVal, vir::ManyCSnap)>,
     pub(super) ref_to_snap:
         FunctionIdn<'vir, (vir::Ref, vir::ManyTyVal, vir::ManyCSnap), vir::Snap>,
+    uninit_pred: PredicateIdn<'vir, (vir::Ref, vir::TyVal)>,
+    /// The lifted type value, in terms of the type's own parameters.
+    self_lifted_ty: vir::ExprTyVal<'vir>,
 
     pub(super) inner: PredicateBuilderInner<'vir>,
 }
@@ -273,6 +297,10 @@ impl<'vir> PredicateBuilder<'vir> {
         snapshot: vir::TypeSnap<'vir>,
     ) -> Self {
         let params = deps.require_dep::<GenericParamsEnc>(ty.params).unwrap();
+        let uninit_pred = deps.require_dep::<UninitEnc>(()).unwrap();
+        let self_lifted_ty = deps
+            .require_dep::<TyExprEnc>(RustTyDecomposition::identity(ty))
+            .unwrap();
         let name = vir::vir_format!(vcx, "p_{}", ty.name());
         let inner = PredicateBuilderInner {
             vcx,
@@ -294,8 +322,17 @@ impl<'vir> PredicateBuilder<'vir> {
             snapshot,
             ref_to_pred,
             ref_to_snap,
+            uninit_pred,
+            self_lifted_ty,
             inner,
         }
+    }
+
+    /// The `Uninit` token of a place of the type being encoded.
+    pub(crate) fn uninit_pred_expr(&self, self_ref: vir::ExprRef<'vir>) -> vir::ExprBool<'vir> {
+        self.inner
+            .vcx
+            .mk_predicate_app_expr((self.uninit_pred)(self_ref, self.self_lifted_ty)(None))
     }
 
     pub(crate) fn csnap_type(&self) -> vir::TypeCSnap<'vir> {

@@ -108,6 +108,7 @@ pub fn test_entrypoint<'tcx>(
     crate::encoders::MetadataCastAxiomEnc::emit_outputs(&mut program);
     crate::encoders::ValueCastAxiomEnc::emit_outputs(&mut program);
     crate::encoders::PrustiBuiltinEnc::emit_outputs(&mut program);
+    crate::encoders::UninitEnc::emit_outputs(&mut program);
 
     program.header("pure generic casts");
     GArgsCastEnc::<Pure>::emit_outputs(&mut program);

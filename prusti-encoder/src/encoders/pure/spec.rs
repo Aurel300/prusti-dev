@@ -70,7 +70,17 @@ impl<'vir> PledgeExpr<'vir> {
     }
 
     pub fn expr(&self, args: PledgeArgs<'vir>) -> vir::ExprBool<'vir> {
-        vir::with_vcx(|vcx| self.expr.reify(vcx, (self.did, args.0)))
+        vir::with_vcx(|vcx| {
+            self.expr
+                .reify(vcx, (self.did, args.0, vir::OldLabel::None))
+        })
+    }
+
+    pub fn expr_at_label(&self, args: PledgeArgs<'vir>, label: &'vir str) -> vir::ExprBool<'vir> {
+        vir::with_vcx(|vcx| {
+            self.expr
+                .reify(vcx, (self.did, args.0, vir::OldLabel::Label(label)))
+        })
     }
 
     pub fn span(&self) -> Span {
@@ -227,7 +237,7 @@ impl TaskEncoder for MirSpecEnc {
                 .filter_map(|spec_def_id| {
                     let spec = Self::encode_pure(vcx, deps, ctx, *spec_def_id, "precondition")?;
                     let expr = spec.expr.downcast_ty::<vir::Bool>();
-                    let expr = expr.reify(vcx, (*spec_def_id, pre_args));
+                    let expr = expr.reify(vcx, (*spec_def_id, pre_args, vir::OldLabel::None));
                     let span = vcx.tcx().def_span(*spec_def_id);
                     Some((vcx.with_span(span, |_| expr), span))
                 })
@@ -262,7 +272,7 @@ impl TaskEncoder for MirSpecEnc {
                             )])
                         });
                         let expr = spec.expr.downcast_ty::<vir::Bool>();
-                        let expr = expr.reify(vcx, (*spec_def_id, post_args));
+                        let expr = expr.reify(vcx, (*spec_def_id, post_args, vir::OldLabel::None));
                         Some((expr, span))
                     })
                 })

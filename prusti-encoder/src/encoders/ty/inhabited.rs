@@ -40,7 +40,11 @@ impl<'vir> TyInhabitedRef<'vir> {
     }
 }
 
-// Clients should use `TyUseInhabitedEnc` instead of this encoder directly.
+/// Encodes axioms that define when a Rust type is inhabited (relative to its
+/// type parameters). This encoder takes a `RustTy` as input and therefore does
+/// not consider actual type parameters a Rust type may be instantiated with. To
+/// determine whether a type is inhabited (taking type parameters into account)
+// `TyUseInhabitedEnc` should be used instead.
 pub struct TyInhabitedEnc;
 
 impl TaskEncoder for TyInhabitedEnc {
@@ -147,14 +151,7 @@ impl<'a, 'vir> InhabitedWalker<'a, 'vir> {
             | TySpecifics::Opaque(_)
             | TySpecifics::Primitive(_)
             | TySpecifics::Raw(_)
-            | TySpecifics::Builtin(
-                RustBuiltinData::Int
-                | RustBuiltinData::Real
-                | RustBuiltinData::Set(_)
-                | RustBuiltinData::Multiset(_)
-                | RustBuiltinData::Seq(_)
-                | RustBuiltinData::Map(_, _),
-            ) => vir::with_vcx(|vcx| vcx.mk_bool::<true>()),
+            | TySpecifics::Builtin(_) => vir::with_vcx(|vcx| vcx.mk_bool::<true>()),
             TySpecifics::ImmRef(data) | TySpecifics::MutRef(data) => {
                 self.encode_decomposition(data.referent.decompose(ty.params))?
             }

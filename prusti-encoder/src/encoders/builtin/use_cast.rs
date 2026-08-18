@@ -8,7 +8,7 @@ use crate::encoders::{
         cast::{MirBuiltinCastEnc, MirBuiltinCastOutput, MirBuiltinCastTask},
     },
     ty::{
-        RustTyDecomposition, TySpecifics,
+        RustTyDecomposition, RustTySpecial, TySpecifics,
         generics::{GArgsTy, GArgsTyEnc},
     },
 };
@@ -168,6 +168,12 @@ impl TaskEncoder for MirBuiltinUseCastEnc {
                         (od.referent, rd.referent)
                     }
                     (TySpecifics::Raw(od), TySpecifics::Raw(rd)) => (od.referent, rd.referent),
+                    // A `Box` unsize coercion: the referent is the boxed value.
+                    (TySpecifics::StructLike(_), TySpecifics::StructLike(_))
+                        if operand_ty.ty.special == RustTySpecial::Box =>
+                    {
+                        (operand_ty.ty.box_value_ty(), result_ty.ty.box_value_ty())
+                    }
                     // `MirBuiltinCastOutput::Unsize` should only happen for
                     // reference/pointer types, do not expect other types here.
                     _ => unreachable!(

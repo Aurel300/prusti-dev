@@ -9,7 +9,7 @@ use crate::encoders::{
     TyUseImpureEnc,
     builtin::{MetadataCastEnc, ValueCastEnc},
     ty::{
-        LazyRustTy, RustTy, RustTyDecomposition, TySpecifics,
+        LazyRustTy, RustTy, RustTyDecomposition, RustTySpecial, TySpecifics,
         generics::{GParams, GenericParamsEnc},
         use_pure::TyUsePureEnc,
     },
@@ -234,6 +234,24 @@ impl TaskEncoder for MirBuiltinCastEnc {
                                 value_cast(data.value_access(arg_ex).downcast_ty()).upcast_ty(),
                             );
                             (true, expr)
+                        }
+                        // A `Box` (e.g. `Box<[T; N]> -> Box<[T]>`): rebuild the
+                        // snapshot with the coerced pointer metadata and value
+                        // (the address is unchanged). Unlike `&mut`, no
+                        // side-effecting methods are needed: the box owns its
+                        // referent, so the whole predicate is exhaled/inhaled
+                        // by the surrounding assignment.
+                        TySpecifics::StructLike(data)
+                            if operand_ty.special == RustTySpecial::Box =>
+                        {
+                            assert_eq!(operand_ty, result_ty);
+                            let expr = data.box_unsize_snap(
+                                arg_ex,
+                                metadata_cast(data.box_metadata_access(arg_ex).downcast_ty())
+                                    .upcast_ty(),
+                                value_cast(data.box_value_access(arg_ex).downcast_ty()).upcast_ty(),
+                            );
+                            (false, expr)
                         }
                         _ => {
                             return Err(EncodeFullError::EncodingError(

@@ -83,6 +83,7 @@ impl<'tcx> RustTyDecomposition<'tcx> {
         let data = RustTyData {
             name: symbol::Symbol::intern("Param"),
             params: GParams::empty_env(gty),
+            special: RustTySpecial::None,
         };
         let specifics = TySpecifics::Param(RustParamData::Generic);
         TyData::<RustTyDatas>::new(data, specifics).alloc()
@@ -268,6 +269,16 @@ pub type RustBuiltin<'tcx> = <RustTyDatas as TyDatas<'tcx>>::BuiltinData;
 pub struct RustTyData<'tcx> {
     pub name: symbol::Symbol,
     pub params: GParams<'tcx>,
+    pub special: RustTySpecial,
+}
+
+/// Marks types with extra hardcoded treatment on top of their regular encoding.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum RustTySpecial {
+    None,
+    /// `alloc::boxed::Box`: its snapshot also carries the value of the boxed
+    /// `T` and its predicate permission to it (see the structlike encoder).
+    Box,
 }
 
 impl<'tcx> RustTyData<'tcx> {
@@ -290,6 +301,17 @@ pub struct RustFieldData<'tcx> {
     pub name: symbol::Symbol,
     pub fid: abi::FieldIdx,
     ty: LazyRustTy<'tcx>,
+    pub address: RustFieldAddress,
+}
+
+/// How the address of a field is obtained from that of the containing struct.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum RustFieldAddress {
+    /// A constant offset: a pure function of the struct's `Ref`.
+    Constant,
+    /// Stored in the struct's value (the value of a `Box`, at its pointer):
+    /// only a function of the struct's snapshot.
+    Dynamic,
 }
 
 impl<'tcx> RustFieldData<'tcx> {
@@ -337,6 +359,13 @@ impl<'tcx> TyData<'tcx, RustTyDatas> {
         }
     }
 
+    /// The type of the value stored in a `Box` (its hardcoded last field, see
+    /// `TySpecifics::from_adt`).
+    pub fn box_value_ty(&self) -> LazyRustTy<'tcx> {
+        assert_eq!(self.special, RustTySpecial::Box);
+        self.expect_structlike().fields.last().unwrap().ty()
+    }
+
     fn from_ty(ty: ty::Ty<'tcx>, context: GParams<'tcx>) -> RustTyDecomposition<'tcx> {
         // We normalize since we may be translating a type such as the field of
         // `struct MyStruct<T: Iterator<Item = i32>>(T::Item);` where `ty` is
@@ -375,6 +404,7 @@ impl<'tcx> TyData<'tcx, RustTyDatas> {
         let data = RustTyData {
             name: symbol::Symbol::intern(&name),
             params,
+            special: RustTySpecial::from_ty(ty),
         };
         RustTyDecomposition::new(
             Self::new(data, specifics).alloc(),
@@ -390,6 +420,7 @@ impl<'tcx> TyData<'tcx, RustTyDatas> {
         let data = RustTyData {
             name: symbol::Symbol::intern(&name),
             params,
+            special: RustTySpecial::None,
         };
         let specifics = TySpecifics::from_prim_ty(ty);
         RustTyDecomposition::new(Self::new(data, specifics).alloc(), args, Some(true))
@@ -558,6 +589,24 @@ impl<'tcx> TyData<'tcx, RustTyDatas> {
     }
 }
 
+/// For a `RustTy` zipped with another (encoded) type data.
+impl<'tcx, D: TyDatas<'tcx>> TyData<'tcx, (RustTyDatas, D)> {
+    pub fn box_metadata_ty(&self) -> LazyRustTy<'tcx> {
+        assert_eq!(self.0.special, RustTySpecial::Box);
+        let box_value_ty = self.expect_structlike().fields.last().unwrap().0.ty();
+        box_value_ty.pointee_metadata()
+    }
+}
+
+impl RustTySpecial {
+    fn from_ty(ty: ty::Ty<'_>) -> Self {
+        match ty.kind() {
+            ty::TyKind::Adt(adt, _) if adt.is_box() => RustTySpecial::Box,
+            _ => RustTySpecial::None,
+        }
+    }
+}
+
 impl<'tcx> TySpecifics<'tcx, RustTyDatas> {
     fn from_ty(ty: ty::Ty<'tcx>) -> Self {
         if ty.is_primitive() {
@@ -577,6 +626,7 @@ impl<'tcx> TySpecifics<'tcx, RustTyDatas> {
                         name: symbol::Symbol::intern(&format!("_{i}")),
                         fid: abi::FieldIdx::from_usize(i),
                         ty: LazyRustTy(Self::new_param_ty(i as u32)),
+                        address: RustFieldAddress::Constant,
                     })
                     .collect::<Vec<_>>();
                 TySpecifics::mk_structlike((), fields)
@@ -629,6 +679,7 @@ impl<'tcx> TySpecifics<'tcx, RustTyDatas> {
                             name: symbol::Symbol::intern(&format!("c{i}")),
                             fid: abi::FieldIdx::from_usize(i),
                             ty: LazyRustTy(vcx.tcx().erase_regions(ty)),
+                            address: RustFieldAddress::Constant,
                         })
                         .collect::<Vec<_>>()
                 });
@@ -655,14 +706,7 @@ impl<'tcx> TySpecifics<'tcx, RustTyDatas> {
     }
 
     fn from_adt(adt: ty::AdtDef<'tcx>) -> Self {
-        if adt.is_box() {
-            let fields = vec![RustFieldData {
-                name: symbol::Symbol::intern("deref"),
-                fid: abi::FieldIdx::from_usize(0),
-                ty: LazyRustTy(Self::new_param_ty(0)),
-            }];
-            TySpecifics::mk_structlike((), fields)
-        } else if vir::with_vcx(|vcx| {
+        if vir::with_vcx(|vcx| {
             vcx.tcx().lang_items().get(hir::LangItem::DynMetadata) == Some(adt.did())
         }) {
             // `DynMetadata<dyn Trait>` is the metadata of a `&dyn`/`*dyn`
@@ -692,6 +736,7 @@ impl<'tcx> TySpecifics<'tcx, RustTyDatas> {
                         name: symbol::Symbol::intern("val"),
                         fid: abi::FieldIdx::from_usize(0),
                         ty: LazyRustTy(Self::new_param_ty(0)),
+                        address: RustFieldAddress::Constant,
                     }];
                     TySpecifics::mk_structlike((), fields)
                 }
@@ -701,7 +746,19 @@ impl<'tcx> TySpecifics<'tcx, RustTyDatas> {
         } else {
             match adt.adt_kind() {
                 ty::AdtKind::Struct => {
-                    let data = Self::from_struct(adt.non_enum_variant());
+                    let mut data = Self::from_struct(adt.non_enum_variant());
+                    if adt.is_box() {
+                        // The hardcoded value slot for the boxed `T` is
+                        // appended as a regular field; only its (heap-dependent)
+                        // field accessor and the pointer metadata are
+                        // special-cased (see the structlike encoder).
+                        data.fields.push(RustFieldData {
+                            name: symbol::Symbol::intern("value"),
+                            fid: abi::FieldIdx::from_usize(data.fields.len()),
+                            ty: LazyRustTy(Self::new_param_ty(0)),
+                            address: RustFieldAddress::Dynamic,
+                        });
+                    }
                     Self::StructLike(data)
                 }
                 ty::AdtKind::Enum => {
@@ -756,6 +813,7 @@ impl<'tcx> TySpecifics<'tcx, RustTyDatas> {
                     name: field.name,
                     fid,
                     ty: LazyRustTy(ty),
+                    address: RustFieldAddress::Constant,
                 }
             })
             .collect::<Vec<_>>()

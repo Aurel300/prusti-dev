@@ -2,6 +2,7 @@ use pcg::r#loop::{LoopAnalysis, LoopId};
 use prusti_interface::{environment::EnvQuery, utils::has_prusti_attr};
 use prusti_rustc_interface::{
     data_structures::fx::{FxHashMap, FxHashSet},
+    hir,
     middle::mir::{self, BasicBlock},
     span::{Span, def_id::DefId},
 };
@@ -578,18 +579,30 @@ impl<'enc, 'vir: 'enc> mir::visit::Visitor<'vir> for SpecVisitor<'enc, 'vir> {
                 // encoding: the spec closures they reference are encoded
                 // separately as the closure's contract. Turned into
                 // [SpecArms] by the callers.
-                "closure_spec_pre" | "closure_spec_post" | "closure_spec_args" => {
+                "closure_spec_pre" => {
                     self.closure_marker_blocks.push(location.block);
-                    // The second argument of args/post is the `PhantomData`
-                    // binding tying the marker types together.
-                    if matches!(
-                        item_name.as_str(),
-                        "closure_spec_args" | "closure_spec_post"
-                    ) && let Some(local) =
-                        args[1].node.place().and_then(|place| place.as_local())
-                    {
-                        self.phantom_operands.push(local);
-                    }
+                    return;
+                }
+                // The second argument of args/post is the `PhantomData`
+                // binding tying the marker types together, moved from a
+                // temporary.
+                "closure_spec_args" | "closure_spec_post" => {
+                    self.closure_marker_blocks.push(location.block);
+                    let local = args[1]
+                        .node
+                        .place()
+                        .and_then(|place| place.as_local())
+                        .expect("closure spec marker: `PhantomData` argument is not a local");
+                    debug_assert!(
+                        self.body.local_decls[local]
+                            .ty
+                            .ty_adt_def()
+                            .is_some_and(|adt| vcx
+                                .tcx()
+                                .is_lang_item(adt.did(), hir::LangItem::PhantomData)),
+                        "closure spec marker: argument is not a `PhantomData`"
+                    );
+                    self.phantom_operands.push(local);
                     return;
                 }
                 _ => return,

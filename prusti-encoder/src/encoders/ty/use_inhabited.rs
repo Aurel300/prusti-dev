@@ -51,9 +51,9 @@ impl TaskEncoder for TyUseInhabitedEnc {
             return Ok(((), ()));
         }
 
-        // Ensure the relevant axioms are emitted for all nested types, e.g. if
-        // the input type is Pair<u32, T>, this will encode inhabitedness for
-        // u32 and T (the latter being a no-op).
+        // Ensure the relevant axioms are emitted for all nested types, e.g., if
+        // the input type is `Pair<u32, T>`, this will encode inhabitedness for
+        // `u32` and `T` (the latter being a no-op).
         for arg in task_key.args.args().iter().filter_map(|arg| arg.as_type()) {
             let arg = RustTyDecomposition::from_ty(arg, task_key.args.context());
             deps.require_ref::<TyUseInhabitedEnc>(arg)?;

@@ -2,7 +2,7 @@ use prusti_rustc_interface::{
     middle::{mir, ty},
     span::symbol,
 };
-use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
+use task_encoder::{EncodeFullError, EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 use vir::{CastType, FunctionIdn, MethodIdn};
 
 use crate::encoders::{
@@ -60,6 +60,11 @@ pub(super) struct MirBuiltinCastLocal<'vir> {
     undo: Option<vir::Method<'vir>>,
 }
 
+#[derive(Clone, Debug)]
+pub enum MirBuiltinCastEncError {
+    Unsupported(#[allow(dead_code)] String),
+}
+
 impl TaskEncoder for MirBuiltinCastEnc {
     task_encoder::encoder_cache!(MirBuiltinCastEnc);
     const ENCODER_NAME: &'static str = "MIR builtin cast encoder";
@@ -68,6 +73,8 @@ impl TaskEncoder for MirBuiltinCastEnc {
 
     type OutputFullDependency<'vir> = MirBuiltinCastOutput<'vir>;
     type OutputFullLocal<'vir> = MirBuiltinCastLocal<'vir>;
+
+    type EncodingError = MirBuiltinCastEncError;
 
     fn task_to_key<'vir>(task: &Self::TaskDescription<'vir>) -> Self::TaskKey<'vir> {
         *task
@@ -204,49 +211,39 @@ impl TaskEncoder for MirBuiltinCastEnc {
                     let u = unsize_params.ty_exprs()[0];
                     let v = unsize_params.ty_exprs()[1];
                     let value_cast = deps.require_dep::<ValueCastEnc>(())?;
-                    let (is_mut, metadata, res_cons) = match &op_ty.specifics {
+                    let metadata_cast = deps.require_dep::<MetadataCastEnc>(())?;
+                    let value_cast = |value| value_cast(value, u, v);
+                    let metadata_cast = |metadata| metadata_cast(metadata, u, v);
+                    let (is_mut, expr) = match &op_ty.specifics {
                         TySpecifics::ImmRef(data) => {
                             let res_data = res_ty.expect_immref();
-                            let value = value_cast(data.value_access(arg_ex).downcast_ty(), u, v)
-                                .upcast_ty();
-                            let res_cons = |metadata| {
-                                res_data.prim_to_snap(data.deref_access(arg_ex), metadata, value)
-                            };
-                            (
-                                false,
-                                data.metadata_access(arg_ex).downcast_ty(),
-                                Ok(res_cons),
-                            )
+                            let expr = res_data.prim_to_snap(
+                                data.deref_access(arg_ex),
+                                metadata_cast(data.metadata_access(arg_ex).downcast_ty())
+                                    .upcast_ty(),
+                                value_cast(data.value_access(arg_ex).downcast_ty()).upcast_ty(),
+                            );
+                            (false, expr)
                         }
                         TySpecifics::MutRef(data) => {
                             let res_data = res_ty.expect_mutref();
-                            let res_cons = |metadata| {
-                                res_data.prim_to_snap(
-                                    data.deref_access(arg_ex),
-                                    metadata,
-                                    data.value_access(arg_ex),
-                                )
-                            };
-                            (
-                                true,
-                                data.metadata_access(arg_ex).downcast_ty(),
-                                Err(res_cons),
-                            )
+                            let expr = res_data.prim_to_snap(
+                                data.deref_access(arg_ex),
+                                metadata_cast(data.metadata_access(arg_ex).downcast_ty())
+                                    .upcast_ty(),
+                                value_cast(data.value_access(arg_ex).downcast_ty()).upcast_ty(),
+                            );
+                            (true, expr)
                         }
-                        _ => unreachable!(),
-                    };
-                    // `metadata_cast(old_metadata, U, V)` rewrites the (operand)
-                    // metadata for the result referent type `V` (e.g. a thin unit
-                    // metadata becomes a slice length, or a `dyn` vtable).
-                    let metadata_cast = deps.require_dep::<MetadataCastEnc>(())?;
-                    let metadata = metadata_cast(
-                        metadata,
-                        unsize_params.ty_exprs()[0],
-                        unsize_params.ty_exprs()[1],
-                    );
-                    let expr = match res_cons {
-                        Ok(res_cons) => res_cons(metadata.upcast_ty()),
-                        Err(res_cons) => res_cons(metadata.upcast_ty()),
+                        _ => {
+                            return Err(EncodeFullError::EncodingError(
+                                MirBuiltinCastEncError::Unsupported(format!(
+                                    "unsizing of `{}` (only references and `Box` can be unsized)",
+                                    operand_ty.name()
+                                )),
+                                None,
+                            ));
+                        }
                     };
                     let fn_idn = FunctionIdn::new(
                         name,
@@ -307,9 +304,9 @@ impl TaskEncoder for MirBuiltinCastEnc {
                         // use the same `value_cast` direction (`U, V`), so a single
                         // axiom per coercion (added in `MirBuiltinUseCastEnc`) suffices.
                         let unsize_value =
-                            vcx.mk_eq_expr(v_snap, value_cast(vcx.mk_old_expr(u_snap), u, v));
+                            vcx.mk_eq_expr(v_snap, value_cast(vcx.mk_old_expr(u_snap)));
                         let undo_value =
-                            vcx.mk_eq_expr(vcx.mk_old_expr(v_snap), value_cast(u_snap, u, v));
+                            vcx.mk_eq_expr(vcx.mk_old_expr(v_snap), value_cast(u_snap));
 
                         let unsize_idn = MethodIdn::new(
                             vir::vir_format_identifier!(

@@ -117,8 +117,22 @@ impl<'tcx> LazyRustTy<'tcx> {
     /// `GParams` that declares it, this yields a `Param` decomposition whose
     /// argument is that type variable. Used to make a builtin method generic
     /// over one of the reference's type parameters.
+    ///
+    /// You very likely do NOT want to use this: it's a hacky thing to make
+    /// `MirBuiltinCastEnc` work.
     pub fn new_param_ty(index: u32) -> Self {
-        Self(TySpecifics::new_param_ty(index))
+        Self::new(TySpecifics::new_param_ty(index))
+    }
+
+    /// The pointer metadata type of a pointer to this type.
+    fn pointee_metadata(self) -> Self {
+        vir::with_vcx(|vcx| {
+            let metadata_did = vcx.tcx().require_lang_item(
+                hir::LangItem::Metadata,
+                prusti_rustc_interface::span::DUMMY_SP,
+            );
+            Self::new(ty::Ty::new_projection(vcx.tcx(), metadata_did, [self.0]))
+        })
     }
 }
 
@@ -264,7 +278,7 @@ impl<'tcx> RustTyData<'tcx> {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct RefData<'tcx> {
-    /// Will always be a `pointee_metadata_projection` (`TyKind::Alias`).
+    /// Will always be a `LazyRustTy::pointee_metadata` (`TyKind::Alias`).
     pub metadata: LazyRustTy<'tcx>,
     /// Will always be `ParamTy { index: 1, .. }`, the concrete type can be
     /// found in the `args` of the containing `RustTyDecomposition`.
@@ -486,7 +500,7 @@ impl<'tcx> TyData<'tcx, RustTyDatas> {
             }
             ty::TyKind::Ref(region, inner, _) => {
                 // The pointer-metadata type is derived from the referent (see
-                // `RefData` below and `pointee_metadata_projection`), so a
+                // `RefData` below and `LazyRustTy::pointee_metadata`), so a
                 // reference has just two generics: the lifetime and the referent.
                 // TODO: what lifetime should we use here?
                 let param_region = vir::with_vcx(|vcx| vcx.tcx().lifetimes.re_erased.into());
@@ -553,19 +567,6 @@ impl<'tcx> TySpecifics<'tcx, RustTyDatas> {
             return TySpecifics::mk_opaque(());
         }
 
-        /// The `<Referent as core::ptr::Pointee>::Metadata` projection type.
-        /// Taken from `pointee_metadata_ty_or_projection` in `rustc`
-        fn pointee_metadata_projection<'tcx>(
-            tcx: ty::TyCtxt<'tcx>,
-            referent: ty::Ty<'tcx>,
-        ) -> ty::Ty<'tcx> {
-            let metadata_did = tcx.require_lang_item(
-                hir::LangItem::Metadata,
-                prusti_rustc_interface::span::DUMMY_SP,
-            );
-            ty::Ty::new_projection(tcx, metadata_did, [referent])
-        }
-
         match ty.kind() {
             ty::TyKind::Adt(adt, _) => Self::from_adt(*adt),
             ty::TyKind::Tuple(args) => {
@@ -592,12 +593,10 @@ impl<'tcx> TySpecifics<'tcx, RustTyDatas> {
                 // The referent is generic parameter 1; its pointer metadata is
                 // derived as `<referent as Pointee>::Metadata` rather than being
                 // a separate generic parameter.
-                let referent = Self::new_param_ty(1);
+                let referent = LazyRustTy(Self::new_param_ty(1));
                 let data = RefData {
-                    metadata: LazyRustTy(vir::with_vcx(|vcx| {
-                        pointee_metadata_projection(vcx.tcx(), referent)
-                    })),
-                    referent: LazyRustTy(referent),
+                    metadata: referent.pointee_metadata(),
+                    referent,
                 };
                 match mutability {
                     ty::Mutability::Mut => TySpecifics::mk_mutref(data),
@@ -611,12 +610,10 @@ impl<'tcx> TySpecifics<'tcx, RustTyDatas> {
             // parameter 0; the metadata is derived from it as
             // `<pointee as Pointee>::Metadata`.
             ty::TyKind::RawPtr(..) => {
-                let referent = Self::new_param_ty(0);
+                let referent = LazyRustTy(Self::new_param_ty(0));
                 TySpecifics::mk_raw(RefData {
-                    metadata: LazyRustTy(vir::with_vcx(|vcx| {
-                        pointee_metadata_projection(vcx.tcx(), referent)
-                    })),
-                    referent: LazyRustTy(referent),
+                    metadata: referent.pointee_metadata(),
+                    referent,
                 })
             }
             ty::TyKind::Alias(..) | ty::TyKind::Param(_) => {
@@ -688,8 +685,8 @@ impl<'tcx> TySpecifics<'tcx, RustTyDatas> {
                     LazyRustTy(Self::new_param_ty(0)),
                     LazyRustTy(Self::new_param_ty(1)),
                 )),
-                // `Ghost<T>` is encoded as if it were `struct Ghost<T>(T)`
-                // (like `Box` above): the snapshot wraps the value of `T`.
+                // `Ghost<T>` is encoded as if it were `struct Ghost<T>(T)`:
+                // the snapshot wraps the value of `T`.
                 "Ghost" => {
                     let fields = vec![RustFieldData {
                         name: symbol::Symbol::intern("val"),

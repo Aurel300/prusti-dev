@@ -2,14 +2,24 @@ use super::*;
 
 pub enum TaskEncoderCacheState<'vir, E: TaskEncoder + 'vir + ?Sized> {
     // None, // indicated by absence in the cache
-    /// Task was enqueued but not yet started.
-    Enqueued,
+    /// Task was enqueued; its encoding(s) may be running but have not
+    /// yet emitted an output reference.
+    Enqueued {
+        /// The number of encodings of this task currently running, see
+        /// `Started::runs`.
+        runs: usize,
+    },
 
     /// Task is currently being encoded. The output reference is available.
-    /// Full encoding is not available yet, and querying for it indicates
-    /// a cyclic dependency error.
+    /// Full encoding is not available yet: querying for it re-runs the
+    /// encoding, which succeeds when the re-run makes progress (e.g. because
+    /// its dependencies now find this task's output reference), in which
+    /// case the earlier runs adopt its result (`EncodeFullError::AlreadyEncoded`).
+    /// Requesting a task with two runs in progress is a cyclic dependency
+    /// error: a third run would only repeat the second one's requests.
     Started {
         output_ref: <E as TaskEncoder>::OutputRef<'vir>,
+        runs: usize,
     },
 
     /// Task was successfully encoded.

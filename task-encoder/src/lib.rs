@@ -238,7 +238,7 @@ pub trait TaskEncoder {
         // enqueue, expecting no entry (we just checked)
         triggers::fire_watchers::<Self>(&task_key);
         let old = Self::with_cache(move |cache| {
-            let v = TaskEncoderCacheState::Enqueued;
+            let v = TaskEncoderCacheState::Enqueued { runs: 0 };
             cache.borrow_mut().insert(task_key, v)
         });
         assert!(old.is_none());
@@ -310,7 +310,7 @@ pub trait TaskEncoder {
         let in_cache = Self::with_cache(|cache| {
             let mut cache = cache.borrow_mut();
 
-            match cache.get(&task_key) {
+            match cache.get_mut(&task_key) {
                 Some(e) => match e {
                     TaskEncoderCacheState::ErrorEnqueue { error, .. }
                     | TaskEncoderCacheState::ErrorEncode { error, .. } => Some(Err(error.clone())),
@@ -330,13 +330,26 @@ pub trait TaskEncoder {
                             Some(Ok(None))
                         }
                     }
-                    // TODO: should we return Some(Ok(None)) for `Started`, if `!need_output` ?
-                    TaskEncoderCacheState::Enqueued | TaskEncoderCacheState::Started { .. } => None,
+                    // In progress: re-run the encoding (see
+                    // `TaskEncoderCacheState::Started`), unless it is already
+                    // being re-run.
+                    TaskEncoderCacheState::Enqueued { runs }
+                    | TaskEncoderCacheState::Started { runs, .. } => {
+                        if *runs >= 2 {
+                            Some(Err(TaskEncoderError::CyclicError))
+                        } else {
+                            *runs += 1;
+                            None
+                        }
+                    }
                 },
                 None => {
                     // enqueue
                     triggers::fire_watchers::<Self>(&task_key);
-                    cache.insert(task_key.clone(), TaskEncoderCacheState::Enqueued);
+                    cache.insert(
+                        task_key.clone(),
+                        TaskEncoderCacheState::Enqueued { runs: 1 },
+                    );
                     None
                 }
             }
@@ -373,7 +386,7 @@ pub trait TaskEncoder {
             Self::with_cache(|cache| {
                 let mut cache = cache.borrow_mut();
                 match cache.get(&task_key) {
-                    Some(TaskEncoderCacheState::Started { output_ref }) => {
+                    Some(TaskEncoderCacheState::Started { output_ref, .. }) => {
                         let output_ref = output_ref.clone();
                         cache.insert(
                             task_key.clone(),
@@ -402,7 +415,7 @@ pub trait TaskEncoder {
 
         let output_ref = Self::with_cache(|cache| match cache.borrow().get(&task_key) {
             Some(
-                TaskEncoderCacheState::Started { output_ref }
+                TaskEncoderCacheState::Started { output_ref, .. }
                 | TaskEncoderCacheState::Encoded { output_ref, .. },
             ) => output_ref.clone(),
             _ => panic!("encoder did not provide output ref for task {task_key:?}"),
@@ -460,7 +473,8 @@ pub trait TaskEncoder {
                     }
                     TaskEncoderCacheState::ErrorEnqueue { error, .. }
                     | TaskEncoderCacheState::ErrorEncode { error, .. } => Err(error.clone()),
-                    TaskEncoderCacheState::Started { .. } | TaskEncoderCacheState::Enqueued => {
+                    TaskEncoderCacheState::Started { .. }
+                    | TaskEncoderCacheState::Enqueued { .. } => {
                         panic!("encoder did not finish for task {task_key:?}")
                     }
                 })

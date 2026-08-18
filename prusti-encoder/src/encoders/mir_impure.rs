@@ -2082,8 +2082,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                         self.wandless_calls.insert(self.current_block.unwrap());
                         let return_ty = destination.ty(self.local_decls, self.vcx.tcx()).ty;
                         let return_ty_use = self.ty_use_impure(return_ty);
-                        let assign_stmt =
-                            return_ty_use.apply_method_assign(self.vcx, dest, pure);
+                        let assign_stmt = return_ty_use.apply_method_assign(self.vcx, dest, pure);
                         if can_fail {
                             vcx.handle_error(
                                 "application.precondition:assertion.false",

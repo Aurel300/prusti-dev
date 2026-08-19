@@ -10,8 +10,7 @@ use prusti_rustc_interface::{
 };
 use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 use vir::{
-    AdtDestructor, Arity, BackendInterpretationPair, CastType, CompType, DomainAxiomData,
-    DomainIdnSnap, FunctionIdn, Type,
+    AdtDestructor, Arity, BackendInterpretationPair, CastType, CompType, DomainAxiomData, DomainIdnSnap, FunctionIdn, Type
 };
 
 use crate::encoders::Pure;
@@ -162,7 +161,7 @@ pub struct TyPureImmRefData<'vir> {
     /// Function to access the reference metadata (fat pointer).
     pub(super) metadata_access: AdtDestructor<'vir, vir::CSnap, vir::PSnap>,
     /// Function to generate a dummy metadata value.
-    pub(super) dummy_metadata: FunctionIdn<'vir, (), vir::PSnap>,
+    pub(super) dummy_metadata_fn: vir::FunctionIdn<'vir, vir::TyVal, vir::PSnap>,
     /// Function to access the snapshot value.
     pub(super) value_access: AdtDestructor<'vir, vir::CSnap, vir::PSnap>,
 }

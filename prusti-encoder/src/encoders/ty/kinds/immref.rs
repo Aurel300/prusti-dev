@@ -19,24 +19,28 @@ pub(crate) fn ty_pure<'vir>(
     let ty = data.metadata.decompose(task_key.params);
     let metadata = deps.require_ref::<TyUsePureEnc>(ty)?.snapshot.downcast_ty();
 
-    // let dummy_metadata_fn = builder.function("dummy_metadata", vir::TyVal, vir::TYPE_PSNAP, (), &[], &[], None);
-
-    let dummy_metadata =
-        builder.function("dummy_metadata", (), vir::TYPE_PSNAP, (), &[], &[], None);
-
     let ty = data.referent.decompose(task_key.params);
     let referent = deps.require_ref::<TyUsePureEnc>(ty)?.snapshot.downcast_ty();
-    println!("referent: {:?}", referent);
-    // let foo = dummy_metadata_fn.call()(ty.);
 
     let (field_snaps_to_snap, field_access) =
         builder.constructor("", (vir::TYPE_REF, metadata, referent), None);
+
+    let referent_ty_decl = builder.vcx.mk_local_decl("referent_ty", vir::TYPE_TYVAL);
+    let dummy_metadata_fn = builder.function(
+        "dummy_metadata",
+        vir::TYPE_TYVAL,
+        vir::TYPE_PSNAP,
+        (referent_ty_decl,),
+        &[],
+        &[],
+        None,
+    );
 
     Ok(TyPureImmRefData {
         prim_to_snap: field_snaps_to_snap,
         deref_access: field_access[0].downcast_ty(),
         metadata_access: field_access[1].downcast_ty(),
-        dummy_metadata,
+        dummy_metadata_fn,
         value_access: field_access[2].downcast_ty(),
     })
 }

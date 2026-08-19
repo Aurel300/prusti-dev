@@ -10,7 +10,8 @@ use prusti_rustc_interface::{
 };
 use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 use vir::{
-    AdtDestructor, Arity, BackendInterpretationPair, CastType, CompType, DomainAxiomData, DomainIdnSnap, FunctionIdn, Type
+    AdtDestructor, Arity, BackendInterpretationPair, CastType, CompType, DomainAxiomData,
+    DomainIdnSnap, FunctionIdn, Type,
 };
 
 use crate::encoders::Pure;

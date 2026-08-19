@@ -10,12 +10,9 @@ use prusti_rustc_interface::{
 use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 use vir::HasType;
 
-use crate::{
-    encoders::{
-        TyUseImpureEnc, TyUsePureEnc,
-        ty::{RustTyDecomposition, use_impure::TyUseImpure, use_pure::TyUsePure},
-    },
-    trait_support::is_function_with_body,
+use crate::encoders::{
+    TyUseImpureEnc, TyUsePureEnc,
+    ty::{RustTyDecomposition, use_impure::TyUseImpure, use_pure::TyUsePure},
 };
 
 pub struct MirLocalDefEnc;

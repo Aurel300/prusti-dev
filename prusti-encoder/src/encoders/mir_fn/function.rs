@@ -3,17 +3,14 @@ use prusti_rustc_interface::span::def_id::DefId;
 use task_encoder::{EncodeFullResult, OutputRefAny, TaskEncoder, TaskEncoderDependencies};
 use vir::{CastType, FunctionIdn, Reify};
 
-use crate::{
-    encoders::{
-        MirLocalDefEnc, MirLocalDefEncTask, MirPureEnc, MirPureEncTask, MirSpecEnc, Pure, PureKind,
-        mir_fn::{CallTaskDescription, RustSignature},
-        pure::spec::MirSpecEncMode,
-        ty::{
-            TySpecifics,
-            generics::{GArgCaster, GArgsCastEnc, GArgsTy, GArgsTyEnc, GParams, GenericParamsEnc},
-        },
+use crate::encoders::{
+    MirLocalDefEnc, MirLocalDefEncTask, MirPureEnc, MirPureEncTask, MirSpecEnc, Pure, PureKind,
+    mir_fn::{CallTaskDescription, RustSignature},
+    pure::spec::MirSpecEncMode,
+    ty::{
+        TySpecifics,
+        generics::{GArgCaster, GArgsCastEnc, GArgsTy, GArgsTyEnc, GParams, GenericParamsEnc},
     },
-    trait_support::is_function_with_body,
 };
 
 // Function wrapper

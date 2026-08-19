@@ -1,5 +1,5 @@
 use prusti_interface::PrustiError;
-use prusti_rustc_interface::{middle::ty, span::def_id::DefId};
+use prusti_rustc_interface::span::def_id::DefId;
 use task_encoder::{EncodeFullResult, OutputRefAny, TaskEncoder, TaskEncoderDependencies};
 use vir::{CastType, FunctionIdn, Reify};
 
@@ -155,7 +155,6 @@ impl TaskEncoder for FunctionEnc {
     ) -> EncodeFullResult<'vir, Self> {
         vir::with_vcx(|vcx| {
             let def_id = *task_key;
-            let trusted = crate::encoders::is_function_trusted(def_id);
             let local_defs = deps.require_dep::<MirLocalDefEnc>(MirLocalDefEncTask::Local {
                 def_id,
                 all_locals: true,
@@ -189,11 +188,10 @@ impl TaskEncoder for FunctionEnc {
                 },
             )?;
 
-            let substs = ty::GenericArgs::identity_for_item(vcx.tcx(), def_id);
             let spec =
                 deps.require_dep::<MirSpecEnc>((def_id, def_id, MirSpecEncMode::PureWithResult))?;
 
-            let expr = if trusted || !is_function_with_body(vcx.tcx(), def_id) {
+            let expr = if !crate::encoders::encodes_body(def_id) {
                 None
             } else {
                 // Encode the body of the function. If it cannot be encoded (e.g. it
@@ -204,9 +202,7 @@ impl TaskEncoder for FunctionEnc {
                     encoding_depth: 0,
                     kind: PureKind::Pure,
                     parent_def_id: def_id,
-                    param_env: vcx.tcx().param_env(def_id),
-                    substs,
-                    caller_def_id: None,
+                    gargs: params.identity_args(),
                 }) {
                     Ok(out) => {
                         let expr = out.expr.reify(vcx, (def_id, spec.pre_args));

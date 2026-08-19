@@ -19,7 +19,7 @@ use vir::{CastType, HasType, Reify};
 use crate::encoders::{
     MirLocalDefEncTask, MirPureEnc,
     mir_pure::{ExprInput, MirPureEncOutput, PureKind},
-    ty::generics::GParams,
+    ty::generics::{GArgs, GParams},
 };
 pub struct MirSpecEnc;
 
@@ -113,6 +113,15 @@ impl<'vir> MirSpecEncOutput<'vir> {
     }
 }
 
+/// State shared by every spec encoded within one `MirSpecEnc` task.
+#[derive(Clone, Copy)]
+struct SpecEncCtx<'vir> {
+    extern_spec: Option<ExternSpecKind>,
+    enc_mode: MirSpecEncMode,
+    context_def_id: DefId,
+    substs: ty::GenericArgsRef<'vir>,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum MirSpecEncMode {
     /// Assumes the arguments and the result are available in local variables
@@ -178,6 +187,12 @@ impl TaskEncoder for MirSpecEnc {
             )?;
             let specs = deps
                 .require_dep::<crate::encoders::SpecEnc>(crate::encoders::SpecEncTask { def_id })?;
+            let ctx = SpecEncCtx {
+                extern_spec: specs.extern_spec,
+                enc_mode,
+                context_def_id,
+                substs,
+            };
 
             let local_iter = (1..=local_defs.arg_count).map(mir::Local::from);
             let all_args: FxHashMap<mir::Local, _> = match enc_mode {
@@ -210,19 +225,14 @@ impl TaskEncoder for MirSpecEnc {
                 .pres
                 .iter()
                 .filter_map(|spec_def_id| {
-                    let spec = Self::encode_pure(
-                        vcx,
-                        deps,
-                        specs.extern_spec,
-                        *spec_def_id,
-                        context_def_id,
-                        substs,
-                        "precondition",
-                    )?;
+                    let spec = Self::encode_pure(vcx, deps, ctx, *spec_def_id, "precondition")?;
                     let expr = spec.expr.downcast_ty::<vir::Bool>();
-                    let expr = expr.reify(vcx, (*spec_def_id, pre_args));
                     let span = vcx.tcx().def_span(*spec_def_id);
-                    Some((vcx.with_span(span, |_| expr), span))
+                    // Reify *inside* the span scope: the nodes created by the
+                    // reification pick up the ambient span, which makes error
+                    // positions inside this precondition point at the spec.
+                    let expr = vcx.with_span(span, |vcx| expr.reify(vcx, (*spec_def_id, pre_args)));
+                    Some((expr, span))
                 })
                 .collect();
 
@@ -246,15 +256,8 @@ impl TaskEncoder for MirSpecEnc {
                 .filter_map(|spec_def_id| {
                     let span = vcx.tcx().def_span(spec_def_id);
                     vcx.with_span(span, |vcx| {
-                        let spec = Self::encode_pure(
-                            vcx,
-                            deps,
-                            specs.extern_spec,
-                            *spec_def_id,
-                            context_def_id,
-                            substs,
-                            "postcondition",
-                        )?;
+                        let spec =
+                            Self::encode_pure(vcx, deps, ctx, *spec_def_id, "postcondition")?;
                         vcx.handle_error("postcondition.violated:assertion.false", move |_| {
                             Some(vec![PrustiError::verification(
                                 "postcondition might not hold",
@@ -280,29 +283,14 @@ impl TaskEncoder for MirSpecEnc {
                         // report at its span and skip the whole pledge.
                         let lhs_expr = match *lhs_def_id {
                             Some(lhs_def_id) => {
-                                let spec = Self::encode_pure(
-                                    vcx,
-                                    deps,
-                                    specs.extern_spec,
-                                    lhs_def_id,
-                                    context_def_id,
-                                    substs,
-                                    "pledge lhs",
-                                )?;
+                                let spec =
+                                    Self::encode_pure(vcx, deps, ctx, lhs_def_id, "pledge lhs")?;
                                 let lhs = spec.expr.downcast_ty::<vir::Bool>();
                                 Some(PledgeExpr::new(lhs_def_id, lhs))
                             }
                             None => None,
                         };
-                        let spec = Self::encode_pure(
-                            vcx,
-                            deps,
-                            specs.extern_spec,
-                            *rhs_def_id,
-                            context_def_id,
-                            substs,
-                            "pledge rhs",
-                        )?;
+                        let spec = Self::encode_pure(vcx, deps, ctx, *rhs_def_id, "pledge rhs")?;
                         let rhs = spec.expr.downcast_ty::<vir::Bool>();
                         let rhs_span = vcx.tcx().def_span(rhs_def_id);
                         let rhs_expr = vcx.with_span(rhs_span, move |vcx| {
@@ -338,21 +326,22 @@ impl MirSpecEnc {
     fn encode_pure<'vir>(
         vcx: &'vir vir::VirCtxt<'vir>,
         deps: &mut TaskEncoderDependencies<'vir, Self>,
-        kind: Option<ExternSpecKind>,
+        ctx: SpecEncCtx<'vir>,
         def_id: DefId,
-        context_def_id: DefId,
-        substs: ty::GenericArgsRef<'vir>,
         type_: &str,
     ) -> Option<MirPureEncOutput<'vir>> {
         let span = vcx.tcx().def_span(def_id);
         let spec = deps.require_dep::<MirPureEnc>(crate::encoders::MirPureEncTask {
             encoding_depth: 0,
-            kind: PureKind::Spec(kind),
+            kind: PureKind::Spec {
+                context: ctx.context_def_id,
+                mode: ctx.enc_mode,
+            },
             parent_def_id: def_id,
-            param_env: vcx.tcx().param_env(def_id),
-            substs,
-            // TODO: should this be `def_id` or `caller_def_id`
-            caller_def_id: Some(context_def_id),
+            gargs: GArgs::new(
+                GParams::new_maybe_extern(ctx.context_def_id, ctx.extern_spec),
+                ctx.substs,
+            ),
         });
         spec.inspect_err(|err| {
             vcx.emit_early_error(PrustiError::unsupported(

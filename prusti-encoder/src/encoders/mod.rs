@@ -1,3 +1,4 @@
+mod body;
 mod builtin;
 mod mir_pure;
 mod mir_impure;
@@ -14,6 +15,7 @@ pub mod mir_fn;
 pub mod custom;
 pub mod addr;
 
+pub use body::{encodes_body, impure_body, impure_body_with_facts, pure_body, spec_body};
 pub use builtin::{
     MetadataCastAxiomEnc, MetadataCastEnc, MirBuiltinBinOpEnc, MirBuiltinBinOpTask,
     MirBuiltinUnOpEnc, MirBuiltinUnOpTask, MirBuiltinUseCastEnc, MirBuiltinUseCastTask, Mode,
@@ -30,7 +32,7 @@ pub use pure::spec::MirSpecEnc;
 pub(super) use spec::with_proc_spec;
 pub use spec::{
     SpecEnc, SpecEncTask, is_function_pure, is_function_trusted, is_type_trusted, kind_is_pure,
-    report_kind_refinement_error,
+    report_kind_refinement_error, spec_is_trusted,
 };
 pub use ty::{
     use_impure::TyUseImpureEnc,

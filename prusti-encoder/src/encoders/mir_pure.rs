@@ -2,15 +2,15 @@ use crate::encoders::{
     FunctionCallEnc, Mode, PrustiBuiltin, SpecBuiltin, ViperTupleEnc,
     mir_fn::{CallTaskDescription, GhostBlocks, RustSignature},
     mir_shared::{PureRvalueEnc, RustcIntrinsic},
+    pure::spec::MirSpecEncMode,
     ty::{
         RustTyDecomposition,
-        generics::GParams,
+        generics::{GArgs, GParams},
         use_pure::{TyUsePure, TyUsePureEnc},
     },
 };
 use itertools::Itertools;
 use pcg::utils::Place;
-use prusti_interface::specs::typed::ExternSpecKind;
 use prusti_rustc_interface::{
     abi,
     data_structures::graph::{self, Successors},
@@ -54,19 +54,20 @@ pub struct MirPureEncOutput<'vir> {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum PureKind {
     Closure,
-    Spec(Option<ExternSpecKind>),
+    /// A specification, attached to the item `context` specifies. That is
+    /// not the specified item itself when an `impl` refines the
+    /// specification of a trait: there the trait's parameters (notably
+    /// `Self`) become the implementing type, and the specification body is
+    /// instantiated accordingly.
+    Spec {
+        context: DefId,
+        /// How the arguments are supplied, which decides whether their
+        /// snapshots are deep (see `Enc::impure_context`).
+        mode: MirSpecEncMode,
+    },
     Pure,
     Constant(mir::Promoted),
     SpecBlock(mir::BasicBlock),
-}
-
-impl PureKind {
-    fn extern_spec(&self) -> Option<ExternSpecKind> {
-        match self {
-            PureKind::Spec(Some(kind)) => Some(*kind),
-            _ => None,
-        }
-    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -75,10 +76,10 @@ pub struct MirPureEncTask<'vir> {
     //   can we integrate the lazy context into the identifier system?
     pub encoding_depth: usize,
     pub kind: PureKind,
-    pub parent_def_id: DefId,             // ID of the function
-    pub param_env: ty::ParamEnv<'vir>,    // param environment at the usage site
-    pub substs: ty::GenericArgsRef<'vir>, // type substitutions at the usage site
-    pub caller_def_id: Option<DefId>,     // ID of the caller function, if any
+    pub parent_def_id: DefId, // ID of the function
+    /// The generic arguments the body is encoded with, together with the
+    /// context whose parameters give them meaning.
+    pub gargs: GArgs<'vir>,
 }
 
 impl TaskEncoder for MirPureEnc {
@@ -88,11 +89,10 @@ impl TaskEncoder for MirPureEnc {
     type TaskDescription<'vir> = MirPureEncTask<'vir>;
 
     type TaskKey<'vir> = (
-        usize,                    // encoding depth
-        PureKind,                 // encoding a pure function?
-        DefId,                    // ID of the function
-        ty::GenericArgsRef<'vir>, // ? this should be the "signature", after applying the env/substs
-        Option<DefId>,            // Caller/Use DefID
+        usize,       // encoding depth
+        PureKind,    // encoding a pure function?
+        DefId,       // ID of the function
+        GArgs<'vir>, // the generic arguments and their context
     );
 
     type OutputFullDependency<'vir> = MirPureEncOutput<'vir>;
@@ -105,8 +105,7 @@ impl TaskEncoder for MirPureEnc {
             task.encoding_depth,
             task.kind,
             task.parent_def_id,
-            task.substs,
-            task.caller_def_id,
+            task.gargs,
         )
     }
 
@@ -116,32 +115,49 @@ impl TaskEncoder for MirPureEnc {
     ) -> EncodeFullResult<'vir, Self> {
         deps.emit_output_ref(*task_key, ())?;
 
-        let (_, kind, def_id, substs, caller_def_id) = *task_key;
+        let (_, kind, def_id, gargs) = *task_key;
 
         tracing::debug!("encoding {def_id:?}");
         let (inputs, expr) = vir::with_vcx(move |vcx| {
+            // The bodies are encoded generically, so they are fetched at the
+            // compiler's identity arguments. The one exception is a trait's
+            // specification encoded for an `impl` of that trait, which is
+            // instantiated with the arguments of the encoding.
+            let identity = ty::GenericArgs::identity_for_item(vcx.tcx(), def_id);
             let body = match kind {
-                PureKind::Closure => vcx
-                    .body_mut()
-                    .get_closure_body(def_id, substs, caller_def_id),
-                PureKind::Spec(_) => vcx.body_mut().get_spec_body(def_id, substs, caller_def_id),
-                PureKind::Pure => vcx
-                    .body_mut()
-                    .get_pure_fn_body(def_id, substs, caller_def_id),
+                PureKind::Closure => vcx.body_mut().get_closure_body(def_id, identity, None),
+                PureKind::Spec { context, .. } => {
+                    let substs = vcx.tcx().mk_args(gargs.args());
+                    vcx.body_mut().get_spec_body(def_id, substs, Some(context))
+                }
+                PureKind::Pure => crate::encoders::pure_body(def_id),
                 PureKind::Constant(promoted) => {
                     vcx.body_mut().get_promoted_constant_body(def_id, promoted)
                 }
-                PureKind::SpecBlock(_) => vcx
-                    .body_mut()
-                    .get_impure_fn_body_identity(def_id.expect_local()),
+                PureKind::SpecBlock(_) => crate::encoders::impure_body(def_id)
+                    .unwrap_or_else(|| panic!("no body to encode for {def_id:?}")),
             };
 
-            let mut enc = Enc::new(vcx, task_key.0, def_id, caller_def_id, kind, &body, deps);
-            let expr_inner = if let PureKind::SpecBlock(block) = kind {
-                enc.encode_spec_block(block)?
+            // Encode under the body's span: expression nodes pick up the
+            // ambient span at creation, so everything in a pure/spec body
+            // defaults to the body's source (e.g. the spec attribute for a
+            // spec closure), refined per statement in `encode_stmt`. This is
+            // what error positions inside the body backtranslate to. The MIR
+            // span of a body deserialized from another crate is dummy; the
+            // definition's span survives in the crate metadata.
+            let body_span = if body.span.is_dummy() {
+                vcx.tcx().def_span(def_id)
             } else {
-                enc.encode_body()?
+                body.span
             };
+            let mut enc = Enc::new(vcx, task_key.0, def_id, kind, gargs, &body, deps);
+            let expr_inner = vcx.with_span(body_span, |_| {
+                if let PureKind::SpecBlock(block) = kind {
+                    enc.encode_spec_block(block)
+                } else {
+                    enc.encode_body()
+                }
+            })?;
             let inputs = std::mem::take(&mut enc.versions_used)
                 .into_iter()
                 .filter(|(l, v)| *l != mir::RETURN_PLACE && *v == 0)
@@ -160,23 +176,30 @@ impl TaskEncoder for MirPureEnc {
                 let ret = RustTyDecomposition::from_ty(body.return_ty(), enc.context);
                 deps.require_ref::<TyUsePureEnc>(ret)?.snapshot
             };
-            let expr = vcx.mk_lazy_expr(
-                vir::vir_format!(vcx, "pure body {def_id:?}"),
-                snapshot,
-                Box::new(move |vcx, lctx: ExprInput<'_>| {
-                    // check: are we actually providing inputs for the
-                    //   correct `DefId`?
-                    assert_eq!(lctx.0, def_id);
+            // Created under the body's span: this wrapper is the node whose
+            // span survives reification as the top of the expression (`span`
+            // is passed through by `reify`), so it is what error positions
+            // pointing at the whole body (e.g. a failing precondition
+            // conjunct) backtranslate to.
+            let expr = vcx.with_span(body_span, |vcx| {
+                vcx.mk_lazy_expr(
+                    vir::vir_format!(vcx, "pure body {def_id:?}"),
+                    snapshot,
+                    Box::new(move |vcx, lctx: ExprInput<'_>| {
+                        // check: are we actually providing inputs for the
+                        //   correct `DefId`?
+                        assert_eq!(lctx.0, def_id);
 
-                    // check: are we providing the expected number of inputs?
-                    // TODO: check that the expected inputs are present; this
-                    //   check is not precise
-                    assert!(lctx.1.len() >= inputs_expected);
+                        // check: are we providing the expected number of inputs?
+                        // TODO: check that the expected inputs are present; this
+                        //   check is not precise
+                        assert!(lctx.1.len() >= inputs_expected);
 
-                    use vir::Reify;
-                    expr_inner.kind.reify(vcx, lctx)
-                }),
-            );
+                        use vir::Reify;
+                        expr_inner.kind.reify(vcx, lctx)
+                    }),
+                )
+            });
             add_debug_note!(expr.debug_info, "Inner expr: {}", expr_inner.debug_info);
             Ok((inputs, expr))
         })?;
@@ -343,8 +366,8 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
         vcx: &'vir vir::VirCtxt<'vir>,
         encoding_depth: usize,
         def_id: DefId,
-        caller_def_id: Option<DefId>,
         kind: PureKind,
+        gargs: GArgs<'vir>,
         body: &'enc mir::Body<'vir>,
         deps: &'enc mut TaskEncoderDependencies<'vir, MirPureEnc>,
     ) -> Self {
@@ -353,7 +376,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
             vcx,
             encoding_depth,
             def_id,
-            context: GParams::new_maybe_extern(caller_def_id.unwrap_or(def_id), kind.extern_spec()),
+            context: gargs.context(),
             body,
             rev_doms,
             ghost: GhostBlocks::new(def_id, body),
@@ -366,7 +389,15 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
             rel0_mode: false,
             rel1_mode: false,
             before_expiry_mode: false,
-            impure_context: matches!(kind, PureKind::Spec(_)),
+            // Only an impure method's pre/post gets shallow argument
+            // snapshots; a pure function's spec is handed deep ones.
+            impure_context: matches!(
+                kind,
+                PureKind::Spec {
+                    mode: MirSpecEncMode::Impure,
+                    ..
+                }
+            ),
         }
     }
 
@@ -539,10 +570,12 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
 
         let update = self.encode_cfg(&init.versions, start, end)?;
 
-        // do we ever panic here? if yes, return the `unreachable_to_snap` expr.
-        let res = init
-            .merge(update)
-            .expect("function unconditionally terminates with unreachable");
+        // The body may unconditionally terminate with `unreachable` (e.g. a
+        // `match` on an uninhabited type): its result is the unreachable snapshot.
+        let Some(res) = init.merge(update) else {
+            let result_ty = self.body.local_decls[result_local].ty;
+            return Ok(self.ty_use(result_ty).unreachable_to_snap());
+        };
         let ret_version = res.versions.get(&result_local).copied().unwrap_or(v0);
         self.versions_used.insert((result_local, ret_version.index));
 
@@ -922,25 +955,31 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
         stmt: &mir::Statement<'vir>,
         location: mir::Location,
     ) -> Result<Update<'vir>, EncodeFullError<'vir, MirPureEnc>> {
-        let mut update = Update::new();
-        match &stmt.kind {
-            &mir::StatementKind::StorageLive(local) => {
-                let new_version = self.bump_version_no_assign(local, location);
-                update.versions.insert(local, new_version);
+        // Encoded under the statement's span: expressions pick up the ambient
+        // span at creation, which makes error positions inside pure/spec
+        // bodies point at the originating source (e.g. the failing conjunct
+        // of a spec).
+        self.vcx.with_span(stmt.source_info.span, |_| {
+            let mut update = Update::new();
+            match &stmt.kind {
+                &mir::StatementKind::StorageLive(local) => {
+                    let new_version = self.bump_version_no_assign(local, location);
+                    update.versions.insert(local, new_version);
+                }
+                mir::StatementKind::StorageDead(..)
+                | mir::StatementKind::FakeRead(..)
+                | mir::StatementKind::AscribeUserType(..)
+                | mir::StatementKind::PlaceMention(..) => {} // nop
+                mir::StatementKind::Assign(box (dest, rvalue)) => {
+                    //assert!(dest.projection.is_empty());
+                    let span = stmt.source_info.span;
+                    let expr = self.encode_rvalue(curr_ver, rvalue, span)?;
+                    self.bump_version(&mut update, dest.local, expr, location);
+                }
+                k => todo!("statement kind {k:?}"),
             }
-            mir::StatementKind::StorageDead(..)
-            | mir::StatementKind::FakeRead(..)
-            | mir::StatementKind::AscribeUserType(..)
-            | mir::StatementKind::PlaceMention(..) => {} // nop
-            mir::StatementKind::Assign(box (dest, rvalue)) => {
-                //assert!(dest.projection.is_empty());
-                let span = stmt.source_info.span;
-                let expr = self.encode_rvalue(curr_ver, rvalue, span)?;
-                self.bump_version(&mut update, dest.local, expr, location);
-            }
-            k => todo!("statement kind {k:?}"),
-        }
-        Ok(update)
+            Ok(update)
+        })
     }
 
     fn encode_rvalue(
@@ -1271,9 +1310,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                 encoding_depth: self.encoding_depth + 1,
                 kind: PureKind::Closure,
                 parent_def_id: cl_def_id,
-                param_env: self.vcx.tcx().param_env(cl_def_id),
-                substs: ty::List::identity_for_item(self.vcx.tcx(), cl_def_id),
-                caller_def_id: Some(self.def_id),
+                gargs: GParams::from(cl_def_id).identity_args(),
             })?
             .expr
             .reify(self.vcx, (cl_def_id, self.vcx.alloc(reify_args)))

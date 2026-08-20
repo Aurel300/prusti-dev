@@ -414,10 +414,7 @@ impl<'tcx> TyData<'tcx, RustTyDatas> {
             ty::TyKind::Array(..) => String::from("Array"),
             ty::TyKind::Slice(..) => String::from("Slice"),
             ty::TyKind::Dynamic(..) => String::from("Dyn"),
-            ty::TyKind::Foreign(def_id) => {
-                vir::with_vcx(|vcx| vcx.tcx().item_name(*def_id).to_ident_string())
-            }
-            ty::TyKind::FnDef(def_id, _) => {
+            ty::TyKind::Foreign(def_id) | ty::TyKind::FnDef(def_id, _) => {
                 vir::with_vcx(|vcx| vcx.tcx().item_name(*def_id).to_ident_string())
             }
             other => unimplemented!("ty_name for {:?}", other),

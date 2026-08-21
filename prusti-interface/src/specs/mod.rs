@@ -257,10 +257,8 @@ impl<'a, 'tcx> SpecCollector<'a, 'tcx> {
 
     fn determine_closure_specs(&self, def_spec: &mut typed::DefSpecificationMap) {
         for (local_id, refs) in self.closure_specs.iter() {
-            // The spec closures are passed as plain generic arguments (their
-            // parameter types are deduced from the `Fn<Args>` bound), so
-            // nothing in the type system prevents them from capturing;
-            // enforce the capture ban here.
+            // TODO: add support for referring to captured variables in closure
+            // specs. For now, we just reject it.
             for spec in refs.pres.iter().chain(&refs.posts) {
                 if !self.env.tcx().closure_captures(*spec).is_empty() {
                     PrustiError::incorrect(

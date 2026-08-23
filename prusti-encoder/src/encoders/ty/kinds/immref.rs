@@ -26,7 +26,7 @@ pub(crate) fn ty_pure<'vir>(
         builder.constructor("", (vir::TYPE_REF, metadata, referent), None);
 
     let referent_ty_decl = builder.vcx.mk_local_decl("referent_ty", vir::TYPE_TYVAL);
-    let dummy_metadata_fn = builder.function(
+    let dummy_metadata_fn: vir::FunctionIdn<vir::TyVal, vir::PSnap> = builder.function(
         "dummy_metadata",
         vir::TYPE_TYVAL,
         vir::TYPE_PSNAP,
@@ -36,11 +36,28 @@ pub(crate) fn ty_pure<'vir>(
         None,
     );
 
+    let immref_snap_decl = builder
+        .vcx
+        .mk_local_decl("immref_snap", field_snaps_to_snap.result());
+    let value_snap_fn = builder.function(
+        "value_snap_of",
+        (field_snaps_to_snap.result(), vir::TYPE_TYVAL),
+        field_snaps_to_snap.result(),
+        (immref_snap_decl, referent_ty_decl),
+        &[],
+        &[],
+        Some(field_snaps_to_snap.call()(
+            builder.vcx.mk_null(),
+            dummy_metadata_fn.call()(builder.vcx.mk_local_ex(referent_ty_decl)),
+            field_access[2].downcast_ty().call()(builder.vcx.mk_local_ex(immref_snap_decl)),
+        )),
+    );
+
     Ok(TyPureImmRefData {
         prim_to_snap: field_snaps_to_snap,
         deref_access: field_access[0].downcast_ty(),
         metadata_access: field_access[1].downcast_ty(),
-        dummy_metadata_fn,
+        value_snap_fn,
         value_access: field_access[2].downcast_ty(),
     })
 }

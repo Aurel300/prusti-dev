@@ -287,6 +287,15 @@ impl<'vir, Curr: 'vir, Next: 'vir, T: CompType> ExprGenData<'vir, Curr, Next, T>
             ty,
         }
     }
+
+    pub fn realloc_span(&'vir self) -> ExprGen<'vir, Curr, Next, T> {
+        with_vcx(|vcx| vcx.alloc(Self {
+            kind: self.kind,
+            debug_info: self.debug_info,
+            span: vcx.top_span(),
+            ty: self.ty,
+        }))
+    }
 }
 
 impl<'tcx> crate::VirCtxt<'tcx> {

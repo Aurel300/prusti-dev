@@ -722,10 +722,13 @@ impl SpecBlocks {
         Ok(LoopSpec {
             loop_id,
             // The loop head (for our encoding and for querying the PCG) of the
-            // loop is the non-spec block preceding the body invariant. It's
-            // not the invariant block itself since that block is spec-only and
-            // guarded in `if false`.
-            head_block: first_invariant.attached_to,
+            // loop is the live target of the switch preceding the body
+            // invariant. It is not the invariant block itself since that block
+            // is spec-only and guarded in `if false`. It is also not the block
+            // that the invariant is attached to, because we need the invariant
+            // to be attached at the label, and the `attached_to` block may
+            // contain statements which mutate the state.
+            head_block: base.spec_arms.switches[&first_invariant.attached_to],
             original_head_block,
             invariants: consecutive_invariants
                 .into_iter()

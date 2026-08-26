@@ -178,17 +178,16 @@ impl<'vir, E: TaskEncoder + 'vir + ?Sized> TaskEncoderDependencies<'vir, E> {
         self.check_cycle()?;
         E::with_cache(move |cache| {
             let mut cache = cache.borrow_mut();
-            let runs = match cache.get(&task_key) {
+            let new_state = match cache.get(&task_key) {
+                Some(TaskEncoderCacheState::Encoding) => {
+                    TaskEncoderCacheState::Started { output_ref }
+                }
                 Some(
-                    TaskEncoderCacheState::Enqueued { runs }
-                    | TaskEncoderCacheState::Started { runs, .. },
-                ) => *runs,
+                    TaskEncoderCacheState::ReEncoding | TaskEncoderCacheState::Restarted { .. },
+                ) => TaskEncoderCacheState::Restarted { output_ref },
                 _ => std::panic!("output ref emitted for task not being encoded: {task_key:?}"),
             };
-            cache.insert(
-                task_key,
-                TaskEncoderCacheState::Started { output_ref, runs },
-            );
+            cache.insert(task_key, new_state);
         });
         Ok(())
     }

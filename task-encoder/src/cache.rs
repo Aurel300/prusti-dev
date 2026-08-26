@@ -2,24 +2,31 @@ use super::*;
 
 pub enum TaskEncoderCacheState<'vir, E: TaskEncoder + 'vir + ?Sized> {
     // None, // indicated by absence in the cache
-    /// Task was enqueued; its encoding(s) may be running but have not
-    /// yet emitted an output reference.
-    Enqueued {
-        /// The number of encodings of this task currently running, see
-        /// `Started::runs`.
-        runs: usize,
-    },
+    /// Task's encoding is running but has not yet emitted an output
+    /// reference. Requesting the task re-runs the encoding (see `Started`).
+    Encoding,
+
+    /// Task is being re-encoded while its first encoding (which has not yet
+    /// emitted an output reference, see `Encoding`) is suspended. Requesting
+    /// the task in this state is a cyclic dependency error: a third run
+    /// would only repeat the re-run's requests.
+    ReEncoding,
 
     /// Task is currently being encoded. The output reference is available.
     /// Full encoding is not available yet: querying for it re-runs the
     /// encoding, which succeeds when the re-run makes progress (e.g. because
-    /// its dependencies now find this task's output reference), in which
-    /// case the earlier runs adopt its result (`EncodeFullError::AlreadyEncoded`).
-    /// Requesting a task with two runs in progress is a cyclic dependency
-    /// error: a third run would only repeat the second one's requests.
+    /// its dependencies now find this task's output reference or the outputs
+    /// cached by the first run), in which case the earlier run adopts its
+    /// result (`EncodeFullError::AlreadyEncoded`).
     Started {
         output_ref: <E as TaskEncoder>::OutputRef<'vir>,
-        runs: usize,
+    },
+
+    /// Task is being re-encoded while its first encoding is suspended (see
+    /// `Started`). Requesting the task in this state is a cyclic dependency
+    /// error: a third run would only repeat the re-run's requests.
+    Restarted {
+        output_ref: <E as TaskEncoder>::OutputRef<'vir>,
     },
 
     /// Task was successfully encoded.

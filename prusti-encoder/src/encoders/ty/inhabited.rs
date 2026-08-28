@@ -1,7 +1,7 @@
 use task_encoder::{EncodeFullError, EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 
 use super::{
-    RustBuiltinData, RustParamData, RustTy, RustTyDecomposition, TySpecifics,
+    RustParamData, RustTy, RustTyDecomposition, TySpecifics,
     generics::{GArgsTy, GenericParamsEnc},
     lifted::TyConstructorEnc,
     pure::TyPureEnc,

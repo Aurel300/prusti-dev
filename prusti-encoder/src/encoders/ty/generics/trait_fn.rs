@@ -12,8 +12,10 @@ use crate::{
         mir_fn::CallTaskDescription,
         pure::spec::MirSpecEncMode,
         ty::{
+            RustTyDecomposition,
             generics::{GArgs, GParams, GenericParamsEnc, r#trait::TraitEnc, trait_impls},
             lifted::TyConstructorEnc,
+            use_inhabited::TyUseInhabitedEnc,
         },
     },
     trait_support::is_function_with_body,
@@ -290,10 +292,22 @@ impl TaskEncoder for TraitFnEnc {
                     item_generics.ty_exprs(),
                     item_generics.const_exprs(),
                 ));
+
                 // If the call succeeds, then its return type is definitely inhabited
                 // We need this postcondition to generate impure wrapper fns
                 // See tests/verify/pass/extern-spec/module-arg.rs
-                stub_posts.push(local_defs.ret().inhabited);
+                let ret_ty = tcx
+                    .instantiate_and_normalize_erasing_regions(
+                        ty::GenericArgs::identity_for_item(tcx, def_id),
+                        ty::TypingEnv::post_analysis(tcx, def_id),
+                        tcx.fn_sig(def_id),
+                    )
+                    .skip_binder()
+                    .output();
+                let ret_ty = RustTyDecomposition::from_ty(ret_ty, def_id);
+                stub_posts.push(deps.require_ref::<TyUseInhabitedEnc>(ret_ty)?.inhabited());
+                // stub_posts.push(local_defs.ret().inhabited);
+
                 let wrapped_call = call_stub_pure_function.unwrap().call()(
                     func_arg_exprs,
                     item_generics.ty_exprs(),

@@ -89,7 +89,6 @@ pub struct TyUsePureRaw<'vir> {
 pub struct TyUsePureImmRef<'vir> {
     referent_caster: FieldCaster<'vir>,
     metadata_caster: FieldCaster<'vir>,
-    args: GArgsTy<'vir>,
     pure: <PureTyDatas as TyDatas<'vir>>::ImmRefData,
 }
 
@@ -230,7 +229,6 @@ impl<'a, 'vir> TyUsePureWalker<'a, 'vir> {
                 TySpecifics::mk_immref(TyUsePureImmRef {
                     referent_caster,
                     metadata_caster,
-                    args: self.args_t,
                     pure: **ref_domain,
                 })
             }
@@ -416,7 +414,7 @@ impl<'vir> TyUsePureImmRef<'vir> {
         &self,
         snap: vir::ExprGenCSnap<'vir, Curr, Next>,
     ) -> vir::ExprGenCSnap<'vir, Curr, Next> {
-        self.pure.value_snap_fn.call()(snap, self.args.get_ty()[0])
+        self.pure.value_snap_fn.call()(snap)
     }
 
     pub fn value_access<Curr, Next>(

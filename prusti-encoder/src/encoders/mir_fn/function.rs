@@ -23,9 +23,9 @@ pub struct FunctionCallEnc;
 pub struct FunctionCallEncOutput<'vir> {
     function: FunctionEncOutputRef<'vir>,
     ty_args: GArgsTy<'vir>,
+    arg_tys: Vec<TyUsePure<'vir>>,
     inputs: Vec<GArgCaster<'vir, Pure>>,
     output: GArgCaster<'vir, Pure>,
-    arg_tys: Vec<TyUsePure<'vir>>,
 }
 
 impl<'vir> FunctionCallEncOutput<'vir> {
@@ -111,7 +111,7 @@ impl TaskEncoder for FunctionCallEnc {
             .inputs
             .iter()
             .map(|ty| {
-                let ty_task = ty.decompose(task_key.gargs.context());
+                let ty_task = ty.decompose_normalize(task_key.gargs);
                 deps.require_dep::<TyUsePureEnc>(ty_task).unwrap()
             })
             .collect::<Vec<_>>();

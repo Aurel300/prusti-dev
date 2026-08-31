@@ -169,7 +169,7 @@ impl TaskEncoder for MethodEnc {
             // Create the identifier and use it as an output ref. This is what
             // is used when other methods call this one.
             let method_name =
-                vir::vir_format_identifier!(vcx, "m_{}", vcx.tcx().def_path_str(def_id));
+                vir::vir_format_identifier!(vcx, "m_{}", vir::ViperIdent::from_def_id(vcx, def_id));
             let ref_args = vcx.alloc_slice(&vec![vir::TYPE_REF; arg_count]);
             let params = GParams::from(def_id);
             let generics = deps.require_dep_spanned::<GenericParamsEnc>(params, span)?;
@@ -334,13 +334,13 @@ impl TaskEncoder for MethodEnc {
                     }
                     Err(EncodeFullError::AlreadyEncoded) => None,
                     Err(err) => {
+                        let (message, span) = super::dep_error(&err);
                         vcx.emit_early_error(PrustiError::unsupported(
                             format!(
-                                "cannot encode method body `{}`: {}",
+                                "cannot encode method body `{}`: {message}",
                                 vcx.tcx().def_path_str(def_id),
-                                super::dep_error_message(&err),
                             ),
-                            vcx.tcx().def_span(def_id).into(),
+                            span.unwrap_or_else(|| vcx.tcx().def_span(def_id)).into(),
                         ));
                         None
                     }

@@ -180,10 +180,9 @@ impl TaskEncoder for FunctionEnc {
 
             tracing::debug!("encoding {def_id:?}");
 
-            let caller_ident =
-                vir::vir_format_identifier!(vcx, "cf_{}", vcx.tcx().def_path_str(def_id));
-            let function_ident =
-                vir::vir_format_identifier!(vcx, "f_{}", vcx.tcx().def_path_str(def_id));
+            let name = vir::ViperIdent::from_def_id(vcx, def_id);
+            let caller_ident = vir::vir_format_identifier!(vcx, "cf_{name}");
+            let function_ident = vir::vir_format_identifier!(vcx, "f_{name}");
             let arg_types = vcx.alloc_slice(&local_defs.snap_ty_args().collect::<Vec<_>>());
             let return_type = local_defs.snap_ty_return();
             let params = GParams::from(def_id);
@@ -233,13 +232,13 @@ impl TaskEncoder for FunctionEnc {
                         Some(expr)
                     }
                     Err(err) => {
+                        let (message, span) = super::dep_error(&err);
                         vcx.emit_early_error(PrustiError::unsupported(
                             format!(
-                                "cannot encode function body `{}`: {}",
+                                "cannot encode function body `{}`: {message}",
                                 vcx.tcx().def_path_str(def_id),
-                                super::dep_error_message(&err),
                             ),
-                            vcx.tcx().def_span(def_id).into(),
+                            span.unwrap_or_else(|| vcx.tcx().def_span(def_id)).into(),
                         ));
                         None
                     }

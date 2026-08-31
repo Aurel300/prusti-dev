@@ -5,8 +5,10 @@ use vir::{CastType, PredicateIdn};
 use crate::encoders::{
     Impure,
     ty::{
-        LazyRustTy, RustTyDatas,
+        LazyRustTy, RustTyDatas, RustTyDecomposition,
         generics::{GArgs, GArgsCastEnc, GArgsTyEnc, GParams},
+        pure::TyPureEnc,
+        use_inhabited::{TyUseInhabitedEnc, TyUseInhabitedRef},
     },
 };
 
@@ -15,6 +17,7 @@ use super::{
     data::*,
     generics::{GArgCaster, GArgsTy},
     impure::{ImpureTyDatas, TyImpureEnc},
+    rust_ty::RustTySpecial,
 };
 
 pub(super) type UseImpureTyDatas = UseTyDatas<Impure>;
@@ -44,7 +47,7 @@ pub type TyUseImpureEnum<'vir> = EnumData<'vir, UseImpureTyDatas>;
 pub struct TyUseImpureData<'vir> {
     args: GArgsTy<'vir>,
     impure: <ImpureTyDatas as TyDatas<'vir>>::TyData,
-    maybe_inhabited: bool,
+    inhabited: TyUseInhabitedRef<'vir>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -93,8 +96,9 @@ pub struct TyUseImpureArrayData<'vir> {
 pub struct TyUseImpureStructData<'vir> {
     args: GArgsTy<'vir>,
     ref_to_pred: PredicateIdn<'vir, (vir::Ref, vir::ManyTyVal, vir::ManyCSnap)>,
-    #[allow(dead_code)]
     impure: <ImpureTyDatas as TyDatas<'vir>>::StructData,
+    /// The pointer metadata caster when this struct is a `Box`.
+    box_metadata_caster: Option<GArgCaster<'vir, crate::encoders::Pure>>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -109,6 +113,9 @@ pub struct TyUseImpureEnumData<'vir> {
     #[allow(dead_code)]
     args: GArgsTy<'vir>,
     impure: <ImpureTyDatas as TyDatas<'vir>>::EnumData,
+    /// The inhabitedness of each variant's fields after normalization in this
+    /// use site's generic context, paired with that variant's discriminant.
+    variant_inhabited: &'vir [(vir::ExprCSnap<'vir>, vir::ExprBool<'vir>)],
 }
 
 /// Encodes a type into the predicate representation. Takes an arbitrary Rust
@@ -137,14 +144,9 @@ impl TaskEncoder for TyUseImpureEnc {
         deps.emit_output_ref(*task_key, ())?;
 
         let ty_impure = deps.require_dep::<TyImpureEnc>(task_key.ty)?;
-        let mut walker = TyUseImpureWalker::new(deps, task_key.args)?;
-        // Impure encoding needs to know whether the type may be inhabited (to emit
-        // the right predicate). It is `None` only from `RustTyDecomposition::identity`.
-        let maybe_inhabited = task_key.maybe_inhabited.expect(
-            "impure type encoding requires a decomposition with known inhabitedness \
-             (from `from_ty`), not one built by `RustTyDecomposition::identity`",
-        );
-        let ty_use_impure = walker.encode_ty(task_key.ty.zip(ty_impure), maybe_inhabited)?;
+        let inhabited = deps.require_ref::<TyUseInhabitedEnc>(*task_key)?;
+        let mut walker = TyUseImpureWalker::new(deps, task_key.args, inhabited)?;
+        let ty_use_impure = walker.encode_ty(task_key.ty.zip(ty_impure))?;
         Ok(((), ty_use_impure.alloc()))
     }
 
@@ -157,21 +159,27 @@ struct TyUseImpureWalker<'a, 'vir> {
     deps: &'a mut TaskEncoderDependencies<'vir, TyUseImpureEnc>,
     args_t: GArgsTy<'vir>,
     args: GArgs<'vir>,
+    inhabited: TyUseInhabitedRef<'vir>,
 }
 
 impl<'a, 'vir> TyUseImpureWalker<'a, 'vir> {
     fn new(
         deps: &'a mut TaskEncoderDependencies<'vir, TyUseImpureEnc>,
         args: GArgs<'vir>,
+        inhabited: TyUseInhabitedRef<'vir>,
     ) -> EncResult<'vir, Self> {
         let args_t = deps.require_dep::<GArgsTyEnc>(args)?;
-        Ok(Self { deps, args_t, args })
+        Ok(Self {
+            deps,
+            args_t,
+            args,
+            inhabited,
+        })
     }
 
     fn encode_ty(
         &mut self,
         ty: TyData<'vir, (RustTyDatas, ImpureTyDatas)>,
-        maybe_inhabited: bool,
     ) -> EncResult<'vir, TyData<'vir, UseImpureTyDatas>> {
         let specifics = match &ty.specifics {
             TySpecifics::Param(..) => TySpecifics::mk_param(()),
@@ -209,11 +217,20 @@ impl<'a, 'vir> TyUseImpureWalker<'a, 'vir> {
             TySpecifics::ArrayLike(data) => {
                 TySpecifics::ArrayLike(self.encode_array(data, ty.1.ref_to_pred, ty.0.params)?)
             }
-            TySpecifics::StructLike(data) => TySpecifics::StructLike(self.encode_structlike(
-                data,
-                ty.1.ref_to_pred,
-                ty.0.params,
-            )?),
+            TySpecifics::StructLike(data) => {
+                let box_metadata_caster = match ty.0.special {
+                    RustTySpecial::Box => {
+                        Some(self.encode_normalized_pure(ty.box_metadata_ty(), ty.0.params)?)
+                    }
+                    RustTySpecial::None => None,
+                };
+                TySpecifics::StructLike(self.encode_structlike(
+                    data,
+                    ty.1.ref_to_pred,
+                    ty.0.params,
+                    box_metadata_caster,
+                )?)
+            }
             TySpecifics::EnumLike(data) => {
                 TySpecifics::EnumLike(self.encode_enumlike(data, ty.0.params)?)
             }
@@ -222,7 +239,7 @@ impl<'a, 'vir> TyUseImpureWalker<'a, 'vir> {
         let data = TyUseImpureData {
             args: self.args_t,
             impure: *ty.1,
-            maybe_inhabited,
+            inhabited: self.inhabited,
         };
         Ok(TyData::new(data, specifics))
     }
@@ -267,6 +284,7 @@ impl<'a, 'vir> TyUseImpureWalker<'a, 'vir> {
         data: &StructData<'vir, (RustTyDatas, ImpureTyDatas)>,
         ref_to_pred: PredicateIdn<'vir, (vir::Ref, vir::ManyTyVal, vir::ManyCSnap)>,
         params: GParams<'vir>,
+        box_metadata_caster: Option<GArgCaster<'vir, crate::encoders::Pure>>,
     ) -> EncResult<'vir, StructData<'vir, UseImpureTyDatas>> {
         let fields = data
             .fields
@@ -284,6 +302,7 @@ impl<'a, 'vir> TyUseImpureWalker<'a, 'vir> {
             args: self.args_t,
             ref_to_pred,
             impure: *data.1,
+            box_metadata_caster,
         };
         Ok(StructData::new(data, fields))
     }
@@ -293,18 +312,47 @@ impl<'a, 'vir> TyUseImpureWalker<'a, 'vir> {
         data: &EnumData<'vir, (RustTyDatas, ImpureTyDatas)>,
         params: GParams<'vir>,
     ) -> EncResult<'vir, EnumData<'vir, UseImpureTyDatas>> {
+        let discr_ty = self
+            .deps
+            .require_dep::<TyPureEnc>(RustTyDecomposition::from_prim_ty(data.0.discr).ty)?;
+        let discr_prim = *discr_ty.expect_primitive();
+        let variant_inhabited = data
+            .variants
+            .iter()
+            .map(|variant| {
+                let fields = variant
+                    .inner
+                    .fields
+                    .iter()
+                    .map(|field| {
+                        let field = field.0.ty().decompose_normalize(self.args);
+                        Ok(self
+                            .deps
+                            .require_ref::<TyUseInhabitedEnc>(field)?
+                            .inhabited())
+                    })
+                    .collect::<EncResult<'vir, Vec<_>>>()?;
+                let inhabited = vir::with_vcx(|vcx| vcx.mk_conj(&fields));
+                let discr = discr_prim
+                    .prim_to_snap(discr_prim.expr_from_bits(data.0.discr, variant.0.discr_val));
+                Ok((discr, inhabited))
+            })
+            .collect::<EncResult<'vir, Vec<_>>>()?;
+        let variant_inhabited = vir::with_vcx(|vcx| vcx.alloc_slice(&variant_inhabited));
+
         let variants = data
             .variants
             .iter()
             .map(|variant| {
                 let structlike =
-                    self.encode_structlike(&variant.inner, variant.1.predicate, params)?;
+                    self.encode_structlike(&variant.inner, variant.1.predicate, params, None)?;
                 Ok(VariantData::new((), structlike))
             })
             .collect::<EncResult<'vir, Vec<_>>>()?;
         let data = TyUseImpureEnumData {
             args: self.args_t,
             impure: *data.1,
+            variant_inhabited,
         };
         Ok(EnumData::new(data, variants))
     }
@@ -334,11 +382,9 @@ impl<'vir> TyUseImpureData<'vir> {
         self_ref: vir::ExprRef<'vir>,
         perm: Option<vir::ExprPerm<'vir>>,
     ) -> vir::ExprBool<'vir> {
-        if self.maybe_inhabited {
-            vcx.mk_predicate_app_expr(self.ref_to_pred_app(self_ref, perm))
-        } else {
-            vcx.mk_bool::<false>()
-        }
+        let inhabited = self.inhabited.inhabited();
+        let predicate = vcx.mk_predicate_app_expr(self.ref_to_pred_app(self_ref, perm));
+        vcx.mk_conj(&[inhabited, predicate])
     }
 
     /// Constructs the Viper predicate application.
@@ -364,6 +410,10 @@ impl<'vir> TyUseImpureData<'vir> {
 }
 
 impl<'vir> TyData<'vir, UseImpureTyDatas> {
+    pub fn inhabited<Curr, Next>(&self) -> vir::ExprGenBool<'vir, Curr, Next> {
+        self.data.inhabited.inhabited()
+    }
+
     /// Fold the predicate (including generic casts).
     pub fn fold(
         &self,
@@ -457,9 +507,29 @@ impl<'vir> TyData<'vir, UseImpureTyDatas> {
             TySpecifics::ImmRef(..) | TySpecifics::Raw(..) => Vec::new(),
             TySpecifics::MutRef(data) => data.unfold(self_ref, old).into_iter().collect(),
             TySpecifics::StructLike(data) => data.unfold(self_ref, perm).collect(),
-            TySpecifics::EnumLike(..) => {
+            TySpecifics::EnumLike(data) => {
                 let pred_app = self.ref_to_pred_app(self_ref, perm);
-                vec![vir::with_vcx(|vcx| vcx.mk_unfold_stmt(pred_app))]
+                vir::with_vcx(|vcx| {
+                    let discr = data
+                        .discr_ty()
+                        .ref_to_snap(data.discr(self_ref))
+                        .downcast_ty::<vir::CSnap>();
+                    std::iter::once(vcx.mk_unfold_stmt(pred_app))
+                        .chain(data.variant_inhabited.iter().map(
+                            |(variant_discr, variant_inhabited)| {
+                                let is_variant = vcx.mk_eq_expr(discr, *variant_discr);
+                                let implication = vcx
+                                    .mk_bin_op_expr(
+                                        vir::BinOpKind::Implies,
+                                        is_variant,
+                                        *variant_inhabited,
+                                    )
+                                    .downcast_ty();
+                                vcx.mk_inhale_stmt(implication)
+                            },
+                        ))
+                        .collect()
+                })
             }
         }
     }
@@ -478,6 +548,30 @@ impl<'vir> TyUseImpureArray<'vir> {
 }
 
 impl<'vir> TyUseImpureStruct<'vir> {
+    /// The pointer metadata of a `Box`, read out of the (folded) `Unique`
+    /// field's predicate.
+    #[track_caller]
+    pub fn box_metadata(&self, self_ref: vir::ExprRef<'vir>) -> vir::ExprSnap<'vir> {
+        let box_data = self.data.impure.box_data.expect("expected box");
+        let metadata = box_data.metadata.call()(
+            self_ref,
+            self.data.args.get_ty(),
+            self.data.args.get_const(),
+        );
+        self.data
+            .box_metadata_caster
+            .expect("expected box")
+            .cast_to_caller_ctx(metadata.upcast_ty())
+    }
+
+    /// The (Ref) address of the boxed `T` (the box's last field), read out of
+    /// the (folded) `Unique` field's predicate.
+    #[track_caller]
+    pub fn box_address(&self, self_ref: vir::ExprRef<'vir>) -> vir::ExprRef<'vir> {
+        assert!(self.data.impure.box_data.is_some(), "expected box");
+        self.fields.last().unwrap().field_ref(self_ref)
+    }
+
     fn ref_to_pred_app(
         &self,
         self_ref: vir::ExprRef<'vir>,

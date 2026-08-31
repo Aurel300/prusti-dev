@@ -1,7 +1,7 @@
 use crate::encoders::{
     FunctionCallEnc, Mode, PrustiBuiltin, SpecBuiltin, ViperTupleEnc,
     mir_fn::{CallTaskDescription, GhostBlocks, RustSignature},
-    mir_shared::{PureRvalueEnc, RustcIntrinsic},
+    mir_shared::{EncodeResult, PureRvalueEnc, RustcIntrinsic},
     pure::spec::MirSpecEncMode,
     ty::{
         RustTyDecomposition,
@@ -12,7 +12,6 @@ use crate::encoders::{
 use itertools::Itertools;
 use pcg::utils::Place;
 use prusti_rustc_interface::{
-    abi,
     data_structures::graph::{self, Successors},
     index::IndexVec,
     middle::{
@@ -23,7 +22,7 @@ use prusti_rustc_interface::{
 };
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::fmt;
-use task_encoder::{EncodeFullError, EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
+use task_encoder::{EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 use vir::{CastType, CompType, add_debug_note};
 
 pub struct MirPureEnc;
@@ -341,18 +340,18 @@ impl<'vir: 'enc, 'enc> PureRvalueEnc<'vir> for Enc<'vir, 'enc> {
         &mut self,
         place: Place<'vir>,
         curr_ver: &Self::EncodePlaceCtxt,
-    ) -> ExprRet<'vir> {
-        self.encode_place_with_ref(curr_ver, place).snap
+    ) -> EncodeResult<'vir, ExprRet<'vir>, MirPureEnc> {
+        Ok(self.encode_place_with_ref(curr_ver, place)?.snap)
     }
 
     fn encode_operand_snap(
         &mut self,
         operand: &mir::Operand<'vir>,
         curr_ver: &FxHashMap<mir::Local, Version<'vir>>,
-    ) -> Result<ExprRet<'vir>, EncodeFullError<'vir, Self::Encoder>> {
+    ) -> EncodeResult<'vir, ExprRet<'vir>, MirPureEnc> {
         Ok(match operand {
             mir::Operand::Copy(place) | mir::Operand::Move(place) => {
-                self.encode_place_snap((*place).into(), curr_ver)
+                self.encode_place_snap((*place).into(), curr_ver)?
             }
             mir::Operand::Constant(box constant) => {
                 self.encode_constant_snap(constant)?.upcast_ty().lift()
@@ -553,7 +552,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
         end: mir::BasicBlock,
         local_count: usize,
         result_local: mir::Local,
-    ) -> Result<ExprRet<'vir>, EncodeFullError<'vir, MirPureEnc>> {
+    ) -> EncodeResult<'vir, ExprRet<'vir>, MirPureEnc> {
         let mut init = Update::new();
         let v0 = Version::default();
         // TODO: what about locals which never have StorageLive (i.e. always_live)?
@@ -583,7 +582,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
         Ok(self.reify_binds(res, ex))
     }
 
-    fn encode_body(&mut self) -> Result<ExprRet<'vir>, EncodeFullError<'vir, MirPureEnc>> {
+    fn encode_body(&mut self) -> EncodeResult<'vir, ExprRet<'vir>, MirPureEnc> {
         assert!(
             !graph::is_cyclic(&self.body.basic_blocks),
             "MIR pure encoding does not support loops"
@@ -599,7 +598,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
     fn encode_spec_block(
         &mut self,
         block: mir::BasicBlock,
-    ) -> Result<ExprRet<'vir>, EncodeFullError<'vir, MirPureEnc>> {
+    ) -> EncodeResult<'vir, ExprRet<'vir>, MirPureEnc> {
         let Some(mir::TerminatorKind::Call { destination, .. }) = self.body.basic_blocks[block]
             .terminator
             .as_ref()
@@ -621,7 +620,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
         curr_ver: &FxHashMap<mir::Local, Version<'vir>>,
         curr: mir::BasicBlock,
         join_point: mir::BasicBlock,
-    ) -> Result<Option<Update<'vir>>, EncodeFullError<'vir, MirPureEnc>> {
+    ) -> EncodeResult<'vir, Option<Update<'vir>>, MirPureEnc> {
         if curr == join_point {
             // We are done with the current fragment of the CFG, the rest is
             // handled in a parent call.
@@ -954,7 +953,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
         curr_ver: &FxHashMap<mir::Local, Version<'vir>>,
         stmt: &mir::Statement<'vir>,
         location: mir::Location,
-    ) -> Result<Update<'vir>, EncodeFullError<'vir, MirPureEnc>> {
+    ) -> EncodeResult<'vir, Update<'vir>, MirPureEnc> {
         // Encoded under the statement's span: expressions pick up the ambient
         // span at creation, which makes error positions inside pure/spec
         // bodies point at the originating source (e.g. the failing conjunct
@@ -987,13 +986,13 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
         curr_ver: &FxHashMap<mir::Local, Version<'vir>>,
         rvalue: &mir::Rvalue<'vir>,
         span: Span,
-    ) -> Result<ExprRet<'vir>, EncodeFullError<'vir, MirPureEnc>> {
+    ) -> EncodeResult<'vir, ExprRet<'vir>, MirPureEnc> {
         let rvalue_ty = rvalue.ty(self.body, self.vcx.tcx());
         match rvalue {
             mir::Rvalue::Use(op) => self.encode_operand_snap(op, curr_ver),
             mir::Rvalue::Ref(_, kind, place) => {
                 let rvalue_snapshot_encoding = self.ty_use(rvalue_ty);
-                let encoded_place = self.encode_place_with_ref(curr_ver, (*place).into());
+                let encoded_place = self.encode_place_with_ref(curr_ver, (*place).into())?;
                 // We want to distinguish if `place` is a value that lives
                 // in pure code or not. If it lives in impure (the only way
                 // that this can happen is that we have a `&mut` argument)
@@ -1038,7 +1037,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                     .filter(|_| place_ty.variant_index.is_none())
                 {
                     Some(ty) => ty.snap_to_discr_snap(
-                        self.encode_place_snap((*place).into(), curr_ver)
+                        self.encode_place_snap((*place).into(), curr_ver)?
                             .downcast_ty(),
                     ),
                     None => {
@@ -1058,7 +1057,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
             }
             mir::Rvalue::Len(place) => self.encode_len_snap((*place).into(), curr_ver),
             mir::Rvalue::RawPtr(_, place) => {
-                let encoded_place = self.encode_place_with_ref(curr_ver, (*place).into());
+                let encoded_place = self.encode_place_with_ref(curr_ver, (*place).into())?;
                 // As for `Rvalue::Ref`: a raw pointer built in pure code never
                 // escapes, so its address is `null` unless it re-borrows the
                 // place of an impure `&mut` argument.
@@ -1086,18 +1085,21 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
         place_ty: mir::PlaceTy<'vir>,
         elem: mir::PlaceElem<'vir>,
         encoded_place: EncodedPlace<'vir>,
-    ) -> EncodedPlace<'vir> {
+    ) -> EncodeResult<'vir, EncodedPlace<'vir>, MirPureEnc> {
         let e_ty = self.ty_use(place_ty.ty);
-        match elem {
+        Ok(match elem {
             mir::ProjectionElem::Deref => {
                 assert!(place_ty.variant_index.is_none());
                 match place_ty.ty.kind() {
                     TyKind::Adt(adt, _) if adt.is_box() => {
-                        let proj =
-                            e_ty.expect_variant_opt(place_ty.variant_index)[abi::FieldIdx::ZERO];
-                        let proj_app = proj.read(encoded_place.snap.downcast_ty());
-                        let place_ref = encoded_place.place_ref.map(|pr| proj.field_ref(pr));
-                        EncodedPlace::new(proj_app, place_ref)
+                        // The boxed value, its address and its pointer metadata
+                        // are all read out of the snapshot.
+                        let data = e_ty.expect_structlike();
+                        let snap = encoded_place.snap.downcast_ty();
+                        let val_expr = data.box_value_access(snap);
+                        let place_ref = Some(data.box_address_access(snap));
+                        let metadata = data.box_metadata_access(snap);
+                        EncodedPlace::new(val_expr, place_ref).with_metadata(metadata)
                     }
                     TyKind::Ref(.., ty::Mutability::Not) => {
                         let e_ty = e_ty.expect_immref();
@@ -1143,6 +1145,12 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                         };
                         EncodedPlace::new(val_expr, Some(ref_expr)).with_metadata(metadata)
                     }
+                    TyKind::RawPtr(..) => {
+                        return Err(self.unsupported_rvalue(
+                            format!("dereference of the raw pointer `{}`", place_ty.ty),
+                            self.current_span(),
+                        ));
+                    }
                     _ => unreachable!(),
                 }
             }
@@ -1164,7 +1172,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
             mir::ProjectionElem::Index(idx) => {
                 let proj = e_ty.expect_array();
                 let idx = self
-                    .encode_place_with_ref(curr_ver, mir::Place::from(idx).into())
+                    .encode_place_with_ref(curr_ver, mir::Place::from(idx).into())?
                     .snap;
                 let usize_ty = self.ty_use(self.vcx.tcx().types.usize);
                 let idx = usize_ty
@@ -1177,9 +1185,30 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                     .map(|pr| proj.ref_to_index_ref(pr, idx));
                 EncodedPlace::new(proj_app, place_ref)
             }
+            // `from_end` indexes from the runtime length of a slice; it is
+            // always false for an array, whose statically known length lets
+            // the compiler resolve the offset. Only the array form is
+            // supported (a slice is matched behind a reference and its
+            // length is not in the snapshot's type).
+            mir::ProjectionElem::ConstantIndex {
+                offset,
+                from_end: false,
+                ..
+            } => {
+                let proj = e_ty.expect_array();
+                let idx = self
+                    .vcx
+                    .mk_const_expr(vir::ConstData::Int(offset as u128))
+                    .downcast_ty();
+                let proj_app = proj.index(encoded_place.snap.downcast_ty(), idx);
+                let place_ref = encoded_place
+                    .place_ref
+                    .map(|pr| proj.ref_to_index_ref(pr, idx));
+                EncodedPlace::new(proj_app, place_ref)
+            }
             mir::ProjectionElem::Downcast(..) => encoded_place,
             _ => todo!("Unsupported ProjectionElem {:?}", elem),
-        }
+        })
     }
 
     fn in_mode(&self) -> bool {
@@ -1190,7 +1219,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
         &mut self,
         curr_ver: &FxHashMap<mir::Local, Version<'vir>>,
         place: Place<'vir>,
-    ) -> EncodedPlace<'vir> {
+    ) -> EncodeResult<'vir, EncodedPlace<'vir>, MirPureEnc> {
         // TODO: remove (debug)
         assert!(curr_ver.contains_key(&place.local));
         self.versions_used
@@ -1215,7 +1244,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
         let mut encoded_place = EncodedPlace::new(expr, None);
         // TODO: factor this out (duplication with impure encoder)?
         for elem in place.projection {
-            encoded_place = self.encode_place_element(curr_ver, place_ty, *elem, encoded_place);
+            encoded_place = self.encode_place_element(curr_ver, place_ty, *elem, encoded_place)?;
             place_ty = place_ty.projection_ty(self.vcx.tcx(), *elem);
         }
         // Can we ever have the use of a projected place?
@@ -1236,7 +1265,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
             }
         }
 
-        encoded_place
+        Ok(encoded_place)
     }
 
     /// Encodes the closure argument of a quantifier/spec-block builtin: the
@@ -1249,7 +1278,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
         name: &str,
         closure_ty: ty::Ty<'vir>,
         closure_snap: ExprRet<'vir>,
-    ) -> Result<SpecClosure<'vir>, EncodeFullError<'vir, MirPureEnc>> {
+    ) -> EncodeResult<'vir, SpecClosure<'vir>, MirPureEnc> {
         let (qvar_tys, cl_kind, cl_def_id) = match closure_ty.kind() {
             TyKind::Closure(cl_def_id, cl_args) => (
                 match cl_args.as_closure().sig().skip_binder().inputs()[0].kind() {
@@ -1328,7 +1357,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
         arg_tys: ty::GenericArgsRef<'vir>,
         args: &[Spanned<mir::Operand<'vir>>],
         curr_ver: &FxHashMap<mir::Local, Version<'vir>>,
-    ) -> Result<ExprRet<'vir>, EncodeFullError<'vir, MirPureEnc>> {
+    ) -> EncodeResult<'vir, ExprRet<'vir>, MirPureEnc> {
         let mk_bool = |prim: vir::ExprGenBool<'vir, _, _>| prim.upcast_ty::<vir::CSnap>();
         Ok(match builtin {
             SpecBuiltin::Forall | SpecBuiltin::Exists => {

@@ -28,6 +28,7 @@ pub use local_def::*;
 pub use mir_fn::{FunctionCallEnc, MethodCallEnc, encode_all_in_crate};
 pub use mir_impure::ImpureEncVisitor;
 pub use mir_pure::{MirPureEnc, MirPureEncTask, PureKind};
+pub(crate) use mir_shared::EncodeResult;
 pub use pure::spec::MirSpecEnc;
 pub(super) use spec::with_proc_spec;
 pub use spec::{
@@ -35,6 +36,7 @@ pub use spec::{
     report_kind_refinement_error, spec_is_trusted,
 };
 pub use ty::{
+    TyInhabitedEnc,
     use_impure::TyUseImpureEnc,
     use_pure::TyUsePureEnc,
     viper_tuple::{ViperTupleEnc, ViperTupleEncOutput},

@@ -1,13 +1,18 @@
 use prusti_interface::PrustiError;
 use prusti_rustc_interface::span::def_id::DefId;
 use task_encoder::{EncodeFullResult, OutputRefAny, TaskEncoder, TaskEncoderDependencies};
-use vir::{FunctionIdn, Reify};
+use vir::{CastType, FunctionIdn, Reify};
 
 use crate::encoders::{
     MirLocalDefEnc, MirLocalDefEncTask, MirPureEnc, MirPureEncTask, MirSpecEnc, Pure, PureKind,
+    TyUsePureEnc,
     mir_fn::{CallTaskDescription, RustSignature},
     pure::spec::MirSpecEncMode,
-    ty::generics::{GArgCaster, GArgsCastEnc, GArgsTy, GArgsTyEnc, GParams, GenericParamsEnc},
+    ty::{
+        TySpecifics,
+        generics::{GArgCaster, GArgsCastEnc, GArgsTy, GArgsTyEnc, GParams, GenericParamsEnc},
+        use_pure::TyUsePure,
+    },
 };
 
 // Function wrapper
@@ -18,6 +23,7 @@ pub struct FunctionCallEnc;
 pub struct FunctionCallEncOutput<'vir> {
     function: FunctionEncOutputRef<'vir>,
     ty_args: GArgsTy<'vir>,
+    arg_tys: Vec<TyUsePure<'vir>>,
     inputs: Vec<GArgCaster<'vir, Pure>>,
     output: GArgCaster<'vir, Pure>,
 }
@@ -28,6 +34,15 @@ impl<'vir> FunctionCallEncOutput<'vir> {
         &self,
         args: Vec<vir::ExprGenSnap<'vir, Curr, Next>>,
     ) -> vir::ExprGenSnap<'vir, Curr, Next> {
+        let args = args
+            .iter()
+            .zip(self.arg_tys.iter())
+            .map(|(arg, ty)| match ty.specifics {
+                TySpecifics::ImmRef(data) => data.value_snap_of(arg.downcast_ty()).upcast_ty(),
+                _ => *arg,
+            })
+            .collect::<Vec<_>>();
+
         self.call_casted(self.function.function_ref, args)
     }
 
@@ -69,6 +84,7 @@ impl TaskEncoder for FunctionCallEnc {
     ) -> EncodeFullResult<'vir, Self> {
         deps.emit_output_ref(*task_key, ())?;
         let (callee_def_id, assoc_enc) = task_key.trait_call(deps)?;
+
         let function_ref = if let Some(assoc_enc) = assoc_enc {
             FunctionEncOutputRef {
                 caller_ref: assoc_enc.call_stub_pure_caller.unwrap(),
@@ -91,6 +107,14 @@ impl TaskEncoder for FunctionCallEnc {
             .output
             .decompose_compare_normalize(signature.gparams, task_key.gargs);
         let output = deps.require_dep::<GArgsCastEnc<Pure>>(normalized)?;
+        let arg_tys = signature
+            .inputs
+            .iter()
+            .map(|ty| {
+                let ty_task = ty.decompose_normalize(task_key.gargs);
+                deps.require_dep::<TyUsePureEnc>(ty_task).unwrap()
+            })
+            .collect::<Vec<_>>();
         Ok((
             (),
             FunctionCallEncOutput {
@@ -98,6 +122,7 @@ impl TaskEncoder for FunctionCallEnc {
                 ty_args,
                 inputs,
                 output,
+                arg_tys,
             },
         ))
     }

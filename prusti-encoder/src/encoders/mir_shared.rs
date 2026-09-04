@@ -17,7 +17,7 @@ use prusti_rustc_interface::{
     abi,
     index::IndexVec,
     middle::{mir, ty},
-    span::{Span, def_id::DefId, source_map::Spanned, sym},
+    span::{Span, def_id::DefId, Spanned, sym},
 };
 
 #[allow(type_alias_bounds)]

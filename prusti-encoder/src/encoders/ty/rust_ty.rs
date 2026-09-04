@@ -1,7 +1,7 @@
 use std::ops::Deref;
 
 use prusti_interface::environment::EnvQuery;
-use prusti_rustc_interface::{abi, hir, index, middle::ty, span::symbol};
+use prusti_rustc_interface::{abi, hir, index, middle::ty, span::symbol, hir::attrs::LangItem};
 
 use super::{
     data::*,
@@ -119,10 +119,10 @@ impl<'tcx> LazyRustTy<'tcx> {
     fn pointee_metadata(self) -> Self {
         vir::with_vcx(|vcx| {
             let metadata_did = vcx.tcx().require_lang_item(
-                hir::LangItem::Metadata,
+                LangItem::Metadata,
                 prusti_rustc_interface::span::DUMMY_SP,
             );
-            Self::new(ty::Ty::new_projection(vcx.tcx(), metadata_did, [self.0]))
+            Self::new(ty::Ty::new_projection(vcx.tcx(), ty::IsRigid::No, metadata_did, [self.0]))
         })
     }
 }
@@ -511,7 +511,7 @@ impl<'tcx> TyData<'tcx, RustTyDatas> {
                 let gargs = identity_params(vcx.tcx(), did);
                 (
                     GParams::new(gargs, vcx.tcx().param_env(did), is_trait_extern_spec),
-                    args,
+                    args.skip_binder(),
                 )
             }),
             ty::TyKind::Never
@@ -630,7 +630,7 @@ impl<'tcx> TySpecifics<'tcx, RustTyDatas> {
                         .map(|(i, ty)| RustFieldData {
                             name: symbol::Symbol::intern(&format!("c{i}")),
                             fid: abi::FieldIdx::from_usize(i),
-                            ty: LazyRustTy(vcx.tcx().erase_regions(ty)),
+                            ty: LazyRustTy(vcx.tcx().erase_and_anonymize_regions(ty)),
                             address: RustFieldAddress::Constant,
                         })
                         .collect::<Vec<_>>()
@@ -659,7 +659,7 @@ impl<'tcx> TySpecifics<'tcx, RustTyDatas> {
 
     fn from_adt(adt: ty::AdtDef<'tcx>) -> Self {
         if vir::with_vcx(|vcx| {
-            vcx.tcx().lang_items().get(hir::LangItem::DynMetadata) == Some(adt.did())
+            vcx.tcx().lang_items().get(LangItem::DynMetadata) == Some(adt.did())
         }) {
             // `DynMetadata<dyn Trait>` is the metadata of a `&dyn`/`*dyn`
             // wide pointer. We never reason about vtable contents, so encode it
@@ -764,7 +764,7 @@ impl<'tcx> TySpecifics<'tcx, RustTyDatas> {
                 RustFieldData {
                     name: field.name,
                     fid,
-                    ty: LazyRustTy(ty),
+                    ty: LazyRustTy(ty.skip_norm_wip()),
                     address: RustFieldAddress::Constant,
                 }
             })

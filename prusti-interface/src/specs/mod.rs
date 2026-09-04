@@ -152,7 +152,7 @@ impl<'a, 'tcx> SpecCollector<'a, 'tcx> {
         let Some(impl_def_id) = tcx.impl_of_assoc(method_def_id) else {
             return;
         };
-        if tcx.impl_trait_ref(impl_def_id).is_none() {
+        if tcx.impl_opt_trait_ref(impl_def_id).is_none() {
             return;
         }
         let Some(impl_local) = impl_def_id.as_local() else {

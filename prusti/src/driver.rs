@@ -90,7 +90,7 @@ fn main() {
     })
     .is_some();
     if config::be_rustc() || build_script_build {
-        driver::main();
+        driver::main().exit_process();
     }
 
     // Initialize Prusti and the Rust compiler loggers.

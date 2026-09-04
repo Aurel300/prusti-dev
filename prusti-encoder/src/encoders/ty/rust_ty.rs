@@ -414,6 +414,7 @@ impl<'tcx> TyData<'tcx, RustTyDatas> {
             ty::TyKind::Slice(..) => String::from("Slice"),
             ty::TyKind::Dynamic(..) => String::from("Dyn"),
             ty::TyKind::Foreign(def_id) | ty::TyKind::FnDef(def_id, _) => def_id_name(*def_id),
+            ty::TyKind::Pat(..) => String::from("Pattern"),
             other => unimplemented!("ty_name for {:?}", other),
         }
     }
@@ -514,6 +515,7 @@ impl<'tcx> TyData<'tcx, RustTyDatas> {
                     args.skip_binder(),
                 )
             }),
+            ty::TyKind::Pat(ty, _) => Self::identity_for_ty(ty, is_trait_extern_spec),
             ty::TyKind::Never
             | ty::TyKind::Str
             | ty::TyKind::FnPtr(..)
@@ -648,6 +650,7 @@ impl<'tcx> TySpecifics<'tcx, RustTyDatas> {
             // TODO: give dyn Trait a type witness parameter (the concrete type behind the
             // pointer), enabling virtual dispatch and distinguishing dyn TraitA from dyn TraitB.
             ty::TyKind::Dynamic(..) => TySpecifics::mk_param(RustParamData::Dyn),
+            ty::TyKind::Pat(ty, _) => Self::from_ty(*ty),
             _ => TySpecifics::mk_opaque(()),
         }
     }

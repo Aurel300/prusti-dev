@@ -124,13 +124,37 @@ where
     }
 }
 
-/// Copy specs from '{cargo_target}/*/deps/*.specs' to '{cargo_target}/*/*.specs'
+/// Copy specs from '{cargo_target}/*/deps/*.specs' (Cargo's classic layout) and
+/// '{cargo_target}/*/build/*/*/out/*.specs' (Cargo's newer build-dir layout, which
+/// no longer populates `deps/`) to '{cargo_target}/*/*.specs'.
 fn copy_exported_specs(cargo_target: PathBuf) -> io::Result<()> {
     for de in fs::read_dir(cargo_target)? {
         let build_dir = de?.path();
+        if !build_dir.is_dir() {
+            continue;
+        }
+
+        let mut specs_dirs = Vec::new();
         let deps_dir = build_dir.join("deps");
-        if build_dir.is_dir() && deps_dir.is_dir() {
-            for entry in fs::read_dir(deps_dir)? {
+        if deps_dir.is_dir() {
+            specs_dirs.push(deps_dir);
+        }
+        if let Ok(pkg_entries) = fs::read_dir(build_dir.join("build")) {
+            for pkg_entry in pkg_entries.flatten() {
+                let Ok(hash_entries) = fs::read_dir(pkg_entry.path()) else {
+                    continue;
+                };
+                for hash_entry in hash_entries.flatten() {
+                    let out_dir = hash_entry.path().join("out");
+                    if out_dir.is_dir() {
+                        specs_dirs.push(out_dir);
+                    }
+                }
+            }
+        }
+
+        for specs_dir in specs_dirs {
+            for entry in fs::read_dir(specs_dir)? {
                 let entry = entry?.path();
                 if let Some(ext) = entry.extension()
                     && ext == "specs"
@@ -140,7 +164,7 @@ fn copy_exported_specs(cargo_target: PathBuf) -> io::Result<()> {
                     if let Some(pkg_name) = pkg_name.split('-').next() {
                         let mut tgt = build_dir.join(pkg_name);
                         tgt.set_extension("specs");
-                        fs::copy(entry, tgt)?;
+                        fs::copy(&entry, tgt)?;
                     }
                 }
             }

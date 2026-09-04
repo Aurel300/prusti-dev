@@ -177,55 +177,38 @@ fn get_sysroot_from_rustup() -> Result<PathBuf, String> {
 }
 
 /// Find Viper home
+///
+/// Searches `base_dir` and each of its ancestors for a `viper_tools/server` or
+/// `viper_tools/backends` directory. A fixed number of `../` hops used to be enough,
+/// but Cargo's build-dir layout nests binaries (e.g. test harnesses) at varying,
+/// sometimes hash-suffixed depths, so we walk upward instead of guessing a depth.
 pub fn find_viper_home(base_dir: &Path) -> Option<PathBuf> {
-    let candidates = vec![
-        base_dir.join("viper_tools").join("server"),
-        base_dir
-            .join("..")
-            .join("..")
-            .join("viper_tools")
-            .join("server"),
-        base_dir.join("viper_tools").join("backends"),
-        base_dir
-            .join("..")
-            .join("..")
-            .join("viper_tools")
-            .join("backends"),
-        base_dir
-            .join("..")
-            .join("..")
-            .join("..")
-            .join("viper_tools")
-            .join("backends"),
-    ];
-
-    candidates.into_iter().find(|candidate| candidate.is_dir())
+    for dir in base_dir.ancestors() {
+        for sub in ["server", "backends"] {
+            let candidate = dir.join("viper_tools").join(sub);
+            if candidate.is_dir() {
+                return Some(candidate);
+            }
+        }
+    }
+    None
 }
 
 /// Find Z3 executable
+///
+/// See [`find_viper_home`] for why this walks ancestors instead of using a fixed
+/// number of `../` hops.
 pub fn find_z3_exe(base_dir: &Path) -> Option<PathBuf> {
-    let mut candidates = vec![
-        base_dir
-            .join("viper_tools")
-            .join("z3")
-            .join("bin")
-            .join("z3"),
-        base_dir
-            .join("..")
-            .join("..")
-            .join("viper_tools")
-            .join("z3")
-            .join("bin")
-            .join("z3"),
-    ];
-
-    if cfg!(windows) {
-        candidates.iter_mut().for_each(|x| {
-            x.set_extension("exe");
-        });
+    for dir in base_dir.ancestors() {
+        let mut candidate = dir.join("viper_tools").join("z3").join("bin").join("z3");
+        if cfg!(windows) {
+            candidate.set_extension("exe");
+        }
+        if candidate.is_file() {
+            return Some(candidate);
+        }
     }
-
-    candidates.into_iter().find(|candidate| candidate.is_file())
+    None
 }
 
 pub fn set_environment_settings(

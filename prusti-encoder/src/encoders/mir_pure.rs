@@ -18,7 +18,7 @@ use prusti_rustc_interface::{
         mir,
         ty::{self, TyKind},
     },
-    span::{Span, def_id::DefId, Spanned},
+    span::{Span, Spanned, def_id::DefId},
 };
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::fmt;

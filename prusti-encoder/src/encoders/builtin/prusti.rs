@@ -179,7 +179,12 @@ impl PrustiBuiltin {
                 impl_def_id
                     .or_else(|| tcx.impl_of_assoc(def_id))
                     .and_then(|impl_def_id| {
-                        Self::prusti_adt_name(tcx, tcx.type_of(impl_def_id).instantiate_identity().skip_norm_wip())
+                        Self::prusti_adt_name(
+                            tcx,
+                            tcx.type_of(impl_def_id)
+                                .instantiate_identity()
+                                .skip_norm_wip(),
+                        )
                     });
             let self_ty_name = self_ty_name.as_ref().map(|name| name.as_str());
             let rel_index = || {

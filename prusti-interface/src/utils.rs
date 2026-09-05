@@ -9,9 +9,22 @@
 use prusti_rustc_interface::{
     hir,
     middle::{mir, ty::TyCtxt},
-    span::Span,
+    span::{def_id::DefId, Span},
 };
 use std::borrow::Borrow;
+
+/// Returns all attributes on `def_id`, for both local and external items.
+///
+/// `TyCtxt::get_all_attrs` is deprecated in favor of `rustc_hir::find_attr!`, but that
+/// macro only matches attributes rustc itself parses into `AttributeKind` variants.
+/// Prusti's attributes live in our own tool namespace and are never parsed by rustc, so
+/// we still need the raw attribute slice; this replicates the deprecated method's body.
+pub fn get_all_attrs(tcx: TyCtxt<'_>, def_id: DefId) -> &[hir::Attribute] {
+    match def_id.as_local() {
+        Some(local_def_id) => tcx.hir_attrs(tcx.local_def_id_to_hir_id(local_def_id)),
+        None => tcx.attrs_for_def(def_id),
+    }
+}
 
 /// Check if the place `potential_prefix` is a prefix of `place`. For example:
 ///

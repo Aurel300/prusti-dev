@@ -46,7 +46,10 @@ impl<'tcx> GArgs<'tcx> {
     /// Substitutes type arguments and try to normalize associated types
     pub fn normalize(self, ty: ty::Ty<'tcx>) -> ty::Ty<'tcx> {
         // Substitute type parameters
-        let ty = vir::with_vcx(|vcx| ty::EarlyBinder::bind(vcx.tcx(), ty).instantiate(vcx.tcx(), self.args)).skip_norm_wip();
+        let ty = vir::with_vcx(|vcx| {
+            ty::EarlyBinder::bind(vcx.tcx(), ty).instantiate(vcx.tcx(), self.args)
+        })
+        .skip_norm_wip();
         // Normalize associated types
         self.context.normalize(ty)
     }
@@ -79,10 +82,11 @@ impl<'tcx> GArgs<'tcx> {
     pub fn substitute(self, to_sub_in: GArgs<'tcx>) -> GArgs<'tcx> {
         assert_eq!(self.context.rust_params().len(), to_sub_in.args.len());
         let args = vir::with_vcx(|vcx| {
-            let args = self
-                .args
-                .iter()
-                .map(|arg| ty::EarlyBinder::bind(vcx.tcx(), *arg).instantiate(vcx.tcx(), to_sub_in.args).skip_norm_wip());
+            let args = self.args.iter().map(|arg| {
+                ty::EarlyBinder::bind(vcx.tcx(), *arg)
+                    .instantiate(vcx.tcx(), to_sub_in.args)
+                    .skip_norm_wip()
+            });
             vcx.tcx().mk_args_from_iter(args)
         });
         GArgs {

@@ -54,10 +54,12 @@ impl ExternSpecBlock {
                         // function is part of impl block
                         let mut trait_name = None;
                         let self_ty = if let Some(tref) = tcx.impl_opt_trait_ref(impl_defid) {
-                                let tref = tref.skip_binder();
-                                trait_name = Some(format!("{}", tref.print_only_trait_name()));
-                                tref.self_ty()
-                            } else { tcx.type_of(impl_defid).skip_binder() }
+                            let tref = tref.skip_binder();
+                            trait_name = Some(format!("{}", tref.print_only_trait_name()));
+                            tref.self_ty()
+                        } else {
+                            tcx.type_of(impl_defid).skip_binder()
+                        }
                         .to_string();
                         let generics = generic_params(tcx, impl_defid);
                         let bounds = trait_bounds(tcx, impl_defid);

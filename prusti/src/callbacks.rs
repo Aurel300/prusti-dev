@@ -16,8 +16,9 @@ use prusti_rustc_interface::{
     index::IndexVec,
     interface::{interface::Compiler, Config},
     middle::{
-        mir, queries::mir_borrowck::ProvidedValue as MirBorrowck, ty::TyCtxt,
-        queries::Providers
+        mir,
+        queries::{mir_borrowck::ProvidedValue as MirBorrowck, Providers},
+        ty::TyCtxt,
     },
     session::Session,
     span::{Ident, Symbol, DUMMY_SP},
@@ -68,8 +69,9 @@ fn mir_promoted<'tcx>(
     &'tcx Steal<mir::Body<'tcx>>,
     &'tcx Steal<IndexVec<mir::Promoted, mir::Body<'tcx>>>,
 ) {
-    let original_mir_promoted =
-        prusti_rustc_interface::interface::DEFAULT_QUERY_PROVIDERS.queries.mir_promoted;
+    let original_mir_promoted = prusti_rustc_interface::interface::DEFAULT_QUERY_PROVIDERS
+        .queries
+        .mir_promoted;
     let result = original_mir_promoted(tcx, def_id);
     // SAFETY: This is safe because we are feeding in the same `tcx` that is
     // going to be used as a witness when pulling out the data.

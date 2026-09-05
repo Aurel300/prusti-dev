@@ -1,7 +1,7 @@
 use std::ops::Deref;
 
 use prusti_interface::environment::EnvQuery;
-use prusti_rustc_interface::{abi, hir, index, middle::ty, span::symbol, hir::attrs::LangItem};
+use prusti_rustc_interface::{abi, hir::attrs::LangItem, index, middle::ty, span::symbol};
 
 use super::{
     data::*,
@@ -118,11 +118,15 @@ impl<'tcx> LazyRustTy<'tcx> {
     /// The pointer metadata type of a pointer to this type.
     fn pointee_metadata(self) -> Self {
         vir::with_vcx(|vcx| {
-            let metadata_did = vcx.tcx().require_lang_item(
-                LangItem::Metadata,
-                prusti_rustc_interface::span::DUMMY_SP,
-            );
-            Self::new(ty::Ty::new_projection(vcx.tcx(), ty::IsRigid::No, metadata_did, [self.0]))
+            let metadata_did = vcx
+                .tcx()
+                .require_lang_item(LangItem::Metadata, prusti_rustc_interface::span::DUMMY_SP);
+            Self::new(ty::Ty::new_projection(
+                vcx.tcx(),
+                ty::IsRigid::No,
+                metadata_did,
+                [self.0],
+            ))
         })
     }
 }
@@ -661,9 +665,8 @@ impl<'tcx> TySpecifics<'tcx, RustTyDatas> {
     }
 
     fn from_adt(adt: ty::AdtDef<'tcx>) -> Self {
-        if vir::with_vcx(|vcx| {
-            vcx.tcx().lang_items().get(LangItem::DynMetadata) == Some(adt.did())
-        }) {
+        if vir::with_vcx(|vcx| vcx.tcx().lang_items().get(LangItem::DynMetadata) == Some(adt.did()))
+        {
             // `DynMetadata<dyn Trait>` is the metadata of a `&dyn`/`*dyn`
             // wide pointer. We never reason about vtable contents, so encode it
             // as an opaque snapshot rather than recursing into its `Foreign`

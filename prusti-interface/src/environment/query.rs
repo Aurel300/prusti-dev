@@ -3,10 +3,11 @@ use std::fmt::Debug;
 use crate::data::ProcedureDefId;
 use log::debug;
 use prusti_rustc_interface::{
-    hir::{HirId, Attribute},
+    hir::{Attribute, HirId},
     infer::infer::{InferCtxt, TypeFreshener},
     middle::ty::{
-        self, GenericArgsRef, ParamEnv, PredicatePolarity, TraitPredicate, TyCtxt, TypeVisitableExt, Unnormalized, GenericArg
+        self, GenericArgsRef, ParamEnv, PredicatePolarity, TraitPredicate, TyCtxt,
+        TypeVisitableExt, Unnormalized,
     },
     span::{
         def_id::{DefId, LocalDefId},
@@ -73,7 +74,7 @@ impl<'tcx> EnvQuery<'tcx> {
         if let Some(local_def_id) = def_id.as_local() {
             self.get_local_attributes(local_def_id)
         } else {
-            self.tcx.get_all_attrs(def_id)
+            self.tcx.attrs_for_def(def_id)
         }
     }
 
@@ -236,8 +237,8 @@ impl<'tcx> EnvQuery<'tcx> {
         // above) with call substs, so that we get the trait's type parameters
         // more precisely. We can do this directly with `impl_method_substs`
         // because they contain the substs for the `impl` block as a prefix.
-        let call_trait_substs =
-            ty::EarlyBinder::bind(self.tcx, trait_ref.args).instantiate(self.tcx, impl_method_substs);
+        let call_trait_substs = ty::EarlyBinder::bind(self.tcx, trait_ref.args)
+            .instantiate(self.tcx, impl_method_substs);
         let impl_substs = self.identity_substs(impl_def_id);
         let trait_method_substs = self.tcx.mk_args_from_iter(
             call_trait_substs
@@ -406,10 +407,7 @@ impl<'tcx> EnvQuery<'tcx> {
         param_env: impl IntoParamTcx<'tcx, ParamEnv<'tcx>>,
     ) -> bool {
         let param_env = param_env.into_param(self.tcx);
-        let typing_env = ty::TypingEnv::new(
-            param_env,
-            ty::TypingMode::PostAnalysis,
-        );
+        let typing_env = ty::TypingEnv::new(param_env, ty::TypingMode::PostAnalysis);
         // Normalize the type to account for associated types
         let ty = self.resolve_assoc_types(ty, param_env).skip_binder();
         let ty = self.tcx.erase_and_anonymize_regions(ty);
@@ -450,7 +448,9 @@ impl<'tcx> EnvQuery<'tcx> {
                 // the freshly-created `InferCtxt` (i.e. `tcx.infer_ctxt().enter(..)`) will cause
                 // a panic, since those inference variables don't exist in the new `InferCtxt`.
                 // See: https://rust-lang.zulipchat.com/#narrow/stream/182449-t-compiler.2Fhelp/topic/.E2.9C.94.20Panic.20in.20is_copy_modulo_regions
-                trait_substs.into_iter().map(|ty| ty.into().fold_with(&mut type_freshener)),
+                trait_substs
+                    .into_iter()
+                    .map(|ty| ty.into().fold_with(&mut type_freshener)),
                 param_env.into_param(self.tcx),
             )
             .must_apply_considering_regions()
@@ -498,10 +498,7 @@ impl<'tcx> EnvQuery<'tcx> {
         param_env: impl IntoParamTcx<'tcx, ParamEnv<'tcx>> + Debug,
     ) -> T {
         let param_env = param_env.into_param(self.tcx);
-        let typing_env = ty::TypingEnv::new(
-            param_env,
-            ty::TypingMode::PostAnalysis,
-        );
+        let typing_env = ty::TypingEnv::new(param_env, ty::TypingMode::PostAnalysis);
         let norm_res = self
             .tcx
             .try_normalize_erasing_regions(typing_env, Unnormalized::new(normalizable));

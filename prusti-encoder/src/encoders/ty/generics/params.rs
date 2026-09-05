@@ -153,13 +153,10 @@ impl<'tcx> GParams<'tcx> {
     /// returns None.
     pub fn try_normalize(self, ty: ty::Ty<'tcx>) -> Option<ty::Ty<'tcx>> {
         use prusti_rustc_interface::{
-            middle::ty,
-            middle::ty::Unnormalized,
+            middle::{ty, ty::Unnormalized},
             trait_selection::{
                 infer::{InferCtxt, TyCtxtInferExt},
-                traits::{
-                    NormalizeExt, ObligationCause, FulfillmentEngine, FulfillmentError
-                },
+                traits::{FulfillmentEngine, FulfillmentError, NormalizeExt, ObligationCause},
             },
         };
         vir::with_vcx(|vcx| {
@@ -175,7 +172,8 @@ impl<'tcx> GParams<'tcx> {
             });
             // Normalize associated types
             let ifctxt: InferCtxt = vcx.tcx().infer_ctxt().build(ty::TypingMode::PostAnalysis);
-            let mut fulfill_cx: FulfillmentEngine<'tcx, FulfillmentError<'tcx>> = FulfillmentEngine::new(&ifctxt);
+            let mut fulfill_cx: FulfillmentEngine<'tcx, FulfillmentError<'tcx>> =
+                FulfillmentEngine::new(&ifctxt);
             // TODO: is this correct?
             let kinds = self
                 .params

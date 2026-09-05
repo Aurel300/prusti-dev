@@ -33,7 +33,7 @@ use prusti_rustc_interface::{
         mir,
         ty::{self, TyKind},
     },
-    span::{Span, def_id::DefId, Spanned},
+    span::{Span, Spanned, def_id::DefId},
 };
 use prusti_utils::config;
 use rustc_hash::{FxHashMap, FxHashSet};
@@ -1123,7 +1123,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             }
             mir::Operand::Constant(box constant) => {
                 Ok(self.encode_constant_snap(constant)?.upcast_ty())
-            },
+            }
             mir::Operand::RuntimeChecks(_) => todo!(),
         }
     }
@@ -2209,7 +2209,9 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                     mir::AssertKind::InvalidEnumConstruction(..) => {
                         Some("invalid enum construction may occur")
                     }
-                    mir::AssertKind::NullReferenceConstructed => Some("null reference may be constructed"),
+                    mir::AssertKind::NullReferenceConstructed => {
+                        Some("null reference may be constructed")
+                    }
                 };
                 if let Some(error_msg) = error_msg {
                     self.vcx.with_span(span, |vcx| {

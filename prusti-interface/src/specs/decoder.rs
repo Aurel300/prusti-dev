@@ -15,8 +15,7 @@ use prusti_rustc_interface::{
 };
 use rustc_hash::FxHashMap;
 
-use prusti_rustc_interface::span::{BlobDecoder};
-use prusti_rustc_interface::middle::ty::InternerDecoder;
+use prusti_rustc_interface::{middle::ty::InternerDecoder, span::BlobDecoder};
 
 pub struct DefSpecsDecoder<'a, 'tcx> {
     opaque: opaque::MemDecoder<'a>,
@@ -99,7 +98,6 @@ impl<'a, 'tcx> BlobDecoder for DefSpecsDecoder<'a, 'tcx> {
             _ => unreachable!(),
         }
     }
-
 }
 
 impl<'a, 'tcx> SpanDecoder for DefSpecsDecoder<'a, 'tcx> {

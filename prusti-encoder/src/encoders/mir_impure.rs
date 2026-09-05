@@ -33,7 +33,7 @@ use prusti_rustc_interface::{
         mir,
         ty::{self, TyKind},
     },
-    span::{Span, def_id::DefId, source_map::Spanned},
+    span::{Span, Spanned, def_id::DefId},
 };
 use prusti_utils::config;
 use rustc_hash::{FxHashMap, FxHashSet};
@@ -308,7 +308,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
     ) -> Result<EncodedRvalue<'vir>, EncodeRvalueError<'vir, E>> {
         let rvalue_ty = rvalue.ty(self.local_decls, self.vcx.tcx());
         match rvalue {
-            mir::Rvalue::Use(op) => Ok(self
+            mir::Rvalue::Use(op, _) => Ok(self
                 .encode_operand_snap(op, operand_snaps)
                 .map_err(EncodeRvalueError::from)?
                 .into()),
@@ -320,10 +320,6 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 self.stmts(stmt);
                 Ok(cast.into())
             }
-            mir::Rvalue::Len(place) => {
-                Ok(self.encode_len_snap((*place).into(), operand_snaps)?.into())
-            }
-
             mir::Rvalue::BinaryOp(op, box (l, r)) => Ok(self
                 .encode_binop_snap(rvalue_ty, *op, l, r, operand_snaps, span)
                 .map_err(EncodeRvalueError::from)?
@@ -1079,6 +1075,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 let constant = self.encode_constant_snap(constant)?;
                 (constant.upcast_ty(), ty_out)
             }
+            mir::Operand::RuntimeChecks(_) => todo!(),
         };
         let tmp_exp: vir::ExprRef<'vir> = self.new_tmp(vir::TYPE_REF);
         self.stmt(ty_out.apply_method_assign(self.vcx, tmp_exp, encode_place_result));
@@ -1098,6 +1095,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             mir::Operand::Constant(box constant) => {
                 Ok(self.encode_constant_snap(constant)?.upcast_ty())
             }
+            mir::Operand::RuntimeChecks(_) => todo!(),
         }
     }
 
@@ -1126,6 +1124,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             mir::Operand::Constant(box constant) => {
                 Ok(self.encode_constant_snap(constant)?.upcast_ty())
             }
+            mir::Operand::RuntimeChecks(_) => todo!(),
         }
     }
 
@@ -1905,10 +1904,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                         self.stmt(self.vcx.mk_exhale_stmt(self.vcx.mk_bool::<false>()));
                     });
                 }
-
-                mir::StatementKind::Retag(..)
-                | mir::StatementKind::SetDiscriminant { .. }
-                | mir::StatementKind::Deinit(..) => unreachable!(
+                mir::StatementKind::SetDiscriminant { .. } => unreachable!(
                     "the statement kind {:?} is not allowed in the MIR analysis phase",
                     statement.kind
                 ),
@@ -2212,6 +2208,9 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                     }
                     mir::AssertKind::InvalidEnumConstruction(..) => {
                         Some("invalid enum construction may occur")
+                    }
+                    mir::AssertKind::NullReferenceConstructed => {
+                        Some("null reference may be constructed")
                     }
                 };
                 if let Some(error_msg) = error_msg {

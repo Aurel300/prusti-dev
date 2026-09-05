@@ -108,7 +108,9 @@ pub fn encode_all_in_crate<'tcx>(tcx: ty::TyCtxt<'tcx>) {
                 // spec is transplanted onto the foreign target: verifying the
                 // stub against it would be circular, and by this point the stub
                 // has no spec of its own left to verify against.
-                if prusti_interface::utils::has_extern_spec_attr(tcx.get_all_attrs(def_id)) {
+                if prusti_interface::utils::has_extern_spec_attr(
+                    prusti_interface::utils::get_all_attrs(tcx, def_id),
+                ) {
                     continue;
                 }
 

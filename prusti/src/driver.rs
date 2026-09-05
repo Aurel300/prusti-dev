@@ -5,8 +5,7 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 #![feature(rustc_private)]
-#![feature(proc_macro_internals)]
-#![feature(decl_macro)]
+#![feature(exitcode_exit_method)]
 #![allow(internal_features)]
 #![deny(unused_must_use)]
 
@@ -91,7 +90,7 @@ fn main() {
     })
     .is_some();
     if config::be_rustc() || build_script_build {
-        driver::main();
+        driver::main().exit_process();
     }
 
     // Initialize Prusti and the Rust compiler loggers.
@@ -202,5 +201,5 @@ fn main() {
         );
     }
 
-    std::process::exit(exit_code)
+    exit_code.exit_process();
 }

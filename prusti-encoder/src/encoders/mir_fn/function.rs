@@ -215,7 +215,9 @@ impl TaskEncoder for FunctionEnc {
                     gargs: params.identity_args(),
                 }) {
                     Ok(out) => {
-                        let expr = out.expr.reify(vcx, (def_id, spec.pre_args, vir::OldLabel::None));
+                        let expr = out
+                            .expr
+                            .reify(vcx, (def_id, spec.pre_args, vir::OldLabel::None));
                         assert!(
                             expr.ty() == return_type,
                             "expected {:?}, got {:?}",

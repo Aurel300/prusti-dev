@@ -33,7 +33,11 @@ pub enum MirPureEncError {
     // UnsupportedTerminator,
 }
 
-pub type ExprInput<'vir> = (DefId, &'vir FxHashMap<mir::Local, vir::ExprSnap<'vir>>, vir::OldLabel<'vir>);
+pub type ExprInput<'vir> = (
+    DefId,
+    &'vir FxHashMap<mir::Local, vir::ExprSnap<'vir>>,
+    vir::OldLabel<'vir>,
+);
 type ExprRet<'vir> = vir::ExprGenSnap<'vir, ExprInput<'vir>, vir::ExprKind<'vir>>;
 type ExprRetRef<'vir> = vir::ExprGenRef<'vir, ExprInput<'vir>, vir::ExprKind<'vir>>;
 type ExprRetAny<'vir, T> = vir::ExprGen<'vir, ExprInput<'vir>, vir::ExprKind<'vir>, T>;
@@ -1350,7 +1354,10 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                 gargs: GParams::from(cl_def_id).identity_args(),
             })?
             .expr
-            .reify(self.vcx, (cl_def_id, self.vcx.alloc(reify_args), vir::OldLabel::None))
+            .reify(
+                self.vcx,
+                (cl_def_id, self.vcx.alloc(reify_args), vir::OldLabel::None),
+            )
             .lift();
         Ok((qvars, body.downcast_ty::<vir::Bool>()))
     }

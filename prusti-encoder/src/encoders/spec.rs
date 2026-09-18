@@ -123,9 +123,9 @@ pub fn report_kind_refinement_error(
                 if let Some(trait_item) = vcx
                     .tcx()
                     .opt_associated_item(def_id)
-                    .and_then(|item| item.trait_item_def_id)
+                    .and_then(|item| item.trait_item_def_id())
                 {
-                    let trait_attrs = vcx.tcx().get_all_attrs(trait_item);
+                    let trait_attrs = prusti_interface::utils::get_all_attrs(vcx.tcx(), trait_item);
                     if let Some(pure_span) =
                         prusti_interface::utils::prusti_attr_span(trait_attrs, "pure")
                     {

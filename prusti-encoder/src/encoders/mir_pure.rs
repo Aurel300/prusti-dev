@@ -930,7 +930,23 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                             .collect::<Result<Vec<_>, _>>()?;
                         Ok(pure_func.call_pure(snap_args))
                     } else {
-                        panic!("call to unknown non-pure function in pure code ({def_id:?})");
+                        let span = term.source_info.span;
+                        let name = self.vcx.tcx().def_path_str(def_id);
+
+                        self.vcx.emit_early_error(prusti_interface::PrustiError::incorrect(
+                            format!(
+                                "only pure functions may be called in pure code"
+                            ),
+                            span.into(),
+                        ));
+
+                        Err(EncodeFullError::DependencyError(vec![(
+                            MirPureEnc::ENCODER_NAME,
+                            format!(
+                                "call to non-pure function `{name}` in pure code"
+                            ),
+                            vec![span],
+                        )]))
                     }
                 };
 

@@ -266,37 +266,43 @@ def package(mode: str, package_path: str):
     if os.listdir(package_path):
         logging.warning(f"The destination folder '{package_path}' is not empty.")
 
-    # The glob patterns of the files to copy and their destination folder inside the package.
+    # The glob patterns of the files to copy, their destination folder inside the package,
+    # and whether the package would be unusable without them.
+    # The `prusti-contracts` libraries are taken from the copies that Cargo uplifts to the
+    # profile folder: `prusti-rustc` puts that folder on rustc's dependency search path, and
+    # Cargo's newer build-dir layout no longer populates a `deps/` folder to take hashed
+    # copies from. The leading `*` covers dynamic libraries losing their `lib` prefix on
+    # Windows.
     include_paths_and_dst = [
-        # (source pattern, destination)
-        ("rust-toolchain", "."),
-        ("viper_tools", "."),
-        (f"target/{mode}/prusti-driver*", "."),
-        (f"target/{mode}/prusti-server*", "."),
-        (f"target/{mode}/prusti-rustc*", "."),
-        (f"target/{mode}/cargo-prusti*", "."),
-        (f"target/verify/{mode}/libprusti_contracts.*", "."),
-        (f"target/verify/{mode}/deps/libprusti_contracts_proc_macros-*", "deps"),
-        (f"target/verify/{mode}/deps/prusti_contracts_proc_macros-*.dll", "deps"),
-        (f"target/verify/{mode}/libprusti_std.*", "."),
-        (f"target/verify/{mode}/deps/libprusti_contracts-*", "deps"),
-        (f"target/verify/{mode}/deps/prusti_contracts-*.dll", "deps"),
+        # (source pattern, destination, required)
+        ("rust-toolchain", ".", True),
+        ("viper_tools", ".", True),
+        (f"target/{mode}/prusti-driver*", ".", True),
+        (f"target/{mode}/prusti-server*", ".", True),
+        (f"target/{mode}/prusti-rustc*", ".", True),
+        (f"target/{mode}/cargo-prusti*", ".", True),
+        (f"target/verify/{mode}/libprusti_contracts.*", ".", True),
+        (f"target/verify/{mode}/*prusti_contracts_proc_macros.*", ".", True),
+        (f"target/verify/{mode}/libprusti_std.*", ".", False),
     ]
     exclude_paths = [
         f"target/{mode}/*.d",
         f"target/verify/{mode}/*.d",
-        f"target/verify/{mode}/deps/*.d",
     ]
     actual_exclude_set = set(path for pattern in exclude_paths for path in glob.glob(pattern))
     logging.debug(f"The number of excluded paths is: {len(actual_exclude_set)}")
 
     # Copy the paths
     num_copied_paths = 0
-    for pattern, dst_folder in include_paths_and_dst:
+    missing_patterns = []
+    for pattern, dst_folder, required in include_paths_and_dst:
         matched_paths = set(glob.glob(pattern))
-        if not matched_paths:
-            logging.debug(f"A glob pattern gave no results: {pattern}")
         filtered_paths = sorted(matched_paths - actual_exclude_set)
+        if not filtered_paths:
+            if required:
+                missing_patterns.append(pattern)
+            else:
+                logging.debug(f"A glob pattern gave no results: {pattern}")
         for src_path in filtered_paths:
             dst_folder_path = os.path.join(package_path, dst_folder)
             dst_path = os.path.join(dst_folder_path, os.path.basename(src_path))
@@ -311,8 +317,9 @@ def package(mode: str, package_path: str):
                 shutil.copytree(src_path, dst_path)
 
     logging.info(f"Copied {num_copied_paths} paths to the package folder")
-    if num_copied_paths <= 11:
-        logging.error(f"The number of copied paths is too low.")
+    if missing_patterns:
+        for pattern in missing_patterns:
+            logging.error(f"Nothing to package for the required pattern: {pattern}")
         sys.exit(1)
 
 

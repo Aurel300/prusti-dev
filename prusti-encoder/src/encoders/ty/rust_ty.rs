@@ -654,6 +654,10 @@ impl<'tcx> TySpecifics<'tcx, RustTyDatas> {
             // TODO: give dyn Trait a type witness parameter (the concrete type behind the
             // pointer), enabling virtual dispatch and distinguishing dyn TraitA from dyn TraitB.
             ty::TyKind::Dynamic(..) => TySpecifics::mk_param(RustParamData::Dyn),
+            // TODO: encode the pattern as narrowed bounds on the base type, so that e.g.
+            // the `u32 is 1..` inside a `NonZeroU32` is known to be non-zero. Doing so
+            // also needs a `ty_name` that distinguishes the pattern from its base type,
+            // since the name and the specifics together are the interning key.
             ty::TyKind::Pat(ty, _) => Self::from_ty(*ty),
             _ => TySpecifics::mk_opaque(()),
         }

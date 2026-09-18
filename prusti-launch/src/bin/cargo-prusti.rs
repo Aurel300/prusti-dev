@@ -134,26 +134,7 @@ fn copy_exported_specs(cargo_target: PathBuf) -> io::Result<()> {
             continue;
         }
 
-        let mut specs_dirs = Vec::new();
-        let deps_dir = build_dir.join("deps");
-        if deps_dir.is_dir() {
-            specs_dirs.push(deps_dir);
-        }
-        if let Ok(pkg_entries) = fs::read_dir(build_dir.join("build")) {
-            for pkg_entry in pkg_entries.flatten() {
-                let Ok(hash_entries) = fs::read_dir(pkg_entry.path()) else {
-                    continue;
-                };
-                for hash_entry in hash_entries.flatten() {
-                    let out_dir = hash_entry.path().join("out");
-                    if out_dir.is_dir() {
-                        specs_dirs.push(out_dir);
-                    }
-                }
-            }
-        }
-
-        for specs_dir in specs_dirs {
+        for specs_dir in launch::build_unit_dirs(&build_dir) {
             for entry in fs::read_dir(specs_dir)? {
                 let entry = entry?.path();
                 if let Some(ext) = entry.extension()

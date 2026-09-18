@@ -1,10 +1,13 @@
 use prusti_rustc_interface::middle::{mir, ty};
-use task_encoder::{EncodeFullError, EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
+use task_encoder::{
+    EncodeFullError, EncodeFullResult, Program, TaskEncoder, TaskEncoderDependencies,
+    TaskEncoderError,
+};
 use vir::{CastType, FunctionIdn};
 
 use crate::encoders::ty::{
-    RustTy, RustTyDecomposition, interpretation::float::FloatDomain, pure::TyPurePrimDataKind,
-    use_pure::TyUsePureEnc,
+    RustTy, RustTyDecomposition, TySpecifics, interpretation::float::FloatDomain,
+    pure::TyPurePrimDataKind, use_pure::TyUsePureEnc,
 };
 
 /// Encodes the builtin MIR binary operations (e.g. `Add`, `Sub`, `Mul`, `Div`,
@@ -77,6 +80,14 @@ impl TaskEncoder for MirBuiltinBinOpEnc {
                 deps.require_dep::<TyUsePureEnc>(ty)
             };
             let res = encode(lhs_ty)?;
+            if let TySpecifics::Raw(..) = res.specifics {
+                return Err(EncodeFullError::EncodingError(
+                    MirBuiltinBinOpEncError::Unsupported(
+                        "Binops on raw pointers are not supported yet.".to_string(),
+                    ),
+                    None,
+                ));
+            }
             let (l_ty_prim, l_ty_snap) = (res.expect_primitive(), res.snapshot.downcast_ty());
             let res = encode(rhs_ty)?;
             let (r_ty_prim, r_ty_snap) = (res.expect_primitive(), res.snapshot.downcast_ty());
@@ -133,6 +144,34 @@ impl TaskEncoder for MirBuiltinBinOpEnc {
         for function in Self::all_outputs_local_no_errors(program) {
             program.add_function(function);
         }
+    }
+
+    fn all_outputs_local_no_errors<'vir>(
+        program: &mut Program<'vir>,
+    ) -> Vec<Self::OutputFullLocal<'vir>>
+    where
+        Self: 'vir,
+    {
+        let (outputs, errored) = Self::all_outputs_local();
+        for (key, error, spans) in errored {
+            let span = spans
+                .into_iter()
+                .next()
+                .unwrap_or(prusti_rustc_interface::span::DUMMY_SP);
+            let msg = match error {
+                TaskEncoderError::EncodingError(MirBuiltinBinOpEncError::Unsupported(..)) => {
+                    continue;
+                }
+                other => format!(
+                    "encoder '{}' failed to encode {:?}:\n {:?}",
+                    Self::ENCODER_NAME,
+                    key,
+                    other
+                ),
+            };
+            program.encoder_errors().push((msg, span));
+        }
+        outputs
     }
 }
 

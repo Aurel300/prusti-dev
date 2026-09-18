@@ -302,9 +302,13 @@ impl<'vir> WandEncOutput<'vir> {
             })
         });
         let rhs = rhs
-            .chain(wand_data.pledges.iter().map(|pledge| match pledge_old_label {
-                Some(label) => pledge.expiry_postcondition.expr_at_label(pledge_args, label),
-                None => pledge.expiry_postcondition.expr(pledge_args),
+            .chain(wand_data.pledges.iter().map(|pledge| {
+                match pledge_old_label {
+                    Some(label) => pledge
+                        .expiry_postcondition
+                        .expr_at_label(pledge_args, label),
+                    None => pledge.expiry_postcondition.expr(pledge_args),
+                }
             }))
             .collect::<Vec<_>>();
         if rhs.is_empty() {

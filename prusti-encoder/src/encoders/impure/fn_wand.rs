@@ -296,37 +296,17 @@ impl<'vir> WandEncOutput<'vir> {
         deps: &mut TaskEncoderDependencies<'vir, E>,
     ) -> Option<vir::Wand<'vir>> {
         debug_assert!(!wand_data.lhs.is_empty());
-
-        type PledgeExprFn<'a, 'vir> =
-            dyn Fn(&EncodedPledge<'vir>) -> Option<vir::ExprBool<'vir>> + 'a;
-        let mut process_pledge_side =
-            |pledge_side: &[FunctionShapeNode<Generalized>],
-             pledge_expr_fn: &PledgeExprFn<'_, 'vir>| {
-                pledge_side
-                    .iter()
-                    .filter_map(|g| {
-                        self.encode_predicates_for_function_shape_node(
-                            vcx,
-                            deps,
-                            *g,
-                            call_ctx,
-                            |i| pledge_args[i],
-                        )
-                    })
-                    .chain(wand_data.pledges.iter().filter_map(pledge_expr_fn))
-                    .collect::<Vec<_>>()
-            };
-
-        let rhs: Vec<FunctionShapeNode<Generalized>> =
-            wand_data.rhs.iter().map(|&r| r.into()).collect();
-        let rhs = process_pledge_side(&rhs, &|pledge| match pledge_old_label {
-            Some(label) => Some(
-                pledge
-                    .expiry_postcondition
-                    .expr_at_label(pledge_args, label),
-            ),
-            None => Some(pledge.expiry_postcondition.expr(pledge_args)),
+        let rhs = wand_data.rhs.iter().filter_map(|g| {
+            self.encode_predicates_for_function_shape_node(vcx, deps, *g, call_ctx, |i| {
+                pledge_args[i]
+            })
         });
+        let rhs = rhs
+            .chain(wand_data.pledges.iter().map(|pledge| match pledge_old_label {
+                Some(label) => pledge.expiry_postcondition.expr_at_label(pledge_args, label),
+                None => pledge.expiry_postcondition.expr(pledge_args),
+            }))
+            .collect::<Vec<_>>();
         if rhs.is_empty() {
             // We skip emitting the wand when there is nothing on the RHS, i.e.,
             // nothing would be unblocked by applying this wand, nor are there
@@ -334,13 +314,21 @@ impl<'vir> WandEncOutput<'vir> {
             return None;
         }
         let rhs = vcx.mk_conj(&rhs);
-
-        let lhs = process_pledge_side(&wand_data.lhs, &|pledge| match pledge_old_label {
-            Some(label) => pledge
-                .expiry_obligation
-                .map(|o| o.expr_at_label(pledge_args, label)),
-            None => pledge.expiry_obligation.map(|o| o.expr(pledge_args)),
+        let lhs = wand_data.lhs.iter().filter_map(|g| {
+            self.encode_predicates_for_function_shape_node(vcx, deps, *g, call_ctx, |i| {
+                pledge_args[i]
+            })
         });
+        let lhs = lhs
+            .chain(wand_data.pledges.iter().filter_map(|pledge| {
+                match pledge_old_label {
+                    Some(label) => pledge
+                        .expiry_obligation
+                        .map(|o| o.expr_at_label(pledge_args, label)),
+                    None => pledge.expiry_obligation.map(|o| o.expr(pledge_args)),
+                }
+            }))
+            .collect::<Vec<_>>();
         let lhs = vcx.mk_conj(&lhs);
         Some(vcx.mk_wand(lhs, rhs))
     }

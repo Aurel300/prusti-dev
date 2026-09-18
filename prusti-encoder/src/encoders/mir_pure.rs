@@ -1261,7 +1261,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
             if self.old_mode {
                 let inner = encoded_place.snap;
                 encoded_place.snap = self.vcx.mk_lazy_expr(
-                    vir::vir_format!(self.vcx, "old_mode_wrap"),
+                    "old_mode_wrap",
                     inner.ty(),
                     Box::new(move |vcx, lctx: ExprInput<'vir>| {
                         use vir::Reify;
@@ -1357,12 +1357,15 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                 parent_def_id: cl_def_id,
                 gargs: GParams::from(cl_def_id).identity_args(),
             })?
-            .expr
-            .reify(
-                self.vcx,
-                (cl_def_id, self.vcx.alloc(reify_args), vir::OldLabel::None),
-            )
-            .lift();
+            .expr;
+        let reify_args = self.vcx.alloc(reify_args);
+        let body = self.vcx.mk_lazy_expr(
+            vir::vir_format!(self.vcx, "spec closure body ({name})"),
+            body.ty(),
+            Box::new(move |vcx, lctx: ExprInput<'vir>| {
+                body.reify(vcx, (cl_def_id, reify_args, lctx.2)).kind
+            }),
+        );
         Ok((qvars, body.downcast_ty::<vir::Bool>()))
     }
 

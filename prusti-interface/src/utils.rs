@@ -9,22 +9,9 @@
 use prusti_rustc_interface::{
     hir,
     middle::{mir, ty::TyCtxt},
-    span::{def_id::DefId, Span},
+    span::{def_id::DefId, Span, Symbol},
 };
 use std::borrow::Borrow;
-
-/// Returns all attributes on `def_id`, for both local and external items.
-///
-/// `TyCtxt::get_all_attrs` is deprecated in favor of `rustc_hir::find_attr!`, but that
-/// macro only matches attributes rustc itself parses into `AttributeKind` variants.
-/// Prusti's attributes live in our own tool namespace and are never parsed by rustc, so
-/// we still need the raw attribute slice; this replicates the deprecated method's body.
-pub fn get_all_attrs(tcx: TyCtxt<'_>, def_id: DefId) -> &[hir::Attribute] {
-    match def_id.as_local() {
-        Some(local_def_id) => tcx.hir_attrs(tcx.local_def_id_to_hir_id(local_def_id)),
-        None => tcx.attrs_for_def(def_id),
-    }
-}
 
 /// Check if the place `potential_prefix` is a prefix of `place`. For example:
 ///
@@ -120,15 +107,27 @@ fn get_prusti_attr<'a, T: Borrow<hir::Attribute>>(
     get_prusti_attrs(attrs).find(|item| item.path.segments[1].as_str() == attr_name)
 }
 
+/// The `prusti::<attr_name>` marker on `def_id`, for local and external items.
+/// Prusti's attributes are never parsed into an `AttributeKind`, so `find_attr!`
+/// cannot see them; matching the whole path finds exactly what we emit.
+pub fn get_prusti_attr_of<'tcx>(
+    tcx: TyCtxt<'tcx>,
+    def_id: DefId,
+    attr_name: &str,
+) -> Option<&'tcx hir::AttrItem> {
+    let path = [Symbol::intern("prusti"), Symbol::intern(attr_name)];
+    // Bound so that the iterator borrowing `path` is dropped before it.
+    let mut attrs = tcx.get_attrs_by_path(def_id, &path);
+    attrs.find_map(|attr| match attr {
+        hir::Attribute::Unparsed(item) => Some(&**item),
+        _ => None,
+    })
+}
+
 /// Check if `prusti::<name>` is among the attributes.
 /// Any arguments of the attribute are ignored.
 pub fn has_prusti_attr(attrs: &[hir::Attribute], name: &str) -> bool {
     get_prusti_attr(attrs, name).is_some()
-}
-
-/// The span of the `prusti::<name>` marker among `attrs`, if present.
-pub fn prusti_attr_span(attrs: &[hir::Attribute], name: &str) -> Option<Span> {
-    get_prusti_attr(attrs, name).map(|item| item.span)
 }
 
 /// The spans of the user's Prusti annotations among `attrs`: every
@@ -182,12 +181,17 @@ pub fn read_prusti_attrs<'a, T: Borrow<hir::Attribute>>(
 ) -> impl Iterator<Item = String> + 'a {
     get_prusti_attrs(attrs)
         .filter(move |item| item.path.segments[1].as_str() == attr_name)
-        .filter_map(|item| match &item.args {
-            hir::AttrArgs::Eq { expr, .. } => {
-                Some(expr.as_token_lit().symbol.as_str().replace("\\\"", "\""))
-            }
-            _ => None,
-        })
+        .filter_map(read_prusti_attr_value)
+}
+
+/// The value of a single Prusti attribute, if it stores one.
+pub fn read_prusti_attr_value(item: &hir::AttrItem) -> Option<String> {
+    match &item.args {
+        hir::AttrArgs::Eq { expr, .. } => {
+            Some(expr.as_token_lit().symbol.as_str().replace("\\\"", "\""))
+        }
+        _ => None,
+    }
 }
 
 /// Read the value stored in a single Prusti attribute (e.g. `prusti::<attr_name>="...")`.

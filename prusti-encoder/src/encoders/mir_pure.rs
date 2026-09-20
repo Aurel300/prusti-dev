@@ -1063,7 +1063,6 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                 // place of an impure `&mut` argument.
                 let place_ref = encoded_place
                     .place_ref
-                    .filter(|_| place.is_indirect())
                     .unwrap_or_else(|| self.vcx.mk_null().lazy());
                 let metadata = encoded_place
                     .metadata

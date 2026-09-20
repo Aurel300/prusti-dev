@@ -1,7 +1,7 @@
 use prusti_interface::PrustiError;
 use prusti_rustc_interface::span::def_id::DefId;
 use task_encoder::{EncodeFullResult, OutputRefAny, TaskEncoder, TaskEncoderDependencies};
-use vir::{CastType, FunctionIdn, Reify};
+use vir::{FunctionIdn, Reify};
 
 use crate::encoders::{
     MirLocalDefEnc, MirLocalDefEncTask, MirPureEnc, MirPureEncTask, MirSpecEnc, Pure, PureKind,
@@ -9,7 +9,6 @@ use crate::encoders::{
     mir_fn::{CallTaskDescription, RustSignature},
     pure::spec::MirSpecEncMode,
     ty::{
-        TySpecifics,
         generics::{GArgCaster, GArgsCastEnc, GArgsTy, GArgsTyEnc, GParams, GenericParamsEnc},
         use_pure::TyUsePure,
     },
@@ -34,15 +33,6 @@ impl<'vir> FunctionCallEncOutput<'vir> {
         &self,
         args: Vec<vir::ExprGenSnap<'vir, Curr, Next>>,
     ) -> vir::ExprGenSnap<'vir, Curr, Next> {
-        let args = args
-            .iter()
-            .zip(self.arg_tys.iter())
-            .map(|(arg, ty)| match ty.specifics {
-                TySpecifics::ImmRef(data) => data.value_snap_of(arg.downcast_ty()).upcast_ty(),
-                _ => *arg,
-            })
-            .collect::<Vec<_>>();
-
         self.call_casted(self.function.function_ref, args)
     }
 
@@ -60,8 +50,12 @@ impl<'vir> FunctionCallEncOutput<'vir> {
         mut args: Vec<vir::ExprGenSnap<'vir, Curr, Next>>,
     ) -> vir::ExprGenSnap<'vir, Curr, Next> {
         assert_eq!(self.inputs.len(), args.len());
-        for (arg, caster) in args.iter_mut().zip(self.inputs.iter()) {
-            *arg = caster.cast_to_callee_ctx(*arg);
+        for ((arg, caster), ty) in args
+            .iter_mut()
+            .zip(self.inputs.iter())
+            .zip(self.arg_tys.iter())
+        {
+            *arg = caster.cast_to_callee_ctx(ty.dummy_ref_address(*arg));
         }
         let call = function.call()(&args, self.ty_args.get_ty(), self.ty_args.get_const());
         self.output.cast_to_caller_ctx(call)
@@ -84,7 +78,6 @@ impl TaskEncoder for FunctionCallEnc {
     ) -> EncodeFullResult<'vir, Self> {
         deps.emit_output_ref(*task_key, ())?;
         let (callee_def_id, assoc_enc) = task_key.trait_call(deps)?;
-
         let function_ref = if let Some(assoc_enc) = assoc_enc {
             FunctionEncOutputRef {
                 caller_ref: assoc_enc.call_stub_pure_caller.unwrap(),
@@ -112,9 +105,9 @@ impl TaskEncoder for FunctionCallEnc {
             .iter()
             .map(|ty| {
                 let ty_task = ty.decompose_normalize(task_key.gargs);
-                deps.require_dep::<TyUsePureEnc>(ty_task).unwrap()
+                deps.require_dep::<TyUsePureEnc>(ty_task)
             })
-            .collect::<Vec<_>>();
+            .collect::<Result<Vec<_>, _>>()?;
         Ok((
             (),
             FunctionCallEncOutput {

@@ -388,14 +388,15 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
             rel0_mode: false,
             rel1_mode: false,
             before_expiry_mode: false,
-            // Only an impure method's pre/post gets shallow argument
-            // snapshots; a pure function's spec is handed deep ones.
+            // Specs of an impure method get shallow argument snapshots,
+            // whether they are its pre/post or a block in its body; a pure
+            // function's spec is handed deep ones.
             impure_context: matches!(
                 kind,
                 PureKind::Spec {
                     mode: MirSpecEncMode::Impure,
                     ..
-                }
+                } | PureKind::SpecBlock(..)
             ),
         }
     }
@@ -1113,11 +1114,25 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                         let snap = encoded_place.snap.downcast_ty();
                         let metadata = e_ty.metadata_access(snap);
                         let ref_expr = e_ty.deref_access(snap);
-                        let val_expr = if self.impure_context {
-                            // In a method's pre/post the snapshot is shallow
-                            // and doesn't contain the value behind the mutable
-                            // reference, so we need to take an extra snapshot
-                            // here.
+                        if !self.impure_context {
+                            // Every mutable-reference snapshot is shallow: the
+                            // value field is left unconstrained wherever one is
+                            // built (see `p_Ref_mutable_arbitrary_value`, which
+                            // fixes only the address and the metadata). Reading
+                            // it would yield a value no caller ever relates to
+                            // the referent.
+                            return Err(self.unsupported_rvalue(
+                                format!(
+                                    "dereference of the mutable reference `{}` in pure code",
+                                    place_ty.ty
+                                ),
+                                self.current_span(),
+                            ));
+                        }
+                        let val_expr = {
+                            // The snapshot is shallow and doesn't contain the
+                            // value behind the mutable reference, so we need to
+                            // take an extra snapshot here.
                             // TODO: avoid all of this by using shallow and deep snapshots
                             let ty_task = RustTyDecomposition::from_ty(place_ty.ty, self.context);
                             let inner = ty_task.ty.expect_mutref();
@@ -1136,11 +1151,6 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                                 .require_dep::<crate::encoders::TyUseImpureEnc>(inner_ty_task)
                                 .unwrap();
                             caster.cast_to_caller_ctx(inner_ty.ref_to_snap(ref_expr))
-                        } else {
-                            // In a pure function, the snapshot passed in as an
-                            // argument should be "deep" such that we can
-                            // read the value directly from the snapshot itself
-                            e_ty.value_access(snap)
                         };
                         EncodedPlace::new(val_expr, Some(ref_expr)).with_metadata(metadata)
                     }

@@ -134,7 +134,6 @@ impl FoldOrUnfold {
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum LocationLabelPrefix {
     Before,
-    After,
     BeforeRefReassignment,
 }
 
@@ -142,7 +141,6 @@ impl LocationLabelPrefix {
     pub(crate) fn to_str(self) -> &'static str {
         match self {
             LocationLabelPrefix::Before => "before",
-            LocationLabelPrefix::After => "after",
             LocationLabelPrefix::BeforeRefReassignment => "before_ref_reassignment",
         }
     }
@@ -913,8 +911,10 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 &mut to_skip,
             ),
             BorrowPcgActionKind::Weaken(weaken)
-                if matches!(weaken.from_cap(), CapabilityKind::Exclusive)
-                    && matches!(weaken.to_cap(), None | Some(CapabilityKind::Write)) =>
+                if matches!(
+                    weaken.from_cap(),
+                    CapabilityKind::Exclusive | CapabilityKind::ShallowExclusive
+                ) && matches!(weaken.to_cap(), None | Some(CapabilityKind::Write)) =>
             {
                 self.pcg_weaken(weaken.place(), weaken.is_for_storage_dead())
             }
@@ -936,7 +936,11 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             match repack_op {
                 RepackOp::RegainLoanedCapability(..) => true,
                 RepackOp::Weaken(weaken) => {
-                    weaken.from_cap().is_exclusive() && weaken.to_cap().is_read()
+                    weaken.from_cap().is_exclusive()
+                        && matches!(
+                            weaken.to_cap(),
+                            CapabilityKind::Read | CapabilityKind::ShallowExclusive
+                        )
                 }
                 RepackOp::StorageDead(..) => true,
                 _ => false,
@@ -980,7 +984,10 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 Ok(())
             }
             RepackOp::Weaken(weaken)
-                if weaken.from_cap().is_exclusive() && weaken.to_cap().is_write() =>
+                if matches!(
+                    weaken.from_cap(),
+                    CapabilityKind::Exclusive | CapabilityKind::ShallowExclusive
+                ) && weaken.to_cap().is_write() =>
             {
                 self.pcg_weaken(weaken.place(), weaken.is_for_storage_dead())
             }
@@ -1017,7 +1024,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         if for_storage_dead {
             comment!(
                 self,
-                "Weaken(E, W) for {:?} (skipped exhale: StorageDead)",
+                "Weaken to Write for {:?} (skipped exhale: StorageDead)",
                 place
             );
             return Ok(());
@@ -1026,7 +1033,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         let place_ty_out = self.ty_use_impure(place_ty.ty);
 
         let place_enc = self.encode_place(place)?;
-        comment!(self, "exhale due to Weaken(E, W)");
+        comment!(self, "exhale due to weaken to Write");
         self.stmt(self.vcx.mk_exhale_stmt(place_ty_out.ref_to_pred(
             self.vcx,
             place_enc.expr.expect_predicate(),
@@ -1048,14 +1055,17 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         cfpcs: &PcgLocation<'_, 'vir>,
         succ: &'a PcgSuccessor<'_, 'vir>,
     ) -> EncodeResult<'vir, (), E> {
-        // The terminator's deferred `PostMain` actions (e.g. the collapse
-        // re-packing owned places for the CFG join); see
-        // [Self::visit_terminator].
-        comment!(self, "PCG (T) {}", EvalStmtPhase::PostMain);
         let post_main = &cfpcs.states[EvalStmtPhase::PostMain];
-        self.pcg_actions(post_main, &cfpcs.actions(EvalStmtPhase::PostMain), false)?;
         let edge_to_loop = self.loop_head_of(succ.block()).is_some();
         self.pcg_actions(post_main, succ.actions(), edge_to_loop)
+    }
+
+    fn finish_terminator(&mut self, location: mir::Location) -> EncodeResult<'vir, (), E> {
+        comment!(self, "PCG (T) {}", EvalStmtPhase::PostMain);
+        self.pcg_phase_actions(location, EvalStmtPhase::PostMain)?;
+        let label = self.block_end_label(location.block, self.current_block_pres.as_ref().unwrap());
+        self.stmt(self.vcx.mk_label_stmt(label));
+        Ok(())
     }
 
     fn encode_operand(
@@ -1362,20 +1372,28 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
 
     pub(crate) fn get_location_label(&self, at: SnapshotLocation) -> vir::OldLabel<'vir> {
         // TODO: this should probably take pre-loop labels into account, somehow
-        if let SnapshotLocation::BeforeJoin(bb) | SnapshotLocation::Loop(bb) = at {
-            return vir::OldLabel::Block(vir::CfgBlockLabelData::BasicBlock(bb.as_usize()));
-        }
-        let prefix = match at {
-            SnapshotLocation::Before(..) => LocationLabelPrefix::Before,
-            SnapshotLocation::After(..) => LocationLabelPrefix::After,
-            SnapshotLocation::BeforeRefReassignment(..) => {
-                LocationLabelPrefix::BeforeRefReassignment
+        match at {
+            SnapshotLocation::BeforeJoin(bb) | SnapshotLocation::Loop(bb) => {
+                vir::OldLabel::Block(vir::CfgBlockLabelData::BasicBlock(bb.as_usize()))
             }
-            SnapshotLocation::Loop(_) | SnapshotLocation::BeforeJoin(_) => unreachable!(),
-        };
-        let location = at.location();
-        let label = self.location_label(prefix, location, &[]);
-        vir::OldLabel::Label(label)
+            SnapshotLocation::After(bb) => vir::OldLabel::Label(self.block_end_label(bb, &[])),
+            SnapshotLocation::Before(at) => vir::OldLabel::Label(self.location_label(
+                LocationLabelPrefix::Before,
+                at.location(),
+                &[],
+            )),
+            SnapshotLocation::BeforeRefReassignment(location) => vir::OldLabel::Label(
+                self.location_label(LocationLabelPrefix::BeforeRefReassignment, location, &[]),
+            ),
+        }
+    }
+
+    fn block_end_label(&self, block: mir::BasicBlock, loop_pres: &[usize]) -> &'vir str {
+        let pres = loop_pres
+            .iter()
+            .map(|l| format!("_pre{l}"))
+            .collect::<String>();
+        vir::vir_format!(self.vcx, "_after_{}{pres}", block.index())
     }
 
     pub(crate) fn location_label(
@@ -1935,8 +1953,8 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         // projects into an aggregate is read in the branch condition, relying
         // on the `PreOperands` unfolds), while the `PostMain` actions re-pack
         // owned places for the CFG join and thus may fold those operands'
-        // places away. They are instead emitted on each outgoing edge by
-        // [Self::pcs_succ], after the terminator's operands have been read.
+        // places away. [Self::finish_terminator] emits them after the operands
+        // have been read, then records a snapshot before the edge repacks.
         // Terminators that do not go through [Self::pcs_succ] have no
         // successor state to re-pack for.
         for phase in [
@@ -1973,6 +1991,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 // A `Drop`'s semantics (releasing the dropped place's
                 // permission via a weaken exhale) are carried by the PCG
                 // statements, so only its goto remains to be encoded here.
+                self.finish_terminator(location)?;
                 self.pcs_succ_to(*target)?;
                 let set_flag = self.set_from_to_flag(location.block, *target);
                 self.stmt(set_flag);
@@ -1982,6 +2001,12 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             mir::TerminatorKind::SwitchInt { discr, targets } => {
                 let discr_ty_rs = discr.ty(self.local_decls, self.vcx.tcx());
                 let discr_ty = self.ty_use_pure(discr_ty_rs).expect_primitive();
+
+                let discr_ex =
+                    discr_ty.snap_to_prim(self.encode_operand_snap(discr, &None)?.downcast_ty());
+                let discr_tmp = self.new_tmp(discr_ex.ty());
+                self.stmt(self.vcx.mk_pure_assign_stmt(discr_tmp, discr_ex));
+                self.finish_terminator(location)?;
 
                 let goto_targets = self.vcx.alloc_slice(
                     &targets
@@ -2007,13 +2032,8 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                     self.collect_pcs_succ_at(otherwise_succ_idx, targets.otherwise())?;
                 otherwise_stmts.push(self.set_from_to_flag(location.block, targets.otherwise()));
 
-                let discr_ex = discr_ty.snap_to_prim(
-                    self.encode_operand_snap(discr, &None)
-                        .unwrap()
-                        .downcast_ty(),
-                );
                 self.vcx.mk_goto_if_stmt(
-                    discr_ex.as_dyn(), // self.vcx.mk_local_ex(discr_name),
+                    discr_tmp.as_dyn(),
                     goto_targets,
                     goto_otherwise,
                     self.vcx.alloc_slice(&otherwise_stmts),
@@ -2144,6 +2164,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
 
                 match *target {
                     Some(target) => {
+                        self.finish_terminator(location)?;
                         self.pcs_succ_to(target)?;
                         let set_flag = self.set_from_to_flag(location.block, target);
                         self.stmt(set_flag);
@@ -2227,6 +2248,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 // The check is the terminator's main effect, emitted before
                 // the deferred `PostMain` re-pack, which may fold the place
                 // the condition projects into.
+                self.finish_terminator(location)?;
                 self.pcs_succ_to(*target)?;
                 let set_flag = self.set_from_to_flag(location.block, *target);
                 self.stmt(set_flag);

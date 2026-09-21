@@ -201,23 +201,26 @@ impl TaskEncoder for MirSpecEnc {
             )?;
             let specs = deps
                 .require_dep::<crate::encoders::SpecEnc>(crate::encoders::SpecEncTask { def_id })?;
+            let (pres, pres_inherited) = crate::encoders::spec_items(&specs.pres);
+            let (posts, posts_inherited) = crate::encoders::spec_items(&specs.posts);
+            let (pledges, pledges_inherited) = crate::encoders::spec_items(&specs.pledges);
             let pre_ctx = SpecEncCtx {
                 extern_spec: specs.extern_spec,
                 enc_mode,
                 context_def_id,
-                substs: substs_for(specs.pres.inherited),
+                substs: substs_for(pres_inherited),
             };
             let post_ctx = SpecEncCtx {
                 extern_spec: specs.extern_spec,
                 enc_mode,
                 context_def_id,
-                substs: substs_for(specs.posts.inherited),
+                substs: substs_for(posts_inherited),
             };
             let pledge_ctx = SpecEncCtx {
                 extern_spec: specs.extern_spec,
                 enc_mode,
                 context_def_id,
-                substs: substs_for(specs.pledges.inherited),
+                substs: substs_for(pledges_inherited),
             };
 
             let local_iter = (1..=local_defs.arg_count).map(mir::Local::from);
@@ -247,9 +250,7 @@ impl TaskEncoder for MirSpecEnc {
             // it uses an unsupported feature), report the error at *that spec's*
             // span and skip only it, keeping the permission contract and the other
             // specs intact.
-            let pres: Vec<(vir::ExprBool<'_>, Span)> = specs
-                .pres
-                .items
+            let pres: Vec<(vir::ExprBool<'_>, Span)> = pres
                 .iter()
                 .filter_map(|spec_def_id| {
                     let spec = Self::encode_pure(vcx, deps, pre_ctx, *spec_def_id, "precondition")?;
@@ -277,9 +278,7 @@ impl TaskEncoder for MirSpecEnc {
                 }
                 MirSpecEncMode::PureWithResult | MirSpecEncMode::PureWithoutResult => all_args,
             };
-            let posts: Vec<(vir::ExprBool<'_>, Span)> = specs
-                .posts
-                .items
+            let posts: Vec<(vir::ExprBool<'_>, Span)> = posts
                 .iter()
                 .filter_map(|spec_def_id| {
                     let span = vcx.tcx().def_span(spec_def_id);
@@ -299,9 +298,7 @@ impl TaskEncoder for MirSpecEnc {
                     })
                 })
                 .collect();
-            let pledges = specs
-                .pledges
-                .items
+            let pledges = pledges
                 .iter()
                 .filter_map(
                     |Pledge {

@@ -25,6 +25,31 @@ impl PartialEq for () {
     fn eq(&self, _other: &()) -> bool;
 }
 
+/// Relates `PartialEq` on the primitive types to their built-in comparison.
+/// Without this the impls are encoded as uninterpreted functions, which is
+/// invisible for a direct `a == b` (that compiles to a `BinOp`) but blocks
+/// any generic specification that reaches them, e.g. `PartialEq for
+/// Option<T>` comparing its payloads at `T`.
+///
+/// The right hand side is the built-in comparison rather than snapshot
+/// equality, so this also holds for the floats, where `NaN` is equal to
+/// nothing, itself included.
+macro_rules! impl_partial_eq_primitive {
+    ($($ty:ty),*) => {$(
+        #[extern_spec]
+        impl PartialEq for $ty {
+            #[trusted]
+            #[pure]
+            #[ensures(result == (*self == *other))]
+            fn eq(&self, other: &$ty) -> bool;
+        }
+    )*};
+}
+
+impl_partial_eq_primitive!(
+    bool, char, i8, i16, i32, i64, i128, isize, u8, u16, u32, u64, u128, usize, f32, f64
+);
+
 #[extern_spec]
 impl<T: PartialEq> PartialEq for Option<T> {
     #[trusted]

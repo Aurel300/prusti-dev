@@ -205,19 +205,19 @@ impl TaskEncoder for MirSpecEnc {
                 extern_spec: specs.extern_spec,
                 enc_mode,
                 context_def_id,
-                substs: substs_for(specs.pres_inherited),
+                substs: substs_for(specs.pres.inherited),
             };
             let post_ctx = SpecEncCtx {
                 extern_spec: specs.extern_spec,
                 enc_mode,
                 context_def_id,
-                substs: substs_for(specs.posts_inherited),
+                substs: substs_for(specs.posts.inherited),
             };
             let pledge_ctx = SpecEncCtx {
                 extern_spec: specs.extern_spec,
                 enc_mode,
                 context_def_id,
-                substs: substs_for(specs.pledges_inherited),
+                substs: substs_for(specs.pledges.inherited),
             };
 
             let local_iter = (1..=local_defs.arg_count).map(mir::Local::from);
@@ -249,6 +249,7 @@ impl TaskEncoder for MirSpecEnc {
             // specs intact.
             let pres: Vec<(vir::ExprBool<'_>, Span)> = specs
                 .pres
+                .items
                 .iter()
                 .filter_map(|spec_def_id| {
                     let spec = Self::encode_pure(vcx, deps, pre_ctx, *spec_def_id, "precondition")?;
@@ -278,6 +279,7 @@ impl TaskEncoder for MirSpecEnc {
             };
             let posts: Vec<(vir::ExprBool<'_>, Span)> = specs
                 .posts
+                .items
                 .iter()
                 .filter_map(|spec_def_id| {
                     let span = vcx.tcx().def_span(spec_def_id);
@@ -299,6 +301,7 @@ impl TaskEncoder for MirSpecEnc {
                 .collect();
             let pledges = specs
                 .pledges
+                .items
                 .iter()
                 .filter_map(
                     |Pledge {

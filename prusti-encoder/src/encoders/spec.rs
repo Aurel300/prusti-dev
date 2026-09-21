@@ -17,15 +17,21 @@ pub struct SpecEnc;
 
 pub type SpecEncError = ();
 
+/// The specification items of one kind, together with where they come from:
+/// `inherited` holds when they are the trait item's rather than written on
+/// the item being encoded, and so are expressed in the trait's generics.
+#[derive(Clone, Copy, Debug)]
+pub struct Specs<'vir, T> {
+    pub items: &'vir [T],
+    pub inherited: bool,
+}
+
 #[derive(Clone, Debug)]
 pub struct SpecEncOutput<'vir> {
     pub extern_spec: Option<ExternSpecKind>,
-    pub pres: &'vir [DefId],
-    pub pres_inherited: bool,
-    pub posts: &'vir [DefId],
-    pub posts_inherited: bool,
-    pub pledges: &'vir [Pledge],
-    pub pledges_inherited: bool,
+    pub pres: Specs<'vir, DefId>,
+    pub posts: Specs<'vir, DefId>,
+    pub pledges: Specs<'vir, Pledge>,
 }
 
 thread_local! {
@@ -207,40 +213,48 @@ impl TaskEncoder for SpecEnc {
                     (specs.extern_spec, pres, posts, pledges)
                 },
             )
-            .unwrap_or((None, (&[], false), (&[], false), (&[], false)));
-            let (pres, pres_inherited) = pres;
-            let (posts, posts_inherited) = posts;
-            let (pledges, pledges_inherited) = pledges;
-            let pledges = vcx.alloc_slice(
-                &pledges
-                    .iter()
-                    .map(|pledge| Pledge::new(pledge.lhs, pledge.rhs))
-                    .collect::<Vec<_>>(),
-            );
+            .unwrap_or((None, Specs::empty(), Specs::empty(), Specs::empty()));
+            let pledges = Specs {
+                items: vcx.alloc_slice(
+                    &pledges
+                        .items
+                        .iter()
+                        .map(|pledge| Pledge::new(pledge.lhs, pledge.rhs))
+                        .collect::<Vec<_>>(),
+                ),
+                inherited: pledges.inherited,
+            };
             Ok((
                 (),
                 SpecEncOutput {
                     extern_spec,
                     pres,
-                    pres_inherited,
                     posts,
-                    posts_inherited,
                     pledges,
-                    pledges_inherited,
                 },
             ))
         })
     }
 }
 
+impl<'vir, T> Specs<'vir, T> {
+    fn new(items: &'vir [T], inherited: bool) -> Self {
+        Self { items, inherited }
+    }
+
+    fn empty() -> Self {
+        Self::new(&[], false)
+    }
+}
+
 fn get_spec_items<'vir, T: Copy>(
     vcx: &'vir VirCtxt<'_>,
     spec: &SpecificationItem<Vec<T>>,
-) -> (&'vir [T], bool) {
+) -> Specs<'vir, T> {
     match spec {
-        SpecificationItem::Inherent(items) => (vcx.alloc_slice(items), false),
-        SpecificationItem::Inherited(items) => (vcx.alloc_slice(items), true),
-        SpecificationItem::Empty => (&[], false),
+        SpecificationItem::Inherent(items) => Specs::new(vcx.alloc_slice(items), false),
+        SpecificationItem::Inherited(items) => Specs::new(vcx.alloc_slice(items), true),
+        SpecificationItem::Empty => Specs::empty(),
         SpecificationItem::Refined(_from, to) => {
             // Here we ignore the original specs: to get to this branch, the
             // task key given to `SpecEnc` was the `DefId` of an trait method
@@ -250,7 +264,7 @@ fn get_spec_items<'vir, T: Copy>(
             // At callsites, `MethodCallEnc` will direct the call to the stub
             // method, which uses the `DefId` of the trait item for emitting
             // its specifications.
-            (vcx.alloc_slice(to), false)
+            Specs::new(vcx.alloc_slice(to), false)
         }
     }
 }

@@ -27,6 +27,7 @@ use pcg::{
 };
 use prusti_interface::PrustiError;
 use prusti_rustc_interface::{
+    abi,
     data_structures::graph::Successors,
     index::Idx,
     middle::{
@@ -272,6 +273,19 @@ enum EncodeRvalueError<'vir, E: TaskEncoder> {
 impl<'vir, E: TaskEncoder> From<EncodeFullError<'vir, E>> for EncodeRvalueError<'vir, E> {
     fn from(e: EncodeFullError<'vir, E>) -> Self {
         EncodeRvalueError::EncoderError(e)
+    }
+}
+
+fn spec_block_field_ty<'vir>(
+    ty: ty::Ty<'vir>,
+    f: abi::FieldIdx,
+    tcx: ty::TyCtxt<'vir>,
+) -> ty::Ty<'vir> {
+    match ty.kind() {
+        TyKind::Tuple(tys) => tys[f.index()],
+        TyKind::Adt(adt_def, args) => adt_def.non_enum_variant().fields[f].ty(tcx, args),
+        TyKind::Closure(_, args) => args.as_closure().upvar_tys()[f.index()],
+        other => unreachable!("field of non-structlike type {other:?}"),
     }
 }
 
@@ -1630,16 +1644,67 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             kind: PureKind::SpecBlock(spec_block),
         })?;
         use vir::Reify;
-        let locals: FxHashMap<mir::Local, _> = enc_output
-            .inputs
-            .iter()
-            .map(|local| (*local, self.local_defs[*local].impure_snap))
-            .collect();
+        let mut places_by_local: FxHashMap<mir::Local, Vec<Place<'vir>>> = FxHashMap::default();
+        for place in enc_output.inputs.iter().copied() {
+            places_by_local.entry(place.local).or_default().push(place);
+        }
+        let mut locals: FxHashMap<mir::Local, vir::ExprSnap<'vir>> = FxHashMap::default();
+        for (local, places) in places_by_local {
+            let snap = self.encode_spec_block_input_snap(local, &places)?;
+            locals.insert(local, snap);
+        }
+
         let expr = enc_output
             .expr
             .reify(self.vcx, (self.def_id, self.vcx.alloc(locals)))
             .downcast_ty();
         Ok(expr)
+    }
+
+    fn encode_spec_block_input_snap(
+        &mut self,
+        local: mir::Local,
+        places: &[Place<'vir>],
+    ) -> EncodeResult<'vir, vir::ExprSnap<'vir>, E> {
+        let local_ty = self.local_decls[local].ty;
+        let fields: Option<Vec<(abi::FieldIdx, Place<'vir>)>> = places
+            .iter()
+            .map(|place| match place.projection {
+                [mir::ProjectionElem::Field(fidx, _)] => Some((*fidx, *place)),
+                _ => None,
+            })
+            .collect();
+        let Some(fields) = fields else {
+            return Ok(self.local_defs[local].impure_snap);
+        };
+        let Some(struct_data) = self.ty_use_pure(local_ty).get_structlike() else {
+            return Ok(self.local_defs[local].impure_snap);
+        };
+        let field_count = struct_data.fields.len();
+
+        let mut field_snaps = Vec::with_capacity(field_count);
+        for idx in 0..field_count {
+            let fidx = abi::FieldIdx::from_usize(idx);
+            if let Some((_, place)) = fields.iter().find(|(f, _)| *f == fidx) {
+                field_snaps.push(self.encode_place_with_snap(*place)?.1);
+            } else {
+                // The field is unused in the spec block. It may be moved out. Therefore, only use a temporary value for
+                // the snapshot. This is sound since the fields are not used in the snapshot anyway.
+                let field_ty = spec_block_field_ty(local_ty, fidx, self.vcx.tcx());
+                let ty_task = RustTyDecomposition::from_ty(field_ty, self.def_id);
+                let snapshot_ty = self
+                    .deps
+                    .require_ref::<TyUsePureEnc>(ty_task)
+                    .unwrap()
+                    .snapshot;
+                field_snaps.push(self.new_tmp(snapshot_ty));
+            }
+        }
+        Ok(self
+            .ty_use_pure(local_ty)
+            .expect_structlike()
+            .field_snaps_to_snap(field_snaps)
+            .upcast_ty())
     }
 
     fn visit_basic_block_data(

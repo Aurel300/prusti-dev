@@ -1,7 +1,6 @@
-use prusti_rustc_interface::middle::{mir, ty};
+use prusti_rustc_interface::middle::{mir, mir::BinOp, ty};
 use task_encoder::{
-    EncodeFullError, EncodeFullResult, Program, TaskEncoder, TaskEncoderDependencies,
-    TaskEncoderError,
+    EncodeFullError, EncodeFullResult, TaskEncoder, TaskEncoderDependencies,
 };
 use vir::{CastType, FunctionIdn};
 
@@ -79,20 +78,12 @@ impl TaskEncoder for MirBuiltinBinOpEnc {
                 let ty = RustTyDecomposition::identity(ty);
                 deps.require_dep::<TyUsePureEnc>(ty)
             };
-            let res = encode(lhs_ty)?;
-            if let TySpecifics::Raw(..) = res.specifics {
-                return Err(EncodeFullError::EncodingError(
-                    MirBuiltinBinOpEncError::Unsupported(
-                        "Binops on raw pointers are not supported yet.".to_string(),
-                    ),
-                    None,
-                ));
-            }
-            let (l_ty_prim, l_ty_snap) = (res.expect_primitive(), res.snapshot.downcast_ty());
-            let res = encode(rhs_ty)?;
-            let (r_ty_prim, r_ty_snap) = (res.expect_primitive(), res.snapshot.downcast_ty());
-            let res = encode(result_ty.ty)?;
-            let res_ty_snap = res.snapshot.downcast_ty();
+            let lhs_ty_data = encode(lhs_ty)?;
+            let l_ty_snap = lhs_ty_data.snapshot.downcast_ty();
+            let rhs_ty_data = encode(rhs_ty)?;
+            let r_ty_snap = rhs_ty_data.snapshot.downcast_ty();
+            let res_ty_data = encode(result_ty.ty)?;
+            let res_ty_snap = res_ty_data.snapshot.downcast_ty();
 
             let name = vir::vir_format_identifier!(
                 vcx,
@@ -101,36 +92,60 @@ impl TaskEncoder for MirBuiltinBinOpEnc {
                 rhs_ty.name()
             );
             let fn_idn = FunctionIdn::new(name, (l_ty_snap, r_ty_snap), res_ty_snap);
-
             let lhs_decl = vcx.mk_local_decl("arg1", l_ty_snap);
             let rhs_decl = vcx.mk_local_decl("arg2", r_ty_snap);
             let lhs = vcx.mk_local_ex(lhs_decl);
             let rhs = vcx.mk_local_ex(rhs_decl);
-            let (pres, body) = match l_ty_prim.kind {
-                TyPurePrimDataKind::Bool | TyPurePrimDataKind::Int(_) => {
-                    let lhs = l_ty_prim.snap_to_prim(lhs);
-                    let rhs = r_ty_prim.snap_to_prim(rhs);
-                    // `l_ty` is the type the operation is performed in. The operands
-                    // do not always share a type (e.g. a shift's amount may be a
-                    // different integer type than the shifted value), so we do not
-                    // require `lhs_ty == rhs_ty` here.
-                    let l_ty = *lhs_ty.expect_primitive();
 
-                    if op.is_overflowing() {
-                        let val =
-                            Self::handle_bin_op_overflowing(vcx, deps, result_ty, op, lhs, rhs)?;
-                        (Vec::new(), val)
-                    } else {
-                        let res_ty = *result_ty.ty.expect_primitive();
-                        let (pres, val) =
-                            Self::handle_bin_op_native(vcx, lhs, rhs, res_ty, op, l_ty)?;
-                        (pres, res.expect_primitive().prim_to_snap(val))
-                    }
+            let (pres, body) = if let TySpecifics::Raw(..) = lhs_ty_data.specifics {
+                if op != BinOp::Eq {
+                    return Err(EncodeFullError::EncodingError(
+                        MirBuiltinBinOpEncError::Unsupported(
+                            "Binops other than Eq on raw pointers are not supported.".to_string(),
+                        ),
+                        None,
+                    ));
                 }
-                TyPurePrimDataKind::Float(float) => {
-                    assert!(matches!(r_ty_prim.kind, TyPurePrimDataKind::Float(_)));
-                    let body = Self::handle_bin_op_float(vcx, lhs, rhs, op, float);
-                    (Vec::new(), body)
+                let lhs_decl = vcx.mk_local_decl("arg1", l_ty_snap);
+                let rhs_decl = vcx.mk_local_decl("arg2", r_ty_snap);
+                let lhs = vcx.mk_local_ex(lhs_decl);
+                let rhs = vcx.mk_local_ex(rhs_decl);
+                (
+                    Vec::new(),
+                    res_ty_data
+                        .expect_primitive()
+                        .prim_to_snap(vcx.mk_eq_expr(lhs, rhs).upcast_ty()),
+                )
+            } else {
+                let l_ty_prim = lhs_ty_data.expect_primitive();
+                let r_ty_prim = rhs_ty_data.expect_primitive();
+                match l_ty_prim.kind {
+                    TyPurePrimDataKind::Bool | TyPurePrimDataKind::Int(_) => {
+                        let lhs = l_ty_prim.snap_to_prim(lhs);
+                        let rhs = r_ty_prim.snap_to_prim(rhs);
+                        // `l_ty` is the type the operation is performed in. The operands
+                        // do not always share a type (e.g. a shift's amount may be a
+                        // different integer type than the shifted value), so we do not
+                        // require `lhs_ty == rhs_ty` here.
+                        let l_ty = *lhs_ty.expect_primitive();
+
+                        if op.is_overflowing() {
+                            let val = Self::handle_bin_op_overflowing(
+                                vcx, deps, result_ty, op, lhs, rhs,
+                            )?;
+                            (Vec::new(), val)
+                        } else {
+                            let res_ty = *result_ty.ty.expect_primitive();
+                            let (pres, val) =
+                                Self::handle_bin_op_native(vcx, lhs, rhs, res_ty, op, l_ty)?;
+                            (pres, res_ty_data.expect_primitive().prim_to_snap(val))
+                        }
+                    }
+                    TyPurePrimDataKind::Float(float) => {
+                        assert!(matches!(r_ty_prim.kind, TyPurePrimDataKind::Float(_)));
+                        let body = Self::handle_bin_op_float(vcx, lhs, rhs, op, float);
+                        (Vec::new(), body)
+                    }
                 }
             };
             let pres = vcx.alloc_slice(&pres);
@@ -144,34 +159,6 @@ impl TaskEncoder for MirBuiltinBinOpEnc {
         for function in Self::all_outputs_local_no_errors(program) {
             program.add_function(function);
         }
-    }
-
-    fn all_outputs_local_no_errors<'vir>(
-        program: &mut Program<'vir>,
-    ) -> Vec<Self::OutputFullLocal<'vir>>
-    where
-        Self: 'vir,
-    {
-        let (outputs, errored) = Self::all_outputs_local();
-        for (key, error, spans) in errored {
-            let span = spans
-                .into_iter()
-                .next()
-                .unwrap_or(prusti_rustc_interface::span::DUMMY_SP);
-            let msg = match error {
-                TaskEncoderError::EncodingError(MirBuiltinBinOpEncError::Unsupported(..)) => {
-                    continue;
-                }
-                other => format!(
-                    "encoder '{}' failed to encode {:?}:\n {:?}",
-                    Self::ENCODER_NAME,
-                    key,
-                    other
-                ),
-            };
-            program.encoder_errors().push((msg, span));
-        }
-        outputs
     }
 }
 

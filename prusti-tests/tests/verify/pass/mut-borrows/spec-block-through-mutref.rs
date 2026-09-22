@@ -4,9 +4,8 @@ pub struct S {
     v: i32,
 }
 
-// The value behind a mutable reference lives in the heap rather than in the
-// reference's snapshot, so a spec block has to read it from there, just like a
-// pre/postcondition does.
+// A mutable reference's referent lives in the heap rather than in its
+// snapshot, so a spec block reads it from there like a pre/postcondition does.
 
 #[requires(s.v == 5)]
 #[ensures(s.v == 5)]
@@ -26,4 +25,12 @@ fn bumped(s: &mut S) {
 fn through_a_reborrow(s: &mut S) {
     let r = &mut *s;
     prusti_assert!(r.v == 5);
+}
+
+fn shared_reborrow_in_a_match(x: &mut Option<i32>) {
+    let r = &mut *x;
+    prusti_assert!(match &*r {
+        Some(v) => *v == *v,
+        None => true,
+    });
 }

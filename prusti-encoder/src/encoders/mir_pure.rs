@@ -388,9 +388,10 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
             rel0_mode: false,
             rel1_mode: false,
             before_expiry_mode: false,
-            // Specs of an impure method get shallow argument snapshots,
-            // whether they are its pre/post or a block in its body; a pure
-            // function's spec is handed deep ones.
+            // An impure method's specs and contained spec blocks get shallow
+            // argument snapshots (and can take a snapshot of the predicates
+            // behind `&mut`s). Pure functions currently also only get shallow
+            // snapshots but cannot get the value behind `&mut`s.
             impure_context: matches!(
                 kind,
                 PureKind::Spec {
@@ -993,6 +994,18 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
             mir::Rvalue::Use(op) => self.encode_operand_snap(op, curr_ver),
             mir::Rvalue::Ref(_, kind, place) => {
                 let rvalue_snapshot_encoding = self.ty_use(rvalue_ty);
+                // Reading a mutable reference's referent needs an address
+                // holding a predicate, which pure-created mutrefs don't have.
+                if kind.mutability().is_mut() {
+                    return Err(self.unsupported_rvalue(
+                        format!(
+                            "mutable borrow of `{}` in a specification: take a shared \
+                             reference (`&`) instead",
+                            place.ty(self.body, self.vcx.tcx()).ty
+                        ),
+                        self.current_span(),
+                    ));
+                }
                 let encoded_place = self.encode_place_with_ref(curr_ver, (*place).into())?;
                 // We want to distinguish if `place` is a value that lives
                 // in pure code or not. If it lives in impure (the only way
@@ -1115,12 +1128,9 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
                         let metadata = e_ty.metadata_access(snap);
                         let ref_expr = e_ty.deref_access(snap);
                         if !self.impure_context {
-                            // Every mutable-reference snapshot is shallow: the
-                            // value field is left unconstrained wherever one is
-                            // built (see `p_Ref_mutable_arbitrary_value`, which
-                            // fixes only the address and the metadata). Reading
-                            // it would yield a value no caller ever relates to
-                            // the referent.
+                            // The value field of a mutable reference's snapshot
+                            // is never constrained to the referent (see
+                            // `p_Ref_mutable_arbitrary_value`).
                             return Err(self.unsupported_rvalue(
                                 format!(
                                     "dereference of the mutable reference `{}` in pure code",

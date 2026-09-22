@@ -95,57 +95,45 @@ impl TaskEncoder for MirBuiltinBinOpEnc {
             let lhs = vcx.mk_local_ex(lhs_decl);
             let rhs = vcx.mk_local_ex(rhs_decl);
 
-            let (pres, body) = if let TySpecifics::Raw(..) = lhs_ty_data.specifics {
-                if op != BinOp::Eq {
-                    return Err(EncodeFullError::EncodingError(
-                        MirBuiltinBinOpEncError::Unsupported(
-                            "Binops other than Eq on raw pointers are not supported.".to_string(),
-                        ),
-                        None,
-                    ));
+            let (pres, body) = match lhs_ty_data.specifics {
+                TySpecifics::Raw(..) => {
+                    let body = Self::handle_bin_op_raw(vcx, lhs, rhs, op)?;
+                    (Vec::new(), body)
                 }
-                let lhs_decl = vcx.mk_local_decl("arg1", l_ty_snap);
-                let rhs_decl = vcx.mk_local_decl("arg2", r_ty_snap);
-                let lhs = vcx.mk_local_ex(lhs_decl);
-                let rhs = vcx.mk_local_ex(rhs_decl);
-                (
-                    Vec::new(),
-                    res_ty_data
-                        .expect_primitive()
-                        .prim_to_snap(vcx.mk_eq_expr(lhs, rhs).upcast_ty()),
-                )
-            } else {
-                let l_ty_prim = lhs_ty_data.expect_primitive();
-                let r_ty_prim = rhs_ty_data.expect_primitive();
-                match l_ty_prim.kind {
-                    TyPurePrimDataKind::Bool | TyPurePrimDataKind::Int(_) => {
-                        let lhs = l_ty_prim.snap_to_prim(lhs);
-                        let rhs = r_ty_prim.snap_to_prim(rhs);
-                        // `l_ty` is the type the operation is performed in. The operands
-                        // do not always share a type (e.g. a shift's amount may be a
-                        // different integer type than the shifted value), so we do not
-                        // require `lhs_ty == rhs_ty` here.
-                        let l_ty = *lhs_ty.expect_primitive();
+                TySpecifics::Primitive(l_ty_prim) => {
+                    let r_ty_prim = rhs_ty_data.expect_primitive();
+                    match l_ty_prim.kind {
+                        TyPurePrimDataKind::Bool | TyPurePrimDataKind::Int(_) => {
+                            let lhs = l_ty_prim.snap_to_prim(lhs);
+                            let rhs = r_ty_prim.snap_to_prim(rhs);
+                            // `l_ty` is the type the operation is performed in. The operands
+                            // do not always share a type (e.g. a shift's amount may be a
+                            // different integer type than the shifted value), so we do not
+                            // require `lhs_ty == rhs_ty` here.
+                            let l_ty = *lhs_ty.expect_primitive();
 
-                        if op.is_overflowing() {
-                            let val = Self::handle_bin_op_overflowing(
-                                vcx, deps, result_ty, op, lhs, rhs,
-                            )?;
-                            (Vec::new(), val)
-                        } else {
-                            let res_ty = *result_ty.ty.expect_primitive();
-                            let (pres, val) =
-                                Self::handle_bin_op_native(vcx, lhs, rhs, res_ty, op, l_ty)?;
-                            (pres, res_ty_data.expect_primitive().prim_to_snap(val))
+                            if op.is_overflowing() {
+                                let val = Self::handle_bin_op_overflowing(
+                                    vcx, deps, result_ty, op, lhs, rhs,
+                                )?;
+                                (Vec::new(), val)
+                            } else {
+                                let res_ty = *result_ty.ty.expect_primitive();
+                                let (pres, val) =
+                                    Self::handle_bin_op_native(vcx, lhs, rhs, res_ty, op, l_ty)?;
+                                (pres, res_ty_data.expect_primitive().prim_to_snap(val))
+                            }
+                        }
+                        TyPurePrimDataKind::Float(float) => {
+                            assert!(matches!(r_ty_prim.kind, TyPurePrimDataKind::Float(_)));
+                            let body = Self::handle_bin_op_float(vcx, lhs, rhs, op, float);
+                            (Vec::new(), body)
                         }
                     }
-                    TyPurePrimDataKind::Float(float) => {
-                        assert!(matches!(r_ty_prim.kind, TyPurePrimDataKind::Float(_)));
-                        let body = Self::handle_bin_op_float(vcx, lhs, rhs, op, float);
-                        (Vec::new(), body)
-                    }
                 }
+                _ => unreachable!(),
             };
+
             let pres = vcx.alloc_slice(&pres);
             let function =
                 vcx.mk_function(fn_idn, (lhs_decl, rhs_decl), pres, &[], None, Some(body));
@@ -322,6 +310,54 @@ impl MirBuiltinBinOpEnc {
                 // this is handled separately, earlier
                 Cmp => unreachable!(),
             })
+        }
+    }
+
+    fn handle_bin_op_raw<'vir>(
+        vcx: &'vir vir::VirCtxt<'vir>,
+        lhs: vir::ExprCSnap<'vir>,
+        rhs: vir::ExprCSnap<'vir>,
+        op: mir::BinOp,
+    ) -> EncodeResult<'vir, vir::ExprCSnap<'vir>> {
+        match op {
+            BinOp::Eq => Ok(vcx.mk_eq_expr(lhs, rhs).upcast_ty()),
+            BinOp::Ne => {
+                let eq = vcx.mk_eq_expr(lhs, rhs).upcast_ty();
+                let ne = vcx.mk_unary_op_expr(vir::UnOpKind::Not, eq);
+                Ok(ne.downcast_ty::<vir::Bool>().upcast_ty())
+            }
+            // We do not encode addresses as Ints yet
+            // We cannot compare Viper refs using <, <=, >=, >, or use offset
+            BinOp::Lt | BinOp::Le | BinOp::Ge | BinOp::Gt => Err(EncodeFullError::EncodingError(
+                MirBuiltinBinOpEncError::Unsupported(format!(
+                    "ordering comparison `{op:?}` on raw pointers"
+                )),
+                None,
+            )),
+            BinOp::Offset => Err(EncodeFullError::EncodingError(
+                MirBuiltinBinOpEncError::Unsupported("pointer offset".to_string()),
+                None,
+            )),
+            // Raw pointers support no arithmetic, bitwise, or shift operators
+            BinOp::Add
+            | BinOp::AddUnchecked
+            | BinOp::AddWithOverflow
+            | BinOp::Sub
+            | BinOp::SubUnchecked
+            | BinOp::SubWithOverflow
+            | BinOp::Mul
+            | BinOp::MulUnchecked
+            | BinOp::MulWithOverflow
+            | BinOp::Div
+            | BinOp::Rem
+            | BinOp::BitXor
+            | BinOp::BitAnd
+            | BinOp::BitOr
+            | BinOp::Shl
+            | BinOp::ShlUnchecked
+            | BinOp::Shr
+            | BinOp::ShrUnchecked
+            | BinOp::Cmp => unreachable!("`{op:?}` cannot occur on raw pointer operands"),
         }
     }
 

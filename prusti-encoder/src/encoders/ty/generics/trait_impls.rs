@@ -59,7 +59,7 @@ impl TaskEncoder for TraitImplEnc {
             let impl_context = GParams::from(*task_key);
 
             let trait_ref = tcx.impl_trait_ref(*task_key).instantiate_identity();
-            let trait_did = trait_ref.skip_norm_wip().def_id;
+            let trait_did = trait_ref.skip_normalization().def_id;
             let trait_data = deps.require_ref::<TraitEnc>(trait_did)?;
             let trait_name = trait_data.trait_name;
 
@@ -68,7 +68,7 @@ impl TaskEncoder for TraitImplEnc {
             let implementing_ty = tcx
                 .type_of(*task_key)
                 .instantiate_identity()
-                .skip_norm_wip();
+                .skip_normalization();
             let implementing_ty = RustTyDecomposition::from_ty(implementing_ty, impl_context);
             let implementing_ty = implementing_ty.ty.name();
 
@@ -532,7 +532,7 @@ impl TraitImplEnc {
                     let ty = tcx
                         .type_of(proj_pred.def_id())
                         .instantiate_identity()
-                        .skip_norm_wip();
+                        .skip_normalization();
                     let const_task = ConstEncTask::Ty {
                         const_,
                         ty,
@@ -800,7 +800,10 @@ fn impl_name<'vir>(vcx: &'vir vir::VirCtxt<'vir>, impl_did: DefId) -> &'vir str 
     let krate = tcx.crate_name(impl_did.krate);
     let trait_did = tcx.impl_trait_ref(impl_did).skip_binder().def_id;
     let trait_name = ViperIdent::from_def_id(vcx, trait_did);
-    let implementing_ty = tcx.type_of(impl_did).instantiate_identity().skip_norm_wip();
+    let implementing_ty = tcx
+        .type_of(impl_did)
+        .instantiate_identity()
+        .skip_normalization();
     let implementing_ty = RustTyDecomposition::from_ty(implementing_ty, GParams::from(impl_did));
     let implementing_ty = implementing_ty.ty.name();
     vir::vir_format!(vcx, "{trait_name}_impl_{krate}_{implementing_ty}_{idx}")
@@ -824,7 +827,7 @@ pub(super) fn impl_unlock_keys<'vir>(impl_did: DefId) -> Vec<RustTy<'vir>> {
         let impl_trait_ref = tcx
             .impl_trait_ref(impl_did)
             .instantiate_identity()
-            .skip_norm_wip();
+            .skip_normalization();
         fn collect_ctor_keys<'vir>(ty: ty::Ty<'vir>, ctx: DefId, out: &mut Vec<RustTy<'vir>>) {
             let decomp = RustTyDecomposition::from_ty(ty, ctx);
             if decomp.ty.specifics.is_param() {
@@ -897,7 +900,7 @@ impl TaskEncoder for TraitImplItemEnc {
             let trait_ref = tcx
                 .impl_trait_ref(impl_did)
                 .instantiate_identity()
-                .skip_norm_wip();
+                .skip_normalization();
 
             let impl_item_context = GParams::from(impl_item_def_id);
             let impl_item_params = deps.require_dep::<GenericParamsEnc>(impl_item_context)?;
@@ -971,7 +974,7 @@ impl TaskEncoder for TraitImplItemEnc {
                         RustTyDecomposition::from_ty(
                             tcx.type_of(impl_item_def_id)
                                 .instantiate_identity()
-                                .skip_norm_wip(),
+                                .skip_normalization(),
                             impl_item_context,
                         ),
                     )?;

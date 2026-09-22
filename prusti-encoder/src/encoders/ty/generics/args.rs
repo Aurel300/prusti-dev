@@ -49,7 +49,7 @@ impl<'tcx> GArgs<'tcx> {
         let ty = vir::with_vcx(|vcx| {
             ty::EarlyBinder::bind(vcx.tcx(), ty).instantiate(vcx.tcx(), self.args)
         })
-        .skip_norm_wip();
+        .skip_normalization();
         // Normalize associated types
         self.context.normalize(ty)
     }
@@ -85,7 +85,7 @@ impl<'tcx> GArgs<'tcx> {
             let args = self.args.iter().map(|arg| {
                 ty::EarlyBinder::bind(vcx.tcx(), *arg)
                     .instantiate(vcx.tcx(), to_sub_in.args)
-                    .skip_norm_wip()
+                    .skip_normalization()
             });
             vcx.tcx().mk_args_from_iter(args)
         });

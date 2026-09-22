@@ -1,7 +1,5 @@
 use prusti_rustc_interface::middle::{mir, mir::BinOp, ty};
-use task_encoder::{
-    EncodeFullError, EncodeFullResult, TaskEncoder, TaskEncoderDependencies,
-};
+use task_encoder::{EncodeFullError, EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
 use vir::{CastType, FunctionIdn};
 
 use crate::encoders::ty::{

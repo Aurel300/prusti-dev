@@ -253,7 +253,7 @@ pub fn find_trait_method_substs<'tcx>(
     let impl_substs = ty::List::identity_for_item(tcx, impl_def_id);
     let trait_method_substs = tcx.mk_args_from_iter(
         call_trait_substs
-            .skip_norm_wip()
+            .skip_normalization()
             .iter()
             .chain(impl_method_substs.iter().copied().skip(impl_substs.len())),
     );

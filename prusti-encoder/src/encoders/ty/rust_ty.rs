@@ -774,7 +774,7 @@ impl<'tcx> TySpecifics<'tcx, RustTyDatas> {
                 RustFieldData {
                     name: field.name,
                     fid,
-                    ty: LazyRustTy(ty.skip_norm_wip()),
+                    ty: LazyRustTy(ty.skip_normalization()),
                     address: RustFieldAddress::Constant,
                 }
             })

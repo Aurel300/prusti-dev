@@ -146,7 +146,7 @@ impl<'tcx> EnvQuery<'tcx> {
         self.tcx
             .fn_sig(def_id.into_param())
             .instantiate_identity()
-            .skip_norm_wip()
+            .skip_normalization()
             .safety()
             == prusti_rustc_interface::hir::Safety::Unsafe
     }
@@ -163,7 +163,7 @@ impl<'tcx> EnvQuery<'tcx> {
         } else {
             self.tcx.fn_sig(def_id)
         };
-        sig.instantiate(self.tcx, substs).skip_norm_wip()
+        sig.instantiate(self.tcx, substs).skip_normalization()
     }
 
     /// Computes the signature of the function with subst applied and associated types resolved.
@@ -242,7 +242,7 @@ impl<'tcx> EnvQuery<'tcx> {
         let impl_substs = self.identity_substs(impl_def_id);
         let trait_method_substs = self.tcx.mk_args_from_iter(
             call_trait_substs
-                .skip_norm_wip()
+                .skip_normalization()
                 .iter()
                 .chain(impl_method_substs.iter().skip(impl_substs.len())),
         );

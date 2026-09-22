@@ -183,7 +183,7 @@ impl PrustiBuiltin {
                             tcx,
                             tcx.type_of(impl_def_id)
                                 .instantiate_identity()
-                                .skip_norm_wip(),
+                                .skip_normalization(),
                         )
                     });
             let self_ty_name = self_ty_name.as_ref().map(|name| name.as_str());

@@ -339,25 +339,7 @@ impl MirBuiltinBinOpEnc {
                 None,
             )),
             // Raw pointers support no arithmetic, bitwise, or shift operators
-            BinOp::Add
-            | BinOp::AddUnchecked
-            | BinOp::AddWithOverflow
-            | BinOp::Sub
-            | BinOp::SubUnchecked
-            | BinOp::SubWithOverflow
-            | BinOp::Mul
-            | BinOp::MulUnchecked
-            | BinOp::MulWithOverflow
-            | BinOp::Div
-            | BinOp::Rem
-            | BinOp::BitXor
-            | BinOp::BitAnd
-            | BinOp::BitOr
-            | BinOp::Shl
-            | BinOp::ShlUnchecked
-            | BinOp::Shr
-            | BinOp::ShrUnchecked
-            | BinOp::Cmp => unreachable!("`{op:?}` cannot occur on raw pointer operands"),
+            _ => unreachable!("`{op:?}` cannot occur on raw pointer operands"),
         }
     }
 

@@ -91,13 +91,12 @@ impl TaskEncoder for MirBuiltinBinOpEnc {
                 lhs_ty.name(),
                 rhs_ty.name()
             );
-
             let fn_idn = FunctionIdn::new(name, (l_ty_snap, r_ty_snap), res_ty_snap);
+
             let lhs_decl = vcx.mk_local_decl("arg1", l_ty_snap);
             let rhs_decl = vcx.mk_local_decl("arg2", r_ty_snap);
             let lhs = vcx.mk_local_ex(lhs_decl);
             let rhs = vcx.mk_local_ex(rhs_decl);
-
             let (pres, body) = match lhs_ty_data.specifics {
                 TySpecifics::Raw(..) => {
                     let body = Self::handle_bin_op_raw(vcx, lhs, rhs, op)?;

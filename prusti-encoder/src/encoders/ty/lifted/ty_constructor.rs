@@ -127,10 +127,4 @@ impl TyConstructorEnc {
     /// The name of the constructor for the unknown type variant in the `Type` ADT.
     pub const UNKNOWN_TYPE_NAME: &str = "Unknown_type";
     const UNKNOWN_TYPE_ID: &str = "id";
-
-    pub fn unknown_type_id_accessor<'vir>(
-        vcx: &'vir vir::VirCtxt<'vir>,
-    ) -> vir::AdtDestructor<'vir, vir::TyVal, vir::Int> {
-        vcx.mk_adt_destructor(Self::UNKNOWN_TYPE_ID, vir::TYPE_TYVAL, vir::TYPE_INT)
-    }
 }

@@ -271,7 +271,7 @@ impl TaskEncoder for TraitImplEnc {
                 ));
             }
 
-            // Make the impl visible to the trait's `impl_fun` disjunction.
+            // Make the impl visible to the trait's `impl_fun`.
             deps.require_dep::<TraitImplConditionEnc>(*task_key)?;
 
             Ok((methods, ()))
@@ -287,13 +287,14 @@ impl TaskEncoder for TraitImplEnc {
     }
 }
 
-/// Encodes the applicability condition of a trait impl: the check that a
-/// given instantiation of the trait's parameters matches this impl and that
-/// the impl's where-clauses hold. The per-item assumable content (associated
-/// type resolution, fn-spec axioms) is encoded individually and conditionally
-/// by [`TraitImplItemEnc`]. Unlike [`TraitImplEnc`], this is safe to run on
-/// foreign impls: it produces no proof obligations, so foreign impls are
-/// assumed - not re-verified - to be behavioural subtypes.
+/// Encodes the applicability condition of a trait impl: the axiom that the
+/// trait's `impl_fun` holds at the impl's trait ref wherever the impl's
+/// where-clauses do. The per-item assumable content (associated type
+/// resolution, fn-spec axioms) is encoded individually by
+/// [`TraitImplItemEnc`], guarded by the same where-clauses. Unlike
+/// [`TraitImplEnc`], this is safe to run on foreign impls: it produces no
+/// proof obligations, so foreign impls are assumed - not re-verified - to be
+/// behavioural subtypes.
 pub struct TraitImplConditionEnc;
 
 impl TaskEncoder for TraitImplConditionEnc {
@@ -301,14 +302,16 @@ impl TaskEncoder for TraitImplConditionEnc {
     const ENCODER_NAME: &'static str = "trait impl condition encoder";
 
     type TaskDescription<'vir> = DefId;
-    /// The implemented trait and the condition. This encoder does not have its
-    /// own `emit_outputs`, instead the output is consumed (any errors from
-    /// here are reported there) by `TraitEnc::emit_outputs`, which disjoins
-    /// the conditions into each trait's `impl_fun`.
-    type OutputFullLocal<'vir> = (DefId, vir::ExprBool<'vir>);
+    type OutputFullLocal<'vir> = Domain<'vir>;
 
     fn task_to_key<'vir>(task: &Self::TaskDescription<'vir>) -> Self::TaskKey<'vir> {
         *task
+    }
+
+    fn emit_outputs<'vir>(program: &mut task_encoder::Program<'vir>) {
+        for domain in Self::all_outputs_local_no_errors(program) {
+            program.add_domain(domain);
+        }
     }
 
     fn do_encode_full<'vir>(
@@ -319,12 +322,35 @@ impl TaskEncoder for TraitImplConditionEnc {
 
         vir::with_vcx(|vcx| {
             let tcx = vcx.tcx();
+            let impl_name = impl_name(vcx, *task_key);
 
             let impl_context = GParams::from(*task_key);
             let trait_ref = tcx.impl_trait_ref(task_key).unwrap().instantiate_identity();
-            let trait_did = trait_ref.def_id;
-            let condition = TraitImplEnc::impl_block_check(vcx, deps, impl_context, trait_ref)?;
-            Ok(((trait_did, condition), ()))
+            let trait_ = deps.require_ref::<TraitEnc>(trait_ref.def_id)?;
+            let args = deps.require_dep::<GArgsTyEnc>(GArgs::new(impl_context, trait_ref.args))?;
+            let impl_check = (trait_.impl_fun)(args.get_ty(), args.get_const());
+
+            // Triggering on the application at the impl's trait ref (rather
+            // than quantifying over the trait's parameters) keeps an impl's
+            // axiom from firing for applications it cannot match.
+            let axiom = TraitImplEnc::guarded_forall(
+                vcx,
+                deps,
+                *task_key,
+                *task_key,
+                &[],
+                impl_check.upcast_ty(),
+                impl_check,
+            )?;
+            let domain = vcx.mk_domain(
+                vir_format_identifier!(vcx, "trait_{impl_name}_condition"),
+                &[],
+                vcx.alloc_slice(&[vcx
+                    .mk_domain_axiom(vir_format_identifier!(vcx, "{impl_name}_condition"), axiom)]),
+                &[],
+                None,
+            );
+            Ok((domain, ()))
         })
     }
 }
@@ -450,89 +476,58 @@ impl TraitImplEnc {
         Ok(())
     }
 
-    pub(super) fn impl_block_check<'vir, E: TaskEncoder + 'vir + ?Sized>(
+    /// The where-clauses in force in `ctx`, stated over its parameters.
+    ///
+    /// With `bind_points`, the projection bounds are processed in an order in
+    /// which each only reads parameters already bound, and any parameter a
+    /// projection determines is added to `bind_points` (the parameters
+    /// initially in `bind_points` count as bound).
+    pub(crate) fn context_bounds<'vir, E: TaskEncoder + 'vir + ?Sized>(
         vcx: &'vir vir::VirCtxt<'vir>,
         deps: &mut TaskEncoderDependencies<'vir, E>,
-        impl_ctx: GParams<'vir>,
-        trait_ref: ty::TraitRef<'vir>,
-    ) -> Result<vir::ExprBool<'vir>, EncodeFullError<'vir, E>> {
+        ctx: GParams<'vir>,
+        mut bind_points: Option<&mut FxIndexMap<u32, vir::ExprDyn<'vir>>>,
+    ) -> Result<Vec<vir::ExprBool<'vir>>, EncodeFullError<'vir, E>> {
         let tcx = vcx.tcx();
-        let impl_ctx = impl_ctx.with_suffix("impl");
-        let impl_params = deps.require_dep::<GenericParamsEnc>(impl_ctx)?;
-
-        let trait_ctx = TraitEnc::trait_params(trait_ref.def_id);
-        let trait_params = deps.require_dep::<GenericParamsEnc>(trait_ctx)?;
-
-        let args = deps.require_dep::<GArgsTyEnc>(GArgs::new(impl_ctx, trait_ref.args))?;
-
-        // Collect the bindings for the generics of this impl block
-        let mut generics_map = FxIndexMap::default();
-
-        // Walk the trait type generic arguments. The types come from the
-        // impl's side of the `trait_ref`, so they are decomposed in the
-        // impl's context.
-        let impl_rust_tys = trait_ref.args.iter().filter_map(|arg| arg.as_type());
-        for (ty_arg, rust_ty) in std::iter::zip(trait_params.ty_exprs(), impl_rust_tys) {
-            Self::discover_bind_points(deps, &mut generics_map, impl_ctx, ty_arg, rust_ty)?;
-        }
-
-        // Walk the trait const generic arguments
-        let impl_rust_consts = trait_ref.args.iter().filter_map(|arg| arg.as_const());
-        for (const_arg, rust_const) in std::iter::zip(trait_params.const_exprs(), impl_rust_consts)
-        {
-            if let ty::ConstKind::Param(p) = rust_const.kind() {
-                generics_map.entry(p.index).or_insert(const_arg.upcast_ty());
-            }
-        }
-
+        let params = deps.require_dep::<GenericParamsEnc>(ctx)?;
+        let caller_bounds = ctx.typing_env().param_env.caller_bounds();
         let mut checks = Vec::new();
-        // Collect checks for the generics of the trait and their corresponding arguments in the impl
-        for (trait_ty_param, ty_args) in std::iter::zip(trait_params.ty_exprs(), args.get_ty()) {
-            checks.push(vcx.mk_eq_expr(trait_ty_param, ty_args));
-        }
-        for (trait_const_param, const_args) in
-            std::iter::zip(trait_params.const_exprs(), args.get_const())
-        {
-            checks.push(vcx.mk_eq_expr(trait_const_param, const_args));
-        }
 
-        let caller_bounds = impl_ctx.typing_env().param_env.caller_bounds();
-
-        // Collect checks for the trait bounds
         let trait_preds = caller_bounds
             .iter()
             .filter_map(ty::Clause::as_trait_clause)
-            .map(ty::Binder::skip_binder);
+            .map(ty::Binder::skip_binder)
+            .filter(|pred| pred.polarity == ty::PredicatePolarity::Positive);
         for trait_pred in trait_preds {
-            let trait_did = trait_pred.def_id();
-            let trait_ = deps.require_ref::<TraitEnc>(trait_did)?;
-            let gargs = GArgs::new(impl_ctx, trait_pred.trait_ref.args);
+            let trait_ = deps.require_ref::<TraitEnc>(trait_pred.def_id())?;
+            let gargs = GArgs::new(ctx, trait_pred.trait_ref.args);
             let gargs = deps.require_dep::<GArgsTyEnc>(gargs)?;
-
-            let impl_check = (trait_.impl_fun)(gargs.get_ty(), gargs.get_const());
-            checks.push(impl_check);
+            checks.push((trait_.impl_fun)(gargs.get_ty(), gargs.get_const()));
         }
 
-        // Collect checks for the projection predicates. These have to be processed in a way such that
-        // any bindpoints they introduce are introduced with the let-bindings in the correct order.
         let proj_preds = caller_bounds
             .iter()
             .filter_map(ty::Clause::as_projection_clause)
             .map(ty::Binder::skip_binder);
-        let proj_preds = Self::order_projections(generics_map.keys().copied(), proj_preds);
+        let proj_preds: Vec<_> = match &bind_points {
+            Some(bound) => Self::order_projections(bound.keys().copied(), proj_preds),
+            None => proj_preds.collect(),
+        };
         for proj_pred in proj_preds {
             let trait_did = proj_pred.trait_def_id(tcx);
             let trait_ = deps.require_ref::<TraitEnc>(trait_did)?;
-            let gargs = GArgs::new(impl_ctx, proj_pred.projection_term.args);
+            let gargs = GArgs::new(ctx, proj_pred.projection_term.args);
             let gargs = deps.require_dep::<GArgsTyEnc>(gargs)?;
 
             let (projection, expr): (vir::ExprDyn, vir::ExprDyn) = match proj_pred.term.kind() {
                 ty::TermKind::Ty(ty) => {
                     let projection =
                         trait_.assoc_types[&proj_pred.def_id()](gargs.get_ty(), gargs.get_const());
-                    let decomp = RustTyDecomposition::from_ty(ty, impl_ctx);
-                    let ty_expr = impl_params.ty_expr(deps, decomp);
-                    Self::discover_bind_points(deps, &mut generics_map, impl_ctx, projection, ty)?;
+                    let decomp = RustTyDecomposition::from_ty(ty, ctx);
+                    let ty_expr = params.ty_expr(deps, decomp);
+                    if let Some(bound) = bind_points.as_deref_mut() {
+                        Self::discover_bind_points(deps, bound, ctx, projection, ty)?;
+                    }
                     (projection.upcast_ty(), ty_expr?.upcast_ty())
                 }
                 ty::TermKind::Const(const_) => {
@@ -542,32 +537,98 @@ impl TraitImplEnc {
                     let const_task = ConstEncTask::Ty {
                         const_,
                         ty,
-                        context: impl_ctx,
+                        context: ctx,
                     };
                     let const_expr = deps.require_dep::<ConstEnc>(const_task)?;
-                    if let ty::ConstKind::Param(p) = const_.kind() {
-                        generics_map
-                            .entry(p.index)
-                            .or_insert(const_expr.upcast_ty());
+                    if let Some(bound) = bind_points.as_deref_mut()
+                        && let ty::ConstKind::Param(p) = const_.kind()
+                    {
+                        bound.entry(p.index).or_insert(const_expr.upcast_ty());
                     }
                     (projection.upcast_ty(), const_expr.upcast_ty())
                 }
             };
 
-            let projection_check = vcx.mk_eq_expr(projection, expr);
-            checks.push(projection_check);
+            checks.push(vcx.mk_eq_expr(projection, expr));
         }
 
-        let checks = vcx.mk_conj(&checks);
+        Ok(checks)
+    }
 
-        Ok(generics_map.iter().rfold(checks, |acc, (&idx, expr)| {
-            let idx = impl_params.map_idx(idx);
-            let decl = match idx {
-                Ok(idx) => impl_params.ty_decls()[idx].upcast_ty(),
-                Err(idx) => impl_params.const_decls()[idx].upcast_ty(),
+    /// `forall params :: {trigger} impl_bounds ==> body`: an assertion about
+    /// the impl `impl_did` that only holds where the impl applies, i.e. where
+    /// its where-clauses hold.
+    ///
+    /// Quantifies over the parameters of `item_did` (the impl itself or one
+    /// of its items, whose parameters extend the impl's) and `extra`. The
+    /// trigger is applied to the impl's trait ref followed by the item's own
+    /// parameters; an impl parameter not occurring in those is instead
+    /// let-bound to the projection that determines it: rustc only accepts
+    /// such an impl parameter if a projection bound constrains it (E0207),
+    /// and binding it keeps every quantified variable covered by the
+    /// trigger.
+    pub(super) fn guarded_forall<'vir, E: TaskEncoder + 'vir + ?Sized>(
+        vcx: &'vir vir::VirCtxt<'vir>,
+        deps: &mut TaskEncoderDependencies<'vir, E>,
+        impl_did: DefId,
+        item_did: DefId,
+        extra: &[vir::LocalDeclDyn<'vir>],
+        trigger: vir::ExprDyn<'vir>,
+        body: vir::ExprBool<'vir>,
+    ) -> Result<vir::ExprBool<'vir>, EncodeFullError<'vir, E>> {
+        let impl_ctx = GParams::from(impl_did);
+        let item_ctx = GParams::from(item_did);
+        let item_params = deps.require_dep::<GenericParamsEnc>(item_ctx)?;
+        let decl = |idx: u32| match item_params.map_idx(idx) {
+            Ok(idx) => item_params.ty_decls()[idx].upcast_ty(),
+            Err(idx) => item_params.const_decls()[idx].upcast_ty(),
+        };
+
+        let trait_ref = vcx
+            .tcx()
+            .impl_trait_ref(impl_did)
+            .unwrap()
+            .instantiate_identity();
+        let item_args = &item_ctx.rust_params()[impl_ctx.rust_params().len()..];
+        let pinned = trait_ref.args.iter().chain(item_args.iter().copied());
+
+        let mut bind_points = FxIndexMap::default();
+        for arg in pinned.flat_map(|arg| arg.walk()) {
+            let idx = match arg.kind() {
+                ty::GenericArgKind::Type(ty) if let ty::TyKind::Param(p) = ty.kind() => p.index,
+                ty::GenericArgKind::Const(c) if let ty::ConstKind::Param(p) = c.kind() => p.index,
+                _ => continue,
             };
-            vcx.mk_let_expr(decl, expr, acc)
-        }))
+            bind_points
+                .entry(idx)
+                .or_insert_with(|| vcx.mk_local_ex(decl(idx)).upcast_ty());
+        }
+        let pinned_count = bind_points.len();
+
+        let bounds = Self::context_bounds(vcx, deps, impl_ctx, Some(&mut bind_points))?;
+        let body = if bounds.is_empty() {
+            body
+        } else {
+            let guard = vcx.mk_conj(&bounds);
+            vir::expr! { (guard) ==> (body) }
+        };
+
+        let lets = bind_points.split_off(pinned_count);
+        let body = lets.iter().rfold(body, |acc, (&idx, expr)| {
+            vcx.mk_let_expr(decl(idx), expr, acc)
+        });
+
+        let qvars = (0..item_ctx.rust_params().len() as u32)
+            .filter(|&idx| item_ctx.rust_params()[idx as usize].as_region().is_none())
+            .filter(|idx| !lets.contains_key(idx))
+            .map(decl)
+            .chain(extra.iter().copied())
+            .collect::<Vec<_>>();
+        Ok(vcx.mk_forall_expr(
+            vcx.alloc_slice(&qvars),
+            vcx.alloc_slice(&[vcx.mk_trigger(&[trigger])]),
+            body,
+        ))
     }
 }
 

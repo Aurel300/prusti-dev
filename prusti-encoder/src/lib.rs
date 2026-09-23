@@ -27,7 +27,7 @@ use crate::encoders::{
             GArgsCastEnc,
             r#trait::TraitEnc,
             trait_fn::TraitFnEnc,
-            trait_impls::{TraitImplEnc, TraitImplItemEnc},
+            trait_impls::{TraitImplConditionEnc, TraitImplEnc, TraitImplItemEnc},
         },
         interpretation::bitvec::BitVecEnc,
         lifted::TyConstructorEnc,
@@ -135,6 +135,7 @@ pub fn test_entrypoint<'tcx>(
     TraitEnc::emit_outputs(&mut program);
     TraitFnEnc::emit_outputs(&mut program);
     TraitImplEnc::emit_outputs(&mut program);
+    TraitImplConditionEnc::emit_outputs(&mut program);
     TraitImplItemEnc::emit_outputs(&mut program);
 
     if std::env::var("LOCAL_TESTING").is_ok() {

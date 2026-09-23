@@ -497,7 +497,9 @@ impl TraitImplEnc {
             .iter()
             .filter_map(ty::Clause::as_trait_clause)
             .map(ty::Binder::skip_binder)
-            .filter(|pred| pred.polarity == ty::PredicatePolarity::Positive);
+            .filter(|pred| pred.polarity == ty::PredicatePolarity::Positive)
+            // Holds of every type (see `SizednessEnc`).
+            .filter(|pred| Some(pred.def_id()) != tcx.lang_items().pointee_sized_trait());
         for trait_pred in trait_preds {
             let trait_ = deps.require_ref::<TraitEnc>(trait_pred.def_id())?;
             let gargs = GArgs::new(ctx, trait_pred.trait_ref.args);

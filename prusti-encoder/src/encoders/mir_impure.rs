@@ -1388,6 +1388,13 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         }
     }
 
+    /// Creates a label for the state after executing all statements and the
+    /// terminator of the block, but BEFORE any PCG operations for the
+    /// terminator edge are applied (i.e. for the join into the target block).
+    /// In particular, places that will become inacessible in the target block due to
+    /// conditional moves are still accessible at the point where this label is inserted.
+    /// `loop_pres` is used to generate a unique label when `block` is encoded multiple times
+    /// (see the comment in [Self::visit_body]).
     fn block_end_label(&self, block: mir::BasicBlock, loop_pres: &[usize]) -> &'vir str {
         let pres = loop_pres
             .iter()

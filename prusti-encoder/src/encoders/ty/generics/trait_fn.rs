@@ -197,7 +197,7 @@ impl TaskEncoder for TraitFnEnc {
             // default body instead unlocks the axiom stating that body at its
             // trait refs.
             let has_body = is_function_with_body(vcx.tcx(), def_id);
-            for impl_did in tcx.all_impls(trait_def_id) {
+            for impl_did in trait_impls::positive_impls(tcx, trait_def_id) {
                 let keys = trait_impls::impl_unlock_keys(impl_did);
                 let impl_span = tcx.def_span(impl_did);
                 if let Some(&impl_item_def_id) =

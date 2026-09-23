@@ -122,7 +122,7 @@ impl TaskEncoder for TraitEnc {
 
             // Each relevant impl contributes an axiom stating where it makes
             // `impl_fun` hold (see `impl_unlock_keys` for the gating).
-            for impl_did in tcx.all_impls(*task_key) {
+            for impl_did in trait_impls::positive_impls(tcx, *task_key) {
                 let keys = trait_impls::impl_unlock_keys(impl_did);
                 let span = tcx.def_span(impl_did);
                 TyConstructorEnc::on_all_requested(keys.clone(), move || {

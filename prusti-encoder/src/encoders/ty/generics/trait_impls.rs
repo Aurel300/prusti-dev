@@ -245,7 +245,9 @@ impl TaskEncoder for TraitImplEnc {
             }
 
             // Make the impl visible to the trait's `impl_fun`.
-            deps.require_dep::<TraitImplConditionEnc>(*task_key)?;
+            if is_positive_impl(tcx, *task_key) {
+                deps.require_dep::<TraitImplConditionEnc>(*task_key)?;
+            }
 
             Ok((methods, ()))
         })
@@ -703,6 +705,18 @@ impl TraitImplEnc {
             vcx.mk_let_expr(decl, expr, acc)
         }))
     }
+}
+
+/// The impls of a trait that make it hold. Negative impls (`impl !Tr for X`)
+/// and reservation impls (`#[rustc_reservation_impl]`) are not used by trait
+/// selection, so assuming their conditions or items would be unsound.
+pub(super) fn positive_impls(tcx: ty::TyCtxt<'_>, trait_did: DefId) -> impl Iterator<Item = DefId> {
+    tcx.all_impls(trait_did)
+        .filter(move |&impl_did| is_positive_impl(tcx, impl_did))
+}
+
+fn is_positive_impl(tcx: ty::TyCtxt<'_>, impl_did: DefId) -> bool {
+    tcx.impl_polarity(impl_did) == ty::ImplPolarity::Positive
 }
 
 /// The Viper name of an impl. `idx` is only unique within a crate, so foreign

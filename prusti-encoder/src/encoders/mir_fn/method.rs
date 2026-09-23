@@ -252,16 +252,7 @@ impl TaskEncoder for MethodEnc {
                     // extra blocks: Start, End
                     2 + block_count,
                 );
-                // The function's own where-clauses: rustc guarantees them at
-                // every instantiation, and resolving through an impl (its
-                // associated types and fn specs are guarded by its
-                // where-clauses) may depend on them. Assumed rather than
-                // required, since callers could not always discharge them
-                // (e.g. `Fn*` bounds, which have no encoded impls).
-                let mut start_stmts = TraitImplEnc::context_bounds(vcx, deps, params, None)?
-                    .into_iter()
-                    .map(|bound| vcx.mk_inhale_stmt(bound))
-                    .collect::<Vec<_>>();
+                let mut start_stmts = TraitImplEnc::assume_context_bounds(vcx, deps, params)?;
                 for local in (arg_count..body.local_decls.len()).map(mir::Local::from) {
                     // Spec-only locals have no definition.
                     let Some(local_def) = local_defs.get(local) else {

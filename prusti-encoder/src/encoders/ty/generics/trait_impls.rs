@@ -2,7 +2,7 @@ use prusti_interface::PrustiError;
 use prusti_rustc_interface::{
     data_structures::fx::{FxIndexMap, FxIndexSet},
     errors::MultiSpan,
-    middle::{mir, ty},
+    middle::{mir, traits::specialization_graph, ty},
     span::def_id::DefId,
 };
 use task_encoder::{EncodeFullError, EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
@@ -82,7 +82,6 @@ impl TaskEncoder for TraitImplEnc {
                 let impl_item_params = deps.require_dep::<GenericParamsEnc>(impl_item_context)?;
                 let trait_ty_decls = impl_item_params.ty_decls();
                 let trait_const_decls = impl_item_params.const_decls();
-                let trait_item_context = GParams::from(trait_item_def_id);
 
                 let local_defs = deps.require_dep::<MirLocalDefEnc>(MirLocalDefEncTask::Local {
                     def_id: impl_item_def_id,
@@ -91,16 +90,11 @@ impl TaskEncoder for TraitImplEnc {
                 let arg_count = local_defs.arg_count + 1;
                 let ref_args = vcx.alloc_slice(&vec![vir::TYPE_REF; arg_count]);
 
-                let trait_item_is_pure = crate::encoders::is_function_pure(
-                    trait_item_def_id,
-                    GArgs::new(trait_item_context, trait_item_context.rust_params()),
-                );
                 let impl_item_is_pure = crate::encoders::is_function_pure(
                     impl_item_def_id,
                     GArgs::new(impl_item_context, impl_item_context.rust_params()),
                 );
 
-                let trait_item_has_body = is_function_with_body(vcx.tcx(), trait_item_def_id);
                 let impl_item_has_body = is_function_with_body(vcx.tcx(), impl_item_def_id);
 
                 let trait_item_spec = deps.require_dep_spanned::<MirSpecEnc>(
@@ -131,6 +125,9 @@ impl TaskEncoder for TraitImplEnc {
                 let trait_pre_spans: Vec<_> =
                     trait_item_spec.pres.iter().map(|(_, s)| *s).collect();
 
+                // Both checks are only needed where the impl applies.
+                let bounds = Self::assume_context_bounds(vcx, deps, impl_item_context)?;
+
                 methods.push(vcx.mk_method(
                     MethodIdn::<(vir::ManyRef, vir::ManyTyVal, vir::ManyCSnap)>::new(
                         vir_format_identifier!(vcx, "trait_{trait_name}_impl_{implementing_ty}_{idx}_fn_pre_weaken_{item_name}"),
@@ -144,7 +141,7 @@ impl TaskEncoder for TraitImplEnc {
                         vcx.mk_cfg_block(
                             &vir::CfgBlockLabelData::Start,
                             &[],
-                            vcx.alloc_slice(&impl_item_spec.pres.iter().copied()
+                            vcx.alloc_slice(&bounds.iter().copied().chain(impl_item_spec.pres.iter().copied()
                                 .map(|(pre, pre_span)| vcx.with_span(pre_span, |vcx| {
                                     let trait_pre_spans = trait_pre_spans.clone();
                                     vcx.handle_error("exhale.failed:assertion.false", move |_| {
@@ -161,7 +158,7 @@ impl TaskEncoder for TraitImplEnc {
                                         Some(vec![err])
                                     });
                                     vcx.mk_exhale_stmt(pre)
-                                }))
+                                })))
                                 .collect::<Vec<_>>()),
                             vcx.alloc(vir::TerminatorStmtData::Exit),
                         )
@@ -176,7 +173,7 @@ impl TaskEncoder for TraitImplEnc {
 
                 // here we inhale the impl postconditions, since they
                 // can contain "old" variables
-                let mut stmts = Vec::new();
+                let mut stmts = bounds;
                 for post in impl_item_spec.post_exprs() {
                     stmts.push(vcx.mk_inhale_stmt(post));
                 }
@@ -224,30 +221,6 @@ impl TaskEncoder for TraitImplEnc {
                             Some(vec![err])
                         });
                         stmts.push(vcx.mk_exhale_stmt(post));
-                    });
-                }
-                if trait_item_has_body && trait_item_is_pure {
-                    let pure_func = deps.require_dep::<FunctionCallEnc>(
-                        CallTaskDescription::new(
-                            impl_item_def_id,
-                            trait_ref.args,
-                            trait_item_def_id,
-                        )
-                        .resolve_trait_calls(false),
-                    )?;
-                    let pure_func_app = pure_func.call_pure(
-                        local_defs
-                            .args()
-                            .map(|arg| arg.impure_snap)
-                            .collect::<Vec<_>>(),
-                    );
-                    vcx.with_span(impl_span, |vcx| {
-                        vcx.handle_error("exhale.failed:assertion.false", move |_| {
-                            Some(vec![PrustiError::verification("the implementation's result may differ from the trait method's (pure functions must be behavioural subtypes)", impl_span.into())])
-                        });
-                        stmts.push(vcx.mk_exhale_stmt(vir::expr! {
-                            ([local_defs[mir::RETURN_PLACE].impure_snap]) == ([pure_func_app])
-                        }));
                     });
                 }
 
@@ -476,6 +449,22 @@ impl TraitImplEnc {
         Ok(())
     }
 
+    /// Assumes the where-clauses in force in `ctx`. rustc guarantees them at
+    /// every instantiation, and resolving through an impl (its associated
+    /// types and fn specs are guarded by its where-clauses) may depend on
+    /// them. Assumed rather than required, since callers could not always
+    /// discharge them (e.g. `Fn*` bounds, which have no encoded impls).
+    pub(crate) fn assume_context_bounds<'vir, E: TaskEncoder + 'vir + ?Sized>(
+        vcx: &'vir vir::VirCtxt<'vir>,
+        deps: &mut TaskEncoderDependencies<'vir, E>,
+        ctx: GParams<'vir>,
+    ) -> Result<Vec<vir::Stmt<'vir>>, EncodeFullError<'vir, E>> {
+        Ok(Self::context_bounds(vcx, deps, ctx, None)?
+            .into_iter()
+            .map(|bound| vcx.mk_inhale_stmt(bound))
+            .collect())
+    }
+
     /// The where-clauses in force in `ctx`, stated over its parameters.
     ///
     /// With `bind_points`, the projection bounds are processed in an order in
@@ -578,8 +567,32 @@ impl TraitImplEnc {
         trigger: vir::ExprDyn<'vir>,
         body: vir::ExprBool<'vir>,
     ) -> Result<vir::ExprBool<'vir>, EncodeFullError<'vir, E>> {
-        let impl_ctx = GParams::from(impl_did);
-        let item_ctx = GParams::from(item_did);
+        Self::guarded_forall_in(
+            vcx,
+            deps,
+            impl_did,
+            GParams::from(impl_did),
+            GParams::from(item_did),
+            extra,
+            trigger,
+            body,
+        )
+    }
+
+    /// [`Self::guarded_forall`] with the contexts of the impl and the item
+    /// given explicitly, e.g. suffixed so that their parameters cannot capture
+    /// variables of `body`.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn guarded_forall_in<'vir, E: TaskEncoder + 'vir + ?Sized>(
+        vcx: &'vir vir::VirCtxt<'vir>,
+        deps: &mut TaskEncoderDependencies<'vir, E>,
+        impl_did: DefId,
+        impl_ctx: GParams<'vir>,
+        item_ctx: GParams<'vir>,
+        extra: &[vir::LocalDeclDyn<'vir>],
+        trigger: vir::ExprDyn<'vir>,
+        body: vir::ExprBool<'vir>,
+    ) -> Result<vir::ExprBool<'vir>, EncodeFullError<'vir, E>> {
         let item_params = deps.require_dep::<GenericParamsEnc>(item_ctx)?;
         let decl = |idx: u32| match item_params.map_idx(idx) {
             Ok(idx) => item_params.ty_decls()[idx].upcast_ty(),
@@ -631,6 +644,64 @@ impl TraitImplEnc {
             vcx.alloc_slice(&[vcx.mk_trigger(&[trigger])]),
             body,
         ))
+    }
+
+    /// Whether the impl applies at the trait ref with the given arguments:
+    /// they are the impl's trait ref at some instantiation of its parameters,
+    /// and its where-clauses hold there. Unlike [`Self::guarded_forall`],
+    /// which quantifies over the impl's parameters, this is stated over the
+    /// arguments; the impl's parameters are let-bound to the subterms of the
+    /// arguments they occur in (in a suffixed context, so that they cannot
+    /// capture the arguments' variables), or to the projection determining
+    /// them.
+    pub(super) fn applies_at<'vir, E: TaskEncoder + 'vir + ?Sized>(
+        vcx: &'vir vir::VirCtxt<'vir>,
+        deps: &mut TaskEncoderDependencies<'vir, E>,
+        impl_did: DefId,
+        trait_tys: &[vir::ExprTyVal<'vir>],
+        trait_consts: &[vir::ExprCSnap<'vir>],
+    ) -> Result<vir::ExprBool<'vir>, EncodeFullError<'vir, E>> {
+        let impl_ctx = GParams::from(impl_did).with_suffix("impl");
+        let impl_params = deps.require_dep::<GenericParamsEnc>(impl_ctx)?;
+        let trait_ref = vcx
+            .tcx()
+            .impl_trait_ref(impl_did)
+            .unwrap()
+            .instantiate_identity();
+
+        let mut bind_points = FxIndexMap::default();
+        for (&expr, ty) in std::iter::zip(trait_tys, trait_ref.args.types()) {
+            Self::discover_bind_points(deps, &mut bind_points, impl_ctx, expr, ty)?;
+        }
+        for (&expr, const_) in std::iter::zip(trait_consts, trait_ref.args.consts()) {
+            if let ty::ConstKind::Param(p) = const_.kind() {
+                bind_points.entry(p.index).or_insert(expr.upcast_ty());
+            }
+        }
+
+        let args = deps.require_dep::<GArgsTyEnc>(GArgs::new(impl_ctx, trait_ref.args))?;
+        let mut checks = Vec::new();
+        for (&arg, &impl_arg) in std::iter::zip(trait_tys, args.get_ty()) {
+            checks.push(vcx.mk_eq_expr(arg, impl_arg));
+        }
+        for (&arg, &impl_arg) in std::iter::zip(trait_consts, args.get_const()) {
+            checks.push(vcx.mk_eq_expr(arg, impl_arg));
+        }
+        checks.extend(Self::context_bounds(
+            vcx,
+            deps,
+            impl_ctx,
+            Some(&mut bind_points),
+        )?);
+
+        let checks = vcx.mk_conj(&checks);
+        Ok(bind_points.iter().rfold(checks, |acc, (&idx, &expr)| {
+            let decl = match impl_params.map_idx(idx) {
+                Ok(idx) => impl_params.ty_decls()[idx].upcast_ty(),
+                Err(idx) => impl_params.const_decls()[idx].upcast_ty(),
+            };
+            vcx.mk_let_expr(decl, expr, acc)
+        }))
     }
 }
 
@@ -735,17 +806,16 @@ impl TaskEncoder for TraitImplItemEnc {
             let impl_item_params = deps.require_dep::<GenericParamsEnc>(impl_item_context)?;
 
             // The ty and const decls of the trait items are the decls of the
-            // item itself prefixed by the decls of the impl itself.
+            // item itself prefixed by the decls of the impl itself (so the
+            // impl's where-clauses can guard the item's axioms).
             assert_eq!(
                 impl_params.ty_decls(),
                 &impl_item_params.ty_decls()[..impl_params.ty_decls().len()]
             );
-            let trait_ty_decls = impl_item_params.ty_decls();
             assert_eq!(
                 impl_params.const_decls(),
                 &impl_item_params.const_decls()[..impl_params.const_decls().len()]
             );
-            let trait_const_decls = impl_item_params.const_decls();
 
             // Combine the args to the trait in the impl and the identity args
             // for the item itself. That is, for:
@@ -788,11 +858,23 @@ impl TaskEncoder for TraitImplItemEnc {
                             impl_item_context,
                         ),
                     )?;
+                    // Guarded by the impl's where-clauses: a blanket impl and
+                    // a more specific one that Rust keeps apart by them would
+                    // otherwise resolve the same projection to two distinct
+                    // types, which is false and makes everything provable.
+                    let projection = assoc_type(trait_tys, trait_consts);
+                    let equation = vcx.mk_eq_expr(projection, assoc_type_expr);
                     axioms.push(vcx.mk_domain_axiom(
                         vir_format_identifier!(vcx, "{impl_name}_assoc_type_{item_name}"),
-                        vir::expr! {forall ..[trait_ty_decls], ..[trait_const_decls] ::
-                            {[assoc_type(trait_tys, trait_consts)]}
-                        ([assoc_type(trait_tys, trait_consts)]) == (assoc_type_expr)},
+                        TraitImplEnc::guarded_forall(
+                            vcx,
+                            deps,
+                            impl_did,
+                            impl_item_def_id,
+                            &[],
+                            projection.upcast_ty(),
+                            equation,
+                        )?,
                     ));
                 }
                 ty::AssocKind::Fn { .. } => {
@@ -839,13 +921,22 @@ impl TaskEncoder for TraitImplItemEnc {
                     let casted_args_slice = vcx.alloc_slice(&casted_args);
                     let pre_func_call =
                         assoc_fn.pre_func.call()(casted_args_slice, trait_tys, trait_consts);
+                    let arg_decls = func_args
+                        .iter()
+                        .map(|arg| arg.upcast_ty())
+                        .collect::<Vec<vir::LocalDeclDyn>>();
                     axioms.push(vcx.mk_domain_axiom(
-                    vir_format_identifier!(vcx, "{impl_name}_fn_pre_{item_name}"),
-                    vir::expr! {
-                        forall ..[func_args], ..[trait_ty_decls], ..[trait_const_decls] :: {[pre_func_call]}
-                            (pres) ==> (pre_func_call)
-                    },
-                ));
+                        vir_format_identifier!(vcx, "{impl_name}_fn_pre_{item_name}"),
+                        TraitImplEnc::guarded_forall(
+                            vcx,
+                            deps,
+                            impl_did,
+                            impl_item_def_id,
+                            &arg_decls,
+                            pre_func_call.upcast_ty(),
+                            vir::expr! { (pres) ==> (pre_func_call) },
+                        )?,
+                    ));
                     let mut posts = impl_item_spec.post_exprs().collect::<Vec<_>>();
                     if impl_item_has_body && impl_item_is_pure {
                         let pure_func = deps.require_dep::<FunctionCallEnc>(
@@ -879,13 +970,21 @@ impl TaskEncoder for TraitImplItemEnc {
                         trait_tys,
                         trait_consts,
                     );
+                    let ret_and_arg_decls = std::iter::once(func_ret.upcast_ty())
+                        .chain(arg_decls)
+                        .collect::<Vec<_>>();
                     axioms.push(vcx.mk_domain_axiom(
-                    vir_format_identifier!(vcx, "{impl_name}_fn_post_{item_name}"),
-                    vir::expr! {
-                        forall [func_ret], ..[func_args], ..[trait_ty_decls], ..[trait_const_decls] :: {[post_func_call]}
-                            (post_func_call) ==> (posts)
-                    },
-                ));
+                        vir_format_identifier!(vcx, "{impl_name}_fn_post_{item_name}"),
+                        TraitImplEnc::guarded_forall(
+                            vcx,
+                            deps,
+                            impl_did,
+                            impl_item_def_id,
+                            &ret_and_arg_decls,
+                            post_func_call.upcast_ty(),
+                            vir::expr! { (post_func_call) ==> (posts) },
+                        )?,
+                    ));
                 }
                 ty::AssocKind::Const { .. } => (),
             }
@@ -894,6 +993,161 @@ impl TaskEncoder for TraitImplItemEnc {
                 vir_format_identifier!(vcx, "trait_{impl_name}_{item_name}"),
                 &[],
                 vcx.alloc_slice(&axioms),
+                &[],
+                None,
+            );
+            Ok((domain, ()))
+        })
+    }
+}
+
+/// Whether the (positive) impl's definition of `trait_fn` is the trait's
+/// default body, rather than its own or one inherited from an impl it
+/// specializes.
+pub(super) fn inherits_default_body(tcx: ty::TyCtxt<'_>, impl_did: DefId, trait_fn: DefId) -> bool {
+    if tcx.impl_polarity(impl_did) != ty::ImplPolarity::Positive {
+        return false;
+    }
+    let trait_did = tcx.impl_trait_ref(impl_did).unwrap().skip_binder().def_id;
+    specialization_graph::ancestors(tcx, trait_did, impl_did)
+        .ok()
+        .and_then(|ancestors| ancestors.leaf_def(tcx, trait_fn))
+        .is_some_and(|leaf| leaf.defining_node.is_from_trait())
+}
+
+/// Encodes, for an impl that inherits the default body of a pure trait fn,
+/// the axiom that at the impl's trait refs the fn returns what the default
+/// body does. The default body is not part of the trait's contract (impls
+/// may override it with a different result, see `TraitFnEnc`), so it is
+/// stated per inheriting impl, like the fn items of overriding impls (see
+/// [`TraitImplItemEnc`]).
+pub struct TraitImplDefaultFnEnc;
+
+impl TaskEncoder for TraitImplDefaultFnEnc {
+    task_encoder::encoder_cache!(TraitImplDefaultFnEnc);
+    const ENCODER_NAME: &'static str = "trait impl default fn encoder";
+
+    /// The impl and the trait fn whose default body it inherits.
+    type TaskDescription<'vir> = (DefId, DefId);
+    type OutputFullLocal<'vir> = Domain<'vir>;
+
+    fn task_to_key<'vir>(task: &Self::TaskDescription<'vir>) -> Self::TaskKey<'vir> {
+        *task
+    }
+
+    fn emit_outputs<'vir>(program: &mut task_encoder::Program<'vir>) {
+        for domain in Self::all_outputs_local_no_errors(program) {
+            program.add_domain(domain);
+        }
+    }
+
+    fn do_encode_full<'vir>(
+        task_key: &Self::TaskKey<'vir>,
+        deps: &mut TaskEncoderDependencies<'vir, Self>,
+    ) -> EncodeFullResult<'vir, Self> {
+        deps.emit_output_ref(*task_key, ())?;
+
+        vir::with_vcx(|vcx| {
+            let (impl_did, trait_fn) = *task_key;
+            let impl_name = impl_name(vcx, impl_did);
+            let item_name = ViperIdent::from_def_id(vcx, trait_fn);
+            let trait_ref = vcx
+                .tcx()
+                .impl_trait_ref(impl_did)
+                .unwrap()
+                .instantiate_identity();
+
+            // The trait fn's parameters: the trait's, then the fn's own.
+            let item_params = GParams::from(trait_fn);
+            let item_generics = deps.require_dep::<GenericParamsEnc>(item_params)?;
+            let post_func = deps.require_ref::<TraitFnEnc>(trait_fn)?.post_func;
+            let local_defs = deps.require_dep::<MirLocalDefEnc>(MirLocalDefEncTask::Local {
+                def_id: trait_fn,
+                all_locals: false,
+            })?;
+            let func_args = local_defs.local_decl_args().collect::<Vec<_>>();
+            let func_arg_exprs = func_args
+                .iter()
+                .map(|arg| vcx.mk_local_ex(arg))
+                .collect::<Vec<_>>();
+            let func_ret = local_defs.local_decl_ret();
+
+            let default_body = deps.require_dep::<FunctionCallEnc>(
+                CallTaskDescription::new(trait_fn, item_params.rust_params(), trait_fn)
+                    .resolve_trait_calls(false),
+            )?;
+            let default_body_app = default_body.call_pure(func_arg_exprs.clone());
+            let post_func_call = post_func.call()(
+                vcx.mk_local_ex(func_ret),
+                vcx.alloc_slice(&func_arg_exprs),
+                item_generics.ty_exprs(),
+                item_generics.const_exprs(),
+            );
+
+            // Quantified over the impl's parameters (in a suffixed context, so
+            // that they cannot capture the trait fn's) and the fn's own, and
+            // triggered on the application at the impl's trait ref, so that
+            // the axiom only fires for calls it can match. The trait's
+            // parameters, which form the trait ref, are let-bound to it.
+            let impl_ctx = GParams::from(impl_did).with_suffix("impl");
+            let impl_args = deps.require_dep::<GArgsTyEnc>(GArgs::new(impl_ctx, trait_ref.args))?;
+            let (impl_tys, impl_consts) = (impl_args.get_ty(), impl_args.get_const());
+            let own_ty_decls = &item_generics.ty_decls()[impl_tys.len()..];
+            let own_const_decls = &item_generics.const_decls()[impl_consts.len()..];
+
+            let trigger_tys = impl_tys
+                .iter()
+                .chain(&item_generics.ty_exprs()[impl_tys.len()..])
+                .copied()
+                .collect::<Vec<_>>();
+            let trigger_consts = impl_consts
+                .iter()
+                .chain(&item_generics.const_exprs()[impl_consts.len()..])
+                .copied()
+                .collect::<Vec<_>>();
+            let trigger = post_func.call()(
+                vcx.mk_local_ex(func_ret),
+                vcx.alloc_slice(&func_arg_exprs),
+                vcx.alloc_slice(&trigger_tys),
+                vcx.alloc_slice(&trigger_consts),
+            );
+
+            let body = vir::expr! {
+                (post_func_call) ==> (([func_ret]) == ([default_body_app]))
+            };
+            let trait_lets = std::iter::zip(item_generics.ty_decls(), impl_tys)
+                .map(|(decl, &ty)| (decl.upcast_ty(), ty.upcast_ty()))
+                .chain(
+                    std::iter::zip(item_generics.const_decls(), impl_consts)
+                        .map(|(decl, &const_)| (decl.upcast_ty(), const_.upcast_ty())),
+                )
+                .collect::<Vec<(vir::LocalDeclDyn, vir::ExprDyn)>>();
+            let body = trait_lets
+                .into_iter()
+                .rfold(body, |acc, (decl, expr)| vcx.mk_let_expr(decl, expr, acc));
+
+            let extra = std::iter::once(func_ret.upcast_ty())
+                .chain(func_args.iter().map(|arg| arg.upcast_ty()))
+                .chain(own_ty_decls.iter().map(|decl| decl.upcast_ty()))
+                .chain(own_const_decls.iter().map(|decl| decl.upcast_ty()))
+                .collect::<Vec<_>>();
+            let axiom = TraitImplEnc::guarded_forall_in(
+                vcx,
+                deps,
+                impl_did,
+                impl_ctx,
+                impl_ctx,
+                &extra,
+                trigger.upcast_ty(),
+                body,
+            )?;
+            let domain = vcx.mk_domain(
+                vir_format_identifier!(vcx, "trait_{impl_name}_default_{item_name}"),
+                &[],
+                vcx.alloc_slice(&[vcx.mk_domain_axiom(
+                    vir_format_identifier!(vcx, "{impl_name}_fn_default_{item_name}"),
+                    axiom,
+                )]),
                 &[],
                 None,
             );

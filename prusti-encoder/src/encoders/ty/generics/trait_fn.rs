@@ -8,8 +8,7 @@ use vir::{FunctionIdn, MethodIdn, ViperIdent, vir_format_identifier};
 
 use crate::{
     encoders::{
-        FunctionCallEnc, MirLocalDefEnc, MirLocalDefEncTask, MirSpecEnc,
-        mir_fn::CallTaskDescription,
+        MirLocalDefEnc, MirLocalDefEncTask, MirSpecEnc,
         pure::spec::MirSpecEncMode,
         ty::{
             RustTyDecomposition,
@@ -194,18 +193,35 @@ impl TaskEncoder for TraitFnEnc {
             // item implementing this function once the impl's constructor
             // keys are requested - the same gating as the impl's condition
             // (see `TraitEnc`), but calling a trait function must not pull in
-            // the trait's whole machinery.
+            // the trait's whole machinery. An impl that inherits a pure
+            // default body instead unlocks the axiom stating that body at its
+            // trait refs.
+            let has_body = is_function_with_body(vcx.tcx(), def_id);
             for impl_did in tcx.all_impls(trait_def_id) {
-                let Some(&impl_item_def_id) = tcx.impl_item_implementor_ids(impl_did).get(&def_id)
-                else {
-                    continue;
-                };
                 let keys = trait_impls::impl_unlock_keys(impl_did);
                 let impl_span = tcx.def_span(impl_did);
-                TyConstructorEnc::on_all_requested(keys, move || {
-                    let _ =
-                        trait_impls::TraitImplItemEnc::encode(impl_item_def_id, false, impl_span);
-                });
+                if let Some(&impl_item_def_id) =
+                    tcx.impl_item_implementor_ids(impl_did).get(&def_id)
+                {
+                    TyConstructorEnc::on_all_requested(keys, move || {
+                        let _ = trait_impls::TraitImplItemEnc::encode(
+                            impl_item_def_id,
+                            false,
+                            impl_span,
+                        );
+                    });
+                } else if has_body
+                    && is_pure
+                    && trait_impls::inherits_default_body(tcx, impl_did, def_id)
+                {
+                    TyConstructorEnc::on_all_requested(keys, move || {
+                        let _ = trait_impls::TraitImplDefaultFnEnc::encode(
+                            (impl_did, def_id),
+                            false,
+                            impl_span,
+                        );
+                    });
+                }
             }
 
             let func_args = local_defs.local_decl_args().collect::<Vec<_>>();
@@ -216,8 +232,6 @@ impl TaskEncoder for TraitFnEnc {
                     .collect::<Vec<_>>(),
             );
             let func_ret = local_defs.local_decl_ret();
-
-            let has_body = is_function_with_body(vcx.tcx(), def_id);
 
             let spec = deps.require_dep_spanned::<MirSpecEnc>(
                 (def_id, def_id, MirSpecEncMode::PureWithoutResult),
@@ -239,18 +253,9 @@ impl TaskEncoder for TraitFnEnc {
                         (pres) ==> (pre_func_call)
                 },
             ));
-            let mut posts = spec.post_exprs().collect::<Vec<_>>();
-            if has_body && is_pure {
-                let pure_func = deps.require_dep::<FunctionCallEnc>(
-                    CallTaskDescription::new(def_id, item_params.rust_params(), def_id)
-                        .resolve_trait_calls(false),
-                )?;
-                let pure_func_app = pure_func.call_pure(func_arg_exprs.to_vec());
-                posts.push(vir::expr! {
-                    ([func_ret]) == ([pure_func_app])
-                });
-            }
-            let posts = vcx.mk_conj(&posts);
+            // A default body is not part of the trait's contract: impls may
+            // override it with a different result.
+            let posts = vcx.mk_conj(&spec.post_exprs().collect::<Vec<_>>());
             let post_func_call = post_func.call()(
                 vcx.mk_local_ex(func_ret),
                 func_arg_exprs,

@@ -1,0 +1,106 @@
+// A blanket impl's associated types and method specifications are assumed
+// only where the impl's where-clauses hold (see
+// `verify/fail/traits/blanket_*.rs`). These check that they still resolve
+// where the bounds do hold: for concrete types, and for generic code whose
+// own where-clauses provide them.
+
+use prusti_contracts::*;
+use std::convert::{Infallible, TryFrom};
+
+// `impl<T, U: Into<T>> TryFrom<U> for T` with `Error = Infallible`.
+pub fn try_from_same(x: u8) -> u8 {
+    let r: Result<u8, Infallible> = u8::try_from(x);
+    match r {
+        Ok(v) => v,
+        Err(e) => match e {},
+    }
+}
+
+pub fn try_from_generic<T, U: Into<T>>(u: U) -> T {
+    match T::try_from(u) {
+        Ok(t) => t,
+        Err(e) => match e {},
+    }
+}
+
+pub trait MyBound {}
+pub trait Tr<U> {
+    type Out;
+    #[pure]
+    fn make(&self, u: U) -> Self::Out;
+}
+
+pub struct S;
+#[derive(Clone, Copy)]
+pub struct Z(pub u32);
+
+impl MyBound for Z {}
+
+#[refine_trait_spec]
+impl<U: MyBound + Copy> Tr<U> for S {
+    type Out = U;
+    #[pure]
+    fn make(&self, u: U) -> U {
+        u
+    }
+}
+
+#[pure]
+pub fn via<T: Tr<V>, V>(t: &T, v: V) -> T::Out {
+    t.make(v)
+}
+
+// `<S as Tr<Z>>::Out == Z` and the impl's `make` spec, at a concrete type.
+pub fn concrete_user(z: Z) {
+    let o: Z = via(&S, z);
+    prusti_assert!(o.0 == z.0);
+}
+
+// The same, where `V: MyBound + Copy` is only known from the where-clause.
+#[pure]
+#[ensures(result === v)]
+pub fn generic_user<V: MyBound + Copy>(v: V) -> V {
+    via(&S, v)
+}
+
+// `impl<I: Iterator> IntoIterator for I`: `IntoIter == I`.
+pub fn into_iter_is_identity<I: Iterator<Item = u32>>(i: I) -> I {
+    i.into_iter()
+}
+
+// The behavioural-subtyping check of an impl assumes the impl's
+// where-clauses: `via(&self.0) == 7` needs `T: Copy`.
+mod subtyping_check_bounds {
+    use prusti_contracts::*;
+
+    pub trait Seven {
+        #[pure]
+        fn seven(&self) -> u32;
+    }
+    #[refine_trait_spec]
+    impl<T: Copy> Seven for T {
+        #[pure]
+        #[ensures(result == 7)]
+        fn seven(&self) -> u32 {
+            7
+        }
+    }
+
+    #[pure]
+    pub fn via<T: Seven>(t: &T) -> u32 {
+        t.seven()
+    }
+
+    pub trait Tr {
+        #[ensures(result == 7)]
+        fn f(&self) -> u32;
+    }
+    pub struct W<T>(pub T);
+    #[refine_trait_spec]
+    impl<T: Copy> Tr for W<T> {
+        #[ensures(result == via(&self.0))]
+        fn f(&self) -> u32 {
+            via(&self.0)
+        }
+    }
+}

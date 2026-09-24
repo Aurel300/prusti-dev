@@ -58,22 +58,25 @@ impl TaskEncoder for TraitImplEnc {
 
             let impl_context = GParams::from(*task_key);
 
-            let trait_ref = tcx.impl_trait_ref(task_key).unwrap().instantiate_identity();
-            let trait_did = trait_ref.def_id;
+            let trait_ref = tcx.impl_trait_ref(*task_key).instantiate_identity();
+            let trait_did = trait_ref.skip_norm_wip().def_id;
             let trait_data = deps.require_ref::<TraitEnc>(trait_did)?;
             let trait_name = trait_data.trait_name;
 
             let mut methods = Vec::new();
 
-            let implementing_ty = tcx.type_of(task_key).instantiate_identity();
+            let implementing_ty = tcx
+                .type_of(*task_key)
+                .instantiate_identity()
+                .skip_norm_wip();
             let implementing_ty = RustTyDecomposition::from_ty(implementing_ty, impl_context);
             let implementing_ty = implementing_ty.ty.name();
 
-            for impl_item in tcx.associated_items(task_key).in_definition_order() {
+            for impl_item in tcx.associated_items(*task_key).in_definition_order() {
                 let ty::AssocKind::Fn { .. } = impl_item.kind else {
                     continue;
                 };
-                let trait_item_def_id = impl_item.trait_item_def_id.unwrap();
+                let trait_item_def_id = impl_item.trait_item_def_id().unwrap();
                 let impl_item_def_id = impl_item.def_id;
                 let impl_span = vcx.tcx().def_span(impl_item_def_id);
                 let item_name = ViperIdent::from_def_id(vcx, impl_item_def_id);
@@ -230,7 +233,7 @@ impl TaskEncoder for TraitImplEnc {
                     let pure_func = deps.require_dep::<FunctionCallEnc>(
                         CallTaskDescription::new(
                             impl_item_def_id,
-                            trait_ref.args,
+                            trait_ref.skip_norm_wip().args,
                             trait_item_def_id,
                         )
                         .resolve_trait_calls(false),
@@ -321,7 +324,10 @@ impl TaskEncoder for TraitImplConditionEnc {
             let tcx = vcx.tcx();
 
             let impl_context = GParams::from(*task_key);
-            let trait_ref = tcx.impl_trait_ref(task_key).unwrap().instantiate_identity();
+            let trait_ref = tcx
+                .impl_trait_ref(*task_key)
+                .instantiate_identity()
+                .skip_norm_wip();
             let trait_did = trait_ref.def_id;
             let condition = TraitImplEnc::impl_block_check(vcx, deps, impl_context, trait_ref)?;
             Ok(((trait_did, condition), ()))
@@ -423,6 +429,11 @@ impl TraitImplEnc {
     ) -> Result<(), EncodeFullError<'vir, E>> {
         if let ty::TyKind::Param(p) = ty.kind() {
             generic_map.entry(p.index).or_insert(expr.upcast_ty());
+            return Ok(());
+        }
+        if matches!(ty.kind(), ty::TyKind::Alias(..)) {
+            // An unresolved associated-type projection whose self-type is
+            // still generic
             return Ok(());
         }
 
@@ -538,7 +549,10 @@ impl TraitImplEnc {
                 ty::TermKind::Const(const_) => {
                     let projection =
                         trait_.assoc_consts[&proj_pred.def_id()](gargs.get_ty(), gargs.get_const());
-                    let ty = tcx.type_of(proj_pred.def_id()).instantiate_identity();
+                    let ty = tcx
+                        .type_of(proj_pred.def_id())
+                        .instantiate_identity()
+                        .skip_norm_wip();
                     let const_task = ConstEncTask::Ty {
                         const_,
                         ty,
@@ -578,9 +592,9 @@ fn impl_name<'vir>(vcx: &'vir vir::VirCtxt<'vir>, impl_did: DefId) -> &'vir str 
     let all_impls = tcx.trait_impls_in_crate(impl_did.krate);
     let idx = all_impls.iter().position(|did| *did == impl_did).unwrap();
     let krate = tcx.crate_name(impl_did.krate);
-    let trait_did = tcx.impl_trait_ref(impl_did).unwrap().skip_binder().def_id;
+    let trait_did = tcx.impl_trait_ref(impl_did).skip_binder().def_id;
     let trait_name = ViperIdent::from_def_id(vcx, trait_did);
-    let implementing_ty = tcx.type_of(impl_did).instantiate_identity();
+    let implementing_ty = tcx.type_of(impl_did).instantiate_identity().skip_norm_wip();
     let implementing_ty = RustTyDecomposition::from_ty(implementing_ty, GParams::from(impl_did));
     let implementing_ty = implementing_ty.ty.name();
     vir::vir_format!(vcx, "{trait_name}_impl_{krate}_{implementing_ty}_{idx}")
@@ -601,7 +615,10 @@ fn impl_name<'vir>(vcx: &'vir vir::VirCtxt<'vir>, impl_did: DefId) -> &'vir str 
 pub(super) fn impl_unlock_keys<'vir>(impl_did: DefId) -> Vec<RustTy<'vir>> {
     vir::with_vcx(|vcx| {
         let tcx = vcx.tcx();
-        let impl_trait_ref = tcx.impl_trait_ref(impl_did).unwrap().instantiate_identity();
+        let impl_trait_ref = tcx
+            .impl_trait_ref(impl_did)
+            .instantiate_identity()
+            .skip_norm_wip();
         fn collect_ctor_keys<'vir>(ty: ty::Ty<'vir>, ctx: DefId, out: &mut Vec<RustTy<'vir>>) {
             let decomp = RustTyDecomposition::from_ty(ty, ctx);
             if decomp.ty.specifics.is_param() {
@@ -659,14 +676,17 @@ impl TaskEncoder for TraitImplItemEnc {
             let impl_item_def_id = *task_key;
             let impl_did = tcx.impl_of_assoc(impl_item_def_id).unwrap();
             let impl_item = tcx.associated_item(impl_item_def_id);
-            let trait_item_def_id = impl_item.trait_item_def_id.unwrap();
+            let trait_item_def_id = impl_item.trait_item_def_id().unwrap();
             let impl_span = tcx.def_span(impl_item_def_id);
             let item_name = ViperIdent::from_def_id(vcx, impl_item_def_id);
             let impl_name = impl_name(vcx, impl_did);
 
             let impl_context = GParams::from(impl_did);
             let impl_params = deps.require_dep::<GenericParamsEnc>(impl_context)?;
-            let trait_ref = tcx.impl_trait_ref(impl_did).unwrap().instantiate_identity();
+            let trait_ref = tcx
+                .impl_trait_ref(impl_did)
+                .instantiate_identity()
+                .skip_norm_wip();
 
             let impl_item_context = GParams::from(impl_item_def_id);
             let impl_item_params = deps.require_dep::<GenericParamsEnc>(impl_item_context)?;
@@ -710,6 +730,155 @@ impl TaskEncoder for TraitImplItemEnc {
             let trait_tys = args.get_ty();
             let trait_consts = args.get_const();
 
+            // Impl-block generics that don't appear structurally in
+            // `trait_tys`/`trait_consts` (e.g. `T` in `impl<I, T> Iterator
+            // for Copied<I> where I: Iterator<Item = &'a T> { type Item =
+            // T; ... }`, where `T` is only recoverable via the where-clause)
+            // must not be quantified in the axioms below: they don't occur
+            // in the triggers (which only mention `trait_tys`/
+            // `trait_consts`), which Viper rejects. Discover their values
+            // from the impl's projection predicates instead (mirroring
+            // `TraitImplEnc::impl_block_check`) and `let`-bind them inside
+            // each axiom's body instead of quantifying over them.
+            let known_generics: FxIndexSet<u32> = trait_ref
+                .args
+                .iter()
+                .chain(item_args.iter().copied())
+                .flat_map(|arg| arg.walk())
+                .filter_map(|arg| match arg.kind() {
+                    ty::GenericArgKind::Type(ty) if let ty::TyKind::Param(p) = ty.kind() => {
+                        Some(p.index)
+                    }
+                    ty::GenericArgKind::Const(c) if let ty::ConstKind::Param(p) = c.kind() => {
+                        Some(p.index)
+                    }
+                    _ => None,
+                })
+                .collect();
+            let mut generics_map: FxIndexMap<u32, vir::ExprDyn<'vir>> = FxIndexMap::default();
+            // Only impl blocks with a generic parameter that's unreachable
+            // from `trait_ref.args`/`item_args` (the "loose" case this fix
+            // targets) need any of this: everything below is skipped
+            // entirely for the overwhelmingly common case of impls whose
+            // every generic is already structurally present in `Self`/the
+            // trait's own args, so their axioms are encoded exactly as
+            // before.
+            let has_loose_generics =
+                impl_item_context
+                    .rust_params()
+                    .iter()
+                    .any(|arg| match arg.kind() {
+                        ty::GenericArgKind::Type(ty) => {
+                            let ty::TyKind::Param(p) = ty.kind() else {
+                                unreachable!()
+                            };
+                            !known_generics.contains(&p.index)
+                        }
+                        ty::GenericArgKind::Const(c) => {
+                            let ty::ConstKind::Param(p) = c.kind() else {
+                                unreachable!()
+                            };
+                            !known_generics.contains(&p.index)
+                        }
+                        ty::GenericArgKind::Lifetime(_) => false,
+                    });
+            if has_loose_generics {
+                let caller_bounds = impl_item_context.typing_env().param_env.caller_bounds();
+                let proj_preds = caller_bounds
+                    .iter()
+                    .filter_map(ty::Clause::as_projection_clause)
+                    .map(ty::Binder::skip_binder);
+                let proj_preds =
+                    TraitImplEnc::order_projections(known_generics.iter().copied(), proj_preds);
+                for proj_pred in proj_preds {
+                    let proj_trait_did = proj_pred.trait_def_id(tcx);
+                    let proj_trait = deps.require_ref::<TraitEnc>(proj_trait_did)?;
+                    let gargs = GArgs::new(impl_item_context, proj_pred.projection_term.args);
+                    let gargs = deps.require_dep::<GArgsTyEnc>(gargs)?;
+                    match proj_pred.term.kind() {
+                        ty::TermKind::Ty(ty) => {
+                            let projection = proj_trait.assoc_types[&proj_pred.def_id()](
+                                gargs.get_ty(),
+                                gargs.get_const(),
+                            );
+                            TraitImplEnc::discover_bind_points(
+                                deps,
+                                &mut generics_map,
+                                impl_item_context,
+                                projection,
+                                ty,
+                            )?;
+                        }
+                        ty::TermKind::Const(const_) => {
+                            if let ty::ConstKind::Param(p) = const_.kind() {
+                                let projection = proj_trait.assoc_consts[&proj_pred.def_id()](
+                                    gargs.get_ty(),
+                                    gargs.get_const(),
+                                );
+                                generics_map
+                                    .entry(p.index)
+                                    .or_insert(projection.upcast_ty());
+                            }
+                        }
+                    }
+                }
+            }
+            // A projection's term can structurally mention a generic that's
+            // *also* directly reachable from `trait_ref.args`/`item_args`
+            // (and hence already covered by the quantifier and `trait_tys`/
+            // `trait_consts`) without that generic itself being "loose" --
+            // only genuinely undiscoverable-from-trait_tys generics should
+            // be `let`-bound instead of quantified.
+            generics_map.retain(|idx, _| !known_generics.contains(idx));
+
+            // `ty_decls()`/`const_decls()` are positional (the k-th
+            // type-kind entry of `rust_params()`, in order), while
+            // `generics_map` is keyed by rustc's own param index; for an
+            // identity `GParams` (as `impl_item_context` is) these
+            // coincide, so walk `rust_params()` once to filter both lists
+            // in lockstep.
+            let mut trait_ty_decls_filtered = Vec::new();
+            let mut trait_const_decls_filtered = Vec::new();
+            let mut ty_pos = 0usize;
+            let mut const_pos = 0usize;
+            for arg in impl_item_context.rust_params() {
+                match arg.kind() {
+                    ty::GenericArgKind::Type(ty) => {
+                        let ty::TyKind::Param(p) = ty.kind() else {
+                            unreachable!()
+                        };
+                        if !generics_map.contains_key(&p.index) {
+                            trait_ty_decls_filtered.push(trait_ty_decls[ty_pos]);
+                        }
+                        ty_pos += 1;
+                    }
+                    ty::GenericArgKind::Const(c) => {
+                        let ty::ConstKind::Param(p) = c.kind() else {
+                            unreachable!()
+                        };
+                        if !generics_map.contains_key(&p.index) {
+                            trait_const_decls_filtered.push(trait_const_decls[const_pos]);
+                        }
+                        const_pos += 1;
+                    }
+                    ty::GenericArgKind::Lifetime(_) => {}
+                }
+            }
+            let trait_ty_decls = trait_ty_decls_filtered.as_slice();
+            let trait_const_decls = trait_const_decls_filtered.as_slice();
+            // Wraps `body` in a `let` for each discovered "loose" generic,
+            // binding it to its derived value (see comment above).
+            let let_bind_generics = |body: vir::ExprBool<'vir>| {
+                generics_map.iter().rfold(body, |acc, (&idx, expr)| {
+                    let idx = impl_item_params.map_idx(idx);
+                    let decl = match idx {
+                        Ok(idx) => impl_item_params.ty_decls()[idx].upcast_ty(),
+                        Err(idx) => impl_item_params.const_decls()[idx].upcast_ty(),
+                    };
+                    vcx.mk_let_expr(decl, *expr, acc)
+                })
+            };
+
             let mut axioms = Vec::new();
 
             match impl_item.kind {
@@ -721,15 +890,20 @@ impl TaskEncoder for TraitImplItemEnc {
                     let assoc_type_expr = impl_item_params.ty_expr(
                         deps,
                         RustTyDecomposition::from_ty(
-                            tcx.type_of(impl_item_def_id).instantiate_identity(),
+                            tcx.type_of(impl_item_def_id)
+                                .instantiate_identity()
+                                .skip_norm_wip(),
                             impl_item_context,
                         ),
                     )?;
+                    let body = let_bind_generics(
+                        vcx.mk_eq_expr(assoc_type(trait_tys, trait_consts), assoc_type_expr),
+                    );
                     axioms.push(vcx.mk_domain_axiom(
                         vir_format_identifier!(vcx, "{impl_name}_assoc_type_{item_name}"),
                         vir::expr! {forall ..[trait_ty_decls], ..[trait_const_decls] ::
                             {[assoc_type(trait_tys, trait_consts)]}
-                        ([assoc_type(trait_tys, trait_consts)]) == (assoc_type_expr)},
+                        [body]},
                     ));
                 }
                 ty::AssocKind::Fn { .. } => {
@@ -776,11 +950,12 @@ impl TaskEncoder for TraitImplItemEnc {
                     let casted_args_slice = vcx.alloc_slice(&casted_args);
                     let pre_func_call =
                         assoc_fn.pre_func.call()(casted_args_slice, trait_tys, trait_consts);
+                    let pre_body = let_bind_generics(vir::expr! { (pres) ==> (pre_func_call) });
                     axioms.push(vcx.mk_domain_axiom(
                     vir_format_identifier!(vcx, "{impl_name}_fn_pre_{item_name}"),
                     vir::expr! {
                         forall ..[func_args], ..[trait_ty_decls], ..[trait_const_decls] :: {[pre_func_call]}
-                            (pres) ==> (pre_func_call)
+                            [pre_body]
                     },
                 ));
                     let mut posts = impl_item_spec.post_exprs().collect::<Vec<_>>();
@@ -816,11 +991,12 @@ impl TaskEncoder for TraitImplItemEnc {
                         trait_tys,
                         trait_consts,
                     );
+                    let post_body = let_bind_generics(vir::expr! { (post_func_call) ==> (posts) });
                     axioms.push(vcx.mk_domain_axiom(
                     vir_format_identifier!(vcx, "{impl_name}_fn_post_{item_name}"),
                     vir::expr! {
                         forall [func_ret], ..[func_args], ..[trait_ty_decls], ..[trait_const_decls] :: {[post_func_call]}
-                            (post_func_call) ==> (posts)
+                            [post_body]
                     },
                 ));
                 }

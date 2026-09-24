@@ -16,8 +16,9 @@ use prusti_rustc_interface::{
     index::IndexVec,
     interface::{interface::Compiler, Config},
     middle::{
-        mir, query::queries::mir_borrowck::ProvidedValue as MirBorrowck, ty::TyCtxt,
-        util::Providers,
+        mir,
+        queries::{mir_borrowck::ProvidedValue as MirBorrowck, Providers},
+        ty::TyCtxt,
     },
     session::Session,
     span::{Ident, Symbol, DUMMY_SP},
@@ -68,8 +69,9 @@ fn mir_promoted<'tcx>(
     &'tcx Steal<mir::Body<'tcx>>,
     &'tcx Steal<IndexVec<mir::Promoted, mir::Body<'tcx>>>,
 ) {
-    let original_mir_promoted =
-        prusti_rustc_interface::interface::DEFAULT_QUERY_PROVIDERS.mir_promoted;
+    let original_mir_promoted = prusti_rustc_interface::interface::DEFAULT_QUERY_PROVIDERS
+        .queries
+        .mir_promoted;
     let result = original_mir_promoted(tcx, def_id);
     // SAFETY: This is safe because we are feeding in the same `tcx` that is
     // going to be used as a witness when pulling out the data.
@@ -86,9 +88,9 @@ impl prusti_rustc_interface::ast_pretty::pprust::PpAnn for NoAnn {}
 impl prusti_rustc_interface::driver::Callbacks for PrustiCompilerCalls {
     fn config(&mut self, config: &mut Config) {
         assert!(config.override_queries.is_none());
-        config.override_queries = Some(|_session: &Session, providers: &mut Providers| {
-            providers.mir_borrowck = mir_borrowck;
-            providers.mir_promoted = mir_promoted;
+        config.override_queries = Some(|_session: &Session, providers| {
+            providers.queries.mir_borrowck = mir_borrowck;
+            providers.queries.mir_promoted = mir_promoted;
         });
     }
 
@@ -126,7 +128,6 @@ impl prusti_rustc_interface::driver::Callbacks for PrustiCompilerCalls {
                     vis: Visibility {
                         kind: VisibilityKind::Public,
                         span: DUMMY_SP,
-                        tokens: None,
                     },
                     kind: ItemKind::ExternCrate(
                         None,
@@ -156,8 +157,8 @@ impl prusti_rustc_interface::driver::Callbacks for PrustiCompilerCalls {
         if config::print_desugared_specs() {
             // based on the implementation of rustc_driver::pretty::print_after_parsing
             let sess = &compiler.sess;
-            let krate = &tcx.resolver_for_lowering().borrow().1;
-            let src_name = sess.io.input.source_name();
+            let krate = &tcx.resolver_for_lowering().1.borrow();
+            let src_name = sess.io.input.file_name(sess);
             let src = sess
                 .source_map()
                 .get_source_file(&src_name)

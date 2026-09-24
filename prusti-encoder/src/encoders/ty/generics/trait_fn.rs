@@ -262,6 +262,9 @@ impl TaskEncoder for TraitFnEnc {
                 item_generics.ty_exprs(),
                 item_generics.const_exprs(),
             );
+            // Impls may weaken the preconditions, so a call can be valid
+            // outside them; the trait's postconditions are only promised
+            // where they held. `post_func` receives the arguments' pre-state.
             axioms.push(vcx.mk_domain_axiom(
                 vir_format_identifier!(
                     vcx,
@@ -269,7 +272,7 @@ impl TaskEncoder for TraitFnEnc {
                 ),
                 vir::expr! {
                     forall [func_ret], ..[func_args], ..[item_generics.ty_decls()], ..[item_generics.const_decls()] :: {[post_func_call]}
-                        (post_func_call) ==> (posts)
+                        (post_func_call) ==> ((pres) ==> (posts))
                 },
             ));
 

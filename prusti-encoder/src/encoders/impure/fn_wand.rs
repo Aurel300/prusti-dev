@@ -47,7 +47,7 @@ impl<'vir, E: TaskEncoder> ImpureEncVisitor<'vir, '_, E> {
         for wand_data in self.wands.viper_wands() {
             let Some(wand) = self
                 .wands
-                .mk_wand(&wand_data, args, None, self.vcx, self.deps)
+                .mk_wand(&wand_data, args, None, None, self.vcx, self.deps)
             else {
                 continue;
             };
@@ -245,7 +245,7 @@ impl<'vir> WandEncOutput<'vir> {
 
         // TODO: wands for late-bound regions
         self.viper_wands().into_iter().filter_map(move |wand_data| {
-            let wand = self.mk_wand(&wand_data, args, None, vcx, deps)?;
+            let wand = self.mk_wand(&wand_data, args, None, None, vcx, deps)?;
             Some(vcx.mk_let_expr(
                 wand_result,
                 local_defs[mir::RETURN_PLACE].impure_snap,
@@ -272,9 +272,14 @@ impl<'vir> WandEncOutput<'vir> {
         });
         let args = PledgeExpr::pledge_args(result, args);
         for wand_data in self.viper_wands() {
-            let Some(wand) =
-                self.mk_wand(&wand_data, args, Some(call_ctx), visitor.vcx, visitor.deps)
-            else {
+            let Some(wand) = self.mk_wand(
+                &wand_data,
+                args,
+                Some(label_pre),
+                Some(call_ctx),
+                visitor.vcx,
+                visitor.deps,
+            ) else {
                 continue;
             };
             visitor.stmt(visitor.vcx.mk_apply_stmt(wand));
@@ -285,6 +290,7 @@ impl<'vir> WandEncOutput<'vir> {
         &self,
         wand_data: &WandData<'vir>,
         pledge_args: PledgeArgs<'vir>,
+        pledge_old_label: Option<&'vir str>,
         call_ctx: WandCallContext<'vir>,
         vcx: &'vir vir::VirCtxt<'vir>,
         deps: &mut TaskEncoderDependencies<'vir, E>,
@@ -296,12 +302,14 @@ impl<'vir> WandEncOutput<'vir> {
             })
         });
         let rhs = rhs
-            .chain(
-                wand_data
-                    .pledges
-                    .iter()
-                    .map(|pledge| pledge.expiry_postcondition.expr(pledge_args)),
-            )
+            .chain(wand_data.pledges.iter().map(|pledge| {
+                match pledge_old_label {
+                    Some(label) => pledge
+                        .expiry_postcondition
+                        .expr_at_label(pledge_args, label),
+                    None => pledge.expiry_postcondition.expr(pledge_args),
+                }
+            }))
             .collect::<Vec<_>>();
         if rhs.is_empty() {
             // We skip emitting the wand when there is nothing on the RHS, i.e.,
@@ -316,13 +324,14 @@ impl<'vir> WandEncOutput<'vir> {
             })
         });
         let lhs = lhs
-            .chain(
-                wand_data
-                    .pledges
-                    .iter()
-                    .filter_map(|pledge| pledge.expiry_obligation)
-                    .map(|expr| expr.expr(pledge_args)),
-            )
+            .chain(wand_data.pledges.iter().filter_map(|pledge| {
+                match pledge_old_label {
+                    Some(label) => pledge
+                        .expiry_obligation
+                        .map(|o| o.expr_at_label(pledge_args, label)),
+                    None => pledge.expiry_obligation.map(|o| o.expr(pledge_args)),
+                }
+            }))
             .collect::<Vec<_>>();
         let lhs = vcx.mk_conj(&lhs);
         Some(vcx.mk_wand(lhs, rhs))

@@ -27,6 +27,7 @@ use pcg::{
 };
 use prusti_interface::PrustiError;
 use prusti_rustc_interface::{
+    abi,
     data_structures::graph::Successors,
     index::Idx,
     middle::{
@@ -1690,16 +1691,98 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             kind: PureKind::SpecBlock(spec_block),
         })?;
         use vir::Reify;
-        let locals: FxHashMap<mir::Local, _> = enc_output
-            .inputs
-            .iter()
-            .map(|local| (*local, self.local_defs[*local].impure_snap))
-            .collect();
+        let mut places_by_local: FxHashMap<mir::Local, Vec<Place<'vir>>> = FxHashMap::default();
+        for place in enc_output.inputs.iter().copied() {
+            places_by_local.entry(place.local).or_default().push(place);
+        }
+        let mut locals: FxHashMap<mir::Local, vir::ExprSnap<'vir>> = FxHashMap::default();
+        for (local, reads) in places_by_local {
+            let place: Place = local.into();
+            let place_ty = RustTyDecomposition::from_ty(place.ty(self.pcg_ctxt()).ty, self.def_id);
+            let snap = self.encode_partial_place_snap(place, &reads, place_ty)?;
+            locals.insert(local, snap);
+        }
+
         let expr = enc_output
             .expr
             .reify(self.vcx, (self.def_id, self.vcx.alloc(locals)))
             .downcast_ty();
         Ok(expr)
+    }
+
+    fn encode_place_snap_with_decomposition(
+        &mut self,
+        place: Place<'vir>,
+        place_ty: RustTyDecomposition<'vir>,
+    ) -> EncodeResult<'vir, vir::ExprSnap<'vir>, E> {
+        let result = self.encode_place(place)?;
+        let impure_ty = self.deps.require_dep::<TyUseImpureEnc>(place_ty)?;
+        Ok(result
+            .expr
+            .snap
+            .unwrap_or_else(|| impure_ty.ref_to_snap(result.expr.address)))
+    }
+
+    fn encode_partial_place_snap(
+        &mut self,
+        place: Place<'vir>,
+        reads: &[Place<'vir>],
+        place_ty: RustTyDecomposition<'vir>,
+    ) -> EncodeResult<'vir, vir::ExprSnap<'vir>, E> {
+        if reads.contains(&place) {
+            return self.encode_place_snap_with_decomposition(place, place_ty);
+        }
+        let depth = place.projection.len();
+        let next_field = |read: &Place<'vir>| match read.projection.get(depth) {
+            Some(mir::ProjectionElem::Field(fidx, _)) => Some(*fidx),
+            _ => None,
+        };
+        let pure_ty = self.deps.require_dep::<TyUsePureEnc>(place_ty)?;
+        let Some(struct_data) = pure_ty.get_structlike() else {
+            return self.encode_place_snap_with_decomposition(place, place_ty);
+        };
+        if reads.iter().any(|read| next_field(read).is_none()) {
+            return self.encode_place_snap_with_decomposition(place, place_ty);
+        }
+        let field_count = struct_data.fields.len();
+
+        let mut field_snaps = Vec::with_capacity(field_count);
+        for idx in 0..field_count {
+            let fidx = abi::FieldIdx::from_usize(idx);
+            let field_reads: Vec<Place<'vir>> = reads
+                .iter()
+                .copied()
+                .filter(|read| next_field(read) == Some(fidx))
+                .collect();
+            let field_data = place_ty.ty.expect_structlike().fields[idx];
+            let field_ty = field_data.decompose_normalize(place_ty.args);
+            if field_reads.is_empty() {
+                // The field is never read by the spec block, so using a
+                // placeholder is fine even if it was moved out.
+                let snapshot_ty = self
+                    .deps
+                    .require_ref::<TyUsePureEnc>(field_ty)
+                    .unwrap()
+                    .snapshot;
+                field_snaps.push(self.new_tmp(snapshot_ty));
+            } else {
+                let field_place = place
+                    .project_deeper(
+                        &[field_data.get_field_projection(fidx, place_ty.args)],
+                        self.vcx.tcx(),
+                    )
+                    .into();
+                field_snaps.push(self.encode_partial_place_snap(
+                    field_place,
+                    &field_reads,
+                    field_ty,
+                )?);
+            }
+        }
+        Ok(pure_ty
+            .expect_structlike()
+            .field_snaps_to_snap(field_snaps)
+            .upcast_ty())
     }
 
     fn visit_basic_block_data(

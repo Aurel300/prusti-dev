@@ -157,10 +157,9 @@ impl TaskEncoder for MirPureEnc {
                     enc.encode_body()
                 }
             })?;
-            let inputs = std::mem::take(&mut enc.place_versions_used)
+            let inputs = std::mem::take(&mut enc.input_places_used)
                 .into_iter()
-                .filter(|(p, v)| p.local != mir::RETURN_PLACE && *v == 0)
-                .map(|(p, _v)| p)
+                .filter(|p| p.local != mir::RETURN_PLACE)
                 .sorted()
                 .collect::<Vec<_>>();
             let inputs_expected = inputs.iter().map(|p| p.local).unique().count();
@@ -194,7 +193,6 @@ impl TaskEncoder for MirPureEnc {
                         assert!(lctx.1.len() >= inputs_expected);
 
                         use vir::Reify;
-
                         expr_inner.kind.reify(vcx, lctx)
                     }),
                 )
@@ -283,7 +281,7 @@ struct Enc<'vir: 'enc, 'enc> {
     /// Always holds the next version to be used for a local.
     version_ctr: IndexVec<mir::Local, usize>,
     versions_used: FxHashSet<(mir::Local, usize)>, // TODO: mode indicators?
-    place_versions_used: FxHashSet<(Place<'vir>, usize)>,
+    input_places_used: FxHashSet<Place<'vir>>,
     phi_ctr: usize,
     old_mode: bool,
     rel0_mode: bool,
@@ -384,7 +382,7 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
             // visited: IndexVec::from_elem_n(false, body.basic_blocks.len()),
             version_ctr: IndexVec::from_elem_n(0, body.local_decls.len()),
             versions_used: Default::default(),
-            place_versions_used: Default::default(),
+            input_places_used: Default::default(),
             phi_ctr: 0,
             old_mode: false,
             rel0_mode: false,
@@ -1225,7 +1223,9 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
         assert!(curr_ver.contains_key(&place.local));
         let version = curr_ver[&place.local].index;
         self.versions_used.insert((place.local, version));
-        self.place_versions_used.insert((place, version));
+        if version == 0 {
+            self.input_places_used.insert(place);
+        }
 
         let mut place_ty = mir::PlaceTy::from_ty(self.body.local_decls[place.local].ty);
 

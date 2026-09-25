@@ -1,7 +1,13 @@
 use std::ops::Deref;
 
 use prusti_interface::environment::EnvQuery;
-use prusti_rustc_interface::{abi, hir, index, middle::ty, span::symbol};
+use prusti_rustc_interface::{
+    abi,
+    abi::FieldIdx,
+    hir, index,
+    middle::{mir::ProjectionElem, ty},
+    span::symbol,
+};
 
 use super::{
     data::*,
@@ -124,6 +130,14 @@ impl<'tcx> LazyRustTy<'tcx> {
             );
             Self::new(ty::Ty::new_projection(vcx.tcx(), metadata_did, [self.0]))
         })
+    }
+
+    pub fn get_field_projection<V>(
+        &self,
+        fidx: FieldIdx,
+        args: GArgs<'tcx>,
+    ) -> ProjectionElem<V, ty::Ty<'tcx>> {
+        ProjectionElem::Field(fidx, args.normalize(self.0))
     }
 }
 

@@ -195,25 +195,25 @@ impl TaskEncoder for TraitFnEnc {
             // (see `TraitEnc`), but calling a trait function must not pull in
             // the trait's whole machinery. An impl that inherits a pure
             // default body instead unlocks the axiom stating that body at its
-            // trait refs.
+            // trait refs. Only final definitions are assumed (see
+            // `final_leaf_def`).
             let has_body = is_function_with_body(vcx.tcx(), def_id);
-            for impl_did in trait_impls::positive_impls(tcx, trait_def_id) {
+            for impl_did in trait_impls::implementing_impls(tcx, trait_def_id) {
+                let Some(leaf) = trait_impls::final_leaf_def(tcx, impl_did, def_id) else {
+                    continue;
+                };
                 let keys = trait_impls::impl_unlock_keys(impl_did);
                 let impl_span = tcx.def_span(impl_did);
-                if let Some(&impl_item_def_id) =
-                    tcx.impl_item_implementor_ids(impl_did).get(&def_id)
-                {
+                if !leaf.defining_node.is_from_trait() {
+                    let item_did = leaf.item.def_id;
                     TyConstructorEnc::on_all_requested(keys, move || {
                         let _ = trait_impls::TraitImplItemEnc::encode(
-                            impl_item_def_id,
+                            (impl_did, item_did),
                             false,
                             impl_span,
                         );
                     });
-                } else if has_body
-                    && is_pure
-                    && trait_impls::inherits_default_body(tcx, impl_did, def_id)
-                {
+                } else if has_body && is_pure {
                     TyConstructorEnc::on_all_requested(keys, move || {
                         let _ = trait_impls::TraitImplDefaultFnEnc::encode(
                             (impl_did, def_id),

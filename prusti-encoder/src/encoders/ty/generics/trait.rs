@@ -122,7 +122,7 @@ impl TaskEncoder for TraitEnc {
 
             // Each relevant impl contributes an axiom stating where it makes
             // `impl_fun` hold (see `impl_unlock_keys` for the gating).
-            for impl_did in trait_impls::positive_impls(tcx, *task_key) {
+            for impl_did in trait_impls::implementing_impls(tcx, *task_key) {
                 let keys = trait_impls::impl_unlock_keys(impl_did);
                 let span = tcx.def_span(impl_did);
                 TyConstructorEnc::on_all_requested(keys.clone(), move || {
@@ -131,14 +131,27 @@ impl TaskEncoder for TraitEnc {
                 // The impl's associated types resolve through the trait's
                 // type functions declared above, so they unlock together
                 // with the condition (fn items instead unlock per called
-                // function, from `TraitFnEnc`).
-                for item in tcx.associated_items(impl_did).in_definition_order() {
-                    if matches!(item.kind, ty::AssocKind::Type { .. }) {
-                        let item_did = item.def_id;
-                        TyConstructorEnc::on_all_requested(keys.clone(), move || {
-                            let _ = trait_impls::TraitImplItemEnc::encode(item_did, false, span);
-                        });
+                // function, from `TraitFnEnc`). Only final definitions are
+                // assumed (see `final_leaf_def`); defaults provided by the
+                // trait are not supported.
+                for item in tcx.associated_items(*task_key).in_definition_order() {
+                    if !matches!(item.kind, ty::AssocKind::Type { .. }) {
+                        continue;
                     }
+                    let Some(leaf) = trait_impls::final_leaf_def(tcx, impl_did, item.def_id) else {
+                        continue;
+                    };
+                    if leaf.defining_node.is_from_trait() {
+                        continue;
+                    }
+                    let item_did = leaf.item.def_id;
+                    TyConstructorEnc::on_all_requested(keys.clone(), move || {
+                        let _ = trait_impls::TraitImplItemEnc::encode(
+                            (impl_did, item_did),
+                            false,
+                            span,
+                        );
+                    });
                 }
             }
             let trait_domain = vcx.mk_domain(

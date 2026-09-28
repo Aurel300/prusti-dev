@@ -245,7 +245,7 @@ impl TaskEncoder for TraitImplEnc {
             }
 
             // Make the impl visible to the trait's `impl_fun`.
-            if is_positive_impl(tcx, *task_key) {
+            if implements_trait(tcx, *task_key) {
                 deps.require_dep::<TraitImplConditionEnc>(*task_key)?;
             }
 
@@ -707,16 +707,46 @@ impl TraitImplEnc {
     }
 }
 
-/// The impls of a trait that make it hold. Negative impls (`impl !Tr for X`)
-/// and reservation impls (`#[rustc_reservation_impl]`) are not used by trait
-/// selection, so assuming their conditions or items would be unsound.
-pub(super) fn positive_impls(tcx: ty::TyCtxt<'_>, trait_did: DefId) -> impl Iterator<Item = DefId> {
+/// The impls of a trait that make it hold (see [`implements_trait`]).
+pub(super) fn implementing_impls(
+    tcx: ty::TyCtxt<'_>,
+    trait_did: DefId,
+) -> impl Iterator<Item = DefId> {
     tcx.all_impls(trait_did)
-        .filter(move |&impl_did| is_positive_impl(tcx, impl_did))
+        .filter(move |&impl_did| implements_trait(tcx, impl_did))
 }
 
-fn is_positive_impl(tcx: ty::TyCtxt<'_>, impl_did: DefId) -> bool {
+/// Whether the impl makes its trait ref hold, i.e. whether its condition
+/// and items may be assumed. Negative impls (`impl !Tr for X`) and
+/// reservation impls (`#[rustc_reservation_impl]`) are not used by trait
+/// selection, and a partial `default impl` only provides items for the impls
+/// specializing it.
+pub(super) fn implements_trait(tcx: ty::TyCtxt<'_>, impl_did: DefId) -> bool {
     tcx.impl_polarity(impl_did) == ty::ImplPolarity::Positive
+        && !tcx.defaultness(impl_did).is_default()
+}
+
+/// The definition of `trait_item` that Rust uses wherever the impl applies,
+/// if it is final: the impl's own item, or one it inherits from an impl it
+/// specializes or from the trait (an inherited item cannot be specialized
+/// further, E0520). A `default` item may be overridden by a specializing
+/// impl, possibly in a crate this one cannot see; like rustc, which only
+/// resolves such an item once all types are known, it stays opaque.
+///
+/// Only for impls that implement the trait: `leaf_def` counts an item that
+/// the starting impl does not mention as finalized by it, which does not
+/// hold for a partial `default impl`.
+pub(super) fn final_leaf_def(
+    tcx: ty::TyCtxt<'_>,
+    impl_did: DefId,
+    trait_item: DefId,
+) -> Option<specialization_graph::LeafDef> {
+    debug_assert!(implements_trait(tcx, impl_did));
+    let trait_did = tcx.impl_trait_ref(impl_did).unwrap().skip_binder().def_id;
+    specialization_graph::ancestors(tcx, trait_did, impl_did)
+        .ok()?
+        .leaf_def(tcx, trait_item)
+        .filter(specialization_graph::LeafDef::is_final)
 }
 
 /// The Viper name of an impl. `idx` is only unique within a crate, so foreign
@@ -775,14 +805,19 @@ pub(super) fn impl_unlock_keys<'vir>(impl_did: DefId) -> Vec<RustTy<'vir>> {
 /// (triggered per called function by `TraitFnEnc`). For an associated type:
 /// the axiom resolving the trait's type function to the impl's concrete type
 /// (triggered alongside the impl condition by `TraitEnc`).
+///
+/// An item that the impl inherits from an impl it specializes is encoded in
+/// the context of the latter, additionally guarded by the inheriting impl
+/// applying (see [`TraitImplEnc::applies_at`]).
 pub struct TraitImplItemEnc;
 
 impl TaskEncoder for TraitImplItemEnc {
     task_encoder::encoder_cache!(TraitImplItemEnc);
     const ENCODER_NAME: &'static str = "trait impl item encoder";
 
-    /// The impl's associated item.
-    type TaskDescription<'vir> = DefId;
+    /// The impl and its final definition of an item (see [`final_leaf_def`]):
+    /// its own item, or one it inherits from an impl it specializes.
+    type TaskDescription<'vir> = (DefId, DefId);
     type OutputFullLocal<'vir> = Domain<'vir>;
 
     fn task_to_key<'vir>(task: &Self::TaskDescription<'vir>) -> Self::TaskKey<'vir> {
@@ -804,13 +839,13 @@ impl TaskEncoder for TraitImplItemEnc {
         vir::with_vcx(|vcx| {
             let tcx = vcx.tcx();
 
-            let impl_item_def_id = *task_key;
+            let (applying_impl, impl_item_def_id) = *task_key;
             let impl_did = tcx.impl_of_assoc(impl_item_def_id).unwrap();
             let impl_item = tcx.associated_item(impl_item_def_id);
             let trait_item_def_id = impl_item.trait_item_def_id.unwrap();
             let impl_span = tcx.def_span(impl_item_def_id);
             let item_name = ViperIdent::from_def_id(vcx, impl_item_def_id);
-            let impl_name = impl_name(vcx, impl_did);
+            let impl_name = impl_name(vcx, applying_impl);
 
             let impl_context = GParams::from(impl_did);
             let impl_params = deps.require_dep::<GenericParamsEnc>(impl_context)?;
@@ -857,6 +892,24 @@ impl TaskEncoder for TraitImplItemEnc {
             let trait_tys = args.get_ty();
             let trait_consts = args.get_const();
 
+            // An inherited item describes only the inheriting impl's trait
+            // refs: other impls specializing the defining one may override it.
+            let inherited_guard = if applying_impl == impl_did {
+                None
+            } else {
+                Some(TraitImplEnc::applies_at(
+                    vcx,
+                    deps,
+                    applying_impl,
+                    trait_tys,
+                    trait_consts,
+                )?)
+            };
+            let guard_inherited = |body: vir::ExprBool<'vir>| match inherited_guard {
+                Some(applies) => vir::expr! { (applies) ==> (body) },
+                None => body,
+            };
+
             let mut axioms = Vec::new();
 
             match impl_item.kind {
@@ -887,7 +940,7 @@ impl TaskEncoder for TraitImplItemEnc {
                             impl_item_def_id,
                             &[],
                             projection.upcast_ty(),
-                            equation,
+                            guard_inherited(equation),
                         )?,
                     ));
                 }
@@ -948,7 +1001,7 @@ impl TaskEncoder for TraitImplItemEnc {
                             impl_item_def_id,
                             &arg_decls,
                             pre_func_call.upcast_ty(),
-                            vir::expr! { (pres) ==> (pre_func_call) },
+                            guard_inherited(vir::expr! { (pres) ==> (pre_func_call) }),
                         )?,
                     ));
                     let mut posts = impl_item_spec.post_exprs().collect::<Vec<_>>();
@@ -996,7 +1049,7 @@ impl TaskEncoder for TraitImplItemEnc {
                             impl_item_def_id,
                             &ret_and_arg_decls,
                             post_func_call.upcast_ty(),
-                            vir::expr! { (post_func_call) ==> (posts) },
+                            guard_inherited(vir::expr! { (post_func_call) ==> (posts) }),
                         )?,
                     ));
                 }
@@ -1013,20 +1066,6 @@ impl TaskEncoder for TraitImplItemEnc {
             Ok((domain, ()))
         })
     }
-}
-
-/// Whether the (positive) impl's definition of `trait_fn` is the trait's
-/// default body, rather than its own or one inherited from an impl it
-/// specializes.
-pub(super) fn inherits_default_body(tcx: ty::TyCtxt<'_>, impl_did: DefId, trait_fn: DefId) -> bool {
-    if tcx.impl_polarity(impl_did) != ty::ImplPolarity::Positive {
-        return false;
-    }
-    let trait_did = tcx.impl_trait_ref(impl_did).unwrap().skip_binder().def_id;
-    specialization_graph::ancestors(tcx, trait_did, impl_did)
-        .ok()
-        .and_then(|ancestors| ancestors.leaf_def(tcx, trait_fn))
-        .is_some_and(|leaf| leaf.defining_node.is_from_trait())
 }
 
 /// Encodes, for an impl that inherits the default body of a pure trait fn,

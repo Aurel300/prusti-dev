@@ -6,7 +6,7 @@ use vir::CastType;
 use crate::encoders::{Impure, Pure, Purity, ty::RustTyNormalized};
 
 use super::{
-    GArgsTy, GArgsTyEnc,
+    GArgsTy, GArgsTyEnc, ParamTypEnc,
     casters::{CastersEnc, GArgCasters, PurityCasters},
 };
 
@@ -103,6 +103,7 @@ impl TaskEncoder for GArgsCastEnc<Pure> {
     }
 
     fn emit_outputs<'vir>(program: &mut task_encoder::Program<'vir>) {
+        ParamTypEnc::emit_outputs(program);
         CastersEnc::<Pure>::emit_outputs(program);
     }
 }

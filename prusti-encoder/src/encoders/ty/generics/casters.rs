@@ -8,7 +8,7 @@ use crate::encoders::{
     ty::{RustTy, impure::TyImpureEnc, lifted::ty_constructor::TyConstructorEnc, pure::TyPureEnc},
 };
 
-use super::GenericParamsEnc;
+use super::{GenericParamsEnc, ParamTypEnc};
 
 #[derive(Debug, Clone, Copy)]
 pub(super) struct GArgCasters<'vir, P: PurityCasters> {
@@ -46,19 +46,13 @@ impl PurityCasters for Impure {
 
 impl<'vir, P: PurityCasters> task_encoder::OutputRefAny for GArgCasters<'vir, P> {}
 
-/// Per-pair data for [`CastersEnc::<Pure>::emit_outputs`]: the variant
-/// constructor plus what the `s_Param_typ` axioms need.
+/// A pair's contribution to the program: its variant of the `s_Param` adt,
+/// which [`CastersEnc::<Pure>::emit_outputs`] gathers into the one adt
+/// declaration, and the axioms relating that variant to its type.
 #[derive(Clone)]
 pub(super) struct PureCaster<'vir> {
     constructor: vir::AdtConstructor<'vir>,
-    make_generic: <Pure as PurityCasters>::MakeGeneric<'vir>,
-    make_concrete: <Pure as PurityCasters>::MakeConcrete<'vir>,
-    /// The sole value of the concrete type, if it is a zero-field struct.
-    unit_value: Option<vir::ExprCSnap<'vir>>,
-    self_ty: vir::TypeCSnap<'vir>,
-    ty_constructor: FunctionIdn<'vir, (vir::ManyTyVal, vir::ManyCSnap), vir::TyVal>,
-    ty_decls: Vec<vir::LocalDeclTyVal<'vir>>,
-    const_decls: Vec<vir::LocalDeclCSnap<'vir>>,
+    axioms: vir::Domain<'vir>,
 }
 
 impl TaskEncoder for CastersEnc<Pure> {
@@ -68,7 +62,6 @@ impl TaskEncoder for CastersEnc<Pure> {
     type TaskDescription<'vir> = (RustTy<'vir>, RustTy<'vir>);
     type OutputRef<'vir> = GArgCasters<'vir, Pure>;
     type OutputFullLocal<'vir> = PureCaster<'vir>;
-    type EncodingError = ();
 
     fn task_to_key<'vir>(task: &Self::TaskDescription<'vir>) -> Self::TaskKey<'vir> {
         *task
@@ -151,110 +144,96 @@ impl TaskEncoder for CastersEnc<Pure> {
                 None
             };
 
-            Ok((
-                PureCaster {
-                    constructor,
-                    make_generic: make_generic_ident,
-                    make_concrete: make_concrete_destr,
-                    unit_value,
-                    self_ty,
-                    ty_constructor: ty_constructor.ty_constructor,
-                    ty_decls: generics.ty_decls().to_vec(),
-                    const_decls: generics.const_decls().to_vec(),
-                },
-                (),
-            ))
+            // Two axioms relating the variant to its type: the definition
+            // `s_Param_typ(make_generic_T(x, ts..)) == T_type(ts..)` and the
+            // variant bridge `s_Param_typ(p).isT_type ==> p.ismake_generic_T`.
+            // Together they make the reconstruction
+            // `make_generic_T(make_concrete_T(p), ..) == p` derivable wherever
+            // a param's type is known.
+            let typ_idn = deps.require_dep::<ParamTypEnc>(())?.typ;
+            let mut axioms = Vec::new();
+            let x_decl = vcx.mk_local_decl("x", self_ty);
+            let tys = generics
+                .ty_decls()
+                .iter()
+                .map(|d| vcx.mk_local_ex(*d))
+                .collect::<Vec<_>>();
+            let consts = generics
+                .const_decls()
+                .iter()
+                .map(|d| vcx.mk_local_ex(*d))
+                .collect::<Vec<_>>();
+            let mg_app = make_generic_ident(vcx.mk_local_ex(x_decl), &tys, &consts);
+            let qvars = std::iter::once(x_decl.as_dyn())
+                .chain(generics.ty_decls().iter().map(|d| d.as_dyn()))
+                .chain(generics.const_decls().iter().map(|d| d.as_dyn()))
+                .collect::<Vec<vir::LocalDeclDyn<'vir>>>();
+            let def = vcx.mk_forall_expr(
+                vcx.alloc_slice(&qvars),
+                vcx.alloc_slice(&[vcx.mk_trigger(&[mg_app])]),
+                vcx.mk_eq_expr(typ_idn(mg_app), (ty_constructor.ty_constructor)(&tys, &consts)),
+            );
+            axioms.push(vcx.mk_domain_axiom(
+                vir::vir_format_identifier!(vcx, "{}_def_{}", typ_idn.name(), constructor.name),
+                def,
+            ));
+
+            let p_decl = vcx.mk_local_decl("p", vir::TYPE_PSNAP);
+            let typ_p = typ_idn(vcx.mk_local_ex(p_decl));
+            let bridge = vcx.mk_forall_expr(
+                vcx.alloc_slice(&[p_decl]),
+                vcx.alloc_slice(&[vcx.mk_trigger(&[typ_p])]),
+                vcx.mk_bin_op_expr(
+                    vir::BinOpKind::Implies,
+                    vcx.mk_adt_discriminator_expr(
+                        typ_p,
+                        ty_constructor.ty_constructor.name().to_str(),
+                    ),
+                    vcx.mk_adt_discriminator_expr(vcx.mk_local_ex(p_decl), constructor.name),
+                )
+                .downcast_ty(),
+            );
+            axioms.push(vcx.mk_domain_axiom(
+                vir::vir_format_identifier!(vcx, "{}_variant_{}", typ_idn.name(), constructor.name),
+                bridge,
+            ));
+
+            if let Some(unit_value) = unit_value {
+                let mc_p = make_concrete_destr.call()(vcx.mk_local_ex(p_decl));
+                let unit = vcx.mk_forall_expr(
+                    vcx.alloc_slice(&[p_decl]),
+                    vcx.alloc_slice(&[vcx.mk_trigger(&[mc_p])]),
+                    vcx.mk_eq_expr(mc_p, unit_value),
+                );
+                axioms.push(vcx.mk_domain_axiom(
+                    vir::vir_format_identifier!(vcx, "{}_unit", constructor.name),
+                    unit,
+                ));
+            }
+
+            let axioms = vcx.mk_domain(
+                vir::ViperIdent::new(vir::vir_format!(vcx, "ParamTyp_{}", constructor.name)),
+                &[],
+                vcx.alloc_slice(&axioms),
+                &[],
+                None,
+            );
+            Ok((PureCaster { constructor, axioms }, ()))
         })
     }
 
     /// Emits the `s_Param` adt: one variant per generic cast pair, plus the
     /// fallback variant for values of types without a cast pair in this
-    /// program (mirroring `Unknown_type` in the `Type` adt). Also emits the
-    /// `s_Param_typ` function with two axioms per pair: the definition
-    /// `s_Param_typ(make_generic_T(x, ts..)) == T_type(ts..)` and the variant
-    /// bridge `s_Param_typ(p).isT_type ==> p.ismake_generic_T`. Together they
-    /// make the reconstruction `make_generic_T(make_concrete_T(p), ..) == p`
-    /// derivable wherever a param's type is known.
+    /// program (mirroring `Unknown_type` in the `Type` adt). An adt is a
+    /// single declaration, so this is the one part that cannot be built per
+    /// pair; each pair's axioms are emitted as built.
     fn emit_outputs<'vir>(program: &mut task_encoder::Program<'vir>) {
         let outputs = Self::all_outputs_local_no_errors(program);
         vir::with_vcx(|vcx| {
-            use vir::CastType;
-            let typ_idn: FunctionIdn<'_, vir::PSnap, vir::TyVal> = FunctionIdn::new(
-                vir::ViperIdent::new(Self::TYP_NAME),
-                vir::TYPE_PSNAP,
-                vir::TYPE_TYVAL,
-            );
-            let typ_fn = vcx.mk_domain_function(typ_idn, false, None);
             let mut constructors = Vec::new();
-            let mut axioms = Vec::new();
             for pc in outputs {
                 constructors.push(pc.constructor);
-
-                let x_decl = vcx.mk_local_decl("x", pc.self_ty);
-                let tys = pc
-                    .ty_decls
-                    .iter()
-                    .map(|d| vcx.mk_local_ex(*d))
-                    .collect::<Vec<_>>();
-                let consts = pc
-                    .const_decls
-                    .iter()
-                    .map(|d| vcx.mk_local_ex(*d))
-                    .collect::<Vec<_>>();
-                let mg_app = (pc.make_generic)(vcx.mk_local_ex(x_decl), &tys, &consts);
-                let qvars = std::iter::once(x_decl.as_dyn())
-                    .chain(pc.ty_decls.iter().map(|d| d.as_dyn()))
-                    .chain(pc.const_decls.iter().map(|d| d.as_dyn()))
-                    .collect::<Vec<vir::LocalDeclDyn<'vir>>>();
-                let def = vcx.mk_forall_expr(
-                    vcx.alloc_slice(&qvars),
-                    vcx.alloc_slice(&[vcx.mk_trigger(&[mg_app])]),
-                    vcx.mk_eq_expr(typ_idn(mg_app), (pc.ty_constructor)(&tys, &consts)),
-                );
-                axioms.push(vcx.mk_domain_axiom(
-                    vir::vir_format_identifier!(
-                        vcx,
-                        "{}_def_{}",
-                        Self::TYP_NAME,
-                        pc.constructor.name
-                    ),
-                    def,
-                ));
-
-                let p_decl = vcx.mk_local_decl("p", vir::TYPE_PSNAP);
-                let typ_p = typ_idn(vcx.mk_local_ex(p_decl));
-                let bridge = vcx.mk_forall_expr(
-                    vcx.alloc_slice(&[p_decl]),
-                    vcx.alloc_slice(&[vcx.mk_trigger(&[typ_p])]),
-                    vcx.mk_bin_op_expr(
-                        vir::BinOpKind::Implies,
-                        vcx.mk_adt_discriminator_expr(typ_p, pc.ty_constructor.name().to_str()),
-                        vcx.mk_adt_discriminator_expr(vcx.mk_local_ex(p_decl), pc.constructor.name),
-                    )
-                    .downcast_ty(),
-                );
-                axioms.push(vcx.mk_domain_axiom(
-                    vir::vir_format_identifier!(
-                        vcx,
-                        "{}_variant_{}",
-                        Self::TYP_NAME,
-                        pc.constructor.name
-                    ),
-                    bridge,
-                ));
-
-                if let Some(unit_value) = pc.unit_value {
-                    let mc_p = pc.make_concrete.call()(vcx.mk_local_ex(p_decl));
-                    let unit = vcx.mk_forall_expr(
-                        vcx.alloc_slice(&[p_decl]),
-                        vcx.alloc_slice(&[vcx.mk_trigger(&[mc_p])]),
-                        vcx.mk_eq_expr(mc_p, unit_value),
-                    );
-                    axioms.push(vcx.mk_domain_axiom(
-                        vir::vir_format_identifier!(vcx, "{}_unit", pc.constructor.name),
-                        unit,
-                    ));
-                }
+                program.add_domain(pc.axioms);
             }
             let unknown_args =
                 vcx.alloc_array(&[vcx.mk_local_decl(Self::UNKNOWN_PARAM_ID, vir::TYPE_INT)]);
@@ -267,13 +246,6 @@ impl TaskEncoder for CastersEnc<Pure> {
                 &[],
                 vcx.alloc_slice(&constructors),
             ));
-            program.add_domain(vcx.mk_domain(
-                vir::ViperIdent::new("ParamTyp"),
-                &[],
-                vcx.alloc_slice(&axioms),
-                vcx.alloc_slice(&[typ_fn]),
-                None,
-            ));
         })
     }
 }
@@ -282,8 +254,6 @@ impl CastersEnc<Pure> {
     /// The name of the fallback variant of the `s_Param` adt.
     pub const UNKNOWN_PARAM_NAME: &str = "s_Param_Unknown";
     const UNKNOWN_PARAM_ID: &str = "s_Param_Unknown_id";
-    /// The name of the function mapping a generic snapshot to its type.
-    pub const TYP_NAME: &str = "s_Param_typ";
 }
 
 impl TaskEncoder for CastersEnc<Impure> {

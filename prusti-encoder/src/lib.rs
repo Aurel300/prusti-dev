@@ -21,7 +21,7 @@ use task_encoder::TaskEncoder;
 use crate::encoders::{
     ConstEnc, Impure, Pure,
     addr::RefDataEnc,
-    custom::PairUseEnc,
+    custom::{PairUseEnc, ReadPermEnc},
     ty::{
         generics::{
             GArgsCastEnc,
@@ -128,6 +128,7 @@ pub fn test_entrypoint<'tcx>(
 
     program.header("custom");
     PairUseEnc::emit_outputs(&mut program);
+    ReadPermEnc::emit_outputs(&mut program);
     RefDataEnc::emit_outputs(&mut program);
 
     program.header("traits");

@@ -14,12 +14,20 @@ fn main() {
     let target: PathBuf = ["..", "target"].iter().collect();
     force_reexport_specs(target.join("verify").as_path());
 
-    // Copy just-built binaries to `target/dir` dir
-    let bin_dir = if cfg!(debug_assertions) {
-        target.join("debug")
+    // Copy the just-built binaries into a directory of our own, and run them
+    // from there. Not into `target/{debug,release}`: these binaries are also
+    // workspace members, built there separately (build dependencies use a
+    // different profile), and cargo replacing one of them while
+    // `cargo-prusti` spawns it intermittently fails the spawn with "No such
+    // file or directory". The directory sits next to `target/debug` because
+    // the binaries find the contracts, Viper and Z3 relative to their own
+    // location.
+    let bin_dir = target.join(if cfg!(debug_assertions) {
+        "prusti-contracts-build-debug"
     } else {
-        target.join("release")
-    };
+        "prusti-contracts-build-release"
+    });
+    std::fs::create_dir_all(&bin_dir).unwrap();
     for (krate, file) in [
         ("PRUSTI_LAUNCH", "cargo-prusti"),
         ("PRUSTI_LAUNCH", "prusti-rustc"),

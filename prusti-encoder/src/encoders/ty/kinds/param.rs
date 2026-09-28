@@ -1,5 +1,5 @@
 use crate::encoders::ty::{
-    RustParam,
+    RustParam, RustParamData,
     generics::ParamTypEnc,
     impure::{PredicateBuilder, TyImpureEnc, TyImpureParam},
     pure::{TyPureBuilder, TyPureEnc, TyPureParam},
@@ -7,18 +7,27 @@ use crate::encoders::ty::{
 use task_encoder::{EncodeFullError, TaskEncoderDependencies};
 
 pub(crate) fn ty_pure<'vir>(
-    _data: &RustParam<'vir>,
+    data: &RustParam<'vir>,
     _deps: &mut TaskEncoderDependencies<'vir, TyPureEnc>,
-    _builder: &mut TyPureBuilder<'vir>,
+    builder: &mut TyPureBuilder<'vir>,
 ) -> Result<TyPureParam<'vir>, EncodeFullError<'vir, TyPureEnc>> {
+    // Only generic params share the `s_Param` adt; `dyn` keeps its own
+    // domain.
+    if let RustParamData::Dyn = data {
+        builder.set_domain_builder();
+    }
     Ok(())
 }
 
 pub(crate) fn ty_impure<'vir>(
-    _data: &(&RustParam<'vir>, &TyPureParam<'vir>),
+    data: &(&RustParam<'vir>, &TyPureParam<'vir>),
     deps: &mut TaskEncoderDependencies<'vir, TyImpureEnc>,
     builder: &mut PredicateBuilder<'vir>,
 ) -> Result<TyImpureParam<'vir>, EncodeFullError<'vir, TyImpureEnc>> {
+    if let RustParamData::Dyn = data.0 {
+        super::opaque::set_opaque(builder);
+        return Ok(());
+    }
     let typ = deps.require_dep::<ParamTypEnc>(())?.typ;
     builder.mk_predicate("", None);
     // The intended invariant of the predicate: its snapshot is a value of the

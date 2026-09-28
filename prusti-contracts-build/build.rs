@@ -44,7 +44,7 @@ fn main() {
     let cargo_prusti = bin_dir.join(cargo_prusti);
 
     // On Windows, copy cargo-prusti and its dependencies to a temporary location before running it
-    // to avoid locking the file in target/release, which would prevent rebuilds
+    // to avoid locking the file in `bin_dir`, which would prevent rebuilds
     let cargo_prusti_to_run = if cfg!(windows) {
         let temp_dir = std::env::temp_dir();
         let pid = std::process::id();

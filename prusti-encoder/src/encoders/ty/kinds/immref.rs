@@ -2,8 +2,7 @@ use crate::encoders::{
     TyUseImpureEnc, TyUsePureEnc,
     custom::ReadPermEnc,
     ty::{
-        RustImmRef, RustTyDatas,
-        RustTyDecomposition,
+        RustImmRef, RustTyDatas, RustTyDecomposition,
         data::TyData,
         generics::{ParamTypEnc, TyExprEnc},
         impure::{PredicateBuilder, TyImpureEnc, TyImpureImmRef, TyImpureImmRefData},
@@ -85,9 +84,11 @@ pub(crate) fn ty_impure<'vir>(
     let referent_ty = deps.require_dep::<TyExprEnc>(inner_type)?;
     let metadata_ty = deps.require_dep::<TyExprEnc>(metadata_type)?;
     let addr = vir::expr! { [addr_field](ref_self) };
-    let referent_pred = vcx.mk_predicate_app_expr(
-        (param_ty.ref_to_pred)(addr, vcx.alloc_slice(&[referent_ty]), &[])(Some(read())),
-    );
+    let referent_pred = vcx.mk_predicate_app_expr((param_ty.ref_to_pred)(
+        addr,
+        vcx.alloc_slice(&[referent_ty]),
+        &[],
+    )(Some(read())));
     // Unlike the referent, the metadata is stored rather than held as a
     // `p_Param`, so its type has to be stated for the variant bridge.
     let typ = deps.require_dep::<ParamTypEnc>(())?.typ;
@@ -117,7 +118,9 @@ pub(crate) fn ty_impure<'vir>(
                 vcx.mk_result(builder.csnap_type()),
             )),
             vcx.mk_eq_expr(
-                typ(data.1.value_access.call()(vcx.mk_result(builder.csnap_type()))),
+                typ(data.1.value_access.call()(
+                    vcx.mk_result(builder.csnap_type()),
+                )),
                 referent_ty,
             ),
         ],

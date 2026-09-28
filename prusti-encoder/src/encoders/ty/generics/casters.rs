@@ -171,7 +171,10 @@ impl TaskEncoder for CastersEnc<Pure> {
             let def = vcx.mk_forall_expr(
                 vcx.alloc_slice(&qvars),
                 vcx.alloc_slice(&[vcx.mk_trigger(&[mg_app])]),
-                vcx.mk_eq_expr(typ_idn(mg_app), (ty_constructor.ty_constructor)(&tys, &consts)),
+                vcx.mk_eq_expr(
+                    typ_idn(mg_app),
+                    (ty_constructor.ty_constructor)(&tys, &consts),
+                ),
             );
             axioms.push(vcx.mk_domain_axiom(
                 vir::vir_format_identifier!(vcx, "{}_def_{}", typ_idn.name(), constructor.name),
@@ -218,7 +221,13 @@ impl TaskEncoder for CastersEnc<Pure> {
                 &[],
                 None,
             );
-            Ok((PureCaster { constructor, axioms }, ()))
+            Ok((
+                PureCaster {
+                    constructor,
+                    axioms,
+                },
+                (),
+            ))
         })
     }
 

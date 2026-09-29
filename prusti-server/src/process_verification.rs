@@ -4,7 +4,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-use crate::{ServerMessage, ServerRequest, VerificationRequest};
+use crate::{config, ServerMessage, ServerRequest, VerificationRequest};
 use futures::{lock, stream::Stream};
 use log::{debug, info};
 use std::{
@@ -70,7 +70,7 @@ impl VerificationRequestProcessing {
         request.send(&self.mtx_tx_verreq);
 
         futures::stream::unfold(false, move |done: bool| async move {
-            if done {
+            if !config::run_viper() || done {
                 return None;
             }
             let msg = self.mtx_rx_servermsg.lock().await.recv().unwrap();

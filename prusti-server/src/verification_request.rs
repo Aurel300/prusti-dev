@@ -105,11 +105,13 @@ impl VerificationRequest {
     pub(crate) fn send(&self, mtx_tx_verreq: &sync::Mutex<mpsc::Sender<ServerRequest>>) {
         let request = self.build_request();
 
-        mtx_tx_verreq
-            .lock()
-            .unwrap()
-            .send(ServerRequest::Verification(request))
-            .unwrap();
+        if config::run_viper() {
+            mtx_tx_verreq
+                .lock()
+                .unwrap()
+                .send(ServerRequest::Verification(request))
+                .unwrap();
+        }
     }
 
     fn build_request(&self) -> ServerVerificationRequest {

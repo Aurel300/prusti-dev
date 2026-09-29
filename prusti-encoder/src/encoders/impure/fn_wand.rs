@@ -3,7 +3,7 @@ use crate::encoders::{
     pure::spec::{EncodedPledge, MirSpecEncMode, PledgeArgs, PledgeExpr},
     ty::{
         RustTyDecomposition,
-        generics::{GArgs, GParams},
+        generics::{GArgs, GArgsTyEnc, GParams, GenericParamsEnc},
         indirect::{IndirectPredicatesEnc, projection_for_generalized_idx},
     },
 };
@@ -14,12 +14,12 @@ use pcg::borrow_pcg::{
 };
 use prusti_interface::PrustiError;
 use prusti_rustc_interface::{
-    data_structures::fx::FxHashSet,
+    data_structures::fx::{FxHashMap, FxHashSet},
     middle::{mir, ty},
     span::def_id::DefId,
 };
 use task_encoder::{EncodeFullError, EncodeFullResult, TaskEncoder, TaskEncoderDependencies};
-use vir::HasType;
+use vir::{CastType, HasType};
 
 /// Encodes the magic wands given a function signature.
 pub struct WandEnc;
@@ -306,20 +306,25 @@ impl<'vir> WandEncOutput<'vir> {
         deps: &mut TaskEncoderDependencies<'vir, E>,
     ) -> Option<vir::Wand<'vir>> {
         debug_assert!(!wand_data.lhs.is_empty());
+        let generics = self.generics_subst(call_ctx, vcx, deps);
+        let pledge_expr = |pledge: &PledgeExpr<'vir>| match pledge_old_label {
+            Some(label) => {
+                vcx.with_local_subst(generics, || pledge.expr_at_label(pledge_args, label))
+            }
+            None => pledge.expr(pledge_args),
+        };
         let rhs = wand_data.rhs.iter().filter_map(|g| {
             self.encode_predicates_for_function_shape_node(vcx, deps, *g, call_ctx, |i| {
                 pledge_args[i]
             })
         });
         let rhs = rhs
-            .chain(wand_data.pledges.iter().map(|pledge| {
-                match pledge_old_label {
-                    Some(label) => pledge
-                        .expiry_postcondition
-                        .expr_at_label(pledge_args, label),
-                    None => pledge.expiry_postcondition.expr(pledge_args),
-                }
-            }))
+            .chain(
+                wand_data
+                    .pledges
+                    .iter()
+                    .map(|pledge| pledge_expr(&pledge.expiry_postcondition)),
+            )
             .collect::<Vec<_>>();
         if rhs.is_empty() {
             // We skip emitting the wand when there is nothing on the RHS, i.e.,
@@ -334,17 +339,45 @@ impl<'vir> WandEncOutput<'vir> {
             })
         });
         let lhs = lhs
-            .chain(wand_data.pledges.iter().filter_map(|pledge| {
-                match pledge_old_label {
-                    Some(label) => pledge
-                        .expiry_obligation
-                        .map(|o| o.expr_at_label(pledge_args, label)),
-                    None => pledge.expiry_obligation.map(|o| o.expr(pledge_args)),
-                }
-            }))
+            .chain(
+                wand_data
+                    .pledges
+                    .iter()
+                    .filter_map(|pledge| pledge.expiry_obligation.as_ref().map(pledge_expr)),
+            )
             .collect::<Vec<_>>();
         let lhs = vcx.mk_conj(&lhs);
         Some(vcx.mk_wand(lhs, rhs))
+    }
+
+    /// The pledges are encoded once, at the callee's identity substitution,
+    /// so they refer to the callee's generic parameters. At a call site, these
+    /// are replaced by the call's generic arguments, as Viper does for the
+    /// callee's postcondition (from which the caller holds the wand).
+    fn generics_subst<E: TaskEncoder>(
+        &self,
+        call_ctx: WandCallContext<'vir>,
+        vcx: &'vir vir::VirCtxt<'vir>,
+        deps: &mut TaskEncoderDependencies<'vir, E>,
+    ) -> &'vir FxHashMap<&'vir str, vir::ExprDyn<'vir>> {
+        let Some(call_args) = call_ctx else {
+            return vcx.alloc(FxHashMap::default());
+        };
+        let params = deps
+            .require_dep::<GenericParamsEnc>(self.g_params(vcx, None))
+            .unwrap();
+        let args = deps.require_dep::<GArgsTyEnc>(call_args).unwrap();
+        let tys = params
+            .ty_decls()
+            .iter()
+            .zip(args.get_ty::<(), !>())
+            .map(|(decl, arg)| (decl.name, arg.as_dyn()));
+        let consts = params
+            .const_decls()
+            .iter()
+            .zip(args.get_const::<(), !>())
+            .map(|(decl, arg)| (decl.name, arg.as_dyn()));
+        vcx.alloc(tys.chain(consts).collect())
     }
 }
 

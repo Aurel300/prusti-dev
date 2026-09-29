@@ -110,6 +110,7 @@ lazy_static::lazy_static! {
         settings.set_default("skip_unsupported_features", false).unwrap();
         settings.set_default("internal_errors_as_warnings", false).unwrap();
         settings.set_default("allow_unreachable_unsupported_code", false).unwrap();
+        settings.set_default("run_viper", true).unwrap();
         settings.set_default("no_verify", false).unwrap();
         settings.set_default("no_verify_deps", false).unwrap();
         settings.set_default("opt_in_verification", false).unwrap();
@@ -1015,7 +1016,12 @@ pub fn allow_unreachable_unsupported_code() -> bool {
     read_setting("allow_unreachable_unsupported_code")
 }
 
-/// When enabled, verification is skipped altogether.
+/// When enabled, Viper will be used to verify the program. When disabled, we will still generate a Viper program.
+pub fn run_viper() -> bool {
+    read_setting("run_viper")
+}
+
+/// When enabled, verification is skipped altogether (including generating a Viper program).
 pub fn no_verify() -> bool {
     read_setting("no_verify")
 }

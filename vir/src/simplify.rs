@@ -10,6 +10,7 @@
 //!    constructor argument,
 //!  - `C(xs..) == C(ys..)` for an adt constructor `C` is the conjunction of
 //!    the pairwise argument equalities (adt constructors are injective),
+//!  - the field read rule distributes over ternaries whose branches all fold,
 //!  - `let x = v in b` is dropped when `x` is unused, and inlined when `v` is
 //!    a local/constant or `x` is used exactly once.
 //!
@@ -20,6 +21,9 @@
 //! destructor of its value field, so `make_concrete_X(make_generic_X(e))`
 //! folds to `e`. The other direction, `make_generic_X(make_concrete_X(p))`,
 //! is left standing: it needs to know that `p` really inhabits `X`.
+//!
+//! Rules that silver's `Simplifier` already applies to the translated Viper
+//! program (boolean/literal folding, reflexive equalities) are left to it.
 //!
 //! Inlining a binding (or splicing a constructor argument at a use site)
 //! moves the bound expression to the use site, which is only sound while the
@@ -364,13 +368,6 @@ impl<'enc, 'vir, 'tcx> Simplifier<'enc, 'vir, 'tcx> {
             }
             ExprKindGenData::Ternary(t) => {
                 let cond = self.expr(t.cond.as_dyn());
-                if let ExprKindGenData::Const(ConstData::Bool(b)) = cond.kind {
-                    return if *b {
-                        self.expr(t.then)
-                    } else {
-                        self.expr(t.else_)
-                    };
-                }
                 let then = self.expr(t.then);
                 let else_ = self.expr(t.else_);
                 self.mk(
@@ -443,7 +440,7 @@ impl<'enc, 'vir, 'tcx> Simplifier<'enc, 'vir, 'tcx> {
             }
             ExprKindGenData::AdtDestructor(recv, destr) => {
                 let recv = self.expr(recv);
-                if let Some(arg) = self.fold_destructor(recv, destr) {
+                if let Some(arg) = self.fold_destructor(e, recv, destr) {
                     return arg;
                 }
                 self.mk(
@@ -557,36 +554,54 @@ impl<'enc, 'vir, 'tcx> Simplifier<'enc, 'vir, 'tcx> {
     }
 
     /// An adt field read of the matching constructor application yields the
-    /// constructor argument.
+    /// constructor argument. The read distributes over a ternary receiver
+    /// (`(c ? a : b).f` is `c ? a.f : b.f`) when both branches fold, so
+    /// nothing is duplicated. `orig` is the field read, whose span and type
+    /// such a ternary takes.
     fn fold_destructor(
         &self,
+        orig: ExprDyn<'vir>,
         recv: ExprDyn<'vir>,
         destr: AdtDestructor<'vir, crate::Dyn, crate::Dyn>,
     ) -> Option<ExprDyn<'vir>> {
         let recv = self.resolve(recv);
-        let ExprKindGenData::FuncApp(app) = recv.kind else {
-            return None;
-        };
-        let (cons, idx) = *self.adts.destructors.get(destr.name)?;
-        if app.target != cons {
-            return None;
+        match recv.kind {
+            ExprKindGenData::Ternary(t) => {
+                let then = self.fold_destructor(orig, t.then, destr)?;
+                let else_ = self.fold_destructor(orig, t.else_, destr)?;
+                Some(
+                    self.mk(
+                        orig,
+                        self.vcx
+                            .alloc(ExprKindGenData::Ternary(self.vcx.alloc(TernaryGenData {
+                                cond: t.cond,
+                                then,
+                                else_,
+                            }))),
+                    ),
+                )
+            }
+            ExprKindGenData::FuncApp(app) => {
+                let (cons, idx) = *self.adts.destructors.get(destr.name)?;
+                if app.target != cons {
+                    return None;
+                }
+                let arg = *app.args.get(idx)?;
+                (recv.ty() == destr.input && arg.ty() == destr.ty).then_some(arg)
+            }
+            _ => None,
         }
-        let arg = *app.args.get(idx)?;
-        (recv.ty() == destr.input && arg.ty() == destr.ty).then_some(arg)
     }
 
-    /// Simplified equality of two snapshots, if a rule applies: identical
-    /// operands are `true`; applications of the same adt constructor compare
-    /// pairwise (adt constructors are injective).
+    /// Simplified equality of two snapshots, if a rule applies: applications
+    /// of the same adt constructor compare pairwise (adt constructors are
+    /// injective).
     fn fold_eq(
         &mut self,
         orig: ExprDyn<'vir>,
         lhs: ExprDyn<'vir>,
         rhs: ExprDyn<'vir>,
     ) -> Option<ExprDyn<'vir>> {
-        if syntactic_eq(lhs, rhs) {
-            return Some(self.vcx.mk_bool::<true>().as_dyn());
-        }
         let (l, r) = (self.resolve(lhs), self.resolve(rhs));
         let (ExprKindGenData::FuncApp(la), ExprKindGenData::FuncApp(ra)) = (l.kind, r.kind) else {
             return None;
@@ -632,9 +647,7 @@ impl<'enc, 'vir, 'tcx> Simplifier<'enc, 'vir, 'tcx> {
     }
 
     fn mk_and(&mut self, exprs: Vec<ExprDyn<'vir>>) -> ExprDyn<'vir> {
-        let mut conjuncts = exprs
-            .into_iter()
-            .filter(|e| !matches!(e.kind, ExprKindGenData::Const(ConstData::Bool(true))));
+        let mut conjuncts = exprs.into_iter();
         let Some(first) = conjuncts.next() else {
             return self.vcx.mk_bool::<true>().as_dyn();
         };
@@ -749,27 +762,6 @@ impl<'enc, 'vir, 'tcx> Simplifier<'enc, 'vir, 'tcx> {
                 )))
             }
         }
-    }
-}
-
-/// Syntactic equality, conservative (`false` for unhandled kinds). Used to
-/// fold reflexive equalities.
-fn syntactic_eq<'vir>(a: ExprDyn<'vir>, b: ExprDyn<'vir>) -> bool {
-    if std::ptr::eq(a.kind, b.kind) {
-        return true;
-    }
-    match (a.kind, b.kind) {
-        (ExprKindGenData::Local(x), ExprKindGenData::Local(y)) => x.name == y.name,
-        (ExprKindGenData::Const(x), ExprKindGenData::Const(y)) => x == y,
-        (ExprKindGenData::FuncApp(x), ExprKindGenData::FuncApp(y)) => {
-            x.target == y.target
-                && x.args.len() == y.args.len()
-                && x.args.iter().zip(y.args).all(|(a, b)| syntactic_eq(a, b))
-        }
-        (ExprKindGenData::AdtDestructor(e1, d1), ExprKindGenData::AdtDestructor(e2, d2)) => {
-            d1.name == d2.name && syntactic_eq(e1, e2)
-        }
-        _ => false,
     }
 }
 

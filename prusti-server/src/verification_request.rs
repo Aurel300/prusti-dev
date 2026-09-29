@@ -129,7 +129,8 @@ impl VerificationRequest {
 
                     let viper_program = vir::with_vcx(|vcx| {
                         let program = vcx.get_program(self.program);
-                        prusti_viper::program_to_viper(program, &ast_factory)
+                        let simplifier = config::simplify_encoding().then_some(ast_utils);
+                        prusti_viper::program_to_viper(program, &ast_factory, simplifier)
                     });
 
                     if config::dump_viper_program() {

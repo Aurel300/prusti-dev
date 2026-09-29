@@ -610,6 +610,7 @@ pub enum StmtKindGenData<'vir, Curr, Next> {
     PureAssign(PureAssignGen<'vir, Curr, Next>),
     Inhale(ExprGenBool<'vir, Curr, Next>),
     Exhale(ExprGenBool<'vir, Curr, Next>),
+    Assert(ExprGenBool<'vir, Curr, Next>),
     Refute(ExprGenBool<'vir, Curr, Next>),
     Unfold(PredicateAppGen<'vir, Curr, Next>),
     Fold(PredicateAppGen<'vir, Curr, Next>),

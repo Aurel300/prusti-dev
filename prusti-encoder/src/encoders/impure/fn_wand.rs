@@ -65,6 +65,29 @@ impl<'vir, E: TaskEncoder> ImpureEncVisitor<'vir, '_, E> {
                 package_script.extend(unblock);
             }
 
+            if !wand_data.pledges.is_empty() {
+                // Statements in the package script only see resources already
+                // in the package state. A resource that is not obtained from
+                // the LHS (e.g. an argument the result does not borrow from)
+                // is only moved there when consumed, which for the RHS happens
+                // after the script. Asserting the RHS resources moves them in
+                // early, so that the pledge exhales below can read them.
+                let resources = wand_data
+                    .rhs
+                    .iter()
+                    .filter_map(|g| {
+                        self.wands.encode_predicates_for_function_shape_node(
+                            self.vcx,
+                            self.deps,
+                            *g,
+                            None,
+                            |i| args[i],
+                        )
+                    })
+                    .collect::<Vec<_>>();
+                package_script.push(self.vcx.mk_assert_stmt(self.vcx.mk_conj(&resources)));
+            }
+
             for EncodedPledge {
                 expiry_postcondition,
                 ..

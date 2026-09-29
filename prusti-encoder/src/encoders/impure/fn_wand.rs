@@ -26,7 +26,7 @@ pub struct WandEnc;
 
 #[derive(Clone, Debug)]
 pub enum WandEncError {
-    Unsupported(#[allow(dead_code)] String),
+    Unsupported(String),
 }
 
 impl<'vir, E: TaskEncoder> ImpureEncVisitor<'vir, '_, E> {
@@ -151,6 +151,27 @@ impl<'vir> WandEncOutput<'vir> {
         }
     }
 
+    /// The (unreified) predicates associated with the given node, or `None` if
+    /// there are no resources associated with it.
+    #[allow(clippy::type_complexity)]
+    fn predicates_for_function_shape_node(
+        &self,
+        vcx: &'vir vir::VirCtxt<'vir>,
+        deps: &mut TaskEncoderDependencies<'vir, impl TaskEncoder>,
+        g: FunctionShapeNode<Generalized>,
+        call_ctx: WandCallContext<'vir>,
+    ) -> Option<Vec<vir::ExprGenBool<'vir, vir::ExprSnap<'vir>, vir::ExprKind<'vir>>>> {
+        let arg_ty = g.ty(self.fn_sig(vcx, call_ctx));
+        let decomp = RustTyDecomposition::from_ty(arg_ty, self.g_params(vcx, call_ctx));
+        let region_proj =
+            projection_for_generalized_idx(arg_ty, g.region_idx(), decomp, vcx.tcx())?;
+        let predicates = deps
+            .require_dep::<IndirectPredicatesEnc>(region_proj)
+            .unwrap()
+            .predicate_applications;
+        (!predicates.is_empty()).then_some(predicates)
+    }
+
     fn encode_predicates_for_function_shape_node(
         &self,
         vcx: &'vir vir::VirCtxt<'vir>,
@@ -161,18 +182,7 @@ impl<'vir> WandEncOutput<'vir> {
     ) -> Option<vir::ExprBool<'vir>> {
         use vir::Reify;
         let g = g.into();
-        let arg_ty = g.ty(self.fn_sig(vcx, call_ctx));
-        let decomp = RustTyDecomposition::from_ty(arg_ty, self.g_params(vcx, call_ctx));
-        let region_proj =
-            projection_for_generalized_idx(arg_ty, g.region_idx(), decomp, vcx.tcx())?;
-        let predicates = deps
-            .require_dep::<IndirectPredicatesEnc>(region_proj)
-            .unwrap()
-            .predicate_applications;
-        if predicates.is_empty() {
-            // There are no resources associated with this node, skip.
-            return None;
-        }
+        let predicates = self.predicates_for_function_shape_node(vcx, deps, g, call_ctx)?;
 
         let local = g.mir_local();
         let local_snap = snap(local);
@@ -395,6 +405,12 @@ impl TaskEncoder for WandEnc {
         task.clone()
     }
 
+    fn describe_error(error: Self::EncodingError) -> String {
+        match error {
+            WandEncError::Unsupported(message) => message,
+        }
+    }
+
     fn do_encode_full<'vir>(
         task_key: &Self::TaskKey<'vir>,
         deps: &mut TaskEncoderDependencies<'vir, Self>,
@@ -411,6 +427,7 @@ impl TaskEncoder for WandEnc {
             })?;
 
             let coupled_edges = shape.coupled_edges();
+            let edges: FxHashSet<_> = shape.edges().map(|e| (e.input(), e.output())).collect();
 
             let (inputs, outputs) = shape.take_inputs_and_outputs();
             let spec = deps.require_dep::<MirSpecEnc>((def_id, def_id, MirSpecEncMode::Impure))?;
@@ -427,14 +444,6 @@ impl TaskEncoder for WandEnc {
                 ));
             }
             let pledges = spec.pledges;
-            if pledges.len() > 1 && coupled_edges.len() > 1 {
-                return Err(EncodeFullError::EncodingError(
-                    WandEncError::Unsupported(format!(
-                        "multiple pledges: {pledges:?}, coupled edges: {coupled_edges:?}"
-                    )),
-                    None,
-                ));
-            }
             let wands: Vec<WandData<'vir>> = coupled_edges
                 .into_iter()
                 .filter_map(|hyper_edge| {
@@ -457,18 +466,81 @@ impl TaskEncoder for WandEnc {
                     Some(WandData::new(targets, sources, pledges.clone()))
                 })
                 .collect();
-            let output: WandEncOutput<'vir> = WandEncOutput {
+            let mut output: WandEncOutput<'vir> = WandEncOutput {
                 function_data: task_key.data,
                 inputs,
                 outputs,
-                wands,
+                wands: Vec::new(),
             };
+            output.wands = output
+                .select_wands(wands, !pledges.is_empty(), &edges, vcx, deps)
+                .map_err(|err| EncodeFullError::EncodingError(err, None))?;
             Ok(((), output))
         })
     }
 }
 
 impl<'vir> WandEncOutput<'vir> {
+    /// Selects the wands to emit among those of the coupled edges, rejecting
+    /// the shapes that cannot be encoded precisely.
+    fn select_wands<E: TaskEncoder>(
+        &self,
+        wands: Vec<WandData<'vir>>,
+        has_pledges: bool,
+        edges: &FxHashSet<(WandRhsKey, WandLhsKey)>,
+        vcx: &'vir vir::VirCtxt<'vir>,
+        deps: &mut TaskEncoderDependencies<'vir, E>,
+    ) -> Result<Vec<WandData<'vir>>, WandEncError> {
+        let mut has_resources = |g: FunctionShapeNode<Generalized>| {
+            self.predicates_for_function_shape_node(vcx, deps, g, None)
+                .is_some()
+        };
+        // A wand is only needed if it gives back a resource, or to carry the
+        // pledges if none does (e.g. for shared references).
+        let (mut wands, resourceless): (Vec<_>, Vec<_>) = wands
+            .into_iter()
+            .partition(|wand_data| wand_data.rhs.iter().any(|g| has_resources((*g).into())));
+        // A wand gives back its sources only once all of its targets have
+        // expired. That matches the signature only if each source with
+        // resources flows into each target with resources.
+        for wand_data in &wands {
+            let sources = wand_data
+                .rhs
+                .iter()
+                .filter(|g| has_resources((**g).into()))
+                .collect::<Vec<_>>();
+            let targets = wand_data
+                .lhs
+                .iter()
+                .filter(|g| has_resources(**g))
+                .collect::<Vec<_>>();
+            let precise = sources.iter().all(|source| {
+                let mut targets = targets.iter();
+                targets.all(|target| edges.contains(&(**source, **target)))
+            });
+            if !precise {
+                return Err(WandEncError::Unsupported(
+                    "borrows in the result that expire separately but depend on a common \
+                     argument are not supported"
+                        .to_string(),
+                ));
+            }
+        }
+        if has_pledges {
+            if wands.is_empty() {
+                wands.extend(resourceless.into_iter().take(1));
+            } else if wands.len() > 1 {
+                // It is unclear which expiry the pledges refer to.
+                return Err(WandEncError::Unsupported(
+                    "pledges on a function whose result contains borrows that expire \
+                     separately are not supported"
+                        .to_string(),
+                ));
+            }
+        }
+        Ok(wands)
+    }
+
     pub fn viper_wands(&self) -> Vec<WandData<'vir>> {
         self.wands.clone()
     }

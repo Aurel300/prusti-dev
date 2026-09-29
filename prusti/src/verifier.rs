@@ -55,7 +55,7 @@ pub fn verify<'tcx>(
 
         if config::run_viper() {
             let program = request.program;
-            
+
             prusti_server::verify_programs(&env.diagnostic, vec![program]);
         }
     }

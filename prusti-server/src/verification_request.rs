@@ -105,7 +105,7 @@ impl VerificationRequest {
     pub(crate) fn send(&self, mtx_tx_verreq: &sync::Mutex<mpsc::Sender<ServerRequest>>) {
         let request = self.build_request();
 
-        if config::run_viper() {
+        if !config::verify_mode().is_encode_only() {
             mtx_tx_verreq
                 .lock()
                 .unwrap()

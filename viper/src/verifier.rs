@@ -16,6 +16,7 @@ use crate::{
 };
 use jni::{errors::Result, objects::JObject, JNIEnv};
 use log::{debug, error, info};
+use prusti_utils::config;
 use std::{
     collections::{hash_map::DefaultHasher, HashSet},
     hash::{Hash, Hasher},
@@ -321,6 +322,10 @@ impl<'a> Verifier<'a> {
                         })
                         .collect(),
                 );
+            }
+
+            if config::verify_mode().is_consistency_check() {
+                return VerificationResultKind::Success;
             }
 
             let program_option = self.jni.new_option(Some(program.to_jobject()));

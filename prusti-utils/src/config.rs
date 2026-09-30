@@ -1015,31 +1015,19 @@ pub enum VerifyMode {
 
 impl VerifyMode {
     pub fn is_compile_only(&self) -> bool {
-        match *self {
-            VerifyMode::CompileOnly => true,
-            _ => false,
-        }
+        matches!(*self, VerifyMode::CompileOnly)
     }
 
     pub fn is_encode_only(&self) -> bool {
-        match *self {
-            VerifyMode::EncodeOnly => true,
-            _ => false,
-        }
+        matches!(*self, VerifyMode::EncodeOnly)
     }
 
     pub fn is_consistency_check(&self) -> bool {
-        match *self {
-            VerifyMode::ConsistencyCheck => true,
-            _ => false,
-        }
+        matches!(*self, VerifyMode::ConsistencyCheck)
     }
 
     pub fn is_verify(&self) -> bool {
-        match *self {
-            VerifyMode::Verify => true,
-            _ => false,
-        }
+        matches!(*self, VerifyMode::Verify)
     }
 }
 

@@ -9,6 +9,7 @@ use log::info;
 use prusti_rustc_interface::data_structures::fx::FxHashSet;
 use prusti_utils::{
     config,
+    config::VerifyMode,
     report::log::{report, to_legal_file_name},
     Stopwatch,
 };
@@ -105,7 +106,7 @@ impl VerificationRequest {
     pub(crate) fn send(&self, mtx_tx_verreq: &sync::Mutex<mpsc::Sender<ServerRequest>>) {
         let request = self.build_request();
 
-        if !config::verify_mode().is_encode_only() {
+        if self.backend_config.verify_mode.is_verify() {
             mtx_tx_verreq
                 .lock()
                 .unwrap()
@@ -166,10 +167,11 @@ impl VerificationRequest {
 pub struct ViperBackendConfig {
     pub backend: VerificationBackend,
     pub verifier_args: Vec<String>,
+    pub verify_mode: VerifyMode,
 }
 
 impl ViperBackendConfig {
-    pub fn new(backend: VerificationBackend) -> Self {
+    pub fn new(backend: VerificationBackend, verify_mode: VerifyMode) -> Self {
         let mut verifier_args = config::extra_verifier_args();
         match backend {
             VerificationBackend::Silicon => {
@@ -226,6 +228,7 @@ impl ViperBackendConfig {
         Self {
             backend,
             verifier_args,
+            verify_mode,
         }
     }
 }
@@ -307,6 +310,7 @@ fn new_viper_verifier<'v, 't: 'v>(
         smt_solver,
         boogie_path,
         smt_manager,
+        backend_config.verify_mode,
     )
 }
 

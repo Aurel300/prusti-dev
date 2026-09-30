@@ -1006,6 +1006,7 @@ pub fn allow_unreachable_unsupported_code() -> bool {
     read_setting("allow_unreachable_unsupported_code")
 }
 
+#[derive(Debug, Hash, PartialEq, Eq, serde::Deserialize, serde::Serialize, Clone, Copy)]
 pub enum VerifyMode {
     CompileOnly,
     EncodeOnly,
@@ -1032,7 +1033,7 @@ impl VerifyMode {
 }
 
 impl FromStr for VerifyMode {
-    type Err = &'static str;
+    type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
@@ -1040,7 +1041,7 @@ impl FromStr for VerifyMode {
             "encode-only" => Ok(Self::EncodeOnly),
             "consistency-check" => Ok(Self::ConsistencyCheck),
             "verify" => Ok(Self::Verify),
-            _ => Err("Invalid argument for VERIFY_MODE found"),
+            _ => Err(format!("Found invalid value {s} for option VERIFY_MODE (possible options are: \"compile-only\", \"encode-only\", \"consistency-check\", or \"verify\")")),
         }
     }
 }

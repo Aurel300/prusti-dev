@@ -16,7 +16,7 @@ use crate::{
 };
 use jni::{errors::Result, objects::JObject, JNIEnv};
 use log::{debug, error, info};
-use prusti_utils::config;
+use prusti_utils::config::VerifyMode;
 use std::{
     collections::{hash_map::DefaultHasher, HashSet},
     hash::{Hash, Hasher},
@@ -83,6 +83,7 @@ impl TransitionsTo<Started> for Instantiated {}
 pub struct Verifier<'a, State = Started> {
     env: &'a JNIEnv<'a>,
     backend: VerificationBackend,
+    verify_mode: VerifyMode,
     verifier_wrapper: silver::verifier::Verifier<'a>,
     verifier_instance: JObject<'a>,
     frontend_wrapper: silver::frontend::SilFrontend<'a>,
@@ -134,6 +135,10 @@ impl<'a, State> Verifier<'a, State> {
         // SAFETY: Only ghost state changes
         unsafe { std::mem::transmute(self) }
     }
+
+    pub fn is_verify(&self) -> bool {
+        self.verify_mode.is_verify()
+    }
 }
 
 impl<'a> Verifier<'a, Instantiated> {
@@ -142,6 +147,7 @@ impl<'a> Verifier<'a, Instantiated> {
         backend: VerificationBackend,
         report_path: Option<PathBuf>,
         smt_manager: SmtManager,
+        verify_mode: VerifyMode,
     ) -> Self {
         let jni = JniUtils::new(env);
         let ast_utils = AstUtils::new(env);
@@ -226,6 +232,7 @@ impl<'a> Verifier<'a, Instantiated> {
         let verifier = Verifier {
             env,
             verifier_wrapper,
+            verify_mode,
             verifier_instance,
             frontend_wrapper,
             frontend_instance,
@@ -324,7 +331,7 @@ impl<'a> Verifier<'a> {
                 );
             }
 
-            if config::verify_mode().is_consistency_check() {
+            if !self.is_verify() {
                 return VerificationResultKind::Success;
             }
 

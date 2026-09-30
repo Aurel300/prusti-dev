@@ -406,7 +406,7 @@ When enabled, features not supported by Prusti will be reported as warnings rath
 
 ## `SKIP_VERIFICATION`
 
-When enabled, verification will be skipped. Opposed to `VERIFY_MODE=compile_only`, this flag will cause fake errors to stop the compiler from caching the result.
+When enabled, verification will be skipped. Opposed to `VERIFY_MODE=compile-only`, this flag will cause fake errors to stop the compiler from caching the result.
 
 ## `SMT_QI_BOUND_GLOBAL`
 

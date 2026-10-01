@@ -1638,7 +1638,6 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             let snap = self.encode_partial_place_snap(place, place_ty, pcg_state)?;
             locals.insert(local, snap);
         }
-
         let expr = enc_output
             .expr
             .reify(self.vcx, (self.def_id, self.vcx.alloc(locals)))

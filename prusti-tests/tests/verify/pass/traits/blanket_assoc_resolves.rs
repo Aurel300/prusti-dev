@@ -104,3 +104,37 @@ mod subtyping_check_bounds {
         }
     }
 }
+
+// An impl parameter fixed only by a closure bound's output (`U`, as in
+// itertools' `MapSpecialCaseFnOk`) that occurs in an item's signature, and so
+// in the trigger of the item's axioms.
+mod fn_output_param {
+    use prusti_contracts::*;
+
+    pub trait MapFn<T> {
+        type Out;
+        fn call(&mut self, t: T) -> Self::Out;
+    }
+
+    pub struct MapOk<F>(pub F);
+
+    #[refine_trait_spec]
+    impl<F, T, U, E> MapFn<Result<T, E>> for MapOk<F>
+    where
+        F: FnMut(T) -> U,
+    {
+        type Out = Result<U, E>;
+        #[trusted]
+        fn call(&mut self, t: Result<T, E>) -> Result<U, E> {
+            t.map(&mut self.0)
+        }
+    }
+
+    pub fn go<M: MapFn<Result<u8, ()>>>(m: &mut M, t: Result<u8, ()>) -> M::Out {
+        m.call(t)
+    }
+
+    pub fn user<F: FnMut(u8) -> u16>(m: &mut MapOk<F>) -> Result<u16, ()> {
+        go(m, Ok(1))
+    }
+}

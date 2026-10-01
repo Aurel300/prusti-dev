@@ -1,6 +1,6 @@
 use prusti_interface::PrustiError;
 use prusti_rustc_interface::{
-    data_structures::fx::{FxIndexMap, FxIndexSet},
+    data_structures::fx::{FxHashSet, FxIndexMap, FxIndexSet},
     errors::MultiSpan,
     middle::{mir, traits::specialization_graph, ty},
     span::def_id::DefId,
@@ -559,7 +559,9 @@ impl TraitImplEnc {
     /// let-bound to the projection that determines it: rustc only accepts
     /// such an impl parameter if a projection bound constrains it (E0207),
     /// and binding it keeps every quantified variable covered by the
-    /// trigger.
+    /// trigger. If the trigger mentions it nonetheless (through `extra` or
+    /// `trigger`, e.g. in an item's signature), it is quantified and
+    /// constrained to equal the projection instead.
     pub(super) fn guarded_forall<'vir, E: TaskEncoder + 'vir + ?Sized>(
         vcx: &'vir vir::VirCtxt<'vir>,
         deps: &mut TaskEncoderDependencies<'vir, E>,
@@ -630,14 +632,34 @@ impl TraitImplEnc {
             vir::expr! { (guard) ==> (body) }
         };
 
-        let lets = bind_points.split_off(pinned_count);
-        let body = lets.iter().rfold(body, |acc, (&idx, expr)| {
+        // A parameter determined by a projection that the trigger mentions
+        // (e.g. `U` of `F: FnMut(T) -> U` in an item's signature) cannot be
+        // let-bound, since the trigger would refer to a variable bound only
+        // in the body. It is quantified instead, constrained to equal the
+        // projection inside the remaining lets.
+        let mut trigger_locals = FxHashSet::default();
+        vir::collect_locals(trigger, &mut trigger_locals);
+        let (constrained, lets): (Vec<_>, Vec<_>) = bind_points
+            .split_off(pinned_count)
+            .into_iter()
+            .partition(|&(idx, _)| trigger_locals.contains(decl(idx).name));
+        let body = if constrained.is_empty() {
+            body
+        } else {
+            let eqs = constrained
+                .iter()
+                .map(|&(idx, expr)| vcx.mk_eq_expr(vcx.mk_local_ex(decl(idx)).upcast_ty(), expr))
+                .collect::<Vec<_>>();
+            let eqs = vcx.mk_conj(&eqs);
+            vir::expr! { (eqs) ==> (body) }
+        };
+        let body = lets.iter().rfold(body, |acc, &(idx, expr)| {
             vcx.mk_let_expr(decl(idx), expr, acc)
         });
 
         let qvars = (0..item_ctx.rust_params().len() as u32)
             .filter(|&idx| item_ctx.rust_params()[idx as usize].as_region().is_none())
-            .filter(|idx| !lets.contains_key(idx))
+            .filter(|idx| !lets.iter().any(|(let_idx, _)| let_idx == idx))
             .map(decl)
             .chain(extra.iter().copied())
             .collect::<Vec<_>>();

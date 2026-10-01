@@ -1,5 +1,7 @@
 use std::fmt::Debug;
 
+use prusti_rustc_interface::data_structures::fx::FxHashSet;
+
 use crate::{
     data::*,
     debug_info::{DebugInfo, DEBUGINFO_NONE},
@@ -438,6 +440,94 @@ impl<'vir, Curr, Next> ExprKindGenData<'vir, Curr, Next> {
             ExprKindGenData::AdtDestructor(_, destr) => destr.ty,
             ExprKindGenData::AdtDiscriminator(_, _) => crate::TYPE_BOOL.as_dyn(),
             ExprKindGenData::Todo(_msg) => crate::TYPE_ERR.as_dyn(), // panic!("{msg}"),
+        }
+    }
+}
+
+/// Collects every local name occurring in `e` (a superset of its free
+/// locals: bound variables of quantifiers and lets are included).
+pub fn collect_locals<'vir>(e: ExprDyn<'vir>, out: &mut FxHashSet<&'vir str>) {
+    macro_rules! go {
+        ($e:expr) => {
+            collect_locals($e, out)
+        };
+    }
+    match e.kind {
+        ExprKindGenData::Local(l) => {
+            out.insert(l.name);
+        }
+        ExprKindGenData::Const(_)
+        | ExprKindGenData::Result(_)
+        | ExprKindGenData::Lazy(_)
+        | ExprKindGenData::Todo(_) => (),
+        ExprKindGenData::Field(recv, _) => go!(recv.as_dyn()),
+        ExprKindGenData::Old(o) => go!(o.expr),
+        ExprKindGenData::AccField(a) => {
+            go!(a.recv.as_dyn());
+            if let Some(p) = a.perm {
+                go!(p.as_dyn());
+            }
+        }
+        ExprKindGenData::Unfolding(u) => {
+            for arg in u.target.args {
+                go!(arg);
+            }
+            if let Some(p) = u.target.perm {
+                go!(p.as_dyn());
+            }
+            go!(u.expr);
+        }
+        ExprKindGenData::UnOp(u) => go!(u.expr.as_dyn()),
+        ExprKindGenData::BinOp(b) => {
+            go!(b.lhs);
+            go!(b.rhs);
+        }
+        ExprKindGenData::CollectionBinOp(b) => {
+            go!(b.lhs);
+            go!(b.rhs);
+        }
+        ExprKindGenData::CollectionLiteral(l) => l.values.iter().for_each(|v| go!(v)),
+        ExprKindGenData::CollectionUpdate(u) => {
+            go!(u.target);
+            go!(u.key);
+            go!(u.val);
+        }
+        ExprKindGenData::CollectionLen(inner)
+        | ExprKindGenData::MapDomain(inner)
+        | ExprKindGenData::MapRange(inner) => go!(inner),
+        ExprKindGenData::Ternary(t) => {
+            go!(t.cond.as_dyn());
+            go!(t.then);
+            go!(t.else_);
+        }
+        ExprKindGenData::Forall(ForallGenData { triggers, body, .. })
+        | ExprKindGenData::Exists(ExistsGenData { triggers, body, .. }) => {
+            for t in *triggers {
+                t.exprs.iter().for_each(|e| go!(e));
+            }
+            go!(body.as_dyn());
+        }
+        ExprKindGenData::Let(l) => {
+            go!(l.val);
+            go!(l.expr);
+        }
+        ExprKindGenData::FuncApp(app) => app.args.iter().for_each(|a| go!(a)),
+        ExprKindGenData::PredicateApp(p) => {
+            p.args.iter().for_each(|a| go!(a));
+            if let Some(perm) = p.perm {
+                go!(perm.as_dyn());
+            }
+        }
+        ExprKindGenData::Wand(w) => {
+            go!(w.lhs.as_dyn());
+            go!(w.rhs.as_dyn());
+        }
+        ExprKindGenData::InhaleExhale(ie) => {
+            go!(ie.inhale.as_dyn());
+            go!(ie.exhale.as_dyn());
+        }
+        ExprKindGenData::AdtDestructor(recv, _) | ExprKindGenData::AdtDiscriminator(recv, _) => {
+            go!(recv)
         }
     }
 }

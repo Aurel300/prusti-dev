@@ -1,12 +1,7 @@
 use std::ops::Deref;
 
 use prusti_interface::environment::EnvQuery;
-use prusti_rustc_interface::{
-    abi,
-    hir, index,
-    middle::ty,
-    span::symbol,
-};
+use prusti_rustc_interface::{abi, hir, index, middle::ty, span::symbol};
 
 use super::{
     data::*,

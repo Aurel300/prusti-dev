@@ -21,8 +21,8 @@ use pcg::{
     pcg::{CapabilityKind, EvalStmtPhase, Pcg, PcgNode, PcgSuccessor},
     results::{PcgBasicBlock, PcgLocation},
     utils::{
-        CompilerCtxt, HasPlace, Place, PrefixRelation, SnapshotLocation,
-        display::DisplayWithCtxt, maybe_old::MaybeLabelledPlace,
+        CompilerCtxt, HasPlace, Place, PrefixRelation, SnapshotLocation, display::DisplayWithCtxt,
+        maybe_old::MaybeLabelledPlace,
     },
 };
 use prusti_interface::PrustiError;

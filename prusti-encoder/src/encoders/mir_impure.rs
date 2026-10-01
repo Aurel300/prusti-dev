@@ -21,13 +21,12 @@ use pcg::{
     pcg::{CapabilityKind, EvalStmtPhase, Pcg, PcgNode, PcgSuccessor},
     results::{PcgBasicBlock, PcgLocation},
     utils::{
-        CompilerCtxt, HasPlace, Place, SnapshotLocation, display::DisplayWithCtxt,
-        maybe_old::MaybeLabelledPlace,
+        CompilerCtxt, HasPlace, Place, PrefixRelation, SnapshotLocation,
+        display::DisplayWithCtxt, maybe_old::MaybeLabelledPlace,
     },
 };
 use prusti_interface::PrustiError;
 use prusti_rustc_interface::{
-    abi,
     data_structures::graph::Successors,
     index::Idx,
     middle::{
@@ -1631,15 +1630,11 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             kind: PureKind::SpecBlock(spec_block),
         })?;
         use vir::Reify;
-        let mut places_by_local: FxHashMap<mir::Local, Vec<Place<'vir>>> = FxHashMap::default();
-        for place in enc_output.inputs.iter().copied() {
-            places_by_local.entry(place.local).or_default().push(place);
-        }
         let mut locals: FxHashMap<mir::Local, vir::ExprSnap<'vir>> = FxHashMap::default();
-        for (local, reads) in places_by_local {
+        for local in enc_output.inputs {
             let place: Place = local.into();
             let place_ty = RustTyDecomposition::from_ty(place.ty(self.pcg_ctxt()).ty, self.def_id);
-            let snap = self.encode_partial_place_snap(place, &reads, place_ty)?;
+            let snap = self.encode_partial_place_snap(place, place_ty)?;
             locals.insert(local, snap);
         }
 
@@ -1650,79 +1645,53 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         Ok(expr)
     }
 
-    fn encode_place_snap_with_decomposition(
-        &mut self,
-        place: Place<'vir>,
-        place_ty: RustTyDecomposition<'vir>,
-    ) -> EncodeResult<'vir, vir::ExprSnap<'vir>, E> {
-        let result = self.encode_place(place)?;
-        let impure_ty = self.deps.require_dep::<TyUseImpureEnc>(place_ty)?;
-        Ok(result
-            .expr
-            .snap
-            .unwrap_or_else(|| impure_ty.ref_to_snap(result.expr.address)))
-    }
-
     fn encode_partial_place_snap(
         &mut self,
         place: Place<'vir>,
-        reads: &[Place<'vir>],
         place_ty: RustTyDecomposition<'vir>,
     ) -> EncodeResult<'vir, vir::ExprSnap<'vir>, E> {
-        if reads.contains(&place) {
-            return self.encode_place_snap_with_decomposition(place, place_ty);
-        }
-        let depth = place.projection.len();
-        let next_field = |read: &Place<'vir>| match read.projection.get(depth) {
-            Some(mir::ProjectionElem::Field(fidx, _)) => Some(*fidx),
-            _ => None,
-        };
+        let pcg_state = &self
+            .current_fpcs
+            .as_ref()
+            .unwrap()
+            .statements
+            .last()
+            .unwrap()
+            .states[EvalStmtPhase::PostMain];
         let pure_ty = self.deps.require_dep::<TyUsePureEnc>(place_ty)?;
-        let Some(struct_data) = pure_ty.get_structlike() else {
-            return self.encode_place_snap_with_decomposition(place, place_ty);
-        };
-        if reads.iter().any(|read| next_field(read).is_none()) {
-            return self.encode_place_snap_with_decomposition(place, place_ty);
-        }
-        let field_count = struct_data.fields.len();
 
-        let mut field_snaps = Vec::with_capacity(field_count);
-        for idx in 0..field_count {
-            let fidx = abi::FieldIdx::from_usize(idx);
-            let field_reads: Vec<Place<'vir>> = reads
-                .iter()
-                .copied()
-                .filter(|read| next_field(read) == Some(fidx))
-                .collect();
-            let field_data = place_ty.ty.expect_structlike().fields[idx];
-            let field_ty = field_data.decompose_normalize(place_ty.args);
-            if field_reads.is_empty() {
-                // The field is never read by the spec block, so using a
-                // placeholder is fine even if it was moved out.
-                let snapshot_ty = self
-                    .deps
-                    .require_ref::<TyUsePureEnc>(field_ty)
-                    .unwrap()
-                    .snapshot;
-                field_snaps.push(self.new_tmp(snapshot_ty));
-            } else {
-                let field_place = place
-                    .project_deeper(
-                        &[field_data.get_field_projection(fidx, place_ty.args)],
-                        self.vcx.tcx(),
-                    )
-                    .into();
-                field_snaps.push(self.encode_partial_place_snap(
-                    field_place,
-                    &field_reads,
-                    field_ty,
-                )?);
+        // Check if place is unpacked
+        if let Some(struct_data) = pure_ty.get_structlike()
+            && pcg_state.owned()[place.local].is_allocated()
+        {
+            let expansions = pcg_state.owned()[place.local].expansions();
+            let leaf_expansions = expansions.leaf_places(self.pcg_ctxt());
+            if leaf_expansions.iter().any(|leaf| {
+                place.is_prefix_of(**leaf) && place.projection().len() < leaf.projection().len()
+            }) {
+                let field_count = struct_data.fields.len();
+
+                let mut field_snaps = Vec::with_capacity(field_count);
+                for idx in 0..field_count {
+                    let field_data = place_ty.ty.expect_structlike().fields[idx];
+                    let field_place = place.expand_field(None, self.pcg_ctxt()).unwrap()[idx];
+                    let field_ty = field_data.decompose_normalize(place_ty.args);
+                    field_snaps.push(self.encode_partial_place_snap(field_place, field_ty)?);
+                }
+
+                return Ok(struct_data.field_snaps_to_snap(field_snaps).upcast_ty());
             }
         }
-        Ok(pure_ty
-            .expect_structlike()
-            .field_snaps_to_snap(field_snaps)
-            .upcast_ty())
+
+        // Check if we have capability to this place
+        let place_capability = pcg_state.computed_owned_capability(place, self.pcg_ctxt());
+        if place_capability.is_none_or(|c| c.is_write()) {
+            // we do not own this place or it is moved out -> use temporary snap
+            let snapshot_ty = self.deps.require_ref::<TyUsePureEnc>(place_ty)?.snapshot;
+            return Ok(self.new_tmp(snapshot_ty));
+        }
+
+        Ok(self.encode_place_with_snap(place)?.1)
     }
 
     fn visit_basic_block_data(

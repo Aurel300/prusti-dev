@@ -98,7 +98,11 @@ pub struct VerificationRequest {
 
 impl VerificationRequest {
     pub(crate) fn get_hash(&self) -> u64 {
-        self.program.get_hash()
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        self.program.get_hash().hash(&mut hasher);
+        self.backend_config.verify_mode.hash(&mut hasher);
+        hasher.finish()
     }
 
     /// Builds a more specific request based on the backend configuration and sends it.

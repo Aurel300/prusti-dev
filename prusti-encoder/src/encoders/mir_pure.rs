@@ -1221,8 +1221,8 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
     ) -> EncodeResult<'vir, EncodedPlace<'vir>, MirPureEnc> {
         // TODO: remove (debug)
         assert!(curr_ver.contains_key(&place.local));
-        let version = curr_ver[&place.local].index;
-        self.versions_used.insert((place.local, version));
+        self.versions_used
+            .insert((place.local, curr_ver[&place.local].index));
 
         let mut place_ty = mir::PlaceTy::from_ty(self.body.local_decls[place.local].ty);
 

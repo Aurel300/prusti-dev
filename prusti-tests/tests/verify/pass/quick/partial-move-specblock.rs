@@ -15,8 +15,8 @@ fn foo<X, Y>(x: Outer<Y, X>) {
     prusti_assert!(x.1.1 + 1 - 1 == x.1.1);
 }
 
-// #[requires(x.1 == 5)]
-// fn f(x: Box<(String, i32)>) {
-//     let y = x.0;
-//     prusti_assert!(x.1 == 5);
-// }
+#[requires(x.1 == 5)]
+fn f(x: Box<(String, i32)>) {
+    let y = x.0;
+    prusti_assert!(x.1 == 5);
+}

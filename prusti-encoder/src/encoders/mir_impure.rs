@@ -1622,6 +1622,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
     fn encode_spec_block(
         &mut self,
         spec_block: mir::BasicBlock,
+        pcg_state: &Pcg<'_, 'vir>,
     ) -> EncodeResult<'vir, vir::ExprBool<'vir>, E> {
         let enc_output = self.deps.require_dep::<MirPureEnc>(MirPureEncTask {
             encoding_depth: 0,
@@ -1634,7 +1635,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         for local in enc_output.inputs {
             let place: Place = local.into();
             let place_ty = RustTyDecomposition::from_ty(place.ty(self.pcg_ctxt()).ty, self.def_id);
-            let snap = self.encode_partial_place_snap(place, place_ty)?;
+            let snap = self.encode_partial_place_snap(place, place_ty, pcg_state)?;
             locals.insert(local, snap);
         }
 
@@ -1649,15 +1650,8 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
         &mut self,
         place: Place<'vir>,
         place_ty: RustTyDecomposition<'vir>,
+        pcg_state: &Pcg<'_, 'vir>,
     ) -> EncodeResult<'vir, vir::ExprSnap<'vir>, E> {
-        let pcg_state = &self
-            .current_fpcs
-            .as_ref()
-            .unwrap()
-            .statements
-            .last()
-            .unwrap()
-            .states[EvalStmtPhase::PostMain];
         let pure_ty = self.deps.require_dep::<TyUsePureEnc>(place_ty)?;
 
         // Check if place is unpacked
@@ -1671,12 +1665,33 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             }) {
                 let field_count = struct_data.fields.len();
 
+                // Check if place is a box
+                if place.ty(self.pcg_ctxt()).ty.is_box() {
+                    let fields = place.expand_field(None, self.pcg_ctxt()).unwrap();
+                    return Ok(struct_data
+                        .field_snaps_to_snap(vec![
+                            self.encode_place_with_snap(fields[0])?.1,
+                            self.encode_place_with_snap(fields[1])?.1,
+                            self.encode_partial_place_snap(
+                                place.project_deref(self.pcg_ctxt()),
+                                place_ty.ty.expect_structlike().fields[2]
+                                    .decompose_normalize(place_ty.args),
+                                pcg_state,
+                            )?,
+                        ])
+                        .upcast_ty());
+                }
+
                 let mut field_snaps = Vec::with_capacity(field_count);
                 for idx in 0..field_count {
                     let field_data = place_ty.ty.expect_structlike().fields[idx];
                     let field_place = place.expand_field(None, self.pcg_ctxt()).unwrap()[idx];
                     let field_ty = field_data.decompose_normalize(place_ty.args);
-                    field_snaps.push(self.encode_partial_place_snap(field_place, field_ty)?);
+                    field_snaps.push(self.encode_partial_place_snap(
+                        field_place,
+                        field_ty,
+                        pcg_state,
+                    )?);
                 }
 
                 return Ok(struct_data.field_snaps_to_snap(field_snaps).upcast_ty());
@@ -1750,7 +1765,10 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 .clone()
                 .into_iter()
                 .map(|(spec_block, span)| {
-                    let expr = self.encode_spec_block(spec_block)?;
+                    let expr = self.encode_spec_block(
+                        spec_block,
+                        &cfpcs.statements[0].states[EvalStmtPhase::PreOperands],
+                    )?;
                     self.vcx.with_span(span, |vcx| {
                         let error_msg = "loop invariant might not be preserved";
                         vcx.handle_error("invariant.not.preserved:assertion.false", move |_| {
@@ -1828,7 +1846,16 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 if matches!(spec.kind, SpecBlockKind::LoopInvariant) {
                     continue;
                 }
-                let spec_expr = self.encode_spec_block(spec.block)?;
+                let pcg_state = self
+                    .current_fpcs
+                    .as_ref()
+                    .unwrap()
+                    .statements
+                    .last()
+                    .unwrap()
+                    .states[EvalStmtPhase::PostMain]
+                    .clone();
+                let spec_expr = self.encode_spec_block(spec.block, &pcg_state)?;
                 let span = spec.span;
                 match spec.kind {
                     SpecBlockKind::Assert => {

@@ -3,10 +3,10 @@ use task_encoder::{EncodeFullError, EncodeFullResult, TaskEncoder, TaskEncoderDe
 use vir::{CastType, PredicateIdn};
 
 use crate::encoders::{
-    Impure,
+    Impure, UninitEnc,
     ty::{
         LazyRustTy, RustTyDatas, RustTyDecomposition,
-        generics::{GArgs, GArgsCastEnc, GArgsTyEnc, GParams},
+        generics::{GArgs, GArgsCastEnc, GArgsTyEnc, GParams, TyExprEnc},
         pure::TyPureEnc,
         use_inhabited::{TyUseInhabitedEnc, TyUseInhabitedRef},
     },
@@ -48,6 +48,11 @@ pub struct TyUseImpureData<'vir> {
     args: GArgsTy<'vir>,
     impure: <ImpureTyDatas as TyDatas<'vir>>::TyData,
     inhabited: TyUseInhabitedRef<'vir>,
+    /// The global `Uninit` token predicate.
+    uninit_pred: PredicateIdn<'vir, (vir::Ref, vir::TyVal)>,
+    /// The lifted type value of this type use, with the use's arguments
+    /// applied.
+    lifted_ty: vir::ExprTyVal<'vir>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -145,8 +150,10 @@ impl TaskEncoder for TyUseImpureEnc {
 
         let ty_impure = deps.require_dep::<TyImpureEnc>(task_key.ty)?;
         let inhabited = deps.require_ref::<TyUseInhabitedEnc>(*task_key)?;
+        let uninit_pred = deps.require_dep::<UninitEnc>(())?;
+        let lifted_ty = deps.require_dep::<TyExprEnc>(*task_key)?;
         let mut walker = TyUseImpureWalker::new(deps, task_key.args, inhabited)?;
-        let ty_use_impure = walker.encode_ty(task_key.ty.zip(ty_impure))?;
+        let ty_use_impure = walker.encode_ty(task_key.ty.zip(ty_impure), uninit_pred, lifted_ty)?;
         Ok(((), ty_use_impure.alloc()))
     }
 
@@ -180,6 +187,8 @@ impl<'a, 'vir> TyUseImpureWalker<'a, 'vir> {
     fn encode_ty(
         &mut self,
         ty: TyData<'vir, (RustTyDatas, ImpureTyDatas)>,
+        uninit_pred: PredicateIdn<'vir, (vir::Ref, vir::TyVal)>,
+        lifted_ty: vir::ExprTyVal<'vir>,
     ) -> EncResult<'vir, TyData<'vir, UseImpureTyDatas>> {
         let specifics = match &ty.specifics {
             TySpecifics::Param(..) => TySpecifics::mk_param(()),
@@ -240,6 +249,8 @@ impl<'a, 'vir> TyUseImpureWalker<'a, 'vir> {
             args: self.args_t,
             impure: *ty.1,
             inhabited: self.inhabited,
+            uninit_pred,
+            lifted_ty,
         };
         Ok(TyData::new(data, specifics))
     }
@@ -375,6 +386,20 @@ impl<'vir> TyUseImpureData<'vir> {
         ))))
     }
 
+    /// Generates a call to `method_drop`, exchanging the place's owned
+    /// predicate for its `Uninit` token. Appropriate type arguments are used.
+    pub fn apply_method_drop<'tcx>(
+        &self,
+        vcx: &'vir vir::VirCtxt<'tcx>,
+        self_ref: vir::ExprRef<'vir>,
+    ) -> vir::Stmt<'vir> {
+        vcx.alloc(vir::StmtData::new(vcx.alloc((self.impure.method_drop)(
+            self_ref,
+            self.args.get_ty(),
+            self.args.get_const(),
+        ))))
+    }
+
     /// Constructs the Viper predicate application expression.
     pub fn ref_to_pred<'tcx>(
         &self,
@@ -407,11 +432,48 @@ impl<'vir> TyUseImpureData<'vir> {
     pub fn snapshot(&self) -> vir::TypeSnap<'vir> {
         self.impure.ref_to_snap.result()
     }
+
+    /// The `Uninit` token predicate application for a place of this type.
+    pub fn uninit_pred_app(&self, self_ref: vir::ExprRef<'vir>) -> vir::PredicateApp<'vir> {
+        (self.uninit_pred)(self_ref, self.lifted_ty)(None)
+    }
+
+    /// The `Uninit` token predicate application expression for a place of
+    /// this type.
+    pub fn uninit_pred<'tcx>(
+        &self,
+        vcx: &'vir vir::VirCtxt<'tcx>,
+        self_ref: vir::ExprRef<'vir>,
+    ) -> vir::ExprBool<'vir> {
+        vcx.mk_predicate_app_expr(self.uninit_pred_app(self_ref))
+    }
 }
 
 impl<'vir> TyData<'vir, UseImpureTyDatas> {
     pub fn inhabited<Curr, Next>(&self) -> vir::ExprGenBool<'vir, Curr, Next> {
         self.data.inhabited.inhabited()
+    }
+
+    /// Statements exchanging the place's `Uninit` token for its fields' tokens
+    /// (`expand`) or vice versa (collapse), for repacks of places at write
+    /// capability. Returns `None` for types without token repacking support
+    /// (primitives and refs have no fields to repack to; arrays and opaque
+    /// types are not supported; a box is never unpacked at write capability).
+    pub fn uninit_repack(
+        &self,
+        variant: Option<abi::VariantIdx>,
+        self_ref: vir::ExprRef<'vir>,
+        expand: bool,
+    ) -> Option<Vec<vir::Stmt<'vir>>> {
+        let struct_data = if let Some(variant) = variant {
+            &self.expect_variant(variant).inner
+        } else {
+            match &self.specifics {
+                TySpecifics::StructLike(data) => data,
+                _ => return None,
+            }
+        };
+        struct_data.apply_uninit_repack(self_ref, expand)
     }
 
     /// Fold the predicate (including generic casts).
@@ -570,6 +632,38 @@ impl<'vir> TyUseImpureStruct<'vir> {
     pub fn box_address(&self, self_ref: vir::ExprRef<'vir>) -> vir::ExprRef<'vir> {
         assert!(self.data.impure.box_data.is_some(), "expected box");
         self.fields.last().unwrap().field_ref(self_ref)
+    }
+
+    fn apply_uninit_repack(
+        &self,
+        self_ref: vir::ExprRef<'vir>,
+        expand: bool,
+    ) -> Option<Vec<vir::Stmt<'vir>>> {
+        let method = if expand {
+            self.impure.method_uninit_expand?
+        } else {
+            self.impure.method_uninit_collapse
+        };
+        let call = vir::with_vcx(|vcx| {
+            vcx.alloc(vir::StmtData::new(vcx.alloc((method)(
+                self_ref,
+                self.args.get_ty(),
+                self.args.get_const(),
+            ))))
+        });
+        // A box's collapse consumes the predicates its fields other than the
+        // value still hold, in the callee's (generic) form.
+        let held_fields = match self.impure.box_data {
+            Some(_) => &self.fields[..self.fields.len() - 1],
+            None => &[],
+        };
+        Some(
+            held_fields
+                .iter()
+                .filter_map(|f| f.cast_to_callee_ctx(self_ref))
+                .chain([call])
+                .collect(),
+        )
     }
 
     fn ref_to_pred_app(

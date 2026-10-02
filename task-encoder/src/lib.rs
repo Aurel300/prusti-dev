@@ -74,7 +74,7 @@ impl<'vir> Program<'vir> {
     /// axioms could remove the terms that quantifier triggers rely on.
     pub fn simplify(&mut self) {
         vir::with_vcx(|vcx| {
-            let adts = vir::simplify::AdtIndex::new(&self.adts);
+            let adts = vir::simplify::AdtIndex::new(&self.adts, &self.domains, &self.functions);
             for function in self.functions.iter_mut() {
                 *function = vir::simplify::function(vcx, &adts, function);
             }

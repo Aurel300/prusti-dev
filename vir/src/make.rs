@@ -1590,15 +1590,32 @@ impl<'tcx> VirCtxt<'tcx> {
             _ => unreachable!(),
         }
     }
+    /// `min <= exp && exp <= max` for the integer type `rust_ty`.
+    pub fn get_in_range<'vir>(
+        &'vir self,
+        exp: ExprInt<'vir>,
+        rust_ty: &ty::TyKind,
+    ) -> ExprBool<'vir> {
+        let lower = self
+            .mk_bin_op_expr(BinOpKind::CmpGe, exp, self.get_min_int(rust_ty))
+            .downcast_ty::<crate::Bool>();
+        let upper = self
+            .mk_bin_op_expr(BinOpKind::CmpLe, exp, self.get_max_int(rust_ty))
+            .downcast_ty::<crate::Bool>();
+        self.mk_bin_op_expr(BinOpKind::And, lower, upper)
+            .downcast_ty()
+    }
     /// Wrap `exp` into the range of the integer type `rust_ty` (two's complement):
     /// a `uN` target is `exp mod 2^N`; an `iN` target is
-    /// `((exp + 2^(N-1)) mod 2^N) - 2^(N-1)`. This is the identity when `exp` is
-    /// already in range, and reproduces Rust's `as`/wrapping-arithmetic otherwise.
+    /// `((exp + 2^(N-1)) mod 2^N) - 2^(N-1)`. This reproduces Rust's
+    /// `as`/wrapping-arithmetic. When `exp` is already in range the result is
+    /// spelled out as `exp` itself, so that this case needs no `mod` reasoning.
     pub fn get_wrapped_val<'vir>(
         &'vir self,
         mut exp: ExprInt<'vir>,
         rust_ty: &ty::TyKind,
     ) -> ExprInt<'vir> {
+        let unwrapped = exp;
         let shift_amount = self.get_signed_shift_int(rust_ty);
         if let Some(half) = shift_amount {
             exp = self.mk_bin_op_expr(BinOpKind::Add, exp, half).downcast_ty();
@@ -1610,6 +1627,6 @@ impl<'tcx> VirCtxt<'tcx> {
         if let Some(half) = shift_amount {
             exp = self.mk_bin_op_expr(BinOpKind::Sub, exp, half).downcast_ty();
         }
-        exp
+        self.mk_ternary_expr(self.get_in_range(unwrapped, rust_ty), unwrapped, exp)
     }
 }

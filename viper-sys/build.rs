@@ -797,6 +797,10 @@ fn main() {
                 object_getter!(),
                 method!("simplify")
             ]),
+            java_class!("viper.silver.ast.utility.rewriter.Rewritable", vec![
+                method!("meta"),
+                method!("withMeta"),
+            ]),
             java_class!("viper.silver.ast.Wand$", vec![
                 object_getter!(),
             ]),

@@ -1,13 +1,17 @@
 #![feature(rustc_private)]
 
 use rustc_hash::FxHashMap;
-use viper::{self, AstFactory, Position};
+use std::cell::Cell;
+use viper::{self, AstFactory, AstUtils, Position};
 use vir::CompType;
 
-/// Convert the given VIR program into a Viper program (i.e., Java object).
+/// Convert the given VIR program into a Viper program (i.e., Java object),
+/// simplifying its expressions with `simplifier` if given (see
+/// [`ToViperContext::simplify`]).
 pub fn program_to_viper<'vir>(
     program: vir::Program<'vir>,
     ast: &'vir AstFactory<'_>,
+    simplifier: Option<AstUtils<'vir>>,
 ) -> viper::Program<'vir> {
     let mut adts = FxHashMap::default();
     let mut adt_constructors: FxHashMap<_, _> = Default::default();
@@ -41,6 +45,8 @@ pub fn program_to_viper<'vir>(
         domains,
         domain_functions,
         domain_axioms,
+        simplifier,
+        depth: Cell::new(0),
     };
     program.to_viper_no_pos(&ctx)
 }
@@ -71,6 +77,12 @@ pub struct ToViperContext<'vir, 'v> {
 
     /// Map of all domain axioms in the program, keyed by name.
     domain_axioms: FxHashMap<&'vir str, (vir::Domain<'vir>, vir::DomainAxiom<'vir>)>,
+
+    /// Applies silver's `Simplifier` to the translated expressions.
+    simplifier: Option<AstUtils<'v>>,
+
+    /// Number of expressions enclosing the one being translated.
+    depth: Cell<usize>,
 }
 
 impl<'vir> ToViperContext<'vir, '_> {
@@ -102,6 +114,36 @@ impl<'vir> ToViperContext<'vir, '_> {
         type_map
             .map(|(param, arg)| (param.to_viper_no_pos(self), arg.to_viper_no_pos(self)))
             .collect()
+    }
+}
+
+impl<'v> ToViperContext<'_, 'v> {
+    /// Simplifies a translated expression enclosed by `depth` expressions.
+    /// Each expression tree whose parent is not an expression (a contract
+    /// clause, invariant, body, axiom or statement operand) is simplified
+    /// once: first each child of its root, then the root itself, whose
+    /// simplification must keep the root's position. Viper blames e.g. a
+    /// failing postcondition on the clause's root node, and the error is
+    /// backtranslated through that node's position; a rule replacing the root
+    /// by a subexpression (e.g. `true && e` by `e`) would lose it. Such a
+    /// result is given the root's metadata instead, or discarded where silver
+    /// cannot replace its metadata.
+    fn simplify(&self, expr: viper::Expr<'v>, depth: usize) -> viper::Expr<'v> {
+        let Some(simplifier) = self.simplifier else {
+            return expr;
+        };
+        match depth {
+            0 => {
+                let simplified = simplifier.simplify_expr(expr);
+                if simplifier.pos_id(simplified) == simplifier.pos_id(expr) {
+                    simplified
+                } else {
+                    simplifier.with_meta_of(simplified, expr).unwrap_or(expr)
+                }
+            }
+            1 => simplifier.simplify_expr(expr),
+            _ => expr,
+        }
     }
 }
 
@@ -449,7 +491,8 @@ impl<'vir, 'v> ToViper<'vir, 'v> for vir::Exists<'vir> {
 impl<'vir, 'v, T: vir::CompType> ToViper<'vir, 'v> for vir::Expr<'vir, T> {
     type Output = viper::Expr<'v>;
     fn to_viper(&self, ctx: &ToViperContext<'vir, 'v>, _pos: Position) -> Self::Output {
-        match self.kind {
+        let depth = ctx.depth.replace(ctx.depth.get() + 1);
+        let expr = match self.kind {
             vir::ExprKindData::AccField(v) => v.to_viper_with_span(ctx, self.span),
             vir::ExprKindData::BinOp(v) => v.to_viper_with_span(ctx, self.span),
             vir::ExprKindData::CollectionBinOp(v) => v.to_viper_with_span(ctx, self.span),
@@ -508,7 +551,7 @@ impl<'vir, 'v, T: vir::CompType> ToViper<'vir, 'v> for vir::Expr<'vir, T> {
 
             vir::ExprKindData::AdtDestructor(recv, field) => {
                 let type_map = ctx.adt_type_map(recv.ty().kind());
-                ctx.ast.adt_destructor(
+                ctx.ast.adt_destructor_with_pos(
                     field.name,
                     recv.to_viper_no_pos(ctx),
                     &type_map,
@@ -520,20 +563,24 @@ impl<'vir, 'v, T: vir::CompType> ToViper<'vir, 'v> for vir::Expr<'vir, T> {
                             println!("no such destructor {field:?} for receiver {recv:?}");
                             "invalid_destructor"
                         }),
+                    ctx.span_to_pos(self.span),
                 )
             }
             vir::ExprKindData::AdtDiscriminator(recv, field) => {
                 let type_map = ctx.adt_type_map(recv.ty().kind());
-                ctx.ast.adt_discr(
+                ctx.ast.adt_discr_with_pos(
                     field,
                     recv.to_viper_no_pos(ctx),
                     &type_map,
                     ctx.adt_constructors.get(field).unwrap().0.name,
+                    ctx.span_to_pos(self.span),
                 )
             }
 
             vir::ExprKindData::Lazy(..) | vir::ExprKindData::Todo(..) => unimplemented!(),
-        }
+        };
+        ctx.depth.set(depth);
+        ctx.simplify(expr, depth)
     }
 }
 
@@ -607,7 +654,7 @@ impl<'vir, 'v> ToViper<'vir, 'v> for vir::FuncApp<'vir> {
                 "adt constructors construct the type map internally"
             );
             let type_map = ctx.adt_type_map(self.result_ty.kind());
-            ctx.ast.adt_constructor_app(
+            ctx.ast.adt_constructor_app_with_pos(
                 self.target,
                 &self
                     .args
@@ -617,6 +664,7 @@ impl<'vir, 'v> ToViper<'vir, 'v> for vir::FuncApp<'vir> {
                 &type_map,
                 self.result_ty.to_viper_no_pos(ctx),
                 adt.name,
+                pos,
             )
         } else {
             assert_eq!(
@@ -720,7 +768,7 @@ impl<'vir, 'v> ToViperVec<'vir, 'v> for vir::GotoIf<'vir> {
                     .for_each(|v| vec_then.push(v.to_viper_no_pos(ctx)));
                 vec_then.push(ctx.ast.goto(&target.label.name()));
                 let stmt = ctx.ast.if_stmt(
-                    ctx.ast.eq_cmp(value, target.value.to_viper_no_pos(ctx)),
+                    ctx.simplify(ctx.ast.eq_cmp(value, target.value.to_viper_no_pos(ctx)), 0),
                     ctx.ast.seqn(&vec_then, &[]),
                     else_,
                 );

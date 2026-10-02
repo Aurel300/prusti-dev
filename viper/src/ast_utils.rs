@@ -4,7 +4,12 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-use crate::{ast_factory::Program, jni_utils::JniUtils, JavaException};
+use crate::{
+    ast_factory::{Expr, Program},
+    jni_utils::JniUtils,
+    verifier::extract_pos_id,
+    JavaException,
+};
 use jni::{objects::JObject, JNIEnv};
 use viper_sys::wrappers::viper::*;
 
@@ -50,6 +55,50 @@ impl<'a> AstUtils<'a> {
 
     pub fn to_string(&self, program: Program<'a>) -> String {
         self.jni.to_string(program.to_jobject())
+    }
+
+    /// Applies silver's general-purpose `Simplifier` (constant folding and
+    /// other local semantics-preserving rewrites) to an expression.
+    pub fn simplify_expr(&self, expr: Expr<'a>) -> Expr<'a> {
+        let simplifier_wrapper = silver::ast::utility::Simplifier_object::with(self.env);
+        Expr::new(self.jni.unwrap_result(simplifier_wrapper.call_simplify(
+            self.jni.unwrap_result(simplifier_wrapper.singleton()),
+            expr.to_jobject(),
+            false,
+        )))
+    }
+
+    /// The position identifier of an expression, if it has one.
+    pub fn pos_id(&self, expr: Expr<'a>) -> Option<String> {
+        let pos = self
+            .jni
+            .unwrap_result(silver::ast::Positioned::with(self.env).call_pos(expr.to_jobject()));
+        extract_pos_id(&self.jni, self.env, pos)
+    }
+
+    /// Rebuilds `expr` with the position, info and error transformer of
+    /// `like`. `None` for the expressions whose metadata silver's reflective
+    /// `withMeta` cannot replace: those with extra constructor arguments
+    /// besides the metadata (plugin expressions such as adt applications, and
+    /// backend function applications).
+    pub fn with_meta_of(&self, expr: Expr<'a>, like: Expr<'a>) -> Option<Expr<'a>> {
+        let obj = expr.to_jobject();
+        if self
+            .jni
+            .is_instance_of(obj, "viper/silver/ast/ExtensionExp")
+            || self
+                .jni
+                .is_instance_of(obj, "viper/silver/ast/BackendFuncApp")
+        {
+            return None;
+        }
+        let rewritable = silver::ast::utility::rewriter::Rewritable::with(self.env);
+        let meta = self
+            .jni
+            .unwrap_result(rewritable.call_meta(like.to_jobject()));
+        Some(Expr::new(
+            self.jni.unwrap_result(rewritable.call_withMeta(obj, meta)),
+        ))
     }
 
     /// Important: the result of the `f` call must not contain Java objects. Use carefully.

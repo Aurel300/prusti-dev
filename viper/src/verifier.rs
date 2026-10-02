@@ -397,7 +397,11 @@ impl<State> Drop for Verifier<'_, State> {
 }
 
 /// Extract a position identifier from a `Position` object.
-fn extract_pos_id(jni_utils: &JniUtils<'_>, env: &JNIEnv<'_>, pos: JObject<'_>) -> Option<String> {
+pub(crate) fn extract_pos_id(
+    jni_utils: &JniUtils<'_>,
+    env: &JNIEnv<'_>,
+    pos: JObject<'_>,
+) -> Option<String> {
     let has_identifier_wrapper = silver::ast::HasIdentifier::with(env);
 
     if jni_utils.is_instance_of(pos, "viper/silver/ast/HasIdentifier") {

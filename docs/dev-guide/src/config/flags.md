@@ -398,7 +398,7 @@ When enabled, we emit various json data structures containing information about 
 
 ## `SIMPLIFY_ENCODING`
 
-When enabled, the encoded program is simplified before it is passed to the Viper backend.
+When enabled, the encoded program is simplified before it is passed to the Viper backend, first on the VIR level and then with silver's `Simplifier`.
 
 ## `SKIP_UNSUPPORTED_FEATURES`
 

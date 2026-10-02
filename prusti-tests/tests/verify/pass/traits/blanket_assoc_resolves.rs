@@ -174,3 +174,52 @@ mod forward_to_projection {
         take(r)
     }
 }
+
+// A where-clause on a projection that cannot feed the impl's own trigger
+// (`Clone` of `G::Output` under the trigger at `BlockRng<G>`, as
+// `#[derive(Clone)]` generates it) keeps the trigger as it is, so the impl
+// applies where the projection does not occur yet.
+mod projection_bound {
+    use prusti_contracts::*;
+
+    pub trait Generator {
+        type Output;
+    }
+
+    pub struct BlockRng<G: Generator> {
+        pub core: G,
+    }
+
+    #[refine_trait_spec]
+    impl<G: Generator + Clone> Clone for BlockRng<G>
+    where
+        G::Output: Clone,
+    {
+        #[trusted]
+        fn clone(&self) -> Self {
+            BlockRng { core: self.core.clone() }
+        }
+    }
+
+    #[derive(Clone)]
+    pub struct MyGen<T>(pub T);
+    impl<T> Generator for MyGen<T> {
+        type Output = T;
+    }
+
+    pub struct Wrap<T>(pub T);
+    pub trait Tr {
+        type A;
+    }
+    impl<T: Clone> Tr for Wrap<T> {
+        type A = u8;
+    }
+
+    pub fn get<T: Tr>(_t: &T) -> Option<T::A> {
+        None
+    }
+
+    pub fn user(w: &Wrap<BlockRng<MyGen<u32>>>) -> Option<u8> {
+        get(w)
+    }
+}

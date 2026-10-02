@@ -681,7 +681,8 @@ impl TraitImplEnc {
     }
 
     /// The arguments of the applications of the trigger's function in
-    /// `body` that are not among the trigger's own arguments, built from the
+    /// `body`, at positions where the trigger has a bare variable, that are
+    /// not among the trigger's own arguments and are built from the
     /// quantified variables alone (other than a bare variable).
     fn self_feeding_args<'vir>(
         trigger: vir::ExprDyn<'vir>,
@@ -705,8 +706,11 @@ impl TraitImplEnc {
             if app.target != trigger_app.target {
                 return;
             }
-            for &arg in app.args {
-                if matches!(arg.kind, vir::ExprKindGenData::Local(_))
+            // Only where the trigger has a bare variable does the new term
+            // match it again; a constructor there does not match a projection.
+            for (&arg, &trigger_arg) in std::iter::zip(app.args, trigger_app.args) {
+                if !matches!(trigger_arg.kind, vir::ExprKindGenData::Local(_))
+                    || matches!(arg.kind, vir::ExprKindGenData::Local(_))
                     || !seen.insert(format!("{arg:?}"))
                 {
                     continue;

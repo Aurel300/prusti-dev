@@ -180,23 +180,42 @@ impl TaskEncoder for CastersEnc<Pure> {
                 def,
             ));
 
-            // No discriminators here: their tag terms trigger the N-way
-            // exhaustiveness axioms of the `Type` and `s_Param` adts.
+            // Type arguments are read off `p`'s type, so `p` need not be a
+            // constructor term. No discriminators: their tag terms trigger the
+            // N-way exhaustiveness axioms of the `Type` and `s_Param` adts.
             let p_decl = vcx.mk_local_decl("p", vir::TYPE_PSNAP);
             let p = vcx.mk_local_ex(p_decl);
             let mc_p = make_concrete_destr.call()(p);
             let typ_p = typ_idn(p);
-            let rebuilt = make_generic_ident(mc_p, &tys, &consts);
-            let bridge_qvars = std::iter::once(p_decl.as_dyn())
-                .chain(generics.ty_decls().iter().map(|d| d.as_dyn()))
-                .chain(generics.const_decls().iter().map(|d| d.as_dyn()))
-                .collect::<Vec<vir::LocalDeclDyn<'vir>>>();
+            let ty_args = ty_constructor
+                .ty_param_accessors
+                .iter()
+                .map(|a| a.call()(typ_p))
+                .collect::<Vec<_>>();
+            let const_args = ty_constructor
+                .const_param_accessors
+                .iter()
+                .map(|a| a.call()(typ_p))
+                .collect::<Vec<_>>();
+            let (trigger, rebuilt) = match unit_value {
+                Some(unit_value) => (
+                    vcx.mk_trigger(&[typ_p]),
+                    make_generic_ident(unit_value, &ty_args, &const_args),
+                ),
+                None => (
+                    vcx.mk_trigger(&[mc_p.as_dyn(), typ_p.as_dyn()]),
+                    make_generic_ident(mc_p, &ty_args, &const_args),
+                ),
+            };
             let bridge = vcx.mk_forall_expr(
-                vcx.alloc_slice(&bridge_qvars),
-                vcx.alloc_slice(&[vcx.mk_trigger(&[rebuilt.as_dyn(), typ_p.as_dyn()])]),
+                vcx.alloc_slice(&[p_decl]),
+                vcx.alloc_slice(&[trigger]),
                 vcx.mk_bin_op_expr(
                     vir::BinOpKind::Implies,
-                    vcx.mk_eq_expr(typ_p, (ty_constructor.ty_constructor)(&tys, &consts)),
+                    vcx.mk_eq_expr(
+                        typ_p,
+                        (ty_constructor.ty_constructor)(&ty_args, &const_args),
+                    ),
                     vcx.mk_eq_expr(rebuilt, p),
                 )
                 .downcast_ty(),

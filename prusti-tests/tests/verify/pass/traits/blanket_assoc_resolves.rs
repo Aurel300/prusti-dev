@@ -138,3 +138,39 @@ mod fn_output_param {
         go(m, Ok(1))
     }
 }
+
+// An impl forwarding to a projection of its own parameter (as rand_core's
+// `TryRng` for `R: DerefMut`): its axioms apply `TryRng` to `R::Target`, and
+// resolve where that projection occurs, without feeding themselves.
+mod forward_to_projection {
+    use prusti_contracts::*;
+    use std::ops::DerefMut;
+
+    pub trait TryRng {
+        type Error;
+        fn try_next(&mut self) -> Result<u32, Self::Error>;
+    }
+
+    #[refine_trait_spec]
+    impl<R: DerefMut> TryRng for R
+    where
+        R::Target: TryRng,
+    {
+        type Error = <R::Target as TryRng>::Error;
+        #[trusted]
+        fn try_next(&mut self) -> Result<u32, Self::Error> {
+            self.deref_mut().try_next()
+        }
+    }
+
+    pub fn take<R: TryRng>(r: &mut R) -> Result<u32, R::Error> {
+        r.try_next()
+    }
+
+    pub fn forward<R: DerefMut>(r: &mut R) -> Result<u32, <R::Target as TryRng>::Error>
+    where
+        R::Target: TryRng,
+    {
+        take(r)
+    }
+}

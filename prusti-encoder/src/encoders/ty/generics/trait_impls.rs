@@ -663,11 +663,62 @@ impl TraitImplEnc {
             .map(decl)
             .chain(extra.iter().copied())
             .collect::<Vec<_>>();
+        // An instance whose body applies the trigger's own function to a
+        // larger argument (e.g. `Tr_impl(<R as Deref>::Target)` under the
+        // trigger `Tr_impl(R)`, from `impl<R: Deref> Tr for R where
+        // R::Target: Tr`) creates a term matching the trigger again, one
+        // projection deeper, without end. Requiring that argument to occur
+        // already, as a further pattern, stops the chain at the terms the
+        // program mentions.
+        let patterns = std::iter::once(trigger)
+            .chain(Self::self_feeding_args(trigger, body.upcast_ty(), &qvars))
+            .collect::<Vec<_>>();
         Ok(vcx.mk_forall_expr(
             vcx.alloc_slice(&qvars),
-            vcx.alloc_slice(&[vcx.mk_trigger(&[trigger])]),
+            vcx.alloc_slice(&[vcx.mk_trigger(&patterns)]),
             body,
         ))
+    }
+
+    /// The arguments of the applications of the trigger's function in
+    /// `body` that are not among the trigger's own arguments, built from the
+    /// quantified variables alone (other than a bare variable).
+    fn self_feeding_args<'vir>(
+        trigger: vir::ExprDyn<'vir>,
+        body: vir::ExprDyn<'vir>,
+        qvars: &[vir::LocalDeclDyn<'vir>],
+    ) -> Vec<vir::ExprDyn<'vir>> {
+        let vir::ExprKindGenData::FuncApp(trigger_app) = trigger.kind else {
+            return Vec::new();
+        };
+        let qvar_names = qvars.iter().map(|decl| decl.name).collect::<FxHashSet<_>>();
+        let mut seen = trigger_app
+            .args
+            .iter()
+            .map(|arg| format!("{arg:?}"))
+            .collect::<FxHashSet<_>>();
+        let mut args = Vec::new();
+        vir::visit_subexprs(body, &mut |e| {
+            let vir::ExprKindGenData::FuncApp(app) = e.kind else {
+                return;
+            };
+            if app.target != trigger_app.target {
+                return;
+            }
+            for &arg in app.args {
+                if matches!(arg.kind, vir::ExprKindGenData::Local(_))
+                    || !seen.insert(format!("{arg:?}"))
+                {
+                    continue;
+                }
+                let mut locals = FxHashSet::default();
+                vir::collect_locals(arg, &mut locals);
+                if !locals.is_empty() && locals.is_subset(&qvar_names) {
+                    args.push(arg);
+                }
+            }
+        });
+        args
     }
 
     /// Whether the impl applies at the trait ref with the given arguments:

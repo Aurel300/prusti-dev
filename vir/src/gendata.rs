@@ -447,16 +447,24 @@ impl<'vir, Curr, Next> ExprKindGenData<'vir, Curr, Next> {
 /// Collects every local name occurring in `e` (a superset of its free
 /// locals: bound variables of quantifiers and lets are included).
 pub fn collect_locals<'vir>(e: ExprDyn<'vir>, out: &mut FxHashSet<&'vir str>) {
+    visit_subexprs(e, &mut |e| {
+        if let ExprKindGenData::Local(l) = e.kind {
+            out.insert(l.name);
+        }
+    });
+}
+
+/// Calls `f` on `e` and on each of its subexpressions, outermost first.
+pub fn visit_subexprs<'vir>(e: ExprDyn<'vir>, f: &mut impl FnMut(ExprDyn<'vir>)) {
+    f(e);
     macro_rules! go {
         ($e:expr) => {
-            collect_locals($e, out)
+            visit_subexprs($e, f)
         };
     }
     match e.kind {
-        ExprKindGenData::Local(l) => {
-            out.insert(l.name);
-        }
-        ExprKindGenData::Const(_)
+        ExprKindGenData::Local(_)
+        | ExprKindGenData::Const(_)
         | ExprKindGenData::Result(_)
         | ExprKindGenData::Lazy(_)
         | ExprKindGenData::Todo(_) => (),

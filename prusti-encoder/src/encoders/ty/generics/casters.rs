@@ -149,7 +149,8 @@ impl TaskEncoder for CastersEnc<Pure> {
             // variant bridge, which makes the reconstruction
             // `make_generic_T(make_concrete_T(p), ts..) == p` hold wherever
             // `p`'s type is known to be `T_type(ts..)`.
-            let typ_idn = deps.require_dep::<ParamTypEnc>(())?.typ;
+            let param_typ = deps.require_dep::<ParamTypEnc>(())?;
+            let typ_idn = param_typ.typ;
             let mut axioms = Vec::new();
             let x_decl = vcx.mk_local_decl("x", self_ty);
             let tys = generics
@@ -180,46 +181,60 @@ impl TaskEncoder for CastersEnc<Pure> {
                 def,
             ));
 
-            // Type arguments are read off `p`'s type, so `p` need not be a
-            // constructor term. No discriminators: their tag terms trigger the
-            // N-way exhaustiveness axioms of the `Type` and `s_Param` adts.
+            // No discriminators: their tag terms trigger the N-way
+            // exhaustiveness axioms of the `Type` and `s_Param` adts.
             let p_decl = vcx.mk_local_decl("p", vir::TYPE_PSNAP);
             let p = vcx.mk_local_ex(p_decl);
             let mc_p = make_concrete_destr.call()(p);
             let typ_p = typ_idn(p);
-            let ty_args = ty_constructor
-                .ty_param_accessors
-                .iter()
-                .map(|a| a.call()(typ_p))
-                .collect::<Vec<_>>();
-            let const_args = ty_constructor
-                .const_param_accessors
-                .iter()
-                .map(|a| a.call()(typ_p))
-                .collect::<Vec<_>>();
-            let (trigger, rebuilt) = match unit_value {
-                Some(unit_value) => (
-                    vcx.mk_trigger(&[typ_p]),
-                    make_generic_ident(unit_value, &ty_args, &const_args),
-                ),
-                None => (
-                    vcx.mk_trigger(&[mc_p.as_dyn(), typ_p.as_dyn()]),
-                    make_generic_ident(mc_p, &ty_args, &const_args),
-                ),
+            let bridge = match unit_value {
+                // A param of a zero-field type is never read; the trigger
+                // names the type so that a param fires only its own bridge.
+                Some(unit_value) => {
+                    let ty = (ty_constructor.ty_constructor)(&tys, &consts);
+                    let bridge_qvars = std::iter::once(p_decl.as_dyn())
+                        .chain(generics.ty_decls().iter().map(|d| d.as_dyn()))
+                        .chain(generics.const_decls().iter().map(|d| d.as_dyn()))
+                        .collect::<Vec<vir::LocalDeclDyn<'vir>>>();
+                    vcx.mk_forall_expr(
+                        vcx.alloc_slice(&bridge_qvars),
+                        vcx.alloc_slice(&[vcx.mk_trigger(&[(param_typ.has_typ)(p, ty)])]),
+                        vcx.mk_bin_op_expr(
+                            vir::BinOpKind::Implies,
+                            vcx.mk_eq_expr(typ_p, ty),
+                            vcx.mk_eq_expr(make_generic_ident(unit_value, &tys, &consts), p),
+                        )
+                        .downcast_ty(),
+                    )
+                }
+                // Type arguments are read off `p`'s type, so `p` need not be
+                // a constructor term.
+                None => {
+                    let ty_args = ty_constructor
+                        .ty_param_accessors
+                        .iter()
+                        .map(|a| a.call()(typ_p))
+                        .collect::<Vec<_>>();
+                    let const_args = ty_constructor
+                        .const_param_accessors
+                        .iter()
+                        .map(|a| a.call()(typ_p))
+                        .collect::<Vec<_>>();
+                    vcx.mk_forall_expr(
+                        vcx.alloc_slice(&[p_decl]),
+                        vcx.alloc_slice(&[vcx.mk_trigger(&[mc_p.as_dyn(), typ_p.as_dyn()])]),
+                        vcx.mk_bin_op_expr(
+                            vir::BinOpKind::Implies,
+                            vcx.mk_eq_expr(
+                                typ_p,
+                                (ty_constructor.ty_constructor)(&ty_args, &const_args),
+                            ),
+                            vcx.mk_eq_expr(make_generic_ident(mc_p, &ty_args, &const_args), p),
+                        )
+                        .downcast_ty(),
+                    )
+                }
             };
-            let bridge = vcx.mk_forall_expr(
-                vcx.alloc_slice(&[p_decl]),
-                vcx.alloc_slice(&[trigger]),
-                vcx.mk_bin_op_expr(
-                    vir::BinOpKind::Implies,
-                    vcx.mk_eq_expr(
-                        typ_p,
-                        (ty_constructor.ty_constructor)(&ty_args, &const_args),
-                    ),
-                    vcx.mk_eq_expr(rebuilt, p),
-                )
-                .downcast_ty(),
-            );
             axioms.push(vcx.mk_domain_axiom(
                 vir::vir_format_identifier!(vcx, "{}_variant_{}", typ_idn.name(), constructor.name),
                 bridge,

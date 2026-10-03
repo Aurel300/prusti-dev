@@ -663,6 +663,20 @@ impl TraitImplEnc {
             .map(decl)
             .chain(extra.iter().copied())
             .collect::<Vec<_>>();
+        // Known matching loop: an impl forwarding to a projection of its own
+        // parameter, such as rand_core's
+        //
+        //     impl<R: DerefMut> TryRng for R where R::Target: TryRng {
+        //         type Error = <R::Target as TryRng>::Error;
+        //     }
+        //
+        // gets `{TryRng_impl(R)}` with the guard `TryRng_impl(Target(R))`,
+        // and `{Error(R)}` with the equation `Error(R) == Error(Target(R))`.
+        // Each instance creates a term matching its trigger again with
+        // `R := Target(R)`, and `Target` never resolves at a type without a
+        // `Deref` impl. Z3 defers such deep instances. Requiring `Target(R)`
+        // in the trigger would stop the chain, but also stop resolving
+        // `<&mut S as TryRng>::Error` where only `Error(&mut S)` occurs.
         Ok(vcx.mk_forall_expr(
             vcx.alloc_slice(&qvars),
             vcx.alloc_slice(&[vcx.mk_trigger(&[trigger])]),

@@ -2,10 +2,10 @@ use prusti_contracts::*;
 
 pub fn f(n: usize) {
     let x = ((String::new(), 1), (2, 5));
-    let _y = x.0 .0;
+    let _y = x.0.0;
     let mut i = 0;
     loop {
-        body_invariant!(x.1 .1 == 6); //~ ERROR: loop invariant might not hold on entry
+        body_invariant!(x.1.1 == 6); //~ ERROR: loop invariant might not hold on entry
         if i >= n {
             break;
         }

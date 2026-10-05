@@ -11,8 +11,8 @@ struct Outer<A, B>(B, Inner<A>);
 
 fn generic_partial_move<X, Y>(x: Outer<Y, X>) {
     let _a = x.0;
-    let _b = x.1 .0;
-    prusti_assert!(x.1 .1 + 1 - 1 == x.1 .1);
+    let _b = x.1.0;
+    prusti_assert!(x.1.1 + 1 - 1 == x.1.1);
 }
 
 #[requires(x.1 == 5)]
@@ -33,6 +33,6 @@ fn intact_struct_arg(s: S) {
 
 fn nested_sibling_read() {
     let x = ((String::new(), 1), (2, 3));
-    let _y = x.0 .0;
-    prusti_assert!(x.1 .0 == 2);
+    let _y = x.0.0;
+    prusti_assert!(x.1.0 == 2);
 }

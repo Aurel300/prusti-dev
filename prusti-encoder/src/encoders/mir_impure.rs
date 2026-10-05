@@ -1724,7 +1724,7 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             let Some(capability) = pcg_state.computed_owned_capability(place, self.pcg_ctxt())
             else {
                 return Err(self.unsupported_rvalue(
-                    format!("no capability for `{place:?}` when encoding a specification"),
+                    format!("INTERNAL ERROR: no capability for `{place:?}` when encoding a specification"),
                     self.current_span(),
                 ));
             };

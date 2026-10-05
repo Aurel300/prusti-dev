@@ -1723,11 +1723,10 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
             // for other specblocks we take the owned capabilities
             let Some(capability) = pcg_state.computed_owned_capability(place, self.pcg_ctxt())
             else {
-                return Err(EncodeFullError::DependencyError(vec![(
-                    <E as TaskEncoder>::ENCODER_NAME,
+                return Err(self.unsupported_rvalue(
                     format!("no capability for `{place:?}` when encoding a specification"),
-                    vec![self.local_decls[place.local].source_info.span],
-                )]));
+                    self.current_span(),
+                ));
             };
             capability.is_write()
         };

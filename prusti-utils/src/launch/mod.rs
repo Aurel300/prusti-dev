@@ -217,7 +217,7 @@ fn get_sysroot_from_rustup() -> Result<PathBuf, String> {
 /// else and would silently be the wrong Viper version.
 fn dirs_up_to_root(base_dir: &Path) -> impl Iterator<Item = &'_ Path> + '_ {
     let mut done = false;
-    base_dir.ancestors().take_while(move |dir| {
+    base_dir.ancestors().take(7).take_while(move |dir| {
         let cont = !done;
         done = dir.join("rust-toolchain").is_file() || dir.join("Cargo.toml").is_file();
         cont

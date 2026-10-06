@@ -274,16 +274,15 @@ def package(mode: str, package_path: str):
     # copies from. The leading `*` covers dynamic libraries losing their `lib` prefix on
     # Windows.
     include_paths_and_dst = [
-        # (source pattern, destination, required)
-        ("rust-toolchain", ".", True),
-        ("viper_tools", ".", True),
-        (f"target/{mode}/prusti-driver*", ".", True),
-        (f"target/{mode}/prusti-server*", ".", True),
-        (f"target/{mode}/prusti-rustc*", ".", True),
-        (f"target/{mode}/cargo-prusti*", ".", True),
-        (f"target/verify/{mode}/libprusti_contracts.*", ".", True),
-        (f"target/verify/{mode}/*prusti_contracts_proc_macros.*", ".", True),
-        (f"target/verify/{mode}/libprusti_std.*", ".", False),
+        # (source pattern, destination)
+        ("rust-toolchain", "."),
+        ("viper_tools", "."),
+        (f"target/{mode}/prusti-driver*", "."),
+        (f"target/{mode}/prusti-server*", "."),
+        (f"target/{mode}/prusti-rustc*", "."),
+        (f"target/{mode}/cargo-prusti*", "."),
+        (f"target/verify/{mode}/libprusti_contracts.*", "."),
+        (f"target/verify/{mode}/*prusti_contracts_proc_macros.*", "."),
     ]
     exclude_paths = [
         f"target/{mode}/*.d",
@@ -295,14 +294,11 @@ def package(mode: str, package_path: str):
     # Copy the paths
     num_copied_paths = 0
     missing_patterns = []
-    for pattern, dst_folder, required in include_paths_and_dst:
+    for pattern, dst_folder in include_paths_and_dst:
         matched_paths = set(glob.glob(pattern))
         filtered_paths = sorted(matched_paths - actual_exclude_set)
         if not filtered_paths:
-            if required:
-                missing_patterns.append(pattern)
-            else:
-                logging.debug(f"A glob pattern gave no results: {pattern}")
+            missing_patterns.append(pattern)
         for src_path in filtered_paths:
             dst_folder_path = os.path.join(package_path, dst_folder)
             dst_path = os.path.join(dst_folder_path, os.path.basename(src_path))

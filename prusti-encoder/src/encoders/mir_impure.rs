@@ -1101,7 +1101,9 @@ impl<'vir, 'enc, E: TaskEncoder> ImpureEncVisitor<'vir, 'enc, E> {
                 let constant = self.encode_constant_snap(constant)?;
                 (constant.upcast_ty(), ty_out)
             }
-            mir::Operand::RuntimeChecks(_) => todo!(),
+            mir::Operand::RuntimeChecks(_) => {
+                unreachable!("RuntimeChecks is only produced by LowerIntrinsics")
+            }
         };
         let tmp_exp: vir::ExprRef<'vir> = self.new_tmp(vir::TYPE_REF);
         self.stmt(ty_out.apply_method_assign(self.vcx, tmp_exp, encode_place_result));

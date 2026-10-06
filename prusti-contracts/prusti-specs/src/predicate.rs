@@ -81,7 +81,7 @@ fn parse_predicate_internal(
     in_spec_refinement: bool,
 ) -> syn::Result<ParsedPredicate> {
     let span = tokens.span();
-    let input: PredicateFnInput = syn::parse2(tokens).map_err(|e| {
+    let mut input: PredicateFnInput = syn::parse2(tokens).map_err(|e| {
         syn::Error::new(
             e.span(),
             "`predicate!` can only be used on function definitions; it supports no attributes",
@@ -97,22 +97,21 @@ fn parse_predicate_internal(
         syn::ReturnType::Type(_, box typ) => typ.to_token_stream(),
     };
 
-    // We calculate this before the if-let so that we can borrow from input (otherwise it is moved out (or temporarily borrowed))
-    let mut rewriter = rewriter::AstRewriter::new();
-    let spec_id = rewriter.generate_spec_id();
-    let patched_function: syn::ItemFn = patch_predicate_macro_body(&input, span, spec_id);
-    let patched_impl_item_method: syn::ImplItemMethod =
-        patch_predicate_macro_body(&input, span, spec_id);
-    if let Some(body) = input.body {
+    if let Some(body) = input.body.take() {
+        let mut rewriter = rewriter::AstRewriter::new();
+        let spec_id = rewriter.generate_spec_id();
         if in_spec_refinement {
+            let patched_function: syn::ImplItemMethod =
+                patch_predicate_macro_body(&input, span, spec_id);
             let spec_function =
-                generate_spec_function(body, return_type, spec_id, &patched_impl_item_method)?;
+                generate_spec_function(body, return_type, spec_id, &patched_function)?;
 
             Ok(ParsedPredicate::Impl(PredicateWithBody {
                 spec_function,
-                patched_function: patched_impl_item_method,
+                patched_function,
             }))
         } else {
+            let patched_function: syn::ItemFn = patch_predicate_macro_body(&input, span, spec_id);
             let spec_function =
                 generate_spec_function(body, return_type, spec_id, &patched_function)?;
 

@@ -15,6 +15,8 @@ use prusti_rustc_interface::{
 };
 use rustc_hash::FxHashMap;
 
+use prusti_rustc_interface::{middle::ty::InternerDecoder, span::BlobDecoder};
+
 pub struct DefSpecsDecoder<'a, 'tcx> {
     opaque: opaque::MemDecoder<'a>,
     tcx: TyCtxt<'tcx>,
@@ -36,22 +38,7 @@ impl<'a, 'tcx> DefSpecsDecoder<'a, 'tcx> {
 //const TAG_FULL_SPAN: u8 = 0;
 //const TAG_PARTIAL_SPAN: u8 = 1;
 
-impl<'a, 'tcx> SpanDecoder for DefSpecsDecoder<'a, 'tcx> {
-    fn decode_span(&mut self) -> Span {
-        let sm = self.tcx.sess.source_map();
-        let pos = [(); 2].map(|_| {
-            let ssfi = StableSourceFileId::decode(self);
-            let rel_bp = BytePos::decode(self);
-            sm.source_file_by_stable_id(ssfi)
-                // See comment in 'encoder.rs'
-                .map(|sf| sf.start_pos + rel_bp)
-                // This should hopefully never fail,
-                // so maybe could be an `unwrap` instead?
-                .unwrap_or(BytePos(0))
-        });
-        Span::new(pos[0], pos[1], SyntaxContext::root(), None)
-    }
-
+impl<'a, 'tcx> BlobDecoder for DefSpecsDecoder<'a, 'tcx> {
     fn decode_symbol(&mut self) -> Symbol {
         let tag = self.read_u8();
 
@@ -80,32 +67,8 @@ impl<'a, 'tcx> SpanDecoder for DefSpecsDecoder<'a, 'tcx> {
         }
     }
 
-    fn decode_expn_id(&mut self) -> ExpnId {
-        todo!()
-    }
-
-    fn decode_syntax_context(&mut self) -> SyntaxContext {
-        todo!()
-    }
-
-    fn decode_crate_num(&mut self) -> CrateNum {
-        let stable_id = StableCrateId::decode(self);
-        self.tcx.stable_crate_id_to_crate_num(stable_id)
-    }
     fn decode_def_index(&mut self) -> DefIndex {
         panic!("trying to decode `DefIndex` outside the context of a `DefId`")
-    }
-
-    // Both the `CrateNum` and the `DefIndex` of a `DefId` can change in between two
-    // compilation sessions. We use the `DefPathHash`, which is stable across
-    // sessions, to map the old `DefId` to the new one.
-    fn decode_def_id(&mut self) -> DefId {
-        let def_path_hash = DefPathHash::decode(self);
-        self.tcx.def_path_hash_to_def_id(def_path_hash).unwrap()
-    }
-
-    fn decode_attr_id(&mut self) -> AttrId {
-        todo!()
     }
 
     fn decode_byte_symbol(&mut self) -> ByteSymbol {
@@ -137,14 +100,60 @@ impl<'a, 'tcx> SpanDecoder for DefSpecsDecoder<'a, 'tcx> {
     }
 }
 
+impl<'a, 'tcx> SpanDecoder for DefSpecsDecoder<'a, 'tcx> {
+    fn decode_span(&mut self) -> Span {
+        let sm = self.tcx.sess.source_map();
+        let pos = [(); 2].map(|_| {
+            let ssfi = StableSourceFileId::decode(self);
+            let rel_bp = BytePos::decode(self);
+            sm.source_file_by_stable_id(ssfi)
+                // See comment in 'encoder.rs'
+                .map(|sf| sf.start_pos + rel_bp)
+                // This should hopefully never fail,
+                // so maybe could be an `unwrap` instead?
+                .unwrap_or(BytePos(0))
+        });
+        Span::new(pos[0], pos[1], SyntaxContext::root(), None)
+    }
+
+    fn decode_expn_id(&mut self) -> ExpnId {
+        todo!()
+    }
+
+    fn decode_syntax_context(&mut self) -> SyntaxContext {
+        todo!()
+    }
+
+    fn decode_crate_num(&mut self) -> CrateNum {
+        let stable_id = StableCrateId::decode(self);
+        self.tcx.stable_crate_id_to_crate_num(stable_id)
+    }
+
+    // Both the `CrateNum` and the `DefIndex` of a `DefId` can change in between two
+    // compilation sessions. We use the `DefPathHash`, which is stable across
+    // sessions, to map the old `DefId` to the new one.
+    fn decode_def_id(&mut self) -> DefId {
+        let def_path_hash = DefPathHash::decode(self);
+        self.tcx.def_path_hash_to_def_id(def_path_hash).unwrap()
+    }
+
+    fn decode_attr_id(&mut self) -> AttrId {
+        todo!()
+    }
+}
+
 implement_ty_decoder!(DefSpecsDecoder<'a, 'tcx>);
 
-impl<'a, 'tcx> TyDecoder<'tcx> for DefSpecsDecoder<'a, 'tcx> {
-    const CLEAR_CROSS_CRATE: bool = true;
+impl<'a, 'tcx> InternerDecoder for DefSpecsDecoder<'a, 'tcx> {
+    type Interner = TyCtxt<'tcx>;
 
     fn interner(&self) -> TyCtxt<'tcx> {
         self.tcx
     }
+}
+
+impl<'a, 'tcx> TyDecoder<'tcx> for DefSpecsDecoder<'a, 'tcx> {
+    const CLEAR_CROSS_CRATE: bool = true;
 
     fn cached_ty_for_shorthand<F>(&mut self, shorthand: usize, or_insert_with: F) -> Ty<'tcx>
     where

@@ -29,7 +29,7 @@ pub(super) const BYTE_SYMBOL_PREINTERNED: u8 = 2;
 
 pub struct DefSpecsEncoder<'a, 'tcx> {
     tcx: TyCtxt<'tcx>,
-    opaque: opaque::FileEncoder,
+    opaque: opaque::FileEncoder<'a>,
     type_shorthands: FxHashMap<Ty<'tcx>, usize>,
     predicate_shorthands: FxHashMap<PredicateKind<'tcx>, usize>,
     interpret_allocs: FxIndexSet<AllocId>,

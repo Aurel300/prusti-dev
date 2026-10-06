@@ -14,6 +14,7 @@ use prusti_rustc_interface::{
         BytePos, ByteSymbol, ExpnId, Span, SpanDecoder, StableSourceFileId, Symbol, SyntaxContext,
     },
 };
+use prusti_utils::launch::{SPECS_FORMAT_VERSION, SPECS_MAGIC};
 use rustc_hash::FxHashMap;
 
 use prusti_rustc_interface::{middle::ty::InternerDecoder, span::BlobDecoder};
@@ -25,22 +26,43 @@ pub struct DefSpecsDecoder<'a, 'tcx> {
     alloc_decoding_session: AllocDecodingSession<'a>,
 }
 
+/// Size of the header written by `DefSpecsEncoder::serialize`: magic bytes,
+/// format version and position of the allocation index.
+const HEADER_LEN: usize = SPECS_MAGIC.len() + size_of::<u32>() + size_of::<u64>();
+
+fn invalid_data(msg: impl Into<String>) -> io::Error {
+    io::Error::new(io::ErrorKind::InvalidData, msg.into())
+}
+
 impl<'a, 'tcx> DefSpecsDecoder<'a, 'tcx> {
-    /// Reads the allocation index (see `DefSpecsEncoder::serialize`). Like
-    /// in rustc's metadata decoder, the resulting state is owned by the
-    /// caller and borrowed by the decoder.
+    /// Checks the header and reads the allocation index (see
+    /// `DefSpecsEncoder::serialize`). Like in rustc's metadata decoder, the
+    /// resulting state is owned by the caller and borrowed by the decoder.
     pub fn alloc_decoding_state(data: &[u8]) -> io::Result<AllocDecodingState> {
-        let pos_bytes = data.get(..8).ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::InvalidData,
-                "missing allocation index position",
-            )
-        })?;
-        let pos = u64::from_le_bytes(pos_bytes.try_into().unwrap()) as usize;
-        let mut decoder = opaque::MemDecoder::new(data, pos).map_err(|_| {
-            io::Error::new(io::ErrorKind::InvalidData, "missing end-of-file marker")
-        })?;
-        Ok(AllocDecodingState::new(Vec::<u64>::decode(&mut decoder)))
+        let stale = || {
+            invalid_data(format!(
+                "the file was not written by this version of Prusti (expected specs format \
+                 version {SPECS_FORMAT_VERSION}); run `cargo clean` to rebuild it"
+            ))
+        };
+        let header = data.get(..HEADER_LEN).ok_or_else(stale)?;
+        let (magic, rest) = header.split_at(SPECS_MAGIC.len());
+        let (version, pos) = rest.split_at(size_of::<u32>());
+        if magic != SPECS_MAGIC
+            || u32::from_le_bytes(version.try_into().unwrap()) != SPECS_FORMAT_VERSION
+        {
+            return Err(stale());
+        }
+        let pos = u64::from_le_bytes(pos.try_into().unwrap()) as usize;
+
+        let decoder = opaque::MemDecoder::new(data, 0)
+            .map_err(|_| invalid_data("missing end-of-file marker"))?;
+        if !(HEADER_LEN..decoder.len()).contains(&pos) {
+            return Err(invalid_data("allocation index position out of bounds"));
+        }
+        Ok(AllocDecodingState::new(Vec::<u64>::decode(
+            &mut decoder.split_at(pos),
+        )))
     }
 
     pub fn new(
@@ -49,10 +71,9 @@ impl<'a, 'tcx> DefSpecsDecoder<'a, 'tcx> {
         alloc_decoding_state: &'a AllocDecodingState,
     ) -> io::Result<Self> {
         Ok(DefSpecsDecoder {
-            // Skip the allocation index position
-            opaque: opaque::MemDecoder::new(data, 8).map_err(|_| {
-                io::Error::new(io::ErrorKind::InvalidData, "missing end-of-file marker")
-            })?,
+            // Skip the header
+            opaque: opaque::MemDecoder::new(data, HEADER_LEN)
+                .map_err(|_| invalid_data("missing end-of-file marker"))?,
             tcx,
             ty_rcache: Default::default(),
             alloc_decoding_session: alloc_decoding_state.new_decoding_session(),

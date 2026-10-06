@@ -5,7 +5,11 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 use prusti_utils::{config, launch};
-use std::{env, fs, io, path::PathBuf, process::Command};
+use std::{
+    env, fs, io,
+    path::{Path, PathBuf},
+    process::Command,
+};
 
 fn main() {
     if let Err(code) = process(env::args().skip(1)) {
@@ -78,6 +82,8 @@ where
         };
     }
 
+    clean_if_stale_specs(&cargo_path, args_manifest_path, &cargo_target)?;
+
     let mut cargo_command = Command::new(cargo_path);
     cargo_command
         .arg(&command)
@@ -122,6 +128,41 @@ where
     } else {
         Err(exit_status.code().unwrap_or(-1))
     }
+}
+
+/// Runs `cargo clean` on `cargo_target` if the `.specs` files in it were
+/// written with a different specs format version (or by a Prusti version
+/// before the version was recorded). Cargo would not rebuild them by itself,
+/// since it does not know that Prusti changed, and Prusti could not read them.
+fn clean_if_stale_specs(
+    cargo_path: &str,
+    manifest_path: Option<&str>,
+    cargo_target: &Path,
+) -> Result<(), i32> {
+    let stamp = cargo_target.join(launch::SPECS_FORMAT_VERSION_STAMP);
+    let version = launch::SPECS_FORMAT_VERSION.to_string();
+    if cargo_target.exists() && fs::read_to_string(&stamp).ok().as_deref() != Some(&version) {
+        eprintln!(
+            "cargo-prusti: the specs format changed, cleaning {}",
+            cargo_target.display()
+        );
+        let mut clean_command = Command::new(cargo_path);
+        clean_command
+            .arg("clean")
+            .env("RUSTUP_TOOLCHAIN", launch::get_rust_toolchain_channel())
+            .env("CARGO_TARGET_DIR", cargo_target);
+        if let Some(manifest_path) = manifest_path {
+            clean_command.args(["--manifest-path", manifest_path]);
+        }
+        let exit_status = clean_command.status().expect("could not run cargo");
+        if !exit_status.success() {
+            return Err(exit_status.code().unwrap_or(-1));
+        }
+    }
+    fs::create_dir_all(cargo_target)
+        .and_then(|()| fs::write(&stamp, version))
+        .unwrap_or_else(|err| panic!("could not write {}: {err}", stamp.display()));
+    Ok(())
 }
 
 /// Copy specs from '{cargo_target}/*/deps/*.specs' (Cargo's classic layout) and

@@ -18,6 +18,20 @@ pub mod job;
 /// for `prusti-rustc`.
 pub const PRUSTI_LIBS: [&str; 1] = ["prusti-contracts"];
 
+/// Magic bytes at the start of every `.specs` file.
+pub const SPECS_MAGIC: &[u8] = b"prusti-specs";
+
+/// Version of the `.specs` file format, written after `SPECS_MAGIC`. Bump this
+/// whenever the encoding in `prusti-interface/src/specs/{encoder,decoder}.rs`
+/// or any of the serialized types change: `cargo-prusti` then cleans its
+/// target directory, since cargo does not rebuild dependencies (and hence
+/// their `.specs` files) when only Prusti changes.
+pub const SPECS_FORMAT_VERSION: u32 = 1;
+
+/// Name of the file in `cargo-prusti`'s target directory that records the
+/// `SPECS_FORMAT_VERSION` of the `.specs` files in it.
+pub const SPECS_FORMAT_VERSION_STAMP: &str = "specs-format-version";
+
 /// The directories under `profile_dir` (e.g. `{cargo_target}/debug`) holding
 /// Cargo's per-build-unit artifacts, and hence the `.specs` files Prusti writes
 /// next to each crate's metadata.

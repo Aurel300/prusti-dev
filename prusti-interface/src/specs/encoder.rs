@@ -18,6 +18,7 @@ use prusti_rustc_interface::{
         ByteSymbol, ExpnId, Span, SpanEncoder, StableSourceFileId, Symbol, SyntaxContext,
     },
 };
+use prusti_utils::launch::{SPECS_FORMAT_VERSION, SPECS_MAGIC};
 
 // Tags for encoding Symbol's
 pub(super) const SYMBOL_STR: u8 = 0;
@@ -51,6 +52,8 @@ impl<'a, 'tcx> DefSpecsEncoder<'a, 'tcx> {
         let hygiene_context = HygieneEncodeContext::default();
 
         let mut opaque = opaque::FileEncoder::new(path)?;
+        opaque.emit_raw_bytes(SPECS_MAGIC);
+        opaque.emit_raw_bytes(&SPECS_FORMAT_VERSION.to_le_bytes());
         // Will be filled with the position of the allocation index after
         // encoding everything (same as the crate root position in rustc's
         // metadata encoder).
@@ -107,7 +110,8 @@ fn encode_alloc_index_position(mut file: &File, pos: usize) -> Result<(), Error>
     // We will return to this position after writing the index position.
     let pos_before_seek = file.stream_position()?;
 
-    file.seek(io::SeekFrom::Start(0))?;
+    let header = SPECS_MAGIC.len() + size_of_val(&SPECS_FORMAT_VERSION);
+    file.seek(io::SeekFrom::Start(header as u64))?;
     file.write_all(&(pos as u64).to_le_bytes())?;
 
     // Return to the position where we were before writing the index position.

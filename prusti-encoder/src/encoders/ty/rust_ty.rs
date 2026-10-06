@@ -294,6 +294,7 @@ impl<'tcx> RustTySizedness<'tcx> {
             ty::TyKind::Adt(adt, _) => vir::with_vcx(|vcx| {
                 adt.sizedness_constraint(vcx.tcx(), kind)
                     .map(ty::EarlyBinder::instantiate_identity)
+                    .map(ty::Unnormalized::skip_normalization)
             }),
             ty::TyKind::Tuple(tys) => tys
                 .len()

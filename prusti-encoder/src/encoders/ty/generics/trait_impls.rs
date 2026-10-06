@@ -297,7 +297,10 @@ impl TaskEncoder for TraitImplConditionEnc {
             let impl_name = impl_name(vcx, *task_key);
 
             let impl_context = GParams::from(*task_key);
-            let trait_ref = tcx.impl_trait_ref(*task_key).instantiate_identity().skip_norm_wip();
+            let trait_ref = tcx
+                .impl_trait_ref(*task_key)
+                .instantiate_identity()
+                .skip_normalization();
             let trait_ = deps.require_ref::<TraitEnc>(trait_ref.def_id)?;
             let args = deps.require_dep::<GArgsTyEnc>(GArgs::new(impl_context, trait_ref.args))?;
             let impl_check = (trait_.impl_fun)(args.get_ty(), args.get_const());
@@ -613,7 +616,7 @@ impl TraitImplEnc {
             .tcx()
             .impl_trait_ref(impl_did)
             .instantiate_identity()
-            .skip_norm_wip();
+            .skip_normalization();
         let item_args = &item_ctx.rust_params()[impl_ctx.rust_params().len()..];
         let pinned = trait_ref.args.iter().chain(item_args.iter().copied());
 
@@ -711,7 +714,7 @@ impl TraitImplEnc {
             .tcx()
             .impl_trait_ref(impl_did)
             .instantiate_identity()
-            .skip_norm_wip();
+            .skip_normalization();
 
         let mut bind_points = FxIndexMap::default();
         for (&expr, ty) in std::iter::zip(trait_tys, trait_ref.args.types()) {
@@ -1155,7 +1158,7 @@ impl TaskEncoder for TraitImplDefaultFnEnc {
                 .tcx()
                 .impl_trait_ref(impl_did)
                 .instantiate_identity()
-                .skip_norm_wip();
+                .skip_normalization();
 
             // The trait fn's parameters: the trait's, then the fn's own.
             let item_params = GParams::from(trait_fn);

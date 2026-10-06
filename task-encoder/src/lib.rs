@@ -23,6 +23,7 @@ pub struct Program<'vir> {
     predicates: Vec<vir::Predicate<'vir>>,
     functions: Vec<vir::Function<'vir>>,
     methods: Vec<vir::Method<'vir>>,
+    literal_inverses: Vec<vir::simplify::LiteralInverse<'vir>>,
 
     code: String,
     encoder_errors: Vec<(String, Span)>,
@@ -50,6 +51,11 @@ impl<'vir> Program<'vir> {
         self.code.push_str(&format!("{domain:?}\n"));
     }
 
+    /// Declares a literal inverse, which [`Self::simplify`] then folds.
+    pub fn add_literal_inverse(&mut self, literal_inverse: vir::simplify::LiteralInverse<'vir>) {
+        self.literal_inverses.push(literal_inverse);
+    }
+
     pub fn add_predicate(&mut self, predicate: vir::Predicate<'vir>) {
         self.predicates.push(predicate);
         self.code.push_str(&format!("{predicate:?}\n"));
@@ -65,8 +71,34 @@ impl<'vir> Program<'vir> {
         self.code.push_str(&format!("{method:?}\n"));
     }
 
+    /// The program as added, before any [`Self::simplify`].
     pub fn code(&self) -> &str {
         &self.code
+    }
+
+    /// Simplifies the expressions of all domain axioms, predicates, functions
+    /// and methods added so far (see [`vir::simplify`]).
+    pub fn simplify(&mut self) {
+        vir::with_vcx(|vcx| {
+            let ctx = vir::simplify::SimplifyCtx::new(
+                &self.adts,
+                &self.domains,
+                &self.functions,
+                &self.literal_inverses,
+            );
+            for domain in self.domains.iter_mut() {
+                *domain = vir::simplify::simplify(vcx, &ctx, *domain);
+            }
+            for predicate in self.predicates.iter_mut() {
+                *predicate = vir::simplify::simplify(vcx, &ctx, *predicate);
+            }
+            for function in self.functions.iter_mut() {
+                *function = vir::simplify::simplify(vcx, &ctx, *function);
+            }
+            for method in self.methods.iter_mut() {
+                *method = vir::simplify::simplify(vcx, &ctx, *method);
+            }
+        });
     }
 
     pub fn mk_program(self) -> vir::Program<'vir> {

@@ -5,6 +5,7 @@ use prusti_rustc_interface::{
     hir::def_id::{CrateNum, DefId, DefIndex, DefPathHash},
     middle::{
         implement_ty_decoder,
+        mir::interpret::{AllocDecodingSession, AllocDecodingState, AllocId},
         ty::{codec::TyDecoder, Ty, TyCtxt},
     },
     serialize::{opaque, Decodable, Decoder},
@@ -21,14 +22,40 @@ pub struct DefSpecsDecoder<'a, 'tcx> {
     opaque: opaque::MemDecoder<'a>,
     tcx: TyCtxt<'tcx>,
     ty_rcache: FxHashMap<usize, Ty<'tcx>>,
+    alloc_decoding_session: AllocDecodingSession<'a>,
 }
 
 impl<'a, 'tcx> DefSpecsDecoder<'a, 'tcx> {
-    pub fn new(tcx: TyCtxt<'tcx>, data: &'a [u8]) -> io::Result<Self> {
+    /// Reads the allocation index (see `DefSpecsEncoder::serialize`). Like
+    /// in rustc's metadata decoder, the resulting state is owned by the
+    /// caller and borrowed by the decoder.
+    pub fn alloc_decoding_state(data: &[u8]) -> io::Result<AllocDecodingState> {
+        let pos_bytes = data.get(..8).ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                "missing allocation index position",
+            )
+        })?;
+        let pos = u64::from_le_bytes(pos_bytes.try_into().unwrap()) as usize;
+        let mut decoder = opaque::MemDecoder::new(data, pos).map_err(|_| {
+            io::Error::new(io::ErrorKind::InvalidData, "missing end-of-file marker")
+        })?;
+        Ok(AllocDecodingState::new(Vec::<u64>::decode(&mut decoder)))
+    }
+
+    pub fn new(
+        tcx: TyCtxt<'tcx>,
+        data: &'a [u8],
+        alloc_decoding_state: &'a AllocDecodingState,
+    ) -> io::Result<Self> {
         Ok(DefSpecsDecoder {
-            opaque: opaque::MemDecoder::new(data, 0).unwrap(),
+            // Skip the allocation index position
+            opaque: opaque::MemDecoder::new(data, 8).map_err(|_| {
+                io::Error::new(io::ErrorKind::InvalidData, "missing end-of-file marker")
+            })?,
             tcx,
             ty_rcache: Default::default(),
+            alloc_decoding_session: alloc_decoding_state.new_decoding_session(),
         })
     }
 }
@@ -179,7 +206,8 @@ impl<'a, 'tcx> TyDecoder<'tcx> for DefSpecsDecoder<'a, 'tcx> {
         r
     }
 
-    fn decode_alloc_id(&mut self) -> rustc_middle::mir::interpret::AllocId {
-        unimplemented!("decode_alloc_id")
+    fn decode_alloc_id(&mut self) -> AllocId {
+        let ads = self.alloc_decoding_session;
+        ads.decode_alloc_id(self)
     }
 }

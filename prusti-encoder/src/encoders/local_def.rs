@@ -72,9 +72,32 @@ impl<'vir> MirLocalDefEncOutput<'vir> {
         self.args().map(|arg| arg.local_snap)
     }
 
+    /// The variables of the arguments' snapshots in the post-state, see
+    /// `LocalDef::local_snap_post`.
+    pub fn local_decl_args_post(&self) -> impl Iterator<Item = vir::LocalDeclSnap<'vir>> + '_ {
+        self.args().map(|arg| arg.local_snap_post)
+    }
+
     pub fn local_decl_ret(&self) -> vir::LocalDeclSnap<'vir> {
         self.ret().local_snap
     }
+}
+
+/// For each argument of the function `def_id`, whether it is a mutable
+/// reference, i.e. whether its referent may have a different value in the
+/// post-state (or after a pledge's expiry) than in the pre-state.
+pub fn mut_ref_args(tcx: ty::TyCtxt<'_>, def_id: DefId) -> Vec<bool> {
+    use prusti_rustc_interface::hir::def::DefKind;
+    if !matches!(tcx.def_kind(def_id), DefKind::Fn | DefKind::AssocFn) {
+        return Vec::new();
+    }
+    tcx.fn_sig(def_id)
+        .instantiate_identity()
+        .skip_binder()
+        .inputs()
+        .iter()
+        .map(|ty| matches!(ty.kind(), ty::TyKind::Ref(.., ty::Mutability::Mut)))
+        .collect()
 }
 
 pub type MirLocalDefEncError = ();
@@ -83,8 +106,17 @@ pub type MirLocalDefEncError = ();
 pub struct LocalDef<'vir> {
     pub local: vir::LocalDeclRef<'vir>,
     pub local_snap: vir::LocalDeclSnap<'vir>,
+    /// The snapshot of an argument in the post-state of the function. Only
+    /// used in specifications encoded over snapshots (see
+    /// `MirSpecEncMode::PureWithoutResult`), where it differs from
+    /// `local_snap` for mutable references, whose referent may change.
+    pub local_snap_post: vir::LocalDeclSnap<'vir>,
     pub local_ex: vir::ExprRef<'vir>,
     pub impure_snap: vir::ExprSnap<'vir>,
+    /// The shallow snapshot, which (unlike `impure_snap`) needs no permission
+    /// to what the local's mutable references point to. Use it to locate
+    /// these referents.
+    pub impure_shallow_snap: vir::ExprSnap<'vir>,
     pub impure_pred: vir::ExprBool<'vir>,
 }
 
@@ -183,15 +215,20 @@ impl TaskEncoder for MirLocalDefEnc {
             let ref_local = vir::vir_format!(vcx, "_{}p", local.index());
             let snap_local = vir::vir_format!(vcx, "_{}s", local.index());
             let local = vcx.mk_local_decl(ref_local, vir::TYPE_REF);
-            let local_snap = vcx.mk_local_decl(snap_local, ty.snapshot());
+            let local_snap = vcx.mk_local_decl(snap_local, ty.deep_snapshot());
+            let snap_local_post = vir::vir_format!(vcx, "{snap_local}_post");
+            let local_snap_post = vcx.mk_local_decl(snap_local_post, ty.deep_snapshot());
             let local_ex = vcx.mk_local_ex(local);
-            let impure_snap = ty.ref_to_snap(local_ex);
+            let impure_snap = ty.ref_to_deep_snap(local_ex);
+            let impure_shallow_snap = ty.ref_to_shallow_snap(local_ex);
             let impure_pred = ty.ref_to_pred(vcx, local_ex, None);
             LocalDef {
                 local,
                 local_snap,
+                local_snap_post,
                 local_ex,
                 impure_snap,
+                impure_shallow_snap,
                 impure_pred,
             }
         }

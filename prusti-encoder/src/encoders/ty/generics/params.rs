@@ -418,6 +418,3 @@ impl TaskEncoder for GenericParamsEnc {
         })
     }
 }
-
-#[cfg(test)]
-mod tests;

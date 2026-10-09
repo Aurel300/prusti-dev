@@ -23,6 +23,7 @@ pub use builtin::{
     ValueCastEnc,
 };
 pub use r#const::ConstEnc;
+pub(crate) use impure::fn_wand::MutRefCurrentSnap;
 pub use impure::fn_wand::{WandEnc, WandEncOutput, WandEncTask};
 pub use local_def::*;
 pub use mir_fn::{FunctionCallEnc, MethodCallEnc, encode_all_in_crate};

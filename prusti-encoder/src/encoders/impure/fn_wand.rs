@@ -1,10 +1,18 @@
 use crate::encoders::{
-    EncodeResult, ImpureEncVisitor, MirLocalDefEncOutput, MirSpecEnc,
-    pure::spec::{EncodedPledge, MirSpecEncMode, PledgeArgs, PledgeExpr},
+    EncodeResult, ImpureEncVisitor, MirLocalDefEnc, MirLocalDefEncOutput, MirLocalDefEncTask,
+    MirSpecEnc, Pure, TyUseImpureEnc, TyUsePureEnc,
+    mir_fn::RustSignature,
+    mir_pure::ExprInput,
+    pure::spec::{EncodedPledge, MirSpecEncMode, PledgeArgs, PledgeExpr, callee_ctx_key},
     ty::{
         RustTyDecomposition,
-        generics::{GArgs, GArgsTyEnc, GParams, GenericParamsEnc},
+        generics::{
+            GArgCaster, GArgs, GArgsCastEnc, GArgsTyEnc, GParams, GenericParamsEnc,
+            trait_fn::TraitFnEnc,
+        },
         indirect::{IndirectPredicatesEnc, projection_for_generalized_idx},
+        use_impure::TyUseImpure,
+        use_pure::TyUsePure,
     },
 };
 use pcg::borrow_pcg::{
@@ -43,6 +51,7 @@ impl<'vir, E: TaskEncoder> ImpureEncVisitor<'vir, '_, E> {
             .args()
             .map(|a| self.vcx.mk_old_expr(a.impure_snap));
         let args = PledgeExpr::pledge_args(result, args);
+        let args = self.wands.with_callee_ctx_args(args, None, self.deps);
 
         for wand_data in self.wands.viper_wands() {
             let Some(wand) = self
@@ -114,6 +123,71 @@ impl<'vir, E: TaskEncoder> ImpureEncVisitor<'vir, '_, E> {
 }
 
 type EncodedPledges<'vir> = Vec<EncodedPledge<'vir>>;
+
+/// Builds the deep snapshot that a mutable reference has once its referent
+/// holds the value currently in the heap, from the reference's snapshot in an
+/// earlier state (which gives its address and metadata). Reads the referent's
+/// predicate, which must be held.
+#[derive(Clone, Copy)]
+pub(crate) struct MutRefCurrentSnap<'vir> {
+    ref_ty: TyUsePure<'vir>,
+    referent_caster: GArgCaster<'vir, Pure>,
+    referent_ty: TyUseImpure<'vir>,
+}
+
+impl<'vir> MutRefCurrentSnap<'vir> {
+    /// `ref_ty` must be a mutable reference type.
+    pub(crate) fn new<E: TaskEncoder>(
+        deps: &mut TaskEncoderDependencies<'vir, E>,
+        ref_ty: RustTyDecomposition<'vir>,
+    ) -> Result<Self, EncodeFullError<'vir, E>> {
+        let inner = ref_ty.ty.expect_mutref();
+        let normalized = inner
+            .referent
+            .decompose_compare_normalize(ref_ty.ty.params, ref_ty.args);
+        let referent = inner
+            .referent
+            .decompose_context(ref_ty.ty.params, ref_ty.args);
+        Ok(Self {
+            ref_ty: deps.require_dep::<TyUsePureEnc>(ref_ty)?,
+            referent_caster: deps.require_dep::<GArgsCastEnc<Pure>>(normalized)?,
+            referent_ty: deps.require_dep::<TyUseImpureEnc>(referent)?,
+        })
+    }
+
+    pub(crate) fn snap<Curr, Next>(
+        &self,
+        earlier: vir::ExprGenSnap<'vir, Curr, Next>,
+    ) -> vir::ExprGenSnap<'vir, Curr, Next> {
+        self.snap_reading(earlier, |value| value)
+    }
+
+    /// Like `snap`, but with the referent's value in the state of the
+    /// left-hand side of the enclosing wand, i.e. when the borrow expires.
+    pub(crate) fn snap_at_expiry<Curr, Next>(
+        &self,
+        earlier: vir::ExprGenSnap<'vir, Curr, Next>,
+    ) -> vir::ExprGenSnap<'vir, Curr, Next> {
+        self.snap_reading(earlier, |value| {
+            vir::with_vcx(|vcx| vcx.mk_old_lhs_expr(value))
+        })
+    }
+
+    fn snap_reading<Curr, Next>(
+        &self,
+        earlier: vir::ExprGenSnap<'vir, Curr, Next>,
+        in_state: impl FnOnce(vir::ExprGenSnap<'vir, Curr, Next>) -> vir::ExprGenSnap<'vir, Curr, Next>,
+    ) -> vir::ExprGenSnap<'vir, Curr, Next> {
+        let ref_ty = self.ref_ty.expect_mutref();
+        let earlier = earlier.downcast_ty();
+        let addr = ref_ty.deref_access(earlier);
+        let metadata = ref_ty.metadata_access(earlier);
+        let value = self
+            .referent_caster
+            .cast_to_caller_ctx(in_state(self.referent_ty.ref_to_deep_snap(addr)));
+        ref_ty.prim_to_snap(addr, metadata, value).upcast_ty()
+    }
+}
 
 /// Not tied to a caller or callee context. `indirect_pres`, `indirect_posts`,
 /// `wand_posts`, and `package_wands` are identity-substituted and intended for
@@ -254,12 +328,22 @@ impl<'vir> WandEncOutput<'vir> {
             .collect::<Vec<_>>()
             .into_iter();
 
-        let output_posts = self.outputs().filter_map(|g| {
+        let output_posts = self.indirect_output_posts(vcx, local_defs, deps);
+        unblocked_input_posts.chain(output_posts)
+    }
+
+    /// The part of `indirect_posts` for what the result points to.
+    pub fn indirect_output_posts<'a, E: TaskEncoder>(
+        &'a self,
+        vcx: &'vir vir::VirCtxt<'vir>,
+        local_defs: &'a MirLocalDefEncOutput<'vir>,
+        deps: &'a mut TaskEncoderDependencies<'vir, E>,
+    ) -> impl Iterator<Item = vir::ExprBool<'vir>> + 'a {
+        self.outputs().filter_map(|g| {
             self.encode_predicates_for_function_shape_node(vcx, deps, g, None, |i| {
                 local_defs[i].impure_shallow_snap
             })
-        });
-        unblocked_input_posts.chain(output_posts)
+        })
     }
 
     pub fn wand_posts<'a, E: TaskEncoder>(
@@ -330,6 +414,7 @@ impl<'vir> WandEncOutput<'vir> {
     ) -> Option<vir::Wand<'vir>> {
         debug_assert!(!wand_data.lhs.is_empty());
         let generics = self.generics_subst(call_ctx, vcx, deps);
+        let pledge_args = self.with_callee_ctx_args(pledge_args, call_ctx, deps);
         let pledge_expr = |pledge: &PledgeExpr<'vir>| match pledge_old_label {
             Some(label) => {
                 vcx.with_local_subst(generics, || pledge.expr_at_label(pledge_args, label))
@@ -371,6 +456,34 @@ impl<'vir> WandEncOutput<'vir> {
             .collect::<Vec<_>>();
         let lhs = vcx.mk_conj(&lhs);
         Some(vcx.mk_wand(lhs, rhs))
+    }
+
+    /// Adds the arguments and the result cast to the callee's generic context
+    /// (see `PledgeArgs::with_callee_ctx`). At a call site, they are given in
+    /// the caller's context, from which they are cast with the call's generic
+    /// arguments; in the callee itself, they are already in its context.
+    fn with_callee_ctx_args<E: TaskEncoder>(
+        &self,
+        pledge_args: PledgeArgs<'vir>,
+        call_ctx: WandCallContext<'vir>,
+        deps: &mut TaskEncoderDependencies<'vir, E>,
+    ) -> PledgeArgs<'vir> {
+        let Some(call_args) = call_ctx else {
+            return pledge_args.with_callee_ctx(|_, expr| expr);
+        };
+        let signature = RustSignature::new(self.function_data.def_id());
+        let arg_count = pledge_args.arg_count();
+        pledge_args.with_callee_ctx(|local, expr| {
+            let ty = if local.index() > arg_count {
+                signature.output
+            } else {
+                signature.inputs[local.index() - 1]
+            };
+            let normalized = ty.decompose_compare_normalize(signature.gparams, call_args);
+            deps.require_dep::<GArgsCastEnc<Pure>>(normalized)
+                .unwrap()
+                .cast_to_callee_ctx(expr)
+        })
     }
 
     /// The pledges are encoded once, at the callee's identity substitution,
@@ -531,6 +644,17 @@ impl TaskEncoder for WandEnc {
             output.wands = output
                 .select_wands(wands, !pledges.is_empty(), &edges, vcx, deps)
                 .map_err(|err| EncodeFullError::EncodingError(err, None))?;
+            // A call through a trait cannot know the pledges of the impl it
+            // resolves to; like the postconditions, they are abstracted by a
+            // function of the trait, which the impls' axioms define. It is
+            // only attached if the expiry it refers to is unambiguous.
+            if let [wand] = output.wands.as_mut_slice()
+                && let Some(assoc_item) = vcx.tcx().opt_associated_item(def_id)
+                && assoc_item.trait_container(vcx.tcx()).is_some()
+            {
+                let pledge = trait_fn_pledge(vcx, deps, def_id, &wand.rhs)?;
+                wand.pledges.push(pledge);
+            }
             Ok(((), output))
         })
     }
@@ -610,6 +734,24 @@ impl<'vir> WandEncOutput<'vir> {
             .collect()
     }
 
+    /// If the function has exactly one wand, the arguments (some of) whose
+    /// referents it gives back. A call through a trait passes the pledges
+    /// only the final values of these (see `trait_fn_pledge`).
+    pub fn single_wand_given_back_args(&self) -> Option<FxHashSet<mir::Local>> {
+        match self.wands.as_slice() {
+            [wand] => Some(wand.rhs.iter().map(|input| input.mir_local()).collect()),
+            _ => None,
+        }
+    }
+
+    /// Whether (a lifetime projection of) argument `local` is blocked by the
+    /// result, i.e. what it points to is only given back by a wand.
+    pub fn is_blocked_arg(&self, local: mir::Local) -> bool {
+        self.blocked_inputs()
+            .iter()
+            .any(|input| input.mir_local() == local)
+    }
+
     pub fn inputs(&self) -> impl Iterator<Item = FunctionShapeInput<Generalized>> + '_ {
         self.inputs.iter().copied()
     }
@@ -617,4 +759,81 @@ impl<'vir> WandEncOutput<'vir> {
     pub fn outputs(&self) -> impl Iterator<Item = FunctionShapeOutput<Generalized>> + '_ {
         self.outputs.iter().copied()
     }
+}
+
+/// The pledge of a trait function, `fn_pledge(result, args, args_after)`
+/// (see `TraitFnEnc`), where `args_after` are the arguments after the expiry:
+/// for a mutable reference given back by the wand (one of `rhs`), its
+/// referent's value then; for any other argument, its value before the call.
+///
+/// Only the arguments are looked up when reifying, so that the callee's
+/// generics in the rest of the expression are substituted at a call site.
+fn trait_fn_pledge<'vir>(
+    vcx: &'vir vir::VirCtxt<'vir>,
+    deps: &mut TaskEncoderDependencies<'vir, WandEnc>,
+    def_id: DefId,
+    rhs: &[WandRhsKey],
+) -> Result<EncodedPledge<'vir>, EncodeFullError<'vir, WandEnc>> {
+    let pledge_func = deps.require_ref::<TraitFnEnc>(def_id)?.pledge_func;
+    let params = GParams::from(def_id);
+    let generics = deps.require_dep::<GArgsTyEnc>(GArgs::new(params, params.rust_params()))?;
+    let local_defs = deps.require_dep::<MirLocalDefEnc>(MirLocalDefEncTask::Local {
+        def_id,
+        all_locals: false,
+    })?;
+    let sig = vcx
+        .tcx()
+        .fn_sig(def_id)
+        .instantiate_identity()
+        .skip_binder();
+    let arg = |local: mir::Local, ty: vir::TypeSnap<'vir>| {
+        vcx.mk_lazy_expr(
+            "trait_fn_pledge_arg",
+            ty,
+            Box::new(move |_vcx, lctx: ExprInput<'vir>| lctx.1[&callee_ctx_key(local)].kind),
+        )
+    };
+    let pre = local_defs
+        .args()
+        .enumerate()
+        .map(|(idx, def)| arg(mir::Local::from_usize(idx + 1), def.local_snap.ty()))
+        .collect::<Vec<_>>();
+    // The result just before the expiry: if it is a mutable reference, its
+    // referent is read in the state of the wand's left-hand side.
+    let result = arg(
+        mir::Local::from_usize(pre.len() + 1),
+        local_defs.snap_ty_return(),
+    );
+    let result = if matches!(
+        sig.output().kind(),
+        ty::TyKind::Ref(.., ty::Mutability::Mut)
+    ) {
+        let decomp = RustTyDecomposition::from_ty(sig.output(), def_id);
+        MutRefCurrentSnap::new(deps, decomp)?.snap_at_expiry(result)
+    } else {
+        result
+    };
+    // A mutable reference that is not given back by this wand (so its
+    // referent is not held here) is taken to be unchanged. The pledges cannot
+    // observe this: one reading its final value is rejected (see
+    // `pledges_for_axiom`).
+    let mut after = Vec::with_capacity(pre.len());
+    for (idx, (ty, pre)) in sig.inputs().iter().zip(&pre).enumerate() {
+        let local = mir::Local::from_usize(idx + 1);
+        let given_back = rhs.iter().any(|input| input.mir_local() == local);
+        after.push(
+            if given_back && matches!(ty.kind(), ty::TyKind::Ref(.., ty::Mutability::Mut)) {
+                let decomp = RustTyDecomposition::from_ty(*ty, def_id);
+                MutRefCurrentSnap::new(deps, decomp)?.snap(*pre)
+            } else {
+                *pre
+            },
+        );
+    }
+    let args = vcx.alloc_slice(&[pre.as_slice(), after.as_slice()].concat());
+    let expr = pledge_func.call()(result, args, generics.get_ty(), generics.get_const());
+    Ok(EncodedPledge {
+        expiry_obligation: None,
+        expiry_postcondition: PledgeExpr::new(def_id, expr),
+    })
 }

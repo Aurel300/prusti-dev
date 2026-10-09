@@ -1250,10 +1250,20 @@ impl<'vir: 'enc, 'enc> Enc<'vir, 'enc> {
         };
 
         let expr = if should_wrap {
+            // In `old`, a specification over two states reads the argument's
+            // pre-state snapshot.
+            let pre_state_key = self
+                .old_mode
+                .then(|| crate::encoders::pure::spec::pre_state_key(place.local));
             self.vcx.mk_lazy_expr(
                 vir::vir_format!(self.vcx, "wrapped in {:?}", place.local),
                 self.get_ty_for_local(place.local),
-                Box::new(move |_vcx, lctx: ExprInput<'vir>| lctx.1[&place.local].kind),
+                Box::new(move |_vcx, lctx: ExprInput<'vir>| {
+                    pre_state_key
+                        .and_then(|key| lctx.1.get(&key))
+                        .unwrap_or(&lctx.1[&place.local])
+                        .kind
+                }),
             )
         } else {
             self.mk_local_ex(place.local, curr_ver[&place.local])

@@ -47,6 +47,74 @@ impl<'vir> std::ops::Index<mir::Local> for PledgeArgs<'vir> {
     }
 }
 
+/// Offset of the keys under which the pre-state snapshots of the arguments
+/// are passed to a specification over two states.
+const PRE_STATE_KEY_OFFSET: usize = 1 << 20;
+
+/// The key under which the pre-state snapshot of argument `local` is passed
+/// to a specification over two states. Looked up for an argument in `old`;
+/// if absent, the argument's regular snapshot is used.
+pub fn pre_state_key(local: mir::Local) -> mir::Local {
+    mir::Local::from_usize(PRE_STATE_KEY_OFFSET + local.index())
+}
+
+/// Offset of the keys under which the arguments and the result are passed
+/// cast to the callee's generic context, see `PledgeArgs::with_callee_ctx`.
+const CALLEE_CTX_KEY_OFFSET: usize = 2 << 20;
+
+/// The key under which argument (or result) `local` is passed cast to the
+/// callee's generic context, see `PledgeArgs::with_callee_ctx`.
+pub fn callee_ctx_key(local: mir::Local) -> mir::Local {
+    mir::Local::from_usize(CALLEE_CTX_KEY_OFFSET + local.index())
+}
+
+impl<'vir> PledgeArgs<'vir> {
+    /// The number of arguments (without the result).
+    pub fn arg_count(&self) -> usize {
+        self.1.index() - 1
+    }
+
+    /// These arguments, additionally each passed cast by `cast` under
+    /// `callee_ctx_key`; the result is passed under the key of the local
+    /// after the last argument.
+    pub fn with_callee_ctx(
+        self,
+        mut cast: impl FnMut(mir::Local, vir::ExprSnap<'vir>) -> vir::ExprSnap<'vir>,
+    ) -> Self {
+        let mut all_args = self.0.clone();
+        for idx in 1..=self.1.index() {
+            let local = mir::Local::from_usize(idx);
+            all_args.insert(callee_ctx_key(local), cast(local, self.0[&local]));
+        }
+        vir::with_vcx(|vcx| PledgeArgs(vcx.alloc(all_args), self.1))
+    }
+
+    /// Arguments for a specification over snapshots of two states: the
+    /// pre-state `pre` and a later state `post` (the post-state of the call,
+    /// or the state after a pledge's expiry). Outside of `old`, the mutable
+    /// reference arguments refer to the later state, so that e.g. `*x` is the
+    /// final value of the referent; all other arguments (and all arguments
+    /// inside `old`) refer to the pre-state.
+    pub fn two_state(
+        result: vir::ExprSnap<'vir>,
+        pre: &[vir::ExprSnap<'vir>],
+        post: &[vir::ExprSnap<'vir>],
+        mut_args: &[bool],
+    ) -> Self {
+        assert_eq!(pre.len(), post.len());
+        let mut all_args: FxHashMap<mir::Local, vir::ExprSnap<'vir>> = FxHashMap::default();
+        for (idx, (pre, post)) in pre.iter().zip(post).enumerate() {
+            let local = mir::Local::from_usize(idx + 1);
+            let is_mut = mut_args.get(idx).copied().unwrap_or(false);
+            all_args.insert(local, if is_mut { *post } else { *pre });
+            all_args.insert(pre_state_key(local), *pre);
+        }
+        let result_local = mir::Local::from_usize(pre.len() + 1);
+        all_args.insert(result_local, result);
+        vir::with_vcx(|vcx| PledgeArgs(vcx.alloc(all_args), result_local))
+    }
+}
+
 impl<'vir> PledgeExpr<'vir> {
     pub fn new(
         did: DefId,
@@ -145,7 +213,11 @@ pub enum MirSpecEncMode {
     PureWithResult,
 
     /// Assumes the arguments and the result are available in local variables
-    /// `_1s`, ... `_ns`, and `_0s`, respectively, all of snapshot types.
+    /// `_1s`, ... `_ns`, and `_0s`, respectively, all of snapshot types. In
+    /// the postconditions, the mutable reference arguments are instead
+    /// `_1s_post`, ... `_ns_post`, their snapshots in the post-state (see
+    /// `PledgeArgs::two_state`). The pledges are left to be reified by the
+    /// user, also with `PledgeArgs::two_state`.
     PureWithoutResult,
 }
 
@@ -288,7 +360,18 @@ impl TaskEncoder for MirSpecEnc {
                         .collect();
                     vcx.alloc(post_args)
                 }
-                MirSpecEncMode::PureWithResult | MirSpecEncMode::PureWithoutResult => all_args,
+                MirSpecEncMode::PureWithResult => all_args,
+                MirSpecEncMode::PureWithoutResult => {
+                    let snap = |decl| vcx.mk_local_ex(decl);
+                    let pre = local_defs.local_decl_args().map(snap).collect::<Vec<_>>();
+                    let post = local_defs
+                        .local_decl_args_post()
+                        .map(snap)
+                        .collect::<Vec<_>>();
+                    let result = snap(local_defs.local_decl_ret());
+                    let mut_args = crate::encoders::mut_ref_args(vcx.tcx(), def_id);
+                    PledgeArgs::two_state(result, &pre, &post, &mut_args).0
+                }
             };
             let posts: Vec<(vir::ExprBool<'_>, Span)> = posts
                 .iter()

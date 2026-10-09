@@ -1,16 +1,20 @@
 use pcg::borrow_pcg::FunctionData;
-use prusti_interface::specs::is_spec_fn;
+use prusti_interface::{PrustiError, specs::is_spec_fn};
 use prusti_rustc_interface::{
+    data_structures::fx::FxHashSet,
     middle::{mir, ty},
-    span::def_id::DefId,
+    span::{Span, def_id::DefId},
 };
-use task_encoder::{EncodeFullResult, OutputRefAny, TaskEncoder, TaskEncoderDependencies};
-use vir::{FunctionIdn, MethodIdn, ViperIdent, vir_format_identifier};
+use task_encoder::{
+    EncodeFullError, EncodeFullResult, OutputRefAny, TaskEncoder, TaskEncoderDependencies,
+};
+use vir::{CastType, FunctionIdn, MethodIdn, ViperIdent, vir_format_identifier};
 
 use crate::{
     encoders::{
-        MirLocalDefEnc, MirLocalDefEncTask, MirSpecEnc, WandEnc, WandEncTask,
-        pure::spec::MirSpecEncMode,
+        MirLocalDefEnc, MirLocalDefEncOutput, MirLocalDefEncTask, MirSpecEnc, MutRefCurrentSnap,
+        WandEnc, WandEncTask, mut_ref_args,
+        pure::spec::{EncodedPledge, MirSpecEncMode, PledgeArgs},
         ty::{
             RustTyDecomposition,
             generics::{GArgs, GParams, GenericParamsEnc, r#trait::TraitEnc, trait_impls},
@@ -26,7 +30,14 @@ pub struct TraitFnEnc;
 #[derive(Debug, Clone, Copy)]
 pub struct TraitFnEncOutputRef<'vir> {
     pub pre_func: FunctionIdn<'vir, (vir::ManySnap, vir::ManyTyVal, vir::ManyCSnap), vir::Bool>,
+    /// Takes the result, then the arguments in the pre-state, then the
+    /// arguments in the post-state (which differ for mutable references, see
+    /// `PledgeArgs::two_state`).
     pub post_func:
+        FunctionIdn<'vir, (vir::Snap, vir::ManySnap, vir::ManyTyVal, vir::ManyCSnap), vir::Bool>,
+    /// The pledges: like `post_func`, but with the result just before the
+    /// expiry of the borrows in it, and the arguments after it.
+    pub pledge_func:
         FunctionIdn<'vir, (vir::Snap, vir::ManySnap, vir::ManyTyVal, vir::ManyCSnap), vir::Bool>,
     pub call_stub_impure: Option<MethodIdn<'vir, (vir::ManyRef, vir::ManyTyVal, vir::ManyCSnap)>>,
     pub call_stub_pure_caller:
@@ -126,18 +137,28 @@ impl TaskEncoder for TraitFnEnc {
                 ),
                 vir::TYPE_BOOL,
             );
+            // The arguments in the pre-state, then in the post-state.
+            let two_state_arg_types = vcx.alloc_slice(&[arg_types, arg_types].concat());
             let post_func = FunctionIdn::new(
                 vir_format_identifier!(vcx, "{trait_name}_fn_post_{item_name}"),
-                // TODO: old(arg) types (if applicable)
                 (
                     return_type,
-                    arg_types,
+                    two_state_arg_types,
                     item_generics.ty_args(),
                     item_generics.const_args(),
                 ),
                 vir::TYPE_BOOL,
             );
-            // TODO: spec functions for each pledge
+            let pledge_func = FunctionIdn::new(
+                vir_format_identifier!(vcx, "{trait_name}_fn_pledge_{item_name}"),
+                (
+                    return_type,
+                    two_state_arg_types,
+                    item_generics.ty_args(),
+                    item_generics.const_args(),
+                ),
+                vir::TYPE_BOOL,
+            );
 
             let call_stub_impure = (!is_pure).then(|| {
                 MethodIdn::new(
@@ -176,6 +197,7 @@ impl TaskEncoder for TraitFnEnc {
                 TraitFnEncOutputRef {
                     pre_func,
                     post_func,
+                    pledge_func,
                     call_stub_impure,
                     call_stub_pure_caller,
                     call_stub_pure_function,
@@ -187,6 +209,7 @@ impl TaskEncoder for TraitFnEnc {
             deps.require_ref::<TraitEnc>(trait_def_id)?;
             dom_funcs.push(vcx.mk_domain_function(pre_func, false, None));
             dom_funcs.push(vcx.mk_domain_function(post_func, false, None));
+            dom_funcs.push(vcx.mk_domain_function(pledge_func, false, None));
 
             // The stub emitted below is only useful together with the axioms
             // bridging the abstract pre/post functions to concrete impl
@@ -257,9 +280,17 @@ impl TaskEncoder for TraitFnEnc {
             // A default body is not part of the trait's contract: impls may
             // override it with a different result.
             let posts = vcx.mk_conj(&spec.post_exprs().collect::<Vec<_>>());
+            let func_args_post = local_defs.local_decl_args_post().collect::<Vec<_>>();
+            let two_state_arg_exprs = vcx.alloc_slice(
+                &func_args
+                    .iter()
+                    .chain(&func_args_post)
+                    .map(|arg| vcx.mk_local_ex(arg))
+                    .collect::<Vec<_>>(),
+            );
             let post_func_call = post_func.call()(
                 vcx.mk_local_ex(func_ret),
-                func_arg_exprs,
+                two_state_arg_exprs,
                 item_generics.ty_exprs(),
                 item_generics.const_exprs(),
             );
@@ -272,8 +303,54 @@ impl TaskEncoder for TraitFnEnc {
                     "{trait_name}_fn_post_{item_name}_base",
                 ),
                 vir::expr! {
-                    forall [func_ret], ..[func_args], ..[item_generics.ty_decls()], ..[item_generics.const_decls()] :: {[post_func_call]}
+                    forall [func_ret], ..[func_args], ..[func_args_post], ..[item_generics.ty_decls()], ..[item_generics.const_decls()] :: {[post_func_call]}
                         (post_func_call) ==> ((pres) ==> (posts))
+                },
+            ));
+            // The same for the pledges (the expiry obligations of
+            // `assert_on_expiry` are not supported through traits).
+            let pledge_args = PledgeArgs::two_state(
+                vcx.mk_local_ex(func_ret),
+                &func_args
+                    .iter()
+                    .map(|arg| vcx.mk_local_ex(arg))
+                    .collect::<Vec<_>>(),
+                &func_args_post
+                    .iter()
+                    .map(|arg| vcx.mk_local_ex(arg))
+                    .collect::<Vec<_>>(),
+                &mut_ref_args(tcx, def_id),
+            );
+            let pledges = pledges_for_axiom(
+                vcx,
+                deps,
+                def_id,
+                def_id,
+                &spec.pledges,
+                &local_defs,
+                pledge_args,
+                true,
+            )?;
+            let pledges = vcx.mk_conj(
+                &pledges
+                    .iter()
+                    .map(|(pledge, _)| *pledge)
+                    .collect::<Vec<_>>(),
+            );
+            let pledge_func_call = pledge_func.call()(
+                vcx.mk_local_ex(func_ret),
+                two_state_arg_exprs,
+                item_generics.ty_exprs(),
+                item_generics.const_exprs(),
+            );
+            axioms.push(vcx.mk_domain_axiom(
+                vir_format_identifier!(
+                    vcx,
+                    "{trait_name}_fn_pledge_{item_name}_base",
+                ),
+                vir::expr! {
+                    forall [func_ret], ..[func_args], ..[func_args_post], ..[item_generics.ty_decls()], ..[item_generics.const_decls()] :: {[pledge_func_call]}
+                        (pledge_func_call) ==> ((pres) ==> (pledges))
                 },
             ));
 
@@ -290,14 +367,15 @@ impl TaskEncoder for TraitFnEnc {
                     item_generics.ty_exprs(),
                     item_generics.const_exprs(),
                 ));
+                // A pure function has no mutable reference arguments, so their
+                // post-state is their pre-state.
+                let arg_snaps = local_defs
+                    .args()
+                    .map(|arg| vcx.mk_local_ex(arg.local_snap))
+                    .collect::<Vec<_>>();
                 stub_posts.push(post_func.call()(
                     vcx.mk_result(local_defs.snap_ty_return()),
-                    vcx.alloc_slice(
-                        &local_defs
-                            .args()
-                            .map(|arg| vcx.mk_local_ex(arg.local_snap))
-                            .collect::<Vec<_>>(),
-                    ),
+                    vcx.alloc_slice(&[arg_snaps.as_slice(), arg_snaps.as_slice()].concat()),
                     item_generics.ty_exprs(),
                     item_generics.const_exprs(),
                 ));
@@ -379,15 +457,31 @@ impl TaskEncoder for TraitFnEnc {
                     item_generics.ty_exprs(),
                     item_generics.const_exprs(),
                 ));
-                // TODO: mutable arguments should also have a post-state
+                // The arguments in the post-state: the referent of a mutable
+                // reference that is given back has its value then. One that is
+                // blocked by the result has no value in the post-state, so it
+                // gets the (unconstrained) shallow snapshot.
+                let mut_args = mut_ref_args(tcx, def_id);
+                let sig = tcx.fn_sig(def_id).instantiate_identity().skip_binder();
+                let pre_args = local_defs
+                    .args()
+                    .map(|arg| vcx.mk_old_expr(arg.impure_snap))
+                    .collect::<Vec<_>>();
+                let mut post_args = Vec::with_capacity(pre_args.len());
+                for (idx, (arg, pre)) in local_defs.args().zip(&pre_args).enumerate() {
+                    let local = mir::Local::from_usize(idx + 1);
+                    post_args.push(if !mut_args.get(idx).copied().unwrap_or(false) {
+                        *pre
+                    } else if wands.is_blocked_arg(local) {
+                        vcx.mk_old_expr(arg.impure_shallow_snap)
+                    } else {
+                        let ty = RustTyDecomposition::from_ty(sig.inputs()[idx], def_id);
+                        MutRefCurrentSnap::new(deps, ty)?.snap(*pre)
+                    });
+                }
                 stub_posts.push(post_func.call()(
                     local_defs.ret().impure_snap,
-                    vcx.alloc_slice(
-                        &local_defs
-                            .args()
-                            .map(|arg| vcx.mk_old_expr(arg.impure_snap))
-                            .collect::<Vec<_>>(),
-                    ),
+                    vcx.alloc_slice(&[pre_args.as_slice(), post_args.as_slice()].concat()),
                     item_generics.ty_exprs(),
                     item_generics.const_exprs(),
                 ));
@@ -417,4 +511,70 @@ impl TaskEncoder for TraitFnEnc {
             Ok(((trait_domain, funcs, methods), ()))
         })
     }
+}
+
+/// The `pledges` of `def_id` (the trait function `trait_fn` or an impl of it),
+/// reified with `pledge_args` for the axioms of `fn_pledge`.
+///
+/// A call through the trait gives `fn_pledge` the final values only of the
+/// mutable reference arguments that the result's borrow gives back (see
+/// `trait_fn_pledge`); for the others, the referent is not held when the
+/// borrow expires. A pledge reading the final value of such an argument is
+/// ill-formed (as it is for a call that is not through a trait, where it
+/// reads a referent the wand does not hold), so it is left out (and reported
+/// if `report`). Each pledge is returned with its span.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn pledges_for_axiom<'vir, E: TaskEncoder>(
+    vcx: &'vir vir::VirCtxt<'vir>,
+    deps: &mut TaskEncoderDependencies<'vir, E>,
+    trait_fn: DefId,
+    def_id: DefId,
+    pledges: &[EncodedPledge<'vir>],
+    local_defs: &MirLocalDefEncOutput<'vir>,
+    pledge_args: PledgeArgs<'vir>,
+    report: bool,
+) -> Result<Vec<(vir::ExprBool<'vir>, Span)>, EncodeFullError<'vir, E>> {
+    let mut_args = mut_ref_args(vcx.tcx(), def_id);
+    let given_back = if pledges.is_empty() || !mut_args.contains(&true) {
+        None
+    } else {
+        deps.require_dep::<WandEnc>(WandEncTask {
+            data: FunctionData::new(trait_fn),
+        })?
+        .single_wand_given_back_args()
+    };
+    // The post-state variables of the arguments whose final value a pledge
+    // must not read.
+    let not_given_back = local_defs
+        .args()
+        .enumerate()
+        .filter(|(idx, _)| {
+            let local = mir::Local::from_usize(idx + 1);
+            mut_args.get(*idx).copied().unwrap_or(false)
+                && given_back
+                    .as_ref()
+                    .is_some_and(|given_back| !given_back.contains(&local))
+        })
+        .map(|(_, arg)| arg.local_snap_post.name)
+        .collect::<FxHashSet<_>>();
+    let mut exprs = Vec::with_capacity(pledges.len());
+    for pledge in pledges {
+        let expr = pledge.expiry_postcondition.expr(pledge_args);
+        let mut locals = FxHashSet::default();
+        vir::collect_locals(expr.as_dyn(), &mut locals);
+        let span = pledge.expiry_postcondition.span();
+        if locals.iter().any(|local| not_given_back.contains(local)) {
+            if report {
+                vcx.emit_early_error(PrustiError::incorrect(
+                    "a pledge cannot refer to the final value of a mutable reference argument \
+                     that the result does not borrow from"
+                        .to_string(),
+                    span.into(),
+                ));
+            }
+            continue;
+        }
+        exprs.push((expr, span));
+    }
+    Ok(exprs)
 }
